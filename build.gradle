@@ -1,3 +1,5 @@
+import net.darkhax.curseforgegradle.TaskPublishCurseForge
+
 buildscript {
     repositories {
         maven { url = 'https://maven.minecraftforge.net' }
@@ -13,6 +15,8 @@ plugins {
     id 'eclipse'
     id 'idea'
     id 'net.minecraftforge.gradle' version '[6.0.16,6.2)'
+    id 'net.darkhax.curseforgegradle' version '1.1.24'
+    id 'me.modmuss50.mod-publish-plugin' version '0.8.3'
 }
 
 apply plugin: 'org.spongepowered.mixin'
@@ -273,4 +277,101 @@ tasks.register('runTemplateHitMining', JavaExec) {
     description = 'Summarizes dynamic template hit counts from the replay JSONL output.'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.PinkCats.bandwidthoptimizer.experient.network.TemplateHitMiningMain'
+}
+
+tasks.register('PublishInfo') {
+    group = 'Publishing'
+    description = 'Prints local publishing configuration and token availability.'
+    doLast {
+        println "Reobfuscated JAR file path: ${tasks.named('jar', Jar).get().archiveFile.get().asFile.absolutePath}"
+        println "version = \"${minecraft_version}-${mod_version}\""
+        println "displayName = \"${mod_name} v${mod_version} for Forge ${minecraft_version}\""
+        println "curseforge_id = ${curseforge_id}"
+        println "modrinth_id = ${modrinth_id}"
+        Properties apiProperties = loadApiProperties()
+        println "CF_TOKEN present: ${apiProperties.getProperty('CF_TOKEN') != null}"
+        println "MODRINTH_TOKEN present: ${apiProperties.getProperty('MODRINTH_TOKEN') != null}"
+    }
+}
+
+tasks.register('publishAll') {
+    group = 'Publishing'
+    description = 'Publishes the current build to CurseForge and Modrinth.'
+    dependsOn 'publishCurseForge'
+    dependsOn 'publishMods'
+}
+
+tasks.register('publishCurseForge', TaskPublishCurseForge) {
+    group = 'Publishing'
+    description = 'Publishes the current build to CurseForge.'
+    dependsOn 'reobfJar'
+    onlyIf {
+        hasPublishValue(curseforge_id)
+                && loadApiProperties().getProperty('CF_TOKEN') != null
+                && changelogFile().exists()
+    }
+
+    apiToken = loadApiProperties().getProperty('CF_TOKEN')
+    def mainFile = upload(curseforge_id, tasks.named('jar', Jar).get().archiveFile.get().asFile)
+    mainFile.changelog = firstChangelogEntry()
+    mainFile.addEnvironment('Client', 'Server')
+    mainFile.addGameVersion("${minecraft_version}")
+    mainFile.addModLoader('Forge')
+    mainFile.displayName = "${mod_name} v${mod_version} for Forge ${minecraft_version}"
+    mainFile.releaseType = publish_version
+    disableVersionDetection()
+}
+
+publishMods {
+    def modrinthToken = loadApiProperties().getProperty('MODRINTH_TOKEN')
+
+    file = tasks.named('jar', Jar).get().archiveFile
+    changelog = changelogFile().exists() ? changelogFile().text : ''
+    type = publish_version == 'alpha' ? ALPHA : (publish_version == 'beta' ? BETA : STABLE)
+    version = "${minecraft_version}-${mod_version}"
+    displayName = "${mod_name} v${mod_version} for Forge ${minecraft_version}"
+    modLoaders.add('forge')
+
+    if (modrinthToken != null && hasPublishValue(modrinth_id)) {
+        modrinth {
+            accessToken = modrinthToken
+            projectId = "${modrinth_id}"
+            minecraftVersions.add(minecraft_version)
+        }
+    }
+}
+
+tasks.named('publishMods') {
+    dependsOn 'reobfJar'
+    onlyIf {
+        hasPublishValue(modrinth_id)
+                && loadApiProperties().getProperty('MODRINTH_TOKEN') != null
+                && changelogFile().exists()
+    }
+}
+
+Properties loadApiProperties() {
+    Properties properties = new Properties()
+    File propertiesFile = file('api.properties')
+    if (propertiesFile.exists()) {
+        propertiesFile.withInputStream { properties.load(it) }
+    }
+    return properties
+}
+
+File changelogFile() {
+    return rootProject.file('update/changelog.md')
+}
+
+String firstChangelogEntry() {
+    File file = changelogFile()
+    if (!file.exists()) {
+        return ''
+    }
+    return file.text.split('\\n\\n\\n')[0]
+}
+
+boolean hasPublishValue(Object value) {
+    String text = String.valueOf(value == null ? '' : value).trim()
+    return !text.isEmpty() && !text.equalsIgnoreCase('todo') && !text.equals('0')
 }
