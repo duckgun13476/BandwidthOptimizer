@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.network.client;
 
+import com.PinkCats.bandwidthoptimizer.network.ModNetwork;
+import com.PinkCats.bandwidthoptimizer.network.message.ClientToServerOptimizationTelemetrySubscriptionPacket;
 import com.PinkCats.bandwidthoptimizer.network.server.ServerPlayPacketBatchingManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
@@ -25,6 +27,13 @@ public final class ClientOptimizationHudOverlay {
     @SubscribeEvent
     public static void onLoggingIn(ClientPlayerNetworkEvent.LoggingIn event) {
         enabled = false;
+        sendTelemetrySubscription(false);
+    }
+
+    @SubscribeEvent
+    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+        enabled = false;
+        sendTelemetrySubscription(false);
     }
 
     @SubscribeEvent
@@ -153,9 +162,18 @@ public final class ClientOptimizationHudOverlay {
 
     public static void setEnabled(boolean enabled) {
         ClientOptimizationHudOverlay.enabled = enabled;
+        sendTelemetrySubscription(enabled);
     }
 
     public static boolean isEnabled() {
         return enabled;
+    }
+
+    private static void sendTelemetrySubscription(boolean subscribed) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.getConnection() == null) {
+            return;
+        }
+        ModNetwork.sendToServer(new ClientToServerOptimizationTelemetrySubscriptionPacket(subscribed));
     }
 }

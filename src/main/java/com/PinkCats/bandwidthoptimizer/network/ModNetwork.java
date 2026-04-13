@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.network.attachment.AttachmentDataFlow;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientToServerAttachmentPacket;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientToServerChunkCacheMissPacket;
+import com.PinkCats.bandwidthoptimizer.network.message.ClientToServerOptimizationTelemetrySubscriptionPacket;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientboundChunkCacheRefreshPacket;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientboundServerConfigPacket;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientboundChunkCacheUsePacket;
@@ -99,6 +100,13 @@ public final class ModNetwork {
         );
         CHANNEL.registerMessage(
                 nextId(),
+                ClientToServerOptimizationTelemetrySubscriptionPacket.class,
+                ClientToServerOptimizationTelemetrySubscriptionPacket::encode,
+                ClientToServerOptimizationTelemetrySubscriptionPacket::decode,
+                ClientToServerOptimizationTelemetrySubscriptionPacket::handle
+        );
+        CHANNEL.registerMessage(
+                nextId(),
                 ServerOptimizationTelemetryPacket.class,
                 ServerOptimizationTelemetryPacket::encode,
                 ServerOptimizationTelemetryPacket::decode,
@@ -138,6 +146,10 @@ public final class ModNetwork {
     }
 
     public static void sendToServer(ClientToServerChunkCacheMissPacket packet) {
+        CHANNEL.sendToServer(packet);
+    }
+
+    public static void sendToServer(ClientToServerOptimizationTelemetrySubscriptionPacket packet) {
         CHANNEL.sendToServer(packet);
     }
 
