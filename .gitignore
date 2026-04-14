@@ -22,3 +22,8 @@ run
 logs
 /dump/
 /api.properties
+/tmp_snap_decomp/
+/tmp_dac_decomp_104/
+/tmp_dac_bukkit_decomp_89/
+/tmp_dac_agent_decomp/
+/tmp_dac_agent_classes/
