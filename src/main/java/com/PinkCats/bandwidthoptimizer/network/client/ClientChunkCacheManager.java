@@ -1,7 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.network.client;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
-import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ConnectionReplayInvokerMixin;
 import com.PinkCats.bandwidthoptimizer.network.ModNetwork;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientToServerChunkCacheMissPacket;
@@ -52,7 +51,6 @@ public final class ClientChunkCacheManager {
             if (previous != null) {
                 currentTotalBytes -= previous.byteSize();
             }
-            trace("Refresh", packet.dimensionId(), packet.chunkX(), packet.chunkZ(), "sessionId=" + packet.sessionId() + ", bytes=" + packet.encodedPacketBytes().length);
             enforceLimits();
         }
         replayEncodedPacket(packet.encodedPacketBytes());
@@ -72,11 +70,9 @@ public final class ClientChunkCacheManager {
                 entry = null;
             }
             if (entry == null) {
-                trace("Miss", packet.dimensionId(), packet.chunkX(), packet.chunkZ(), "sessionId=" + packet.sessionId());
             } else {
                 entry.lastAccessMillis = now;
                 entry.expiresAtMillis = now + TTL_MILLIS;
-                trace("Use", packet.dimensionId(), packet.chunkX(), packet.chunkZ(), "sessionId=" + packet.sessionId() + ", bytes=" + entry.byteSize());
             }
         }
         if (entry == null) {
@@ -113,7 +109,6 @@ public final class ClientChunkCacheManager {
         currentSessionId = sessionId;
         CACHE.clear();
         currentTotalBytes = 0L;
-        trace("SessionReset", null, 0, 0, "sessionId=" + sessionId);
     }
 
     private static void prune(long now) {
@@ -124,13 +119,6 @@ public final class ClientChunkCacheManager {
             if (now - cacheEntry.lastAccessMillis > TTL_MILLIS) {
                 iterator.remove();
                 currentTotalBytes -= cacheEntry.byteSize();
-                trace(
-                        "PruneExpired",
-                        entry.getKey().dimensionId(),
-                        new ChunkPos(entry.getKey().chunkKey()).x,
-                        new ChunkPos(entry.getKey().chunkKey()).z,
-                        "ageMillis=" + (now - cacheEntry.lastAccessMillis)
-                );
             }
         }
     }
@@ -160,17 +148,6 @@ public final class ClientChunkCacheManager {
                 iterator.remove();
                 currentTotalBytes -= cacheEntry.byteSize();
                 dimensionCounts.computeIfPresent(key.dimensionId(), (ignored, count) -> Math.max(0, count - 1));
-                trace(
-                        "Evict",
-                        key.dimensionId(),
-                        new ChunkPos(key.chunkKey()).x,
-                        new ChunkPos(key.chunkKey()).z,
-                        "reason="
-                                + (currentTotalBytes > MAX_TOTAL_BYTES ? "byte_limit" : dimensionCount > MAX_ENTRIES_PER_DIMENSION ? "dimension_limit" : "total_limit")
-                                + ", bytes=" + cacheEntry.byteSize()
-                                + ", totalBytes=" + currentTotalBytes
-                                + ", totalEntries=" + CACHE.size()
-                );
             }
         }
     }
@@ -181,20 +158,6 @@ public final class ClientChunkCacheManager {
             counts.merge(key.dimensionId(), 1, Integer::sum);
         }
         return counts;
-    }
-
-    private static void trace(String action, ResourceLocation dimensionId, int chunkX, int chunkZ, String detail) {
-        if (!Config.optimizerDebugLoggingEnabled()) {
-            return;
-        }
-        Bandwidthoptimizer.LOGGER.info(
-                "[ChunkCache][Client][{}] dimension={}, chunk=({}, {}), {}",
-                action,
-                dimensionId,
-                chunkX,
-                chunkZ,
-                detail
-        );
     }
 
     private static final class CacheEntry {

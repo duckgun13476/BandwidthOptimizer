@@ -1,7 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.optimise.chunkcache;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
-import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.network.ModNetwork;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientToServerChunkCacheMissPacket;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientboundChunkCacheRefreshPacket;
@@ -72,13 +71,6 @@ public final class ServerChunkCacheManager {
                 long rawBytes = entry.rawBytes;
                 long sentBytes = usePacket.encodedSize();
                 long savedBytes = Math.max(rawBytes - sentBytes, 0L);
-                trace(
-                        "Use",
-                        player,
-                        dimensionId,
-                        targetChunk,
-                        "sessionId=" + state.sessionId + ", rawBytes=" + rawBytes + ", sentBytes=" + sentBytes
-                );
                 ChunkCacheStats.recordHit(rawBytes, sentBytes, savedBytes);
                 ServerOptimizationTelemetryManager.recordChunkCache(player, savedBytes, true, false);
                 enforceLimits(state, player);
@@ -89,13 +81,6 @@ public final class ServerChunkCacheManager {
             ClientboundChunkCacheRefreshPacket refreshPacket = new ClientboundChunkCacheRefreshPacket(state.sessionId, dimensionId, targetChunk.x, targetChunk.z, encodedPacketBytes);
             ModNetwork.sendChunkCacheRefreshToPlayer(player, refreshPacket);
             state.entries.put(key, new ChunkEntry(now, now, encodedPacketBytes.length));
-            trace(
-                    "Refresh",
-                    player,
-                    dimensionId,
-                    targetChunk,
-                    "sessionId=" + state.sessionId + ", rawBytes=" + encodedPacketBytes.length + ", forceRefresh=" + forceRefresh
-            );
             ChunkCacheStats.recordRefresh(encodedPacketBytes.length, refreshPacket.encodedSize());
             ServerOptimizationTelemetryManager.recordChunkCache(player, 0L, false, true);
             enforceLimits(state, player);
@@ -146,13 +131,6 @@ public final class ServerChunkCacheManager {
             entry.lastRefreshMillis = System.currentTimeMillis();
             entry.lastAccessMillis = entry.lastRefreshMillis;
             entry.rawBytes = refreshPacket.encodedPacketBytes().length;
-            trace(
-                    "MissRefresh",
-                    player,
-                    packet.dimensionId(),
-                    new ChunkPos(packet.chunkX(), packet.chunkZ()),
-                    "sessionId=" + packet.sessionId() + ", rawBytes=" + entry.rawBytes
-            );
             ChunkCacheStats.recordRefresh(entry.rawBytes, refreshPacket.encodedSize());
             ChunkCacheStats.recordMissRefresh(entry.rawBytes, refreshPacket.encodedSize());
         }
@@ -183,26 +161,12 @@ public final class ServerChunkCacheManager {
             ChunkEntry chunkEntry = entry.getValue();
             if (now - chunkEntry.lastAccessMillis > TTL_MILLIS) {
                 typedIterator.remove();
-                trace(
-                        "PruneExpired",
-                        null,
-                        cacheKey.dimensionId(),
-                        new ChunkPos(cacheKey.chunkKey()),
-                        "ageMillis=" + (now - chunkEntry.lastAccessMillis)
-                );
                 continue;
             }
             if (currentDimensionId.equals(cacheKey.dimensionId())) {
                 ChunkPos chunkPos = new ChunkPos(cacheKey.chunkKey());
                 if (distanceSquared(playerChunk, chunkPos) > radiusSquared) {
                     typedIterator.remove();
-                    trace(
-                            "PruneRadius",
-                            null,
-                            cacheKey.dimensionId(),
-                            chunkPos,
-                            "radius=" + cacheRadius
-                    );
                 }
             }
         }
@@ -230,14 +194,6 @@ public final class ServerChunkCacheManager {
             if (state.entries.size() > MAX_ENTRIES_TOTAL || dimensionCount > MAX_ENTRIES_PER_DIMENSION) {
                 iterator.remove();
                 dimensionCounts.computeIfPresent(cacheKey.dimensionId(), (ignored, count) -> Math.max(0, count - 1));
-                trace(
-                        "Evict",
-                        player,
-                        cacheKey.dimensionId(),
-                        new ChunkPos(cacheKey.chunkKey()),
-                        "reason=" + (dimensionCount > MAX_ENTRIES_PER_DIMENSION ? "dimension_limit" : "total_limit")
-                                + ", totalEntries=" + state.entries.size()
-                );
             }
         }
     }
@@ -248,22 +204,6 @@ public final class ServerChunkCacheManager {
             counts.merge(key.dimensionId(), 1, Integer::sum);
         }
         return counts;
-    }
-
-    private static void trace(String action, ServerPlayer player, ResourceLocation dimensionId, ChunkPos chunkPos, String detail) {
-        if (!Config.optimizerDebugLoggingEnabled()) {
-            return;
-        }
-        String target = player == null ? "-" : player.getGameProfile().getName();
-        Bandwidthoptimizer.LOGGER.info(
-                "[ChunkCache][Server][{}] player={}, dimension={}, chunk=({}, {}), {}",
-                action,
-                target,
-                dimensionId,
-                chunkPos.x,
-                chunkPos.z,
-                detail
-        );
     }
 
     private static int distanceSquared(ChunkPos a, ChunkPos b) {
