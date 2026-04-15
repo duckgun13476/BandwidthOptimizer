@@ -13,6 +13,7 @@ import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.ChunkPos;
 
 import java.util.Iterator;
@@ -22,7 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class ClientChunkCacheManager {
 
     private static final long TTL_MILLIS = 240_000L;
-    private static final Map<Long, CacheEntry> CACHE = new ConcurrentHashMap<>();
+    private static final Map<CacheKey, CacheEntry> CACHE = new ConcurrentHashMap<>();
     private static volatile long currentSessionId = Long.MIN_VALUE;
 
     private ClientChunkCacheManager() {
@@ -32,7 +33,7 @@ public final class ClientChunkCacheManager {
         resetIfNeeded(packet.sessionId());
         long now = System.currentTimeMillis();
         prune(now);
-        long key = new ChunkPos(packet.chunkX(), packet.chunkZ()).toLong();
+        CacheKey key = new CacheKey(packet.dimensionId(), new ChunkPos(packet.chunkX(), packet.chunkZ()).toLong());
         CACHE.put(key, new CacheEntry(packet.encodedPacketBytes(), now + TTL_MILLIS));
         replayEncodedPacket(packet.encodedPacketBytes());
     }
@@ -41,18 +42,19 @@ public final class ClientChunkCacheManager {
         resetIfNeeded(packet.sessionId());
         long now = System.currentTimeMillis();
         prune(now);
-        long key = new ChunkPos(packet.chunkX(), packet.chunkZ()).toLong();
+        CacheKey key = new CacheKey(packet.dimensionId(), new ChunkPos(packet.chunkX(), packet.chunkZ()).toLong());
         CacheEntry entry = CACHE.get(key);
         if (entry == null || entry.expiresAtMillis < now) {
             if (Config.optimizerDebugLoggingEnabled() && Bandwidthoptimizer.LOGGER.isDebugEnabled()) {
                 Bandwidthoptimizer.LOGGER.debug(
-                        "[ChunkCache][Client][Miss] chunk=({}, {}), sessionId={}",
+                        "[ChunkCache][Client][Miss] dimension={}, chunk=({}, {}), sessionId={}",
+                        packet.dimensionId(),
                         packet.chunkX(),
                         packet.chunkZ(),
                         packet.sessionId()
                 );
             }
-            ModNetwork.sendToServer(new ClientToServerChunkCacheMissPacket(packet.sessionId(), packet.chunkX(), packet.chunkZ()));
+            ModNetwork.sendToServer(new ClientToServerChunkCacheMissPacket(packet.sessionId(), packet.dimensionId(), packet.chunkX(), packet.chunkZ()));
             return;
         }
         replayEncodedPacket(entry.encodedPacketBytes);
@@ -87,7 +89,7 @@ public final class ClientChunkCacheManager {
     }
 
     private static void prune(long now) {
-        Iterator<Map.Entry<Long, CacheEntry>> iterator = CACHE.entrySet().iterator();
+        Iterator<Map.Entry<CacheKey, CacheEntry>> iterator = CACHE.entrySet().iterator();
         while (iterator.hasNext()) {
             if (iterator.next().getValue().expiresAtMillis < now) {
                 iterator.remove();
@@ -103,5 +105,11 @@ public final class ClientChunkCacheManager {
             this.encodedPacketBytes = encodedPacketBytes;
             this.expiresAtMillis = expiresAtMillis;
         }
+    }
+
+    private record CacheKey(
+            ResourceLocation dimensionId,
+            long chunkKey
+    ) {
     }
 }

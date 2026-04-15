@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.network.message;
 
 import com.PinkCats.bandwidthoptimizer.optimise.chunkcache.ServerChunkCacheManager;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
 
@@ -9,12 +10,14 @@ import java.util.function.Supplier;
 
 public record ClientToServerChunkCacheMissPacket(
         long sessionId,
+        ResourceLocation dimensionId,
         int chunkX,
         int chunkZ
 ) {
 
     public static void encode(ClientToServerChunkCacheMissPacket packet, FriendlyByteBuf buffer) {
         buffer.writeVarLong(packet.sessionId());
+        buffer.writeResourceLocation(packet.dimensionId());
         buffer.writeVarInt(packet.chunkX());
         buffer.writeVarInt(packet.chunkZ());
     }
@@ -22,6 +25,7 @@ public record ClientToServerChunkCacheMissPacket(
     public static ClientToServerChunkCacheMissPacket decode(FriendlyByteBuf buffer) {
         return new ClientToServerChunkCacheMissPacket(
                 buffer.readVarLong(),
+                buffer.readResourceLocation(),
                 buffer.readVarInt(),
                 buffer.readVarInt()
         );

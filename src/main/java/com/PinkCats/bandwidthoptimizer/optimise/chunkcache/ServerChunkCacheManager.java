@@ -8,6 +8,7 @@ import com.PinkCats.bandwidthoptimizer.network.message.ClientboundChunkCacheUseP
 import com.PinkCats.bandwidthoptimizer.network.algorithm.play.PlayPacketReplaySupport;
 import com.PinkCats.bandwidthoptimizer.network.algorithm.play.ServerOptimizationTelemetryManager;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
@@ -52,14 +53,15 @@ public final class ServerChunkCacheManager {
         int forceRefreshRadius = Math.max(1, (int) Math.floor(viewDistance * FORCE_REFRESH_MULTIPLIER));
         ChunkPos playerChunk = player.chunkPosition();
         ChunkPos targetChunk = new ChunkPos(packet.getX(), packet.getZ());
+        ResourceLocation dimensionId = player.serverLevel().dimension().location();
         int distanceSquared = distanceSquared(playerChunk, targetChunk);
-        long key = targetChunk.toLong();
+        CacheKey key = new CacheKey(dimensionId, targetChunk.toLong());
         synchronized (state) {
-            prune(state, playerChunk, cacheRadius, now);
+            prune(state, dimensionId, playerChunk, cacheRadius, now);
             ChunkEntry entry = state.entries.get(key);
             boolean forceRefresh = distanceSquared <= forceRefreshRadius * forceRefreshRadius;
             if (!forceRefresh && entry != null && now - entry.lastRefreshMillis <= TTL_MILLIS) {
-                ClientboundChunkCacheUsePacket usePacket = new ClientboundChunkCacheUsePacket(state.sessionId, targetChunk.x, targetChunk.z);
+                ClientboundChunkCacheUsePacket usePacket = new ClientboundChunkCacheUsePacket(state.sessionId, dimensionId, targetChunk.x, targetChunk.z);
                 ModNetwork.sendChunkCacheUseToPlayer(player, usePacket);
                 long rawBytes = entry.rawBytes;
                 long sentBytes = usePacket.encodedSize();
@@ -70,7 +72,7 @@ public final class ServerChunkCacheManager {
             }
 
             byte[] encodedPacketBytes = PlayPacketReplaySupport.encodePacket(packet);
-            ClientboundChunkCacheRefreshPacket refreshPacket = new ClientboundChunkCacheRefreshPacket(state.sessionId, targetChunk.x, targetChunk.z, encodedPacketBytes);
+            ClientboundChunkCacheRefreshPacket refreshPacket = new ClientboundChunkCacheRefreshPacket(state.sessionId, dimensionId, targetChunk.x, targetChunk.z, encodedPacketBytes);
             ModNetwork.sendChunkCacheRefreshToPlayer(player, refreshPacket);
             state.entries.put(key, new ChunkEntry(now, encodedPacketBytes.length));
             ChunkCacheStats.recordRefresh(encodedPacketBytes.length, refreshPacket.encodedSize());
@@ -88,24 +90,30 @@ public final class ServerChunkCacheManager {
             if (state.sessionId != packet.sessionId()) {
                 return;
             }
-            long key = new ChunkPos(packet.chunkX(), packet.chunkZ()).toLong();
+            ResourceLocation currentDimensionId = player.serverLevel().dimension().location();
+            if (!currentDimensionId.equals(packet.dimensionId())) {
+                return;
+            }
+            CacheKey key = new CacheKey(packet.dimensionId(), new ChunkPos(packet.chunkX(), packet.chunkZ()).toLong());
             ChunkEntry entry = state.entries.get(key);
             if (entry == null) {
                 Bandwidthoptimizer.LOGGER.warn(
-                        "[ChunkCache][Server][MissWithoutEntry] player={}, chunk=({}, {}), sessionId={}",
+                        "[ChunkCache][Server][MissWithoutEntry] player={}, dimension={}, chunk=({}, {}), sessionId={}",
                         player.getGameProfile().getName(),
+                        packet.dimensionId(),
                         packet.chunkX(),
                         packet.chunkZ(),
                         packet.sessionId()
                 );
                 return;
             }
-            ClientboundChunkCacheRefreshPacket refreshPacket = rebuildRefreshPacket(player, state.sessionId, packet.chunkX(), packet.chunkZ());
+            ClientboundChunkCacheRefreshPacket refreshPacket = rebuildRefreshPacket(player, state.sessionId, packet.dimensionId(), packet.chunkX(), packet.chunkZ());
             if (refreshPacket == null) {
                 state.entries.remove(key);
                 Bandwidthoptimizer.LOGGER.warn(
-                        "[ChunkCache][Server][MissRebuildFailed] player={}, chunk=({}, {}), sessionId={}",
+                        "[ChunkCache][Server][MissRebuildFailed] player={}, dimension={}, chunk=({}, {}), sessionId={}",
                         player.getGameProfile().getName(),
+                        packet.dimensionId(),
                         packet.chunkX(),
                         packet.chunkZ(),
                         packet.sessionId()
@@ -120,7 +128,7 @@ public final class ServerChunkCacheManager {
         }
     }
 
-    private static ClientboundChunkCacheRefreshPacket rebuildRefreshPacket(ServerPlayer player, long sessionId, int chunkX, int chunkZ) {
+    private static ClientboundChunkCacheRefreshPacket rebuildRefreshPacket(ServerPlayer player, long sessionId, ResourceLocation dimensionId, int chunkX, int chunkZ) {
         ServerLevel level = player.serverLevel();
         LevelChunk chunk = level.getChunkSource().getChunkNow(chunkX, chunkZ);
         if (chunk == null) {
@@ -133,17 +141,24 @@ public final class ServerChunkCacheManager {
                 null
         );
         byte[] encodedPacketBytes = PlayPacketReplaySupport.encodePacket(rebuiltPacket);
-        return new ClientboundChunkCacheRefreshPacket(sessionId, chunkX, chunkZ, encodedPacketBytes);
+        return new ClientboundChunkCacheRefreshPacket(sessionId, dimensionId, chunkX, chunkZ, encodedPacketBytes);
     }
 
-    private static void prune(PlayerState state, ChunkPos playerChunk, int cacheRadius, long now) {
-        Iterator<Map.Entry<Long, ChunkEntry>> iterator = state.entries.entrySet().iterator();
+    private static void prune(PlayerState state, ResourceLocation currentDimensionId, ChunkPos playerChunk, int cacheRadius, long now) {
+        Iterator<Map.Entry<CacheKey, ChunkEntry>> typedIterator = state.entries.entrySet().iterator();
         int radiusSquared = cacheRadius * cacheRadius;
-        while (iterator.hasNext()) {
-            Map.Entry<Long, ChunkEntry> entry = iterator.next();
-            ChunkPos chunkPos = new ChunkPos(entry.getKey());
-            if (distanceSquared(playerChunk, chunkPos) > radiusSquared || now - entry.getValue().lastRefreshMillis > TTL_MILLIS) {
-                iterator.remove();
+        while (typedIterator.hasNext()) {
+            Map.Entry<CacheKey, ChunkEntry> entry = typedIterator.next();
+            CacheKey cacheKey = entry.getKey();
+            if (now - entry.getValue().lastRefreshMillis > TTL_MILLIS) {
+                typedIterator.remove();
+                continue;
+            }
+            if (currentDimensionId.equals(cacheKey.dimensionId())) {
+                ChunkPos chunkPos = new ChunkPos(cacheKey.chunkKey());
+                if (distanceSquared(playerChunk, chunkPos) > radiusSquared) {
+                    typedIterator.remove();
+                }
             }
         }
     }
@@ -156,7 +171,13 @@ public final class ServerChunkCacheManager {
 
     private static final class PlayerState {
         private final long sessionId = ThreadLocalRandom.current().nextLong();
-        private final Map<Long, ChunkEntry> entries = new ConcurrentHashMap<>();
+        private final Map<CacheKey, ChunkEntry> entries = new ConcurrentHashMap<>();
+    }
+
+    private record CacheKey(
+            ResourceLocation dimensionId,
+            long chunkKey
+    ) {
     }
 
     private static final class ChunkEntry {

@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.network.message;
 import com.PinkCats.bandwidthoptimizer.network.client.ClientChunkCacheManager;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkEvent;
@@ -11,12 +12,14 @@ import java.util.function.Supplier;
 
 public record ClientboundChunkCacheUsePacket(
         long sessionId,
+        ResourceLocation dimensionId,
         int chunkX,
         int chunkZ
 ) {
 
     public static void encode(ClientboundChunkCacheUsePacket packet, FriendlyByteBuf buffer) {
         buffer.writeVarLong(packet.sessionId());
+        buffer.writeResourceLocation(packet.dimensionId());
         buffer.writeVarInt(packet.chunkX());
         buffer.writeVarInt(packet.chunkZ());
     }
@@ -24,6 +27,7 @@ public record ClientboundChunkCacheUsePacket(
     public static ClientboundChunkCacheUsePacket decode(FriendlyByteBuf buffer) {
         return new ClientboundChunkCacheUsePacket(
                 buffer.readVarLong(),
+                buffer.readResourceLocation(),
                 buffer.readVarInt(),
                 buffer.readVarInt()
         );
