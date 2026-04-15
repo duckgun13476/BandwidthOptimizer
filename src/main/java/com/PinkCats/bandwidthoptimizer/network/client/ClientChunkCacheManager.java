@@ -1,7 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.network.client;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
-import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ConnectionReplayInvokerMixin;
 import com.PinkCats.bandwidthoptimizer.network.ModNetwork;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientToServerChunkCacheMissPacket;
@@ -16,44 +15,67 @@ import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.ChunkPos;
 
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 public final class ClientChunkCacheManager {
 
     private static final long TTL_MILLIS = 240_000L;
-    private static final Map<CacheKey, CacheEntry> CACHE = new ConcurrentHashMap<>();
+    private static final long MAX_TOTAL_BYTES = 100L * 1024L * 1024L;
+    private static final int MAX_ENTRIES_TOTAL = 8_192;
+    private static final int MAX_ENTRIES_PER_DIMENSION = 4_096;
+    private static final Object LOCK = new Object();
+    private static final Map<CacheKey, CacheEntry> CACHE = new LinkedHashMap<>(256, 0.75F, true);
     private static volatile long currentSessionId = Long.MIN_VALUE;
+    private static long currentTotalBytes;
 
     private ClientChunkCacheManager() {
     }
 
+    public static Snapshot snapshot() {
+        synchronized (LOCK) {
+            return new Snapshot(currentSessionId, currentTotalBytes, CACHE.size(), countByDimension().size());
+        }
+    }
+
     public static void handleRefresh(ClientboundChunkCacheRefreshPacket packet) {
-        resetIfNeeded(packet.sessionId());
         long now = System.currentTimeMillis();
-        prune(now);
         CacheKey key = new CacheKey(packet.dimensionId(), new ChunkPos(packet.chunkX(), packet.chunkZ()).toLong());
-        CACHE.put(key, new CacheEntry(packet.encodedPacketBytes(), now + TTL_MILLIS));
+        synchronized (LOCK) {
+            resetIfNeeded(packet.sessionId());
+            prune(now);
+            CacheEntry previous = CACHE.put(key, new CacheEntry(packet.encodedPacketBytes(), now + TTL_MILLIS, now));
+            currentTotalBytes += packet.encodedPacketBytes().length;
+            if (previous != null) {
+                currentTotalBytes -= previous.byteSize();
+            }
+            enforceLimits();
+        }
         replayEncodedPacket(packet.encodedPacketBytes());
     }
 
     public static void handleUse(ClientboundChunkCacheUsePacket packet) {
-        resetIfNeeded(packet.sessionId());
         long now = System.currentTimeMillis();
-        prune(now);
-        CacheKey key = new CacheKey(packet.dimensionId(), new ChunkPos(packet.chunkX(), packet.chunkZ()).toLong());
-        CacheEntry entry = CACHE.get(key);
-        if (entry == null || entry.expiresAtMillis < now) {
-            if (Config.optimizerDebugLoggingEnabled() && Bandwidthoptimizer.LOGGER.isDebugEnabled()) {
-                Bandwidthoptimizer.LOGGER.debug(
-                        "[ChunkCache][Client][Miss] dimension={}, chunk=({}, {}), sessionId={}",
-                        packet.dimensionId(),
-                        packet.chunkX(),
-                        packet.chunkZ(),
-                        packet.sessionId()
-                );
+        CacheEntry entry;
+        synchronized (LOCK) {
+            resetIfNeeded(packet.sessionId());
+            prune(now);
+            CacheKey key = new CacheKey(packet.dimensionId(), new ChunkPos(packet.chunkX(), packet.chunkZ()).toLong());
+            entry = CACHE.get(key);
+            if (entry != null && entry.expiresAtMillis < now) {
+                currentTotalBytes -= entry.byteSize();
+                CACHE.remove(key);
+                entry = null;
             }
+            if (entry == null) {
+            } else {
+                entry.lastAccessMillis = now;
+                entry.expiresAtMillis = now + TTL_MILLIS;
+            }
+        }
+        if (entry == null) {
             ModNetwork.sendToServer(new ClientToServerChunkCacheMissPacket(packet.sessionId(), packet.dimensionId(), packet.chunkX(), packet.chunkZ()));
             return;
         }
@@ -86,30 +108,85 @@ public final class ClientChunkCacheManager {
         }
         currentSessionId = sessionId;
         CACHE.clear();
+        currentTotalBytes = 0L;
     }
 
     private static void prune(long now) {
         Iterator<Map.Entry<CacheKey, CacheEntry>> iterator = CACHE.entrySet().iterator();
         while (iterator.hasNext()) {
-            if (iterator.next().getValue().expiresAtMillis < now) {
+            Map.Entry<CacheKey, CacheEntry> entry = iterator.next();
+            CacheEntry cacheEntry = entry.getValue();
+            if (now - cacheEntry.lastAccessMillis > TTL_MILLIS) {
                 iterator.remove();
+                currentTotalBytes -= cacheEntry.byteSize();
             }
         }
     }
 
+    private static void enforceLimits() {
+        if (currentTotalBytes <= MAX_TOTAL_BYTES && CACHE.size() <= MAX_ENTRIES_TOTAL) {
+            Map<ResourceLocation, Integer> dimensionCounts = countByDimension();
+            if (dimensionCounts.values().stream().allMatch(count -> count <= MAX_ENTRIES_PER_DIMENSION)) {
+                return;
+            }
+        }
+
+        Map<ResourceLocation, Integer> dimensionCounts = countByDimension();
+        Iterator<Map.Entry<CacheKey, CacheEntry>> iterator = CACHE.entrySet().iterator();
+        while (iterator.hasNext()) {
+            if (currentTotalBytes <= MAX_TOTAL_BYTES
+                    && CACHE.size() <= MAX_ENTRIES_TOTAL
+                    && dimensionCounts.values().stream().allMatch(count -> count <= MAX_ENTRIES_PER_DIMENSION)) {
+                return;
+            }
+
+            Map.Entry<CacheKey, CacheEntry> entry = iterator.next();
+            CacheKey key = entry.getKey();
+            CacheEntry cacheEntry = entry.getValue();
+            int dimensionCount = dimensionCounts.getOrDefault(key.dimensionId(), 0);
+            if (currentTotalBytes > MAX_TOTAL_BYTES || CACHE.size() > MAX_ENTRIES_TOTAL || dimensionCount > MAX_ENTRIES_PER_DIMENSION) {
+                iterator.remove();
+                currentTotalBytes -= cacheEntry.byteSize();
+                dimensionCounts.computeIfPresent(key.dimensionId(), (ignored, count) -> Math.max(0, count - 1));
+            }
+        }
+    }
+
+    private static Map<ResourceLocation, Integer> countByDimension() {
+        Map<ResourceLocation, Integer> counts = new HashMap<>();
+        for (CacheKey key : CACHE.keySet()) {
+            counts.merge(key.dimensionId(), 1, Integer::sum);
+        }
+        return counts;
+    }
+
     private static final class CacheEntry {
         private final byte[] encodedPacketBytes;
-        private final long expiresAtMillis;
+        private long expiresAtMillis;
+        private long lastAccessMillis;
 
-        private CacheEntry(byte[] encodedPacketBytes, long expiresAtMillis) {
+        private CacheEntry(byte[] encodedPacketBytes, long expiresAtMillis, long lastAccessMillis) {
             this.encodedPacketBytes = encodedPacketBytes;
             this.expiresAtMillis = expiresAtMillis;
+            this.lastAccessMillis = lastAccessMillis;
+        }
+
+        private int byteSize() {
+            return this.encodedPacketBytes.length;
         }
     }
 
     private record CacheKey(
             ResourceLocation dimensionId,
             long chunkKey
+    ) {
+    }
+
+    public record Snapshot(
+            long sessionId,
+            long totalBytes,
+            int totalEntries,
+            int dimensions
     ) {
     }
 }
