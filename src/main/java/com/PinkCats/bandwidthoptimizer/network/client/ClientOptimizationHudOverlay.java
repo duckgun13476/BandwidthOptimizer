@@ -103,11 +103,11 @@ public final class ClientOptimizationHudOverlay {
         long effectiveRecentRaw = optimizedRecentRaw + bypassRecent + chunkCacheSavedRecent;
         long effectiveRecentSent = optimizedRecentSent + bypassRecent;
         lines.add("Client");
-        lines.add("  Total save " + formatPercent(100.0D - ratio(effectiveTotalRaw, effectiveTotalSent))
-                + " / 2 min " + formatPercent(100.0D - ratio(effectiveRecentRaw, effectiveRecentSent))
+        lines.add("  Total " + formatDelta(100.0D - ratio(effectiveTotalRaw, effectiveTotalSent))
+                + " / 2 min " + formatDelta(100.0D - ratio(effectiveRecentRaw, effectiveRecentSent))
                 + "  (" + formatBytes(effectiveTotalRaw) + " -> " + formatBytes(effectiveTotalSent) + ")");
-        lines.add("  Optimize " + formatPercent(100.0D - ratio(optimizedTotalRaw, optimizedTotalSent))
-                + " / 2 min " + formatPercent(100.0D - ratio(optimizedRecentRaw, optimizedRecentSent))
+        lines.add("  Optimize " + formatDelta(100.0D - ratio(optimizedTotalRaw, optimizedTotalSent))
+                + " / 2 min " + formatDelta(100.0D - ratio(optimizedRecentRaw, optimizedRecentSent))
                 + "  (" + formatBytes(optimizedTotalRaw) + " -> " + formatBytes(optimizedTotalSent) + ")");
         lines.add("  ChunkCache " + formatBytes(chunkCacheSavedTotal) + " / 2 min " + formatBytes(chunkCacheSavedRecent)
                 + " / hit " + snapshot.chunkCacheHitTotalPackets() + " / ref " + snapshot.chunkCacheRefreshTotalPackets());
@@ -123,11 +123,11 @@ public final class ClientOptimizationHudOverlay {
         long effectiveRecentRaw = snapshot.recentRawBytes() + snapshot.recentBypassBytes() + snapshot.recentChunkCacheSavedBytes();
         long effectiveRecentSent = snapshot.recentBatchedBytes() + snapshot.recentBypassBytes();
         lines.add("Server Overall");
-        lines.add("  Total save " + formatPercent(100.0D - ratio(effectiveTotalRaw, effectiveTotalSent))
-                + " / 2 min " + formatPercent(100.0D - ratio(effectiveRecentRaw, effectiveRecentSent))
+        lines.add("  Total " + formatDelta(100.0D - ratio(effectiveTotalRaw, effectiveTotalSent))
+                + " / 2 min " + formatDelta(100.0D - ratio(effectiveRecentRaw, effectiveRecentSent))
                 + "  (" + formatBytes(effectiveTotalRaw) + " -> " + formatBytes(effectiveTotalSent) + ")");
-        lines.add("  Optimize " + formatPercent(100.0D - ratio(snapshot.totalRawBytes(), snapshot.totalBatchedBytes()))
-                + " / 2 min " + formatPercent(100.0D - ratio(snapshot.recentRawBytes(), snapshot.recentBatchedBytes()))
+        lines.add("  Optimize " + formatDelta(100.0D - ratio(snapshot.totalRawBytes(), snapshot.totalBatchedBytes()))
+                + " / 2 min " + formatDelta(100.0D - ratio(snapshot.recentRawBytes(), snapshot.recentBatchedBytes()))
                 + "  (" + formatBytes(snapshot.totalRawBytes()) + " -> " + formatBytes(snapshot.totalBatchedBytes()) + ")");
         lines.add("  Bypass " + formatBytes(snapshot.totalBypassBytes()) + " / ChunkCache " + formatBytes(snapshot.totalChunkCacheSavedBytes())
                 + " / hit " + snapshot.totalChunkCacheHitPackets() + " / ref " + snapshot.totalChunkCacheRefreshPackets());
@@ -144,6 +144,13 @@ public final class ClientOptimizationHudOverlay {
 
     private static String formatPercent(double value) {
         return String.format(Locale.ROOT, "%.1f%%", value);
+    }
+
+    private static String formatDelta(double savedPercent) {
+        if (savedPercent >= 0.0D) {
+            return "save " + formatPercent(savedPercent);
+        }
+        return "overhead " + formatPercent(-savedPercent);
     }
 
     private static String formatBytes(long bytes) {

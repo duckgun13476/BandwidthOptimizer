@@ -68,10 +68,12 @@ public final class BatchCompressionStats {
         double minuteBatchedPerSecond = minuteBatched / 60.0D;
         RecentWindow recentWindow = recordRecentAndGetWindow(now, totalRaw, totalBatched, totalBatches, totalPackets);
         double recentRatio = recentWindow.rawBytes() == 0L ? 100.0D : (double) recentWindow.batchedBytes() * 100.0D / (double) recentWindow.rawBytes();
+        String totalDeltaLabel = formatDeltaLabel(100.0D - totalRatio);
+        String recentDeltaLabel = formatDeltaLabel(100.0D - recentRatio);
 
         Bandwidthoptimizer.LOGGER.info(
-                "[{}] Total Raw: {} ({}/s) | Total Batched: {} ({}/s) | Total Ratio: {} | Total Saved: {}"
-                        + " | Recent2m Raw: {} ({}/s) | Recent2m Batched: {} ({}/s) | Recent2m Ratio: {} | Recent2m Saved: {}"
+                "[{}] Total Raw: {} ({}/s) | Total Batched: {} ({}/s) | Total Ratio: {} | Total {}"
+                        + " | Recent2m Raw: {} ({}/s) | Recent2m Batched: {} ({}/s) | Recent2m Ratio: {} | Recent2m {}"
                         + " | Batches: {} | Packets: {} | Conns: {} | Algo: {} | Window: {}ms",
                 LocalTime.now().format(TIME_FORMAT),
                 formatBytes(totalRaw),
@@ -79,13 +81,13 @@ public final class BatchCompressionStats {
                 formatBytes(totalBatched),
                 formatBytes((long) minuteBatchedPerSecond),
                 formatPercent(totalRatio),
-                formatPercent(100.0D - totalRatio),
+                totalDeltaLabel,
                 formatBytes(recentWindow.rawBytes()),
                 formatBytes((long) recentWindow.rawBytesPerSecond()),
                 formatBytes(recentWindow.batchedBytes()),
                 formatBytes((long) recentWindow.batchedBytesPerSecond()),
                 formatPercent(recentRatio),
-                formatPercent(100.0D - recentRatio),
+                recentDeltaLabel,
                 totalBatches + " (+" + minuteBatches + "/interval)",
                 totalPackets + " (+" + minutePackets + "/interval)",
                 activeConnections,
@@ -129,6 +131,13 @@ public final class BatchCompressionStats {
 
     private static String formatPercent(double value) {
         return String.format(Locale.ROOT, "%.3f%%", value);
+    }
+
+    private static String formatDeltaLabel(double savedPercent) {
+        if (savedPercent >= 0.0D) {
+            return "Saved: " + formatPercent(savedPercent);
+        }
+        return "Overhead: " + formatPercent(-savedPercent);
     }
 
     private static String formatBytes(long bytes) {
