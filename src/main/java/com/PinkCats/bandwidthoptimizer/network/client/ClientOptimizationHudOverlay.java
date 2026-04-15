@@ -72,9 +72,10 @@ public final class ClientOptimizationHudOverlay {
             ClientServerOptimizationStats.Snapshot serverSnapshot
     ) {
         List<String> lines = new ArrayList<>(12);
+        ClientChunkCacheManager.Snapshot chunkCacheSnapshot = ClientChunkCacheManager.snapshot();
         lines.add("Bandwidth Optimizer");
         if (localSnapshot.hasData()) {
-            addClientLines(lines, localSnapshot);
+            addClientLines(lines, localSnapshot, chunkCacheSnapshot);
         }
         if (serverSnapshot.hasData()) {
             if (lines.size() > 1) {
@@ -85,11 +86,16 @@ public final class ClientOptimizationHudOverlay {
         if (!localSnapshot.hasData() && !serverSnapshot.hasData()) {
             lines.add("Waiting for traffic data");
             lines.add("  Move in-world or connect to a server.");
+            if (chunkCacheSnapshot.totalEntries() > 0) {
+                lines.add("  Cache " + formatBytes(chunkCacheSnapshot.totalBytes())
+                        + " / entries " + chunkCacheSnapshot.totalEntries()
+                        + " / dims " + chunkCacheSnapshot.dimensions());
+            }
         }
         return lines;
     }
 
-    private static void addClientLines(List<String> lines, ClientOptimizationStats.Snapshot snapshot) {
+    private static void addClientLines(List<String> lines, ClientOptimizationStats.Snapshot snapshot, ClientChunkCacheManager.Snapshot chunkCacheSnapshot) {
         long optimizedTotalRaw = snapshot.totalRawBytes();
         long optimizedTotalSent = snapshot.totalBatchedBytes();
         long optimizedRecentRaw = snapshot.recentRawBytes();
@@ -111,6 +117,9 @@ public final class ClientOptimizationHudOverlay {
                 + "  (" + formatBytes(optimizedTotalRaw) + " -> " + formatBytes(optimizedTotalSent) + ")");
         lines.add("  ChunkCache " + formatBytes(chunkCacheSavedTotal) + " / 2 min " + formatBytes(chunkCacheSavedRecent)
                 + " / hit " + snapshot.chunkCacheHitTotalPackets() + " / ref " + snapshot.chunkCacheRefreshTotalPackets());
+        lines.add("  CacheMem " + formatBytes(chunkCacheSnapshot.totalBytes())
+                + " / entries " + chunkCacheSnapshot.totalEntries()
+                + " / dims " + chunkCacheSnapshot.dimensions());
         lines.add("  Bypass " + formatBytes(bypassTotal) + " / 2 min " + formatBytes(bypassRecent));
         lines.add("  Batch " + snapshot.totalBatchCount() + " / Pkt " + snapshot.totalPacketCount()
                 + " / Algo " + snapshot.algorithmId()
