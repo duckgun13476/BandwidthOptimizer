@@ -12,10 +12,15 @@ import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.network.protocol.game.ClientboundCustomPayloadPacket;
+import net.minecraft.network.protocol.game.ClientboundGameEventPacket;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundLightUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
+import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTimePacket;
+import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
 import net.minecraft.network.protocol.game.ClientboundRotateHeadPacket;
 import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
@@ -40,14 +45,19 @@ public final class PlayPacketReplaySupport {
             ClientboundContainerSetContentPacket.class,
             ClientboundContainerSetSlotPacket.class,
             ClientboundCustomPayloadPacket.class,
+            ClientboundOpenScreenPacket.class,
             ClientboundLevelChunkWithLightPacket.class,
             ClientboundLightUpdatePacket.class,
             ClientboundMoveEntityPacket.Pos.class,
             ClientboundMoveEntityPacket.PosRot.class,
             ClientboundMoveEntityPacket.Rot.class,
+            ClientboundGameEventPacket.class,
             ClientboundSetEntityMotionPacket.class,
             ClientboundSetEntityDataPacket.class,
             ClientboundSetEquipmentPacket.class,
+            ClientboundSetSubtitleTextPacket.class,
+            ClientboundSetTitleTextPacket.class,
+            ClientboundSetTitlesAnimationPacket.class,
             ClientboundRotateHeadPacket.class,
             ClientboundTeleportEntityPacket.class,
             ClientboundSetTimePacket.class,
