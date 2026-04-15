@@ -288,6 +288,13 @@ tasks.register('PublishInfo') {
         println "displayName = \"${mod_name} v${mod_version} for Forge ${minecraft_version}\""
         println "curseforge_id = ${curseforge_id}"
         println "modrinth_id = ${modrinth_id}"
+        String changelogEntry = currentVersionChangelogEntry()
+        if (changelogEntry == null || changelogEntry.isBlank()) {
+            println "\u001B[31mMissing changelog entry for ${mod_version} in ${changelogFile().absolutePath}\u001B[0m"
+            throw new GradleException("Missing changelog entry for ${mod_version}")
+        }
+        println "changelog ="
+        println changelogEntry
         Properties apiProperties = loadApiProperties()
         println "CF_TOKEN present: ${apiProperties.getProperty('CF_TOKEN') != null}"
         println "MODRINTH_TOKEN present: ${apiProperties.getProperty('MODRINTH_TOKEN') != null}"
@@ -313,7 +320,7 @@ tasks.register('publishCurseForge', TaskPublishCurseForge) {
 
     apiToken = loadApiProperties().getProperty('CF_TOKEN')
     def mainFile = upload(curseforge_id, tasks.named('jar', Jar).get().archiveFile.get().asFile)
-    mainFile.changelog = firstChangelogEntry()
+    mainFile.changelog = fullChangelogText()
     mainFile.addEnvironment('Client', 'Server')
     mainFile.addGameVersion("${minecraft_version}")
     mainFile.addModLoader('Forge')
@@ -326,7 +333,7 @@ publishMods {
     def modrinthToken = loadApiProperties().getProperty('MODRINTH_TOKEN')
 
     file = tasks.named('jar', Jar).get().archiveFile
-    changelog = changelogFile().exists() ? changelogFile().text : ''
+    changelog = fullChangelogText()
     type = publish_version == 'alpha' ? ALPHA : (publish_version == 'beta' ? BETA : STABLE)
     version = "${minecraft_version}-${mod_version}"
     displayName = "${mod_name} v${mod_version} for Forge ${minecraft_version}"
@@ -369,6 +376,41 @@ String firstChangelogEntry() {
         return ''
     }
     return file.text.split('\\n\\n\\n')[0]
+}
+
+String fullChangelogText() {
+    File file = changelogFile()
+    if (!file.exists()) {
+        return ''
+    }
+    return file.getText('UTF-8')
+}
+
+String currentVersionChangelogEntry() {
+    File file = changelogFile()
+    if (!file.exists()) {
+        return ''
+    }
+
+    List<String> lines = file.readLines('UTF-8')
+    String targetHeader = "#### v${mod_version}".trim()
+    int startIndex = lines.findIndexOf { String line -> line.trim() == targetHeader }
+    if (startIndex < 0) {
+        return ''
+    }
+
+    int endIndex = lines.size()
+    for (int index = startIndex + 1; index < lines.size(); index++) {
+        if (lines[index].trim().startsWith('#### v')) {
+            endIndex = index
+            break
+        }
+    }
+
+    return lines.subList(startIndex, endIndex)
+            .dropWhile { String line -> line.trim().isEmpty() }
+            .join('\n')
+            .trim()
 }
 
 boolean hasPublishValue(Object value) {
