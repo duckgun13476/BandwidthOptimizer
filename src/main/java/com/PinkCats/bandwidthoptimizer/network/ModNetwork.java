@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.network;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.network.attachment.AttachmentDataFlow;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientToServerAttachmentPacket;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientToServerChunkCacheMissPacket;
@@ -123,25 +124,29 @@ public final class ModNetwork {
 
     public static void sendToPlayer(ServerPlayer player, ServerToClientAttachmentPacket packet) {
         ServerToClientAttachmentPacket processedPacket = AttachmentDataFlow.beforeServerSend(player, packet);
-        Bandwidthoptimizer.LOGGER.debug(
-                "[ModChannel][Server][QueueSend] target={}, key={}, correlationId={}, value={}, payload={}",
-                player.getGameProfile().getName(),
-                processedPacket.key(),
-                processedPacket.correlationId(),
-                processedPacket.value(),
-                processedPacket.payload()
-        );
+        if (Config.optimizerDebugLoggingEnabled() && Bandwidthoptimizer.LOGGER.isDebugEnabled()) {
+            Bandwidthoptimizer.LOGGER.debug(
+                    "[ModChannel][Server][QueueSend] target={}, key={}, correlationId={}, value={}, payload={}",
+                    player.getGameProfile().getName(),
+                    processedPacket.key(),
+                    processedPacket.correlationId(),
+                    processedPacket.value(),
+                    processedPacket.payload()
+            );
+        }
         ServerToClientBatchingManager.enqueue(player, processedPacket);
     }
 
     public static void sendToServer(ClientToServerAttachmentPacket packet) {
-        Bandwidthoptimizer.LOGGER.debug(
-                "[ModChannel][Client][QueueSend] key={}, correlationId={}, value={}, payload={}",
-                packet.key(),
-                packet.correlationId(),
-                packet.value(),
-                packet.payload()
-        );
+        if (Config.optimizerDebugLoggingEnabled() && Bandwidthoptimizer.LOGGER.isDebugEnabled()) {
+            Bandwidthoptimizer.LOGGER.debug(
+                    "[ModChannel][Client][QueueSend] key={}, correlationId={}, value={}, payload={}",
+                    packet.key(),
+                    packet.correlationId(),
+                    packet.value(),
+                    packet.payload()
+            );
+        }
         CHANNEL.sendToServer(packet);
     }
 

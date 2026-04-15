@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.network.client;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ConnectionReplayInvokerMixin;
 import com.PinkCats.bandwidthoptimizer.network.ModNetwork;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientToServerChunkCacheMissPacket;
@@ -43,12 +44,14 @@ public final class ClientChunkCacheManager {
         long key = new ChunkPos(packet.chunkX(), packet.chunkZ()).toLong();
         CacheEntry entry = CACHE.get(key);
         if (entry == null || entry.expiresAtMillis < now) {
-            Bandwidthoptimizer.LOGGER.debug(
-                    "[ChunkCache][Client][Miss] chunk=({}, {}), sessionId={}",
-                    packet.chunkX(),
-                    packet.chunkZ(),
-                    packet.sessionId()
-            );
+            if (Config.optimizerDebugLoggingEnabled() && Bandwidthoptimizer.LOGGER.isDebugEnabled()) {
+                Bandwidthoptimizer.LOGGER.debug(
+                        "[ChunkCache][Client][Miss] chunk=({}, {}), sessionId={}",
+                        packet.chunkX(),
+                        packet.chunkZ(),
+                        packet.sessionId()
+                );
+            }
             ModNetwork.sendToServer(new ClientToServerChunkCacheMissPacket(packet.sessionId(), packet.chunkX(), packet.chunkZ()));
             return;
         }

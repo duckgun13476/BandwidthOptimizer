@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.network.client;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ConnectionReplayInvokerMixin;
 import com.PinkCats.bandwidthoptimizer.network.batch.PayloadBatching;
 import com.PinkCats.bandwidthoptimizer.network.algorithm.play.ClientboundPlayPacketBatchPacket;
@@ -49,13 +50,15 @@ public final class ClientPlayPacketBatchHandler {
         );
 
         Connection connection = listener.getConnection();
-        Bandwidthoptimizer.LOGGER.debug(
-                "[PlayBatch][Client][Receive] entries={}, algorithm={}, resetSession={}, mappedPacketIds={}",
-                packets.size(),
-                batchPacket.algorithmId(),
-                shouldReset,
-                batchPacket.packetIdTable().length
-        );
+        if (Config.optimizerDebugLoggingEnabled() && Bandwidthoptimizer.LOGGER.isDebugEnabled()) {
+            Bandwidthoptimizer.LOGGER.debug(
+                    "[PlayBatch][Client][Receive] entries={}, algorithm={}, resetSession={}, mappedPacketIds={}",
+                    packets.size(),
+                    batchPacket.algorithmId(),
+                    shouldReset,
+                    batchPacket.packetIdTable().length
+            );
+        }
 
         for (Packet<ClientGamePacketListener> packet : packets) {
             replayPacket(connection, listener, packet);

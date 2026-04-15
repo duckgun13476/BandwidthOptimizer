@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.network.client;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.network.ModNetwork;
 import com.PinkCats.bandwidthoptimizer.network.attachment.AttachmentDataFlow;
 import com.PinkCats.bandwidthoptimizer.network.batch.AttachmentPacketBatching;
@@ -22,23 +23,25 @@ public final class ClientAttachmentPacketHandler {
         String playerName = minecraft.player == null ? "<no-player>" : minecraft.player.getGameProfile().getName();
         ServerToClientAttachmentPacket processedPacket = AttachmentDataFlow.beforeClientHandle(packet, playerName);
 
-        Bandwidthoptimizer.LOGGER.debug(
-                "[ModChannel][Client][Receive] key={}, correlationId={}, value={}, payload={}, player={}",
-                processedPacket.key(),
-                processedPacket.correlationId(),
-                processedPacket.value(),
-                processedPacket.payload(),
-                playerName
-        );
+        if (Config.optimizerDebugLoggingEnabled() && Bandwidthoptimizer.LOGGER.isDebugEnabled()) {
+            Bandwidthoptimizer.LOGGER.debug(
+                    "[ModChannel][Client][Receive] key={}, correlationId={}, value={}, payload={}, player={}",
+                    processedPacket.key(),
+                    processedPacket.correlationId(),
+                    processedPacket.value(),
+                    processedPacket.payload(),
+                    playerName
+            );
 
-        Bandwidthoptimizer.LOGGER.debug(
-                "[ModChannel][Client][Send] key={}, correlationId={}, value={}, payload={}, player={}",
-                "ack:" + processedPacket.key(),
-                processedPacket.correlationId(),
-                processedPacket.value() + 1,
-                "incremented-from=" + processedPacket.value(),
-                playerName
-        );
+            Bandwidthoptimizer.LOGGER.debug(
+                    "[ModChannel][Client][Send] key={}, correlationId={}, value={}, payload={}, player={}",
+                    "ack:" + processedPacket.key(),
+                    processedPacket.correlationId(),
+                    processedPacket.value() + 1,
+                    "incremented-from=" + processedPacket.value(),
+                    playerName
+            );
+        }
 
         ClientToServerAttachmentPacket responsePacket = AttachmentDataFlow.beforeClientSend(
                 AttachmentDataFlow.createClientResponse(processedPacket, playerName),
@@ -58,22 +61,27 @@ public final class ClientAttachmentPacketHandler {
                 BATCH_DECODE_SESSION
         );
 
-        Bandwidthoptimizer.LOGGER.debug(
-                "[ModChannelBatch][Client][Receive] entries={}, algorithm={}, resetSession={}",
-                packets.size(),
-                batchPacket.algorithmId(),
-                batchPacket.resetSession()
-        );
+        boolean debugLogs = Config.optimizerDebugLoggingEnabled() && Bandwidthoptimizer.LOGGER.isDebugEnabled();
+        if (debugLogs) {
+            Bandwidthoptimizer.LOGGER.debug(
+                    "[ModChannelBatch][Client][Receive] entries={}, algorithm={}, resetSession={}",
+                    packets.size(),
+                    batchPacket.algorithmId(),
+                    batchPacket.resetSession()
+            );
+        }
 
         for (int i = 0; i < packets.size(); i++) {
             ServerToClientAttachmentPacket packet = packets.get(i);
-            Bandwidthoptimizer.LOGGER.debug(
-                    "[ModChannelBatch][Client][Replay] index={}, key={}, correlationId={}, algorithm={}",
-                    i,
-                    packet.key(),
-                    packet.correlationId(),
-                    batchPacket.algorithmId()
-            );
+            if (debugLogs) {
+                Bandwidthoptimizer.LOGGER.debug(
+                        "[ModChannelBatch][Client][Replay] index={}, key={}, correlationId={}, algorithm={}",
+                        i,
+                        packet.key(),
+                        packet.correlationId(),
+                        batchPacket.algorithmId()
+                );
+            }
             handle(packet);
         }
     }

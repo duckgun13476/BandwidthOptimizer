@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.network.server;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.network.ModNetwork;
 import com.PinkCats.bandwidthoptimizer.network.algorithm.BatchAlgorithmRegistry;
 import com.PinkCats.bandwidthoptimizer.network.batch.AttachmentPacketBatchCodec;
@@ -92,17 +93,19 @@ public final class ServerToClientBatchingManager {
         long batchedBytes = batchPacket.encodedSize();
         BatchCompressionStats.record(rawBytes, batchedBytes, 1, batchPackets.size());
 
-        Bandwidthoptimizer.LOGGER.debug(
-                "[ModChannelBatch][Server][Flush] target={}, entries={}, windowMs={}, algorithm={}, encodedBytes={}, addedMappings={}, removedMappings={}, resetSession={}",
-                player.getGameProfile().getName(),
-                batchPackets.size(),
-                WINDOW_MILLIS,
-                encodedBatch.algorithmId(),
-                encodedBatch.bytes().length,
-                encodedBatch.addedMappings(),
-                encodedBatch.removedMappings(),
-                resetSession
-        );
+        if (Config.optimizerDebugLoggingEnabled() && Bandwidthoptimizer.LOGGER.isDebugEnabled()) {
+            Bandwidthoptimizer.LOGGER.debug(
+                    "[ModChannelBatch][Server][Flush] target={}, entries={}, windowMs={}, algorithm={}, encodedBytes={}, addedMappings={}, removedMappings={}, resetSession={}",
+                    player.getGameProfile().getName(),
+                    batchPackets.size(),
+                    WINDOW_MILLIS,
+                    encodedBatch.algorithmId(),
+                    encodedBatch.bytes().length,
+                    encodedBatch.addedMappings(),
+                    encodedBatch.removedMappings(),
+                    resetSession
+            );
+        }
         ModNetwork.sendBatchToPlayerDirect(player, batchPacket);
 
         if (pendingBatch.isEmpty()) {

@@ -253,6 +253,10 @@ public class Config {
         return Math.max(minutes, 1) * 60_000L;
     }
 
+    public static boolean optimizerDebugLoggingEnabled() {
+        return enableOptimizerStatsLogs && enableTestMode;
+    }
+
     private static void syncRuntimeConfigToOnlinePlayers() {
         net.minecraft.server.MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
         if (server == null) {

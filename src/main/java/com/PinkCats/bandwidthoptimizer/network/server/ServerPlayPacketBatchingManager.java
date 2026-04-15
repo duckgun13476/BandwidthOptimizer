@@ -14,7 +14,6 @@ import com.PinkCats.bandwidthoptimizer.network.algorithm.play.ServerOptimization
 import com.PinkCats.bandwidthoptimizer.network.batch.PayloadBatching;
 import com.PinkCats.bandwidthoptimizer.packet.message.BatchCompressionStats;
 import net.minecraft.network.protocol.Packet;
-import net.minecraft.network.protocol.game.ClientboundCustomPayloadPacket;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
@@ -216,18 +215,19 @@ public final class ServerPlayPacketBatchingManager {
                 encodedBatch.algorithmId()
         );
 
-        Bandwidthoptimizer.LOGGER.debug(
-                "[PlayBatch][Server][Flush] target={}, entries={}, windowMs={}, algorithm={}, encodedBytes={}, addedMappings={}, removedMappings={}, resetSession={}",
-                player.getGameProfile().getName(),
-                encodedBatch.packetCount(),
-                WINDOW_MILLIS,
-                encodedBatch.algorithmId(),
-                encodedBatch.bytes().length,
-                encodedBatch.addedMappings(),
-                encodedBatch.removedMappings(),
-                result.resetSession()
-        );
-        logMapCompatibilityProbe(player, result.sessionId(), result.sequence(), drainedEntries, encodedBatch);
+        if (Config.optimizerDebugLoggingEnabled() && Bandwidthoptimizer.LOGGER.isDebugEnabled()) {
+            Bandwidthoptimizer.LOGGER.debug(
+                    "[PlayBatch][Server][Flush] target={}, entries={}, windowMs={}, algorithm={}, encodedBytes={}, addedMappings={}, removedMappings={}, resetSession={}",
+                    player.getGameProfile().getName(),
+                    encodedBatch.packetCount(),
+                    WINDOW_MILLIS,
+                    encodedBatch.algorithmId(),
+                    encodedBatch.bytes().length,
+                    encodedBatch.addedMappings(),
+                    encodedBatch.removedMappings(),
+                    result.resetSession()
+            );
+        }
         ModNetwork.sendPlayBatchToPlayerDirect(player, batchPacket);
 
         finishPendingBatch(playerId, player, pendingBatch);
@@ -282,49 +282,6 @@ public final class ServerPlayPacketBatchingManager {
                 BatchAlgorithmRegistry.configured().id(),
                 WINDOW_MILLIS
         );
-    }
-
-    private static void logMapCompatibilityProbe(
-            ServerPlayer player,
-            long sessionId,
-            long sequence,
-            List<Packet<?>> packets,
-            PlayPacketBatchCodec.EncodedPlayPacketBatch encodedBatch
-    ) {
-        List<String> suspiciousPackets = new ArrayList<>();
-        for (Packet<?> packet : packets) {
-            String description = describePacket(packet);
-            String lower = description.toLowerCase(java.util.Locale.ROOT);
-            if (lower.contains("map")
-                    || lower.contains("xaero")
-                    || lower.contains("ftbchunks")
-                    || lower.contains("journey")
-                    || lower.contains("atlas")) {
-                suspiciousPackets.add(description);
-            }
-        }
-        if (suspiciousPackets.isEmpty()) {
-            return;
-        }
-        Bandwidthoptimizer.LOGGER.warn(
-                "[PlayBatch][Server][MapCompatProbe] target={}, sessionId={}, sequence={}, algorithm={}, entries={}, addedMappings={}, removedMappings={}, packetIdTable={}, suspiciousPackets={}",
-                player.getGameProfile().getName(),
-                sessionId,
-                sequence,
-                encodedBatch.algorithmId(),
-                packets.size(),
-                encodedBatch.addedMappings(),
-                encodedBatch.removedMappings(),
-                java.util.Arrays.toString(encodedBatch.packetIdTable()),
-                suspiciousPackets
-        );
-    }
-
-    private static String describePacket(Packet<?> packet) {
-        if (packet instanceof ClientboundCustomPayloadPacket customPayloadPacket) {
-            return packet.getClass().getName() + "[" + customPayloadPacket.getIdentifier() + "]";
-        }
-        return packet.getClass().getName();
     }
 
     private static final class PendingBatch {
