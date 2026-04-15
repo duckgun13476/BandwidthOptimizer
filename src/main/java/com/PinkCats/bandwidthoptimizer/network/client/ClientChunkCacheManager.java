@@ -35,6 +35,12 @@ public final class ClientChunkCacheManager {
     private ClientChunkCacheManager() {
     }
 
+    public static Snapshot snapshot() {
+        synchronized (LOCK) {
+            return new Snapshot(currentSessionId, currentTotalBytes, CACHE.size(), countByDimension().size());
+        }
+    }
+
     public static void handleRefresh(ClientboundChunkCacheRefreshPacket packet) {
         long now = System.currentTimeMillis();
         CacheKey key = new CacheKey(packet.dimensionId(), new ChunkPos(packet.chunkX(), packet.chunkZ()).toLong());
@@ -210,6 +216,14 @@ public final class ClientChunkCacheManager {
     private record CacheKey(
             ResourceLocation dimensionId,
             long chunkKey
+    ) {
+    }
+
+    public record Snapshot(
+            long sessionId,
+            long totalBytes,
+            int totalEntries,
+            int dimensions
     ) {
     }
 }
