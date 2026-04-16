@@ -1,25 +1,39 @@
 
 <img src="https://logistics.aisaveworld.tech/d/share/icon.png" width="180" height="180">
 <br><br>
-BandwidthOptimizer 
+
+English | [简体中文](README.zh-CN.md)
+
+### BandwidthOptimizer
+
 ---
 **<span style="color:#B96AD9;">Save your bandwidth with big quantities.</span>**
 
 [![Discord](https://img.shields.io/badge/Discord-Feedback-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/qdMbM9Rq6B)
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-24292e?style=for-the-badge&logo=github&logoColor=white)](https://github.com/duckgun13476/BandwidthOptimizer)
 
+> **Development Status**
+>
+> BandwidthOptimizer is still under active development, so bugs and mod compatibility issues are still possible.
+>
+> The current design uses a strict whitelist-based strategy. If a compatibility problem happens, it should only result in certain mod features not being optimized correctly or temporarily not working as expected. It is not intended to damage worlds or corrupt saves.
+>
+> If you encounter any issue, please open an issue on GitHub. I will do my best to investigate, fix it, and treat all reports and suggestions seriously and respectfully.
+>
+> Contributions of any kind are also welcome.
+
 Overview
 ---
 BandwidthOptimizer introduces a set of advanced optimization techniques to minimize unnecessary network traffic between server and client.
 
-Under typical conditions, it can achieve up to a 20× reduction in bandwidth usage, significantly improving server performance, stability, and scalability.
+In Create-heavy machinery setups, it can achieve up to a 20x reduction in bandwidth usage, while overall real-world server-wide reduction is more accurately described as up to 10x.
 
 
 <br><br>
 
-Key Features🔧
+Key Features
 ---
-1. Up to 20× bandwidth reduction in real-world scenarios
+1. Up to 20x reduction for Create-heavy machinery, and up to 10x reduction in overall real-world scenarios
 2. Specialized optimization for Create and AE2 entities
 3. Reduces redundant synchronization of complex machinery and storage networks
 4. Greatly improves performance in automation-heavy setups
@@ -91,7 +105,7 @@ Security & Stability
 
 <br><br>
 
-🌍 Use Cases
+Use Cases
 ---
 Large-scale multiplayer servers  
 Modded servers with heavy automation (especially Create / AE2 setups)  
@@ -103,3 +117,6 @@ Environments with limited bandwidth or high latency
 Limitations
 ---
 - Requires both client and server to have the mod installed
+- Best results come from heavy, repetitive PLAY traffic. In ultra-light or idle scenarios, replay wrapper overhead can be larger than the payload itself.
+- In those cases, chunk cache reuse still works normally, but generic replay compression may show little benefit or slight bandwidth overhead.
+- This is an intentional tradeoff in the current design. Further reducing overhead for extremely small packet flows would require a much more complex transport path while usually saving only a few KB/s.
