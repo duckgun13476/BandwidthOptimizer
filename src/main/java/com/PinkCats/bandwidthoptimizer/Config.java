@@ -22,6 +22,8 @@ public class Config {
     public static final ForgeConfigSpec.BooleanValue ENABLE_BATCH_ZSTD;
     public static final ForgeConfigSpec.BooleanValue ENABLE_BATCH_STREAMING_ZSTD;
     public static final ForgeConfigSpec.BooleanValue ENABLE_ASYNC_PLAY_BATCH_ENCODING;
+    public static final ForgeConfigSpec.IntValue BATCH_MIN_PACKET_COUNT;
+    public static final ForgeConfigSpec.IntValue BATCH_MIN_RAW_BYTES;
 
     public static final ForgeConfigSpec.IntValue BATCH_ZSTD_LEVEL;
     public static final ForgeConfigSpec.IntValue BATCH_STREAMING_ZSTD_LEVEL;
@@ -54,6 +56,8 @@ public class Config {
     public static int batchTemplateDictionaryMaxPayloadBytes = 2097152;
     public static int batchTemplateDictionaryMaxDiffRuns = 8;
     public static int batchTemplateDictionaryMaxChangedBytes = 128;
+    public static int batchMinPacketCount = 8;
+    public static int batchMinRawBytes = 1024;
     public static boolean enableOptimizerStatsLogs = true;
     public static boolean enableTestMode = false;
     public static int statsLogIntervalMinutes = 30;
@@ -118,6 +122,18 @@ public class Config {
                 .comment("--------------------------------------------------------------------------")
                 .comment("Move stateful PLAY batch dictionary/zstd encoding to a background worker. Packet snapshotting and final send still run on the server thread.")
                 .define("enable_async_play_batch_encoding", true);
+
+        BATCH_MIN_PACKET_COUNT = BUILDER
+                .comment("")
+                .comment("--------------------------------------------------------------------------")
+                .comment("Bypass PLAY batching when the batch is too small to be worth wrapping. Single-packet batches are always bypassed.")
+                .defineInRange("batch_min_packet_count", 8, 2, 64);
+
+        BATCH_MIN_RAW_BYTES = BUILDER
+                .comment("")
+                .comment("--------------------------------------------------------------------------")
+                .comment("Bypass PLAY batching when a small batch carries less than this many raw bytes.")
+                .defineInRange("batch_min_raw_bytes", 1024, 1, Integer.MAX_VALUE);
 
         BUILDER.pop();
 
@@ -210,6 +226,8 @@ public class Config {
                 ENABLE_BATCH_ZSTD.get(),
                 ENABLE_BATCH_STREAMING_ZSTD.get(),
                 ENABLE_ASYNC_PLAY_BATCH_ENCODING.get(),
+                BATCH_MIN_PACKET_COUNT.get(),
+                BATCH_MIN_RAW_BYTES.get(),
                 BATCH_ZSTD_LEVEL.get(),
                 BATCH_STREAMING_ZSTD_LEVEL.get(),
                 BATCH_SHA256_DICTIONARY_MAX_PACKET_BYTES.get(),
@@ -233,6 +251,8 @@ public class Config {
         enableBatchZstd = runtimeConfig.enableBatchZstd();
         enableBatchStreamingZstd = runtimeConfig.enableBatchStreamingZstd();
         enableAsyncPlayBatchEncoding = runtimeConfig.enableAsyncPlayBatchEncoding();
+        batchMinPacketCount = runtimeConfig.batchMinPacketCount();
+        batchMinRawBytes = runtimeConfig.batchMinRawBytes();
         batchZstdLevel = runtimeConfig.batchZstdLevel();
         batchStreamingZstdLevel = runtimeConfig.batchStreamingZstdLevel();
         batchSha256DictionaryMaxPacketBytes = runtimeConfig.batchSha256DictionaryMaxPacketBytes();
@@ -272,6 +292,8 @@ public class Config {
             boolean enableBatchZstd,
             boolean enableBatchStreamingZstd,
             boolean enableAsyncPlayBatchEncoding,
+            int batchMinPacketCount,
+            int batchMinRawBytes,
             int batchZstdLevel,
             int batchStreamingZstdLevel,
             int batchSha256DictionaryMaxPacketBytes,

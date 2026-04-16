@@ -11,6 +11,8 @@ import com.PinkCats.bandwidthoptimizer.network.algorithm.play.OptimizedPlayPacke
 import com.PinkCats.bandwidthoptimizer.network.algorithm.play.PlayPacketBatchCodec;
 import com.PinkCats.bandwidthoptimizer.network.algorithm.play.PlayPacketReplaySupport;
 import com.PinkCats.bandwidthoptimizer.network.algorithm.play.ServerOptimizationTelemetryManager;
+import com.PinkCats.bandwidthoptimizer.network.algorithm.play.BypassedPlayPacketStats;
+import com.PinkCats.bandwidthoptimizer.network.algorithm.play.UnhandledPlayPacketDump;
 import com.PinkCats.bandwidthoptimizer.network.batch.PayloadBatching;
 import com.PinkCats.bandwidthoptimizer.packet.message.BatchCompressionStats;
 import net.minecraft.network.protocol.Packet;
@@ -40,6 +42,7 @@ public final class ServerPlayPacketBatchingManager {
     private static final ExecutorService ENCODER = Executors.newSingleThreadExecutor(new EncoderThreadFactory());
     private static final Map<UUID, PendingBatch> PENDING_BATCHES = new ConcurrentHashMap<>();
     private static final Map<UUID, PlayerBatchSession> BATCH_SESSIONS = new ConcurrentHashMap<>();
+    private static final ThreadLocal<Integer> DIRECT_SEND_BYPASS_DEPTH = ThreadLocal.withInitial(() -> 0);
 
     static {
         SCHEDULER.scheduleAtFixedRate(
@@ -85,6 +88,10 @@ public final class ServerPlayPacketBatchingManager {
         }
     }
 
+    public static boolean isDirectSendBypassActive() {
+        return DIRECT_SEND_BYPASS_DEPTH.get() > 0;
+    }
+
     private static void flush(UUID playerId, ServerPlayer player, PendingBatch pendingBatch) {
         player.server.execute(() -> flushOnServerThread(playerId, player, pendingBatch));
     }
@@ -109,6 +116,12 @@ public final class ServerPlayPacketBatchingManager {
             session.prepareFor(connectionIdentity, System.currentTimeMillis());
             connectionGeneration = session.connectionGeneration();
         }
+        PlayBatchSnapshot snapshot = snapshotBatch(drainedEntries);
+        if (shouldBypassMicroBatch(snapshot)) {
+            sendOriginalPacketsDirect(playerId, player, pendingBatch, drainedEntries, snapshot);
+            return;
+        }
+
         if (Config.enableAsyncPlayBatchEncoding) {
             submitAsyncEncode(playerId, player, pendingBatch, session, drainedEntries, connectionIdentity, connectionGeneration);
             return;
@@ -116,11 +129,14 @@ public final class ServerPlayPacketBatchingManager {
 
         EncodedPlayBatchResult result;
         synchronized (session) {
-            PlayPacketBatchCodec.EncodedPlayPacketBatch encodedBatch = PlayPacketBatchCodec.encode(drainedEntries, session.payloadSession());
+            PlayPacketBatchCodec.EncodedPlayPacketBatch encodedBatch = PlayPacketBatchCodec.encodeInputs(
+                    snapshot.packetIdTable(),
+                    snapshot.entries(),
+                    session.payloadSession()
+            );
             long sequence = session.nextSequence();
             boolean resetSession = session.consumeResetSessionFlag();
-            long totalRawBytes = PlayPacketReplaySupport.totalEncodedBytes(drainedEntries);
-            result = new EncodedPlayBatchResult(session.sessionId(), sequence, resetSession, totalRawBytes, encodedBatch);
+            result = new EncodedPlayBatchResult(session.sessionId(), sequence, resetSession, snapshot.totalRawBytes(), encodedBatch);
         }
         sendEncodedBatch(playerId, player, pendingBatch, drainedEntries, result);
     }
@@ -231,6 +247,64 @@ public final class ServerPlayPacketBatchingManager {
         ModNetwork.sendPlayBatchToPlayerDirect(player, batchPacket);
 
         finishPendingBatch(playerId, player, pendingBatch);
+    }
+
+    private static boolean shouldBypassMicroBatch(PlayBatchSnapshot snapshot) {
+        int packetCount = snapshot.entries().size();
+        if (packetCount <= 1) {
+            return true;
+        }
+        return packetCount < Config.batchMinPacketCount && snapshot.totalRawBytes() < Config.batchMinRawBytes;
+    }
+
+    private static void sendOriginalPacketsDirect(
+            UUID playerId,
+            ServerPlayer player,
+            PendingBatch pendingBatch,
+            List<Packet<?>> drainedEntries,
+            PlayBatchSnapshot snapshot
+    ) {
+        String reason = drainedEntries.size() <= 1 ? "micro_batch_single_packet" : "micro_batch_threshold";
+        long totalBypassBytes = 0L;
+        for (Packet<?> packet : drainedEntries) {
+            int estimatedBytes = PlayPacketReplaySupport.estimatedEncodedBytes(packet);
+            totalBypassBytes += estimatedBytes;
+            BypassedPlayPacketStats.record(packet, reason, estimatedBytes);
+            ServerOptimizationTelemetryManager.recordBypass(player, estimatedBytes);
+            UnhandledPlayPacketDump.record(player, packet, null, reason, estimatedBytes);
+        }
+        if (Config.optimizerDebugLoggingEnabled() && Bandwidthoptimizer.LOGGER.isDebugEnabled()) {
+            Bandwidthoptimizer.LOGGER.debug(
+                    "[PlayBatch][Server][BypassMicroBatch] target={}, entries={}, rawBytes={}, reason={}",
+                    player.getGameProfile().getName(),
+                    drainedEntries.size(),
+                    snapshot.totalRawBytes(),
+                    reason
+            );
+        }
+
+        runDirectSendBypass(() -> {
+            for (Packet<?> packet : drainedEntries) {
+                player.connection.send(packet);
+            }
+        });
+
+        finishPendingBatch(playerId, player, pendingBatch);
+    }
+
+    private static void runDirectSendBypass(Runnable runnable) {
+        int depth = DIRECT_SEND_BYPASS_DEPTH.get();
+        DIRECT_SEND_BYPASS_DEPTH.set(depth + 1);
+        try {
+            runnable.run();
+        } finally {
+            int nextDepth = DIRECT_SEND_BYPASS_DEPTH.get() - 1;
+            if (nextDepth <= 0) {
+                DIRECT_SEND_BYPASS_DEPTH.remove();
+            } else {
+                DIRECT_SEND_BYPASS_DEPTH.set(nextDepth);
+            }
+        }
     }
 
     private static void finishPendingBatch(UUID playerId, ServerPlayer player, PendingBatch pendingBatch) {

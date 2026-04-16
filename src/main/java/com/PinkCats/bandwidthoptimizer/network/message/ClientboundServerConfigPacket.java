@@ -22,6 +22,8 @@ public record ClientboundServerConfigPacket(Config.RuntimeConfig config) {
         buffer.writeBoolean(config.enableBatchZstd());
         buffer.writeBoolean(config.enableBatchStreamingZstd());
         buffer.writeBoolean(config.enableAsyncPlayBatchEncoding());
+        buffer.writeVarInt(config.batchMinPacketCount());
+        buffer.writeVarInt(config.batchMinRawBytes());
         buffer.writeVarInt(config.batchZstdLevel());
         buffer.writeVarInt(config.batchStreamingZstdLevel());
         buffer.writeVarInt(config.batchSha256DictionaryMaxPacketBytes());
@@ -45,6 +47,8 @@ public record ClientboundServerConfigPacket(Config.RuntimeConfig config) {
                 buffer.readBoolean(),
                 buffer.readBoolean(),
                 buffer.readBoolean(),
+                buffer.readVarInt(),
+                buffer.readVarInt(),
                 buffer.readVarInt(),
                 buffer.readVarInt(),
                 buffer.readVarInt(),

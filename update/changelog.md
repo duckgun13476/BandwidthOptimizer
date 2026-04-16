@@ -1,5 +1,8 @@
 
 
+
+#### v1.3-release
+
 #### v1.2-release
 1. Add four new whitelist classes to the algorithm.
 2. Fix #2 (Chunk cache use problem).

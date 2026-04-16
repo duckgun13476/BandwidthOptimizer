@@ -53,6 +53,9 @@ public abstract class ConnectionSendMonitorMixin {
         if (!(this.packetListener instanceof ServerGamePacketListenerImpl serverGamePacketListener)) {
             return;
         }
+        if (ServerPlayPacketBatchingManager.isDirectSendBypassActive()) {
+            return;
+        }
         if (this.channel instanceof LocalChannel) {
             ServerPlayPacketBatchingManager.flushPendingNow(serverGamePacketListener.player);
             return;
