@@ -13,8 +13,10 @@ public record ServerOptimizationTelemetryPacket(
         long bypassTotalPackets,
         long bypassRecentBytes,
         long bypassRecentPackets,
-        long chunkCacheSavedTotalBytes,
-        long chunkCacheSavedRecentBytes,
+        long chunkCacheRawTotalBytes,
+        long chunkCacheRawRecentBytes,
+        long chunkCacheSentTotalBytes,
+        long chunkCacheSentRecentBytes,
         long chunkCacheHitTotalPackets,
         long chunkCacheHitRecentPackets,
         long chunkCacheRefreshTotalPackets,
@@ -26,8 +28,10 @@ public record ServerOptimizationTelemetryPacket(
         buffer.writeVarLong(packet.bypassTotalPackets());
         buffer.writeVarLong(packet.bypassRecentBytes());
         buffer.writeVarLong(packet.bypassRecentPackets());
-        buffer.writeVarLong(packet.chunkCacheSavedTotalBytes());
-        buffer.writeVarLong(packet.chunkCacheSavedRecentBytes());
+        buffer.writeVarLong(packet.chunkCacheRawTotalBytes());
+        buffer.writeVarLong(packet.chunkCacheRawRecentBytes());
+        buffer.writeVarLong(packet.chunkCacheSentTotalBytes());
+        buffer.writeVarLong(packet.chunkCacheSentRecentBytes());
         buffer.writeVarLong(packet.chunkCacheHitTotalPackets());
         buffer.writeVarLong(packet.chunkCacheHitRecentPackets());
         buffer.writeVarLong(packet.chunkCacheRefreshTotalPackets());
@@ -36,6 +40,8 @@ public record ServerOptimizationTelemetryPacket(
 
     public static ServerOptimizationTelemetryPacket decode(FriendlyByteBuf buffer) {
         return new ServerOptimizationTelemetryPacket(
+                buffer.readVarLong(),
+                buffer.readVarLong(),
                 buffer.readVarLong(),
                 buffer.readVarLong(),
                 buffer.readVarLong(),

@@ -14,7 +14,8 @@ public record ServerOverallOptimizationTelemetryPacket(
         long totalBatchCount,
         long totalPacketCount,
         long totalBypassBytes,
-        long totalChunkCacheSavedBytes,
+        long totalChunkCacheRawBytes,
+        long totalChunkCacheSentBytes,
         long totalChunkCacheHitPackets,
         long totalChunkCacheRefreshPackets,
         long recentRawBytes,
@@ -22,7 +23,8 @@ public record ServerOverallOptimizationTelemetryPacket(
         long recentBatchCount,
         long recentPacketCount,
         long recentBypassBytes,
-        long recentChunkCacheSavedBytes,
+        long recentChunkCacheRawBytes,
+        long recentChunkCacheSentBytes,
         int activeConnections,
         String algorithmId
 ) {
@@ -33,7 +35,8 @@ public record ServerOverallOptimizationTelemetryPacket(
         buffer.writeVarLong(packet.totalBatchCount());
         buffer.writeVarLong(packet.totalPacketCount());
         buffer.writeVarLong(packet.totalBypassBytes());
-        buffer.writeVarLong(packet.totalChunkCacheSavedBytes());
+        buffer.writeVarLong(packet.totalChunkCacheRawBytes());
+        buffer.writeVarLong(packet.totalChunkCacheSentBytes());
         buffer.writeVarLong(packet.totalChunkCacheHitPackets());
         buffer.writeVarLong(packet.totalChunkCacheRefreshPackets());
         buffer.writeVarLong(packet.recentRawBytes());
@@ -41,13 +44,16 @@ public record ServerOverallOptimizationTelemetryPacket(
         buffer.writeVarLong(packet.recentBatchCount());
         buffer.writeVarLong(packet.recentPacketCount());
         buffer.writeVarLong(packet.recentBypassBytes());
-        buffer.writeVarLong(packet.recentChunkCacheSavedBytes());
+        buffer.writeVarLong(packet.recentChunkCacheRawBytes());
+        buffer.writeVarLong(packet.recentChunkCacheSentBytes());
         buffer.writeVarInt(packet.activeConnections());
         buffer.writeUtf(packet.algorithmId());
     }
 
     public static ServerOverallOptimizationTelemetryPacket decode(FriendlyByteBuf buffer) {
         return new ServerOverallOptimizationTelemetryPacket(
+                buffer.readVarLong(),
+                buffer.readVarLong(),
                 buffer.readVarLong(),
                 buffer.readVarLong(),
                 buffer.readVarLong(),

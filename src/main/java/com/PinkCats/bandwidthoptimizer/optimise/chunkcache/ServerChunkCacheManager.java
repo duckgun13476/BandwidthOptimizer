@@ -3,11 +3,16 @@ package com.PinkCats.bandwidthoptimizer.optimise.chunkcache;
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.network.ModNetwork;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientToServerChunkCacheMissPacket;
+import com.PinkCats.bandwidthoptimizer.network.message.ClientboundChunkCacheDeltaPacket;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientboundChunkCacheRefreshPacket;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientboundChunkCacheUsePacket;
 import com.PinkCats.bandwidthoptimizer.network.algorithm.play.PlayPacketReplaySupport;
-import com.PinkCats.bandwidthoptimizer.network.algorithm.play.ServerOptimizationTelemetryManager;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
+import net.minecraft.network.protocol.game.ClientboundLightUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -25,8 +30,6 @@ import java.util.concurrent.ThreadLocalRandom;
 public final class ServerChunkCacheManager {
 
     public static final long TTL_MILLIS = 600_000L;
-    private static final double CACHE_RADIUS_MULTIPLIER = 3D;
-    private static final double FORCE_REFRESH_MULTIPLIER = 0.6D;
     private static final int MAX_ENTRIES_TOTAL = 8_192;
     private static final int MAX_ENTRIES_PER_DIMENSION = 2_048;
     private static final Map<UUID, PlayerState> STATES = new ConcurrentHashMap<>();
@@ -52,27 +55,20 @@ public final class ServerChunkCacheManager {
         }
         PlayerState state = STATES.computeIfAbsent(player.getUUID(), ignored -> new PlayerState());
         long now = System.currentTimeMillis();
-        int viewDistance = Math.max(2, player.server.getPlayerList().getViewDistance());
-        int cacheRadius = Math.max(viewDistance, (int) Math.ceil(viewDistance * CACHE_RADIUS_MULTIPLIER));
-        int forceRefreshRadius = Math.max(1, (int) Math.floor(viewDistance * FORCE_REFRESH_MULTIPLIER));
-        ChunkPos playerChunk = player.chunkPosition();
         ChunkPos targetChunk = new ChunkPos(packet.getX(), packet.getZ());
         ResourceLocation dimensionId = player.serverLevel().dimension().location();
-        int distanceSquared = distanceSquared(playerChunk, targetChunk);
         CacheKey key = new CacheKey(dimensionId, targetChunk.toLong());
         synchronized (state) {
-            prune(state, dimensionId, playerChunk, cacheRadius, now);
+            PruneResult pruneResult = prune(state, now, key);
             ChunkEntry entry = state.entries.get(key);
-            boolean forceRefresh = distanceSquared <= forceRefreshRadius * forceRefreshRadius;
-            if (!forceRefresh && entry != null && now - entry.lastRefreshMillis <= TTL_MILLIS) {
+            if (entry != null) {
                 entry.lastAccessMillis = now;
                 ClientboundChunkCacheUsePacket usePacket = new ClientboundChunkCacheUsePacket(state.sessionId, dimensionId, targetChunk.x, targetChunk.z);
-                ModNetwork.sendChunkCacheUseToPlayer(player, usePacket);
+                ModNetwork.sendChunkCacheUseToPlayer(player, usePacket, entry.rawBytes);
                 long rawBytes = entry.rawBytes;
                 long sentBytes = usePacket.encodedSize();
                 long savedBytes = Math.max(rawBytes - sentBytes, 0L);
-                ChunkCacheStats.recordHit(rawBytes, sentBytes, savedBytes);
-                ServerOptimizationTelemetryManager.recordChunkCache(player, savedBytes, true, false);
+                ChunkCacheStats.recordHit(rawBytes, sentBytes, savedBytes, entry.deltaPacketsSinceRefresh, entry.deltaBytesSinceRefresh);
                 enforceLimits(state, player);
                 return true;
             }
@@ -81,8 +77,11 @@ public final class ServerChunkCacheManager {
             ClientboundChunkCacheRefreshPacket refreshPacket = new ClientboundChunkCacheRefreshPacket(state.sessionId, dimensionId, targetChunk.x, targetChunk.z, encodedPacketBytes);
             ModNetwork.sendChunkCacheRefreshToPlayer(player, refreshPacket);
             state.entries.put(key, new ChunkEntry(now, now, encodedPacketBytes.length));
-            ChunkCacheStats.recordRefresh(encodedPacketBytes.length, refreshPacket.encodedSize());
-            ServerOptimizationTelemetryManager.recordChunkCache(player, 0L, false, true);
+            ChunkCacheStats.recordRefresh(
+                    encodedPacketBytes.length,
+                    refreshPacket.encodedSize(),
+                    determineRefreshReason(entry, pruneResult)
+            );
             enforceLimits(state, player);
             return true;
         }
@@ -131,8 +130,59 @@ public final class ServerChunkCacheManager {
             entry.lastRefreshMillis = System.currentTimeMillis();
             entry.lastAccessMillis = entry.lastRefreshMillis;
             entry.rawBytes = refreshPacket.encodedPacketBytes().length;
-            ChunkCacheStats.recordRefresh(entry.rawBytes, refreshPacket.encodedSize());
+            entry.deltaPacketsSinceRefresh = 0L;
+            entry.deltaBytesSinceRefresh = 0L;
+            ChunkCacheStats.recordRefresh(entry.rawBytes, refreshPacket.encodedSize(), ChunkCacheStats.RefreshReason.CLIENT_MISS);
             ChunkCacheStats.recordMissRefresh(entry.rawBytes, refreshPacket.encodedSize());
+        }
+    }
+
+    public static void routeDeltaToCachedPlayers(ServerLevel level, ChunkPos chunkPos, Packet<?> packet) {
+        if (level == null || chunkPos == null || packet == null) {
+            return;
+        }
+        if (!supportsDeltaReplay(packet)) {
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        int viewDistance = Math.max(2, level.getServer().getPlayerList().getViewDistance());
+        ResourceLocation dimensionId = level.dimension().location();
+        CacheKey key = new CacheKey(dimensionId, chunkPos.toLong());
+        byte[] encodedPacketBytes = PlayPacketReplaySupport.encodePacket(packet);
+
+        for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
+            if (player.serverLevel() != level) {
+                continue;
+            }
+            PlayerState state = STATES.get(player.getUUID());
+            if (state == null) {
+                continue;
+            }
+            if (isChunkInRange(chunkPos.x, chunkPos.z, player.chunkPosition().x, player.chunkPosition().z, viewDistance)) {
+                continue;
+            }
+
+            long sessionId;
+            synchronized (state) {
+                ChunkEntry entry = state.entries.get(key);
+                if (entry == null) {
+                    continue;
+                }
+                long idleMillis = now - entry.lastAccessMillis;
+                if (idleMillis > TTL_MILLIS) {
+                    continue;
+                }
+                entry.lastAccessMillis = now;
+                entry.deltaPacketsSinceRefresh++;
+                entry.deltaBytesSinceRefresh += encodedPacketBytes.length;
+                sessionId = state.sessionId;
+            }
+
+            ClientboundChunkCacheDeltaPacket deltaPacket =
+                    new ClientboundChunkCacheDeltaPacket(sessionId, dimensionId, chunkPos.x, chunkPos.z, encodedPacketBytes);
+            ModNetwork.sendChunkCacheDeltaToPlayer(player, deltaPacket);
+            ChunkCacheStats.recordDelta(encodedPacketBytes.length);
         }
     }
 
@@ -152,24 +202,38 @@ public final class ServerChunkCacheManager {
         return new ClientboundChunkCacheRefreshPacket(sessionId, dimensionId, chunkX, chunkZ, encodedPacketBytes);
     }
 
-    private static void prune(PlayerState state, ResourceLocation currentDimensionId, ChunkPos playerChunk, int cacheRadius, long now) {
+    private static ChunkCacheStats.RefreshReason determineRefreshReason(
+            ChunkEntry entry,
+            PruneResult pruneResult
+    ) {
+        if (pruneResult.targetRemovedByIdle()) {
+            return ChunkCacheStats.RefreshReason.PRUNED_IDLE;
+        }
+        if (entry != null) {
+            return ChunkCacheStats.RefreshReason.TTL_SINCE_REFRESH;
+        }
+        return ChunkCacheStats.RefreshReason.NO_ENTRY;
+    }
+
+    private static PruneResult prune(
+            PlayerState state,
+            long now,
+            CacheKey targetKey
+    ) {
         Iterator<Map.Entry<CacheKey, ChunkEntry>> typedIterator = state.entries.entrySet().iterator();
-        int radiusSquared = cacheRadius * cacheRadius;
+        boolean targetRemovedByIdle = false;
         while (typedIterator.hasNext()) {
             Map.Entry<CacheKey, ChunkEntry> entry = typedIterator.next();
             CacheKey cacheKey = entry.getKey();
             ChunkEntry chunkEntry = entry.getValue();
             if (now - chunkEntry.lastAccessMillis > TTL_MILLIS) {
-                typedIterator.remove();
-                continue;
-            }
-            if (currentDimensionId.equals(cacheKey.dimensionId())) {
-                ChunkPos chunkPos = new ChunkPos(cacheKey.chunkKey());
-                if (distanceSquared(playerChunk, chunkPos) > radiusSquared) {
-                    typedIterator.remove();
+                if (cacheKey.equals(targetKey)) {
+                    targetRemovedByIdle = true;
                 }
+                typedIterator.remove();
             }
         }
+        return new PruneResult(targetRemovedByIdle);
     }
 
     private static void enforceLimits(PlayerState state, ServerPlayer player) {
@@ -206,15 +270,30 @@ public final class ServerChunkCacheManager {
         return counts;
     }
 
-    private static int distanceSquared(ChunkPos a, ChunkPos b) {
-        int dx = a.x - b.x;
-        int dz = a.z - b.z;
-        return dx * dx + dz * dz;
+    private static boolean supportsDeltaReplay(Packet<?> packet) {
+        return packet instanceof ClientboundBlockUpdatePacket
+                || packet instanceof ClientboundSectionBlocksUpdatePacket
+                || packet instanceof ClientboundLightUpdatePacket
+                || packet instanceof ClientboundBlockEntityDataPacket;
+    }
+
+    private static boolean isChunkInRange(int chunkX, int chunkZ, int playerChunkX, int playerChunkZ, int viewDistance) {
+        int xDistance = Math.max(0, Math.abs(chunkX - playerChunkX) - 1);
+        int zDistance = Math.max(0, Math.abs(chunkZ - playerChunkZ) - 1);
+        long major = (long) Math.max(0, Math.max(xDistance, zDistance) - 1);
+        long minor = (long) Math.min(xDistance, zDistance);
+        long distance = minor * minor + major * major;
+        return distance < (long) viewDistance * (long) viewDistance;
     }
 
     private static final class PlayerState {
         private final long sessionId = ThreadLocalRandom.current().nextLong();
         private final Map<CacheKey, ChunkEntry> entries = new LinkedHashMap<>(256, 0.75F, true);
+    }
+
+    private record PruneResult(
+            boolean targetRemovedByIdle
+    ) {
     }
 
     private record CacheKey(
@@ -227,6 +306,8 @@ public final class ServerChunkCacheManager {
         private long lastRefreshMillis;
         private long lastAccessMillis;
         private int rawBytes;
+        private long deltaPacketsSinceRefresh;
+        private long deltaBytesSinceRefresh;
 
         private ChunkEntry(long lastRefreshMillis, long lastAccessMillis, int rawBytes) {
             this.lastRefreshMillis = lastRefreshMillis;
