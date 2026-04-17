@@ -142,13 +142,6 @@ public final class ServerChunkCacheManager {
             return;
         }
         if (!supportsDeltaReplay(packet)) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkCache][DeltaTrace][Downstream] skip=unsupported_packet, dim={}, chunk=({}, {}), packetType={}",
-                    level.dimension().location(),
-                    chunkPos.x,
-                    chunkPos.z,
-                    packet.getClass().getName()
-            );
             return;
         }
 
@@ -158,44 +151,15 @@ public final class ServerChunkCacheManager {
         CacheKey key = new CacheKey(dimensionId, chunkPos.toLong());
         byte[] encodedPacketBytes = PlayPacketReplaySupport.encodePacket(packet);
 
-        Bandwidthoptimizer.LOGGER.info(
-                "[ChunkCache][DeltaTrace][Downstream] route_begin, dim={}, chunk=({}, {}), packetType={}, encodedBytes={}, players={}",
-                dimensionId,
-                chunkPos.x,
-                chunkPos.z,
-                packet.getClass().getSimpleName(),
-                encodedPacketBytes.length,
-                level.getServer().getPlayerList().getPlayers().size()
-        );
-
         for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
             if (player.serverLevel() != level) {
                 continue;
             }
             PlayerState state = STATES.get(player.getUUID());
             if (state == null) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[ChunkCache][DeltaTrace][Downstream] skip=no_state, player={}, dim={}, chunk=({}, {}), packetType={}",
-                        player.getGameProfile().getName(),
-                        dimensionId,
-                        chunkPos.x,
-                        chunkPos.z,
-                        packet.getClass().getSimpleName()
-                );
                 continue;
             }
             if (isChunkInRange(chunkPos.x, chunkPos.z, player.chunkPosition().x, player.chunkPosition().z, viewDistance)) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[ChunkCache][DeltaTrace][Downstream] skip=in_range, player={}, playerChunk=({}, {}), dim={}, chunk=({}, {}), viewDistance={}, packetType={}",
-                        player.getGameProfile().getName(),
-                        player.chunkPosition().x,
-                        player.chunkPosition().z,
-                        dimensionId,
-                        chunkPos.x,
-                        chunkPos.z,
-                        viewDistance,
-                        packet.getClass().getSimpleName()
-                );
                 continue;
             }
 
@@ -203,28 +167,10 @@ public final class ServerChunkCacheManager {
             synchronized (state) {
                 ChunkEntry entry = state.entries.get(key);
                 if (entry == null) {
-                    Bandwidthoptimizer.LOGGER.info(
-                            "[ChunkCache][DeltaTrace][Downstream] skip=no_entry, player={}, dim={}, chunk=({}, {}), packetType={}",
-                            player.getGameProfile().getName(),
-                            dimensionId,
-                            chunkPos.x,
-                            chunkPos.z,
-                            packet.getClass().getSimpleName()
-                    );
                     continue;
                 }
                 long idleMillis = now - entry.lastAccessMillis;
                 if (idleMillis > TTL_MILLIS) {
-                    Bandwidthoptimizer.LOGGER.info(
-                            "[ChunkCache][DeltaTrace][Downstream] skip=expired, player={}, dim={}, chunk=({}, {}), idleMillis={}, ttlMillis={}, packetType={}",
-                            player.getGameProfile().getName(),
-                            dimensionId,
-                            chunkPos.x,
-                            chunkPos.z,
-                            idleMillis,
-                            TTL_MILLIS,
-                            packet.getClass().getSimpleName()
-                    );
                     continue;
                 }
                 entry.lastAccessMillis = now;
@@ -236,15 +182,6 @@ public final class ServerChunkCacheManager {
             ClientboundChunkCacheDeltaPacket deltaPacket =
                     new ClientboundChunkCacheDeltaPacket(sessionId, dimensionId, chunkPos.x, chunkPos.z, encodedPacketBytes);
             ModNetwork.sendChunkCacheDeltaToPlayer(player, deltaPacket);
-            Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkCache][DeltaTrace][Downstream] sent, player={}, dim={}, chunk=({}, {}), packetType={}, encodedBytes={}",
-                    player.getGameProfile().getName(),
-                    dimensionId,
-                    chunkPos.x,
-                    chunkPos.z,
-                    packet.getClass().getSimpleName(),
-                    encodedPacketBytes.length
-            );
             ChunkCacheStats.recordDelta(encodedPacketBytes.length);
         }
     }

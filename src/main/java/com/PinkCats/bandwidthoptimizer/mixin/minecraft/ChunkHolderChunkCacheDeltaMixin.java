@@ -1,6 +1,5 @@
 package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
 
-import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.optimise.chunkcache.ServerChunkCacheManager;
 import it.unimi.dsi.fastutil.shorts.ShortSet;
 import net.minecraft.core.BlockPos;
@@ -69,23 +68,7 @@ public abstract class ChunkHolderChunkCacheDeltaMixin {
             return;
         }
 
-        Bandwidthoptimizer.LOGGER.info(
-                "[ChunkCache][DeltaTrace][Upstream] dim={}, chunk=({}, {}), hasChangedSections={}, skyLightBits={}, blockLightBits={}",
-                serverLevel.dimension().location(),
-                this.pos.x,
-                this.pos.z,
-                this.hasChangedSections,
-                this.skyChangedLightSectionFilter.cardinality(),
-                this.blockChangedLightSectionFilter.cardinality()
-        );
-
         if (!this.skyChangedLightSectionFilter.isEmpty() || !this.blockChangedLightSectionFilter.isEmpty()) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkCache][DeltaTrace][Upstream] emit=light_update, dim={}, chunk=({}, {})",
-                    serverLevel.dimension().location(),
-                    this.pos.x,
-                    this.pos.z
-            );
             ServerChunkCacheManager.routeDeltaToCachedPlayers(
                     serverLevel,
                     this.pos,
@@ -108,14 +91,6 @@ public abstract class ChunkHolderChunkCacheDeltaMixin {
             if (changedBlocks.size() == 1) {
                 BlockPos blockPos = sectionPos.relativeToBlockPos(changedBlocks.iterator().nextShort());
                 BlockState blockState = level.getBlockState(blockPos);
-                Bandwidthoptimizer.LOGGER.info(
-                        "[ChunkCache][DeltaTrace][Upstream] emit=block_update, dim={}, chunk=({}, {}), pos={}, block={}",
-                        serverLevel.dimension().location(),
-                        this.pos.x,
-                        this.pos.z,
-                        blockPos,
-                        blockState.getBlock()
-                );
                 ServerChunkCacheManager.routeDeltaToCachedPlayers(
                         serverLevel,
                         new ChunkPos(blockPos.getX() >> 4, blockPos.getZ() >> 4),
@@ -126,14 +101,6 @@ public abstract class ChunkHolderChunkCacheDeltaMixin {
             }
 
             LevelChunkSection section = levelChunk.getSection(sectionIndex);
-            Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkCache][DeltaTrace][Upstream] emit=section_blocks_update, dim={}, chunk=({}, {}), sectionY={}, changedBlocks={}",
-                    serverLevel.dimension().location(),
-                    this.pos.x,
-                    this.pos.z,
-                    sectionY,
-                    changedBlocks.size()
-            );
             ClientboundSectionBlocksUpdatePacket sectionPacket = new ClientboundSectionBlocksUpdatePacket(sectionPos, changedBlocks, section);
             ServerChunkCacheManager.routeDeltaToCachedPlayers(serverLevel, this.pos, sectionPacket);
             sectionPacket.runUpdates((blockPos, blockState) -> routeBlockEntityIfNeeded(serverLevel, blockPos, blockState));
@@ -152,14 +119,6 @@ public abstract class ChunkHolderChunkCacheDeltaMixin {
 
         Packet<?> packet = blockEntity.getUpdatePacket();
         if (packet != null) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkCache][DeltaTrace][Upstream] emit=block_entity_update, dim={}, chunk=({}, {}), pos={}, type={}",
-                    level.dimension().location(),
-                    blockPos.getX() >> 4,
-                    blockPos.getZ() >> 4,
-                    blockPos,
-                    packet.getClass().getSimpleName()
-            );
             ServerChunkCacheManager.routeDeltaToCachedPlayers(
                     level,
                     new ChunkPos(blockPos.getX() >> 4, blockPos.getZ() >> 4),
