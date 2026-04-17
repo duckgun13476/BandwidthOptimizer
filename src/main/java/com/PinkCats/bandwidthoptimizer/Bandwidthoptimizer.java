@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.command.PacketTrafficCommand;
 import com.PinkCats.bandwidthoptimizer.network.ModNetwork;
 import com.PinkCats.bandwidthoptimizer.network.runtime.ZstdRuntimeSupport;
+import com.PinkCats.bandwidthoptimizer.network.server.ServerChunkCacheBatchingManager;
 import com.PinkCats.bandwidthoptimizer.network.server.ServerPlayPacketBatchingManager;
 import com.PinkCats.bandwidthoptimizer.optimise.chunkcache.ServerChunkCacheManager;
 import com.mojang.logging.LogUtils;
@@ -70,12 +71,14 @@ public class Bandwidthoptimizer {
     public static void clearStateOnLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
             ServerPlayPacketBatchingManager.removePlayer(serverPlayer);
+            ServerChunkCacheBatchingManager.removePlayer(serverPlayer);
             ServerChunkCacheManager.removePlayer(serverPlayer);
         }
     }
 
     private static void resetRuntimeState(net.minecraft.server.level.ServerPlayer serverPlayer) {
         ServerPlayPacketBatchingManager.resetPlayer(serverPlayer);
+        ServerChunkCacheBatchingManager.resetPlayer(serverPlayer);
         ServerChunkCacheManager.resetPlayer(serverPlayer);
     }
 
