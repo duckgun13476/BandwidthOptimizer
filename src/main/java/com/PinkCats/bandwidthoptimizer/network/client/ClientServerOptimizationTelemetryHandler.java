@@ -14,7 +14,8 @@ public final class ClientServerOptimizationTelemetryHandler {
                 packet.totalBatchCount(),
                 packet.totalPacketCount(),
                 packet.totalBypassBytes(),
-                packet.totalChunkCacheSavedBytes(),
+                packet.totalChunkCacheRawBytes(),
+                packet.totalChunkCacheSentBytes(),
                 packet.totalChunkCacheHitPackets(),
                 packet.totalChunkCacheRefreshPackets(),
                 packet.recentRawBytes(),
@@ -22,7 +23,8 @@ public final class ClientServerOptimizationTelemetryHandler {
                 packet.recentBatchCount(),
                 packet.recentPacketCount(),
                 packet.recentBypassBytes(),
-                packet.recentChunkCacheSavedBytes(),
+                packet.recentChunkCacheRawBytes(),
+                packet.recentChunkCacheSentBytes(),
                 packet.activeConnections(),
                 packet.algorithmId()
         );

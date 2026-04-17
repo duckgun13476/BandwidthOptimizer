@@ -16,8 +16,10 @@ public final class ClientOptimizationStats {
     private static long bypassTotalPackets;
     private static long bypassRecentBytes;
     private static long bypassRecentPackets;
-    private static long chunkCacheSavedTotalBytes;
-    private static long chunkCacheSavedRecentBytes;
+    private static long chunkCacheRawTotalBytes;
+    private static long chunkCacheRawRecentBytes;
+    private static long chunkCacheSentTotalBytes;
+    private static long chunkCacheSentRecentBytes;
     private static long chunkCacheHitTotalPackets;
     private static long chunkCacheHitRecentPackets;
     private static long chunkCacheRefreshTotalPackets;
@@ -66,8 +68,10 @@ public final class ClientOptimizationStats {
                     bypassTotalPackets,
                     bypassRecentBytes,
                     bypassRecentPackets,
-                    chunkCacheSavedTotalBytes,
-                    chunkCacheSavedRecentBytes,
+                    chunkCacheRawTotalBytes,
+                    chunkCacheRawRecentBytes,
+                    chunkCacheSentTotalBytes,
+                    chunkCacheSentRecentBytes,
                     chunkCacheHitTotalPackets,
                     chunkCacheHitRecentPackets,
                     chunkCacheRefreshTotalPackets,
@@ -87,8 +91,10 @@ public final class ClientOptimizationStats {
             long totalPackets,
             long recentBytes,
             long recentPackets,
-            long chunkCacheSavedTotal,
-            long chunkCacheSavedRecent,
+            long chunkCacheRawTotal,
+            long chunkCacheRawRecent,
+            long chunkCacheSentTotal,
+            long chunkCacheSentRecent,
             long chunkCacheHitTotal,
             long chunkCacheHitRecent,
             long chunkCacheRefreshTotal,
@@ -99,8 +105,10 @@ public final class ClientOptimizationStats {
             bypassTotalPackets = Math.max(totalPackets, 0L);
             bypassRecentBytes = Math.max(recentBytes, 0L);
             bypassRecentPackets = Math.max(recentPackets, 0L);
-            chunkCacheSavedTotalBytes = Math.max(chunkCacheSavedTotal, 0L);
-            chunkCacheSavedRecentBytes = Math.max(chunkCacheSavedRecent, 0L);
+            chunkCacheRawTotalBytes = Math.max(chunkCacheRawTotal, 0L);
+            chunkCacheRawRecentBytes = Math.max(chunkCacheRawRecent, 0L);
+            chunkCacheSentTotalBytes = Math.max(chunkCacheSentTotal, 0L);
+            chunkCacheSentRecentBytes = Math.max(chunkCacheSentRecent, 0L);
             chunkCacheHitTotalPackets = Math.max(chunkCacheHitTotal, 0L);
             chunkCacheHitRecentPackets = Math.max(chunkCacheHitRecent, 0L);
             chunkCacheRefreshTotalPackets = Math.max(chunkCacheRefreshTotal, 0L);
@@ -133,8 +141,10 @@ public final class ClientOptimizationStats {
             long bypassTotalPackets,
             long bypassRecentBytes,
             long bypassRecentPackets,
-            long chunkCacheSavedTotalBytes,
-            long chunkCacheSavedRecentBytes,
+            long chunkCacheRawTotalBytes,
+            long chunkCacheRawRecentBytes,
+            long chunkCacheSentTotalBytes,
+            long chunkCacheSentRecentBytes,
             long chunkCacheHitTotalPackets,
             long chunkCacheHitRecentPackets,
             long chunkCacheRefreshTotalPackets,
@@ -147,7 +157,12 @@ public final class ClientOptimizationStats {
             long lastUpdateMillis
     ) {
         public boolean hasData() {
-            return totalBatchCount > 0L;
+            return totalBatchCount > 0L
+                    || bypassTotalBytes > 0L
+                    || chunkCacheRawTotalBytes > 0L
+                    || chunkCacheSentTotalBytes > 0L
+                    || chunkCacheHitTotalPackets > 0L
+                    || chunkCacheRefreshTotalPackets > 0L;
         }
     }
 }

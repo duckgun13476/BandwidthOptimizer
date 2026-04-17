@@ -102,12 +102,14 @@ public final class ClientOptimizationHudOverlay {
         long optimizedRecentSent = snapshot.recentBatchedBytes();
         long bypassTotal = snapshot.bypassTotalBytes();
         long bypassRecent = snapshot.bypassRecentBytes();
-        long chunkCacheSavedTotal = snapshot.chunkCacheSavedTotalBytes();
-        long chunkCacheSavedRecent = snapshot.chunkCacheSavedRecentBytes();
-        long effectiveTotalRaw = optimizedTotalRaw + bypassTotal + chunkCacheSavedTotal;
-        long effectiveTotalSent = optimizedTotalSent + bypassTotal;
-        long effectiveRecentRaw = optimizedRecentRaw + bypassRecent + chunkCacheSavedRecent;
-        long effectiveRecentSent = optimizedRecentSent + bypassRecent;
+        long chunkCacheRawTotal = snapshot.chunkCacheRawTotalBytes();
+        long chunkCacheRawRecent = snapshot.chunkCacheRawRecentBytes();
+        long chunkCacheSentTotal = snapshot.chunkCacheSentTotalBytes();
+        long chunkCacheSentRecent = snapshot.chunkCacheSentRecentBytes();
+        long effectiveTotalRaw = optimizedTotalRaw + bypassTotal + chunkCacheRawTotal;
+        long effectiveTotalSent = optimizedTotalSent + bypassTotal + chunkCacheSentTotal;
+        long effectiveRecentRaw = optimizedRecentRaw + bypassRecent + chunkCacheRawRecent;
+        long effectiveRecentSent = optimizedRecentSent + bypassRecent + chunkCacheSentRecent;
         lines.add("Client");
         lines.add("  Total " + formatDelta(100.0D - ratio(effectiveTotalRaw, effectiveTotalSent))
                 + " / 2 min " + formatDelta(100.0D - ratio(effectiveRecentRaw, effectiveRecentSent))
@@ -115,7 +117,9 @@ public final class ClientOptimizationHudOverlay {
         lines.add("  Optimize " + formatDelta(100.0D - ratio(optimizedTotalRaw, optimizedTotalSent))
                 + " / 2 min " + formatDelta(100.0D - ratio(optimizedRecentRaw, optimizedRecentSent))
                 + "  (" + formatBytes(optimizedTotalRaw) + " -> " + formatBytes(optimizedTotalSent) + ")");
-        lines.add("  ChunkCache " + formatBytes(chunkCacheSavedTotal) + " / 2 min " + formatBytes(chunkCacheSavedRecent)
+        lines.add("  ChunkCache " + formatDelta(100.0D - ratio(chunkCacheRawTotal, chunkCacheSentTotal))
+                + " / 2 min " + formatDelta(100.0D - ratio(chunkCacheRawRecent, chunkCacheSentRecent))
+                + "  (" + formatBytes(chunkCacheRawTotal) + " -> " + formatBytes(chunkCacheSentTotal) + ")"
                 + " / hit " + snapshot.chunkCacheHitTotalPackets() + " / ref " + snapshot.chunkCacheRefreshTotalPackets());
         lines.add("  CacheMem " + formatBytes(chunkCacheSnapshot.totalBytes())
                 + " / entries " + chunkCacheSnapshot.totalEntries()
@@ -127,10 +131,10 @@ public final class ClientOptimizationHudOverlay {
     }
 
     private static void addServerLines(List<String> lines, ClientServerOptimizationStats.Snapshot snapshot) {
-        long effectiveTotalRaw = snapshot.totalRawBytes() + snapshot.totalBypassBytes() + snapshot.totalChunkCacheSavedBytes();
-        long effectiveTotalSent = snapshot.totalBatchedBytes() + snapshot.totalBypassBytes();
-        long effectiveRecentRaw = snapshot.recentRawBytes() + snapshot.recentBypassBytes() + snapshot.recentChunkCacheSavedBytes();
-        long effectiveRecentSent = snapshot.recentBatchedBytes() + snapshot.recentBypassBytes();
+        long effectiveTotalRaw = snapshot.totalRawBytes() + snapshot.totalBypassBytes() + snapshot.totalChunkCacheRawBytes();
+        long effectiveTotalSent = snapshot.totalBatchedBytes() + snapshot.totalBypassBytes() + snapshot.totalChunkCacheSentBytes();
+        long effectiveRecentRaw = snapshot.recentRawBytes() + snapshot.recentBypassBytes() + snapshot.recentChunkCacheRawBytes();
+        long effectiveRecentSent = snapshot.recentBatchedBytes() + snapshot.recentBypassBytes() + snapshot.recentChunkCacheSentBytes();
         lines.add("Server Overall");
         lines.add("  Total " + formatDelta(100.0D - ratio(effectiveTotalRaw, effectiveTotalSent))
                 + " / 2 min " + formatDelta(100.0D - ratio(effectiveRecentRaw, effectiveRecentSent))
@@ -138,7 +142,8 @@ public final class ClientOptimizationHudOverlay {
         lines.add("  Optimize " + formatDelta(100.0D - ratio(snapshot.totalRawBytes(), snapshot.totalBatchedBytes()))
                 + " / 2 min " + formatDelta(100.0D - ratio(snapshot.recentRawBytes(), snapshot.recentBatchedBytes()))
                 + "  (" + formatBytes(snapshot.totalRawBytes()) + " -> " + formatBytes(snapshot.totalBatchedBytes()) + ")");
-        lines.add("  Bypass " + formatBytes(snapshot.totalBypassBytes()) + " / ChunkCache " + formatBytes(snapshot.totalChunkCacheSavedBytes())
+        lines.add("  Bypass " + formatBytes(snapshot.totalBypassBytes()) + " / ChunkCache " + formatDelta(100.0D - ratio(snapshot.totalChunkCacheRawBytes(), snapshot.totalChunkCacheSentBytes()))
+                + "  (" + formatBytes(snapshot.totalChunkCacheRawBytes()) + " -> " + formatBytes(snapshot.totalChunkCacheSentBytes()) + ")"
                 + " / hit " + snapshot.totalChunkCacheHitPackets() + " / ref " + snapshot.totalChunkCacheRefreshPackets());
         lines.add("  Conn " + snapshot.activeConnections() + " / Batch " + snapshot.totalBatchCount()
                 + " / Pkt " + snapshot.totalPacketCount() + " / Algo " + snapshot.algorithmId());

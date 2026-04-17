@@ -74,15 +74,17 @@ public final class ServerOptimizationTelemetryManager {
         }
     }
 
-    public static void recordChunkCache(ServerPlayer player, long savedBytes, boolean hit, boolean refresh) {
+    public static void recordChunkCache(ServerPlayer player, long rawBytes, long sentBytes, boolean hit, boolean refresh) {
         if (player == null) {
             return;
         }
         long now = System.currentTimeMillis();
         PlayerState state = STATES.computeIfAbsent(player.getUUID(), ignored -> new PlayerState());
         synchronized (GLOBAL_STATE) {
-            long safeSavedBytes = Math.max(savedBytes, 0L);
-            GLOBAL_STATE.totalChunkCacheSavedBytes += safeSavedBytes;
+            long safeRawBytes = Math.max(rawBytes, 0L);
+            long safeSentBytes = Math.max(sentBytes, 0L);
+            GLOBAL_STATE.totalChunkCacheRawBytes += safeRawBytes;
+            GLOBAL_STATE.totalChunkCacheSentBytes += safeSentBytes;
             if (hit) {
                 GLOBAL_STATE.totalChunkCacheHitTotalPackets++;
             }
@@ -90,14 +92,17 @@ public final class ServerOptimizationTelemetryManager {
                 GLOBAL_STATE.totalChunkCacheRefreshTotalPackets++;
             }
             GlobalSample globalSample = currentGlobalSample(now);
-            globalSample.chunkCacheSavedBytes += safeSavedBytes;
+            globalSample.chunkCacheRawBytes += safeRawBytes;
+            globalSample.chunkCacheSentBytes += safeSentBytes;
             globalSample.chunkCacheHitPackets += hit ? 1L : 0L;
             globalSample.chunkCacheRefreshPackets += refresh ? 1L : 0L;
             prune(GLOBAL_STATE.recent, now);
         }
         synchronized (state) {
-            long safeSavedBytes = Math.max(savedBytes, 0L);
-            state.chunkCacheSavedTotalBytes += safeSavedBytes;
+            long safeRawBytes = Math.max(rawBytes, 0L);
+            long safeSentBytes = Math.max(sentBytes, 0L);
+            state.chunkCacheRawTotalBytes += safeRawBytes;
+            state.chunkCacheSentTotalBytes += safeSentBytes;
             if (hit) {
                 state.chunkCacheHitTotalPackets++;
             }
@@ -105,12 +110,17 @@ public final class ServerOptimizationTelemetryManager {
                 state.chunkCacheRefreshTotalPackets++;
             }
             Sample sample = currentPlayerSample(state, now);
-            sample.chunkCacheSavedBytes += safeSavedBytes;
+            sample.chunkCacheRawBytes += safeRawBytes;
+            sample.chunkCacheSentBytes += safeSentBytes;
             sample.chunkCacheHitPackets += hit ? 1L : 0L;
             sample.chunkCacheRefreshPackets += refresh ? 1L : 0L;
             prune(state.recent, now);
             pushIfNeeded(player, state, now);
         }
+    }
+
+    public static void recordChunkCacheDelta(ServerPlayer player, long sentBytes) {
+        recordChunkCache(player, 0L, sentBytes, false, false);
     }
 
     public static void recordOptimizedBatch(ServerPlayer player, long rawBytes, long batchedBytes, int packetCount, String algorithmId) {
@@ -156,8 +166,10 @@ public final class ServerOptimizationTelemetryManager {
                         state.totalPackets,
                         sumPlayerRecent(state.recent, sample -> sample.bytes),
                         sumPlayerRecent(state.recent, sample -> sample.packets),
-                        state.chunkCacheSavedTotalBytes,
-                        sumPlayerRecent(state.recent, sample -> sample.chunkCacheSavedBytes),
+                        state.chunkCacheRawTotalBytes,
+                        sumPlayerRecent(state.recent, sample -> sample.chunkCacheRawBytes),
+                        state.chunkCacheSentTotalBytes,
+                        sumPlayerRecent(state.recent, sample -> sample.chunkCacheSentBytes),
                         state.chunkCacheHitTotalPackets,
                         sumPlayerRecent(state.recent, sample -> sample.chunkCacheHitPackets),
                         state.chunkCacheRefreshTotalPackets,
@@ -174,7 +186,8 @@ public final class ServerOptimizationTelemetryManager {
                             GLOBAL_STATE.totalBatchCount,
                             GLOBAL_STATE.totalPacketCount,
                             GLOBAL_STATE.totalBypassBytes,
-                            GLOBAL_STATE.totalChunkCacheSavedBytes,
+                            GLOBAL_STATE.totalChunkCacheRawBytes,
+                            GLOBAL_STATE.totalChunkCacheSentBytes,
                             GLOBAL_STATE.totalChunkCacheHitTotalPackets,
                             GLOBAL_STATE.totalChunkCacheRefreshTotalPackets,
                             sumGlobalRecent(GLOBAL_STATE.recent, sample -> sample.rawBytes),
@@ -182,7 +195,8 @@ public final class ServerOptimizationTelemetryManager {
                             sumGlobalRecent(GLOBAL_STATE.recent, sample -> sample.batchCount),
                             sumGlobalRecent(GLOBAL_STATE.recent, sample -> sample.packetCount),
                             sumGlobalRecent(GLOBAL_STATE.recent, sample -> sample.bypassBytes),
-                            sumGlobalRecent(GLOBAL_STATE.recent, sample -> sample.chunkCacheSavedBytes),
+                            sumGlobalRecent(GLOBAL_STATE.recent, sample -> sample.chunkCacheRawBytes),
+                            sumGlobalRecent(GLOBAL_STATE.recent, sample -> sample.chunkCacheSentBytes),
                             player.server.getPlayerCount(),
                             GLOBAL_STATE.algorithmId
                     )
@@ -239,7 +253,8 @@ public final class ServerOptimizationTelemetryManager {
     private static final class PlayerState {
         private long totalBytes;
         private long totalPackets;
-        private long chunkCacheSavedTotalBytes;
+        private long chunkCacheRawTotalBytes;
+        private long chunkCacheSentTotalBytes;
         private long chunkCacheHitTotalPackets;
         private long chunkCacheRefreshTotalPackets;
         private long lastPushMillis;
@@ -252,7 +267,8 @@ public final class ServerOptimizationTelemetryManager {
         private long totalBatchCount;
         private long totalPacketCount;
         private long totalBypassBytes;
-        private long totalChunkCacheSavedBytes;
+        private long totalChunkCacheRawBytes;
+        private long totalChunkCacheSentBytes;
         private long totalChunkCacheHitTotalPackets;
         private long totalChunkCacheRefreshTotalPackets;
         private String algorithmId = "-";
@@ -263,7 +279,8 @@ public final class ServerOptimizationTelemetryManager {
         private final long timestampMillis;
         private long bytes;
         private long packets;
-        private long chunkCacheSavedBytes;
+        private long chunkCacheRawBytes;
+        private long chunkCacheSentBytes;
         private long chunkCacheHitPackets;
         private long chunkCacheRefreshPackets;
 
@@ -284,7 +301,8 @@ public final class ServerOptimizationTelemetryManager {
         private long batchCount;
         private long packetCount;
         private long bypassBytes;
-        private long chunkCacheSavedBytes;
+        private long chunkCacheRawBytes;
+        private long chunkCacheSentBytes;
         private long chunkCacheHitPackets;
         private long chunkCacheRefreshPackets;
 
