@@ -53,6 +53,8 @@ public final class PacketTrafficMonitor {
     private static final ConcurrentHashMap<OutboundKey, Counter> OUTBOUND_STATS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Counter> INBOUND_STATS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Counter> BLOCK_ENTITY_STATS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Counter> WIRE_OUTBOUND_STATS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Counter> WIRE_INBOUND_STATS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, ConcurrentLinkedDeque<PendingSend>> PENDING_SENDS =
             new ConcurrentHashMap<>();
 
@@ -78,6 +80,8 @@ public final class PacketTrafficMonitor {
         OUTBOUND_STATS.clear();
         INBOUND_STATS.clear();
         BLOCK_ENTITY_STATS.clear();
+        WIRE_OUTBOUND_STATS.clear();
+        WIRE_INBOUND_STATS.clear();
         PENDING_SENDS.clear();
     }
 
@@ -151,6 +155,14 @@ public final class PacketTrafficMonitor {
         }
     }
 
+    public static void recordWireOutbound(Channel channel, int bytes, byte[] payload) {
+        recordWire(channel, bytes, payload, true);
+    }
+
+    public static void recordWireInbound(Channel channel, int bytes, byte[] payload) {
+        recordWire(channel, bytes, payload, false);
+    }
+
     public static void onServerTick(MinecraftServer server, long tickCounter) {
         TimedCaptureSession session = TIMED_CAPTURE.get();
         if (session != null) {
@@ -160,7 +172,11 @@ public final class PacketTrafficMonitor {
             }
         }
 
-        if (!enabled || (OUTBOUND_STATS.isEmpty() && INBOUND_STATS.isEmpty())) {
+        if (!enabled
+                || (OUTBOUND_STATS.isEmpty()
+                && INBOUND_STATS.isEmpty()
+                && WIRE_OUTBOUND_STATS.isEmpty()
+                && WIRE_INBOUND_STATS.isEmpty())) {
             return;
         }
 
@@ -246,6 +262,9 @@ public final class PacketTrafficMonitor {
         appendOutboundSummary(log, OUTBOUND_STATS);
         appendInboundSummary(log, INBOUND_STATS);
         appendBlockEntitySummary(log, BLOCK_ENTITY_STATS);
+        appendWireSummary(log, "[W-OUT]", WIRE_OUTBOUND_STATS);
+        appendWireSummary(log, "[W-IN]", WIRE_INBOUND_STATS);
+        appendComparisonSummary(log);
         return log.toString();
     }
 
@@ -339,6 +358,52 @@ public final class PacketTrafficMonitor {
                     .append(", packets=").append(entry.packets())
                     .append(", blockEntity=").append(entry.packetName());
         }
+    }
+
+    private static void appendWireSummary(StringBuilder log, String label, Map<String, Counter> snapshot) {
+        long totalBytes = 0L;
+        long totalEvents = 0L;
+        List<InboundEntry> entries = new ArrayList<>(snapshot.size());
+
+        for (Map.Entry<String, Counter> entry : snapshot.entrySet()) {
+            Counter counter = entry.getValue();
+            long bytes = counter.bytes.sum();
+            long events = counter.packets.sum();
+            totalBytes += bytes;
+            totalEvents += events;
+            entries.add(new InboundEntry(entry.getKey(), bytes, events));
+        }
+
+        entries.sort(Comparator.comparingLong(InboundEntry::bytes).reversed());
+        log.append("\n").append(label)
+                .append(" events=").append(totalEvents)
+                .append(", bytes=").append(totalBytes)
+                .append(", unique=").append(entries.size());
+
+        int limit = Math.min(MAX_LOG_ENTRIES, entries.size());
+        for (int i = 0; i < limit; i++) {
+            InboundEntry entry = entries.get(i);
+            log.append("\n  #").append(i + 1)
+                    .append(" bytes=").append(entry.bytes())
+                    .append(", events=").append(entry.packets())
+                    .append(", channel=").append(entry.packetName());
+        }
+    }
+
+    private static void appendComparisonSummary(StringBuilder log) {
+        long encodedOutBytes = sumBytes(OUTBOUND_STATS);
+        long decodedInBytes = sumBytes(INBOUND_STATS);
+        long wireOutBytes = sumBytes(WIRE_OUTBOUND_STATS);
+        long wireInBytes = sumBytes(WIRE_INBOUND_STATS);
+
+        log.append("\n[CMP] encoded_out=").append(encodedOutBytes)
+                .append(", wire_out=").append(wireOutBytes)
+                .append(", delta=").append(wireOutBytes - encodedOutBytes)
+                .append(", ratio=").append(formatRatio(wireOutBytes, encodedOutBytes));
+        log.append("\n[CMP] decoded_in=").append(decodedInBytes)
+                .append(", wire_in=").append(wireInBytes)
+                .append(", delta=").append(wireInBytes - decodedInBytes)
+                .append(", ratio=").append(formatRatio(wireInBytes, decodedInBytes));
     }
 
     private static String resolvePendingSource(Channel channel, Packet<?> packet) {
@@ -438,6 +503,49 @@ public final class PacketTrafficMonitor {
     private static String describeBlockEntity(ClientboundBlockEntityDataPacket packet) {
         ResourceLocation typeId = ForgeRegistries.BLOCK_ENTITY_TYPES.getKey(packet.getType());
         return typeId == null ? packet.getType().toString() : typeId.toString();
+    }
+
+    private static void recordWire(Channel channel, int bytes, byte[] payload, boolean outbound) {
+        if (!enabled || channel == null) {
+            return;
+        }
+
+        String channelLabel = describeWireChannel(channel);
+        (outbound ? WIRE_OUTBOUND_STATS : WIRE_INBOUND_STATS)
+                .computeIfAbsent(channelLabel, key -> new Counter())
+                .add(bytes);
+
+        TimedCaptureSession session = TIMED_CAPTURE.get();
+        if (session != null) {
+            session.record(PacketDumpRecord.wire(outbound ? "OUT" : "IN", channelLabel, bytes, payload));
+        }
+    }
+
+    private static String describeWireChannel(Channel channel) {
+        Object protocol = channel.attr(net.minecraft.network.Connection.ATTRIBUTE_PROTOCOL).get();
+        String protocolName = protocol == null ? "null" : String.valueOf(protocol);
+        String remote = String.valueOf(channel.remoteAddress());
+        String local = String.valueOf(channel.localAddress());
+        return "id=" + channel.id().asShortText()
+                + ", protocol=" + protocolName
+                + ", transport=" + channel.getClass().getSimpleName()
+                + ", remote=" + remote
+                + ", local=" + local;
+    }
+
+    private static long sumBytes(Map<?, Counter> snapshot) {
+        long totalBytes = 0L;
+        for (Counter counter : snapshot.values()) {
+            totalBytes += counter.bytes.sum();
+        }
+        return totalBytes;
+    }
+
+    private static String formatRatio(long numerator, long denominator) {
+        if (denominator <= 0L) {
+            return numerator <= 0L ? "1.000x" : "inf";
+        }
+        return String.format(java.util.Locale.ROOT, "%.3fx", (double) numerator / (double) denominator);
     }
 
     private static byte[] copyByteRange(ByteBuf buf, int startIndex, int length) {
@@ -713,12 +821,14 @@ public final class PacketTrafficMonitor {
     }
 
     private record PacketDumpRecord(
+            String captureType,
             String direction,
             long capturedAtMillis,
             String packetName,
             String packetClass,
             String packetToString,
             String source,
+            String wireChannel,
             int bytes,
             String payloadBase64,
             String payloadHex,
@@ -736,12 +846,14 @@ public final class PacketTrafficMonitor {
             String packetFields = describePacketObject(packet);
             String nbtHint = tryExtractNbt(packet);
             return new PacketDumpRecord(
+                    "PACKET",
                     "OUT",
                     System.currentTimeMillis(),
                     packetName,
                     packet.getClass().getName(),
                     String.valueOf(packet),
                     source,
+                    "",
                     Math.max(bytes, 0),
                     Base64.getEncoder().encodeToString(payload == null ? new byte[0] : payload),
                     hex(payload),
@@ -761,12 +873,14 @@ public final class PacketTrafficMonitor {
             String packetFields = describePacketObject(packet);
             String nbtHint = tryExtractNbt(packet);
             return new PacketDumpRecord(
+                    "PACKET",
                     "IN",
                     System.currentTimeMillis(),
                     packetName,
                     packet.getClass().getName(),
                     String.valueOf(packet),
                     "<decoded>",
+                    "",
                     Math.max(bytes, 0),
                     Base64.getEncoder().encodeToString(payload == null ? new byte[0] : payload),
                     hex(payload),
@@ -781,15 +895,42 @@ public final class PacketTrafficMonitor {
             );
         }
 
+        private static PacketDumpRecord wire(String direction, String channelLabel, int bytes, byte[] payload) {
+            byte[] safePayload = payload == null ? new byte[0] : payload;
+            return new PacketDumpRecord(
+                    "WIRE",
+                    direction,
+                    System.currentTimeMillis(),
+                    "<wire>",
+                    "",
+                    "",
+                    "<wire>",
+                    channelLabel,
+                    Math.max(bytes, 0),
+                    Base64.getEncoder().encodeToString(safePayload),
+                    hex(safePayload),
+                    "",
+                    "",
+                    "null",
+                    "null",
+                    "{}",
+                    "",
+                    1,
+                    0
+            );
+        }
+
         private String toJsonLine() {
             return "{"
                     + "\"type\":\"packet\","
+                    + "\"capture_type\":\"" + escapeJson(this.captureType) + "\","
                     + "\"direction\":\"" + escapeJson(this.direction) + "\","
                     + "\"captured_at_ms\":" + this.capturedAtMillis + ","
                     + "\"packet\":\"" + escapeJson(this.packetName) + "\","
                     + "\"packet_class\":\"" + escapeJson(this.packetClass) + "\","
                     + "\"packet_to_string\":\"" + escapeJson(this.packetToString) + "\","
                     + "\"source\":\"" + escapeJson(this.source) + "\","
+                    + "\"wire_channel\":\"" + escapeJson(this.wireChannel) + "\","
                     + "\"bytes\":" + this.bytes + ","
                     + "\"batch_size\":" + this.batchSize + ","
                     + "\"batch_index\":" + this.batchIndex + ","

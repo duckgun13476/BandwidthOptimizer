@@ -8,7 +8,8 @@ public final class ClientServerOptimizationStats {
     private static long totalBatchCount;
     private static long totalPacketCount;
     private static long totalBypassBytes;
-    private static long totalChunkCacheSavedBytes;
+    private static long totalChunkCacheRawBytes;
+    private static long totalChunkCacheSentBytes;
     private static long totalChunkCacheHitPackets;
     private static long totalChunkCacheRefreshPackets;
     private static long recentRawBytes;
@@ -16,7 +17,8 @@ public final class ClientServerOptimizationStats {
     private static long recentBatchCount;
     private static long recentPacketCount;
     private static long recentBypassBytes;
-    private static long recentChunkCacheSavedBytes;
+    private static long recentChunkCacheRawBytes;
+    private static long recentChunkCacheSentBytes;
     private static int activeConnections;
     private static String algorithmId = "-";
     private static long lastUpdateMillis;
@@ -30,7 +32,8 @@ public final class ClientServerOptimizationStats {
             long totalBatches,
             long totalPackets,
             long totalBypass,
-            long totalChunkCacheSaved,
+            long totalChunkCacheRaw,
+            long totalChunkCacheSent,
             long totalChunkCacheHits,
             long totalChunkCacheRefreshes,
             long recentRaw,
@@ -38,7 +41,8 @@ public final class ClientServerOptimizationStats {
             long recentBatches,
             long recentPackets,
             long recentBypass,
-            long recentChunkCacheSaved,
+            long recentChunkCacheRaw,
+            long recentChunkCacheSent,
             int connections,
             String algorithm
     ) {
@@ -48,7 +52,8 @@ public final class ClientServerOptimizationStats {
             totalBatchCount = Math.max(totalBatches, 0L);
             totalPacketCount = Math.max(totalPackets, 0L);
             totalBypassBytes = Math.max(totalBypass, 0L);
-            totalChunkCacheSavedBytes = Math.max(totalChunkCacheSaved, 0L);
+            totalChunkCacheRawBytes = Math.max(totalChunkCacheRaw, 0L);
+            totalChunkCacheSentBytes = Math.max(totalChunkCacheSent, 0L);
             totalChunkCacheHitPackets = Math.max(totalChunkCacheHits, 0L);
             totalChunkCacheRefreshPackets = Math.max(totalChunkCacheRefreshes, 0L);
             recentRawBytes = Math.max(recentRaw, 0L);
@@ -56,7 +61,8 @@ public final class ClientServerOptimizationStats {
             recentBatchCount = Math.max(recentBatches, 0L);
             recentPacketCount = Math.max(recentPackets, 0L);
             recentBypassBytes = Math.max(recentBypass, 0L);
-            recentChunkCacheSavedBytes = Math.max(recentChunkCacheSaved, 0L);
+            recentChunkCacheRawBytes = Math.max(recentChunkCacheRaw, 0L);
+            recentChunkCacheSentBytes = Math.max(recentChunkCacheSent, 0L);
             activeConnections = Math.max(connections, 0);
             algorithmId = algorithm == null || algorithm.isBlank() ? "-" : algorithm;
             lastUpdateMillis = System.currentTimeMillis();
@@ -71,7 +77,8 @@ public final class ClientServerOptimizationStats {
                     totalBatchCount,
                     totalPacketCount,
                     totalBypassBytes,
-                    totalChunkCacheSavedBytes,
+                    totalChunkCacheRawBytes,
+                    totalChunkCacheSentBytes,
                     totalChunkCacheHitPackets,
                     totalChunkCacheRefreshPackets,
                     recentRawBytes,
@@ -79,7 +86,8 @@ public final class ClientServerOptimizationStats {
                     recentBatchCount,
                     recentPacketCount,
                     recentBypassBytes,
-                    recentChunkCacheSavedBytes,
+                    recentChunkCacheRawBytes,
+                    recentChunkCacheSentBytes,
                     activeConnections,
                     algorithmId,
                     lastUpdateMillis
@@ -93,7 +101,8 @@ public final class ClientServerOptimizationStats {
             long totalBatchCount,
             long totalPacketCount,
             long totalBypassBytes,
-            long totalChunkCacheSavedBytes,
+            long totalChunkCacheRawBytes,
+            long totalChunkCacheSentBytes,
             long totalChunkCacheHitPackets,
             long totalChunkCacheRefreshPackets,
             long recentRawBytes,
@@ -101,13 +110,19 @@ public final class ClientServerOptimizationStats {
             long recentBatchCount,
             long recentPacketCount,
             long recentBypassBytes,
-            long recentChunkCacheSavedBytes,
+            long recentChunkCacheRawBytes,
+            long recentChunkCacheSentBytes,
             int activeConnections,
             String algorithmId,
             long lastUpdateMillis
     ) {
         public boolean hasData() {
-            return totalBatchCount > 0L || totalBypassBytes > 0L || totalChunkCacheSavedBytes > 0L;
+            return totalBatchCount > 0L
+                    || totalBypassBytes > 0L
+                    || totalChunkCacheRawBytes > 0L
+                    || totalChunkCacheSentBytes > 0L
+                    || totalChunkCacheHitPackets > 0L
+                    || totalChunkCacheRefreshPackets > 0L;
         }
     }
 }
