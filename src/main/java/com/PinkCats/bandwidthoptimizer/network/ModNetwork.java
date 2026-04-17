@@ -6,6 +6,8 @@ import com.PinkCats.bandwidthoptimizer.network.attachment.AttachmentDataFlow;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientToServerAttachmentPacket;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientToServerChunkCacheMissPacket;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientToServerOptimizationTelemetrySubscriptionPacket;
+import com.PinkCats.bandwidthoptimizer.network.message.ClientboundChunkCacheBatchPacket;
+import com.PinkCats.bandwidthoptimizer.network.message.ClientboundChunkCacheDeltaPacket;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientboundChunkCacheRefreshPacket;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientboundServerConfigPacket;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientboundChunkCacheUsePacket;
@@ -14,6 +16,7 @@ import com.PinkCats.bandwidthoptimizer.network.message.ServerOptimizationTelemet
 import com.PinkCats.bandwidthoptimizer.network.message.ServerToClientAttachmentBatchPacket;
 import com.PinkCats.bandwidthoptimizer.network.message.ServerToClientAttachmentPacket;
 import com.PinkCats.bandwidthoptimizer.network.algorithm.play.ClientboundPlayPacketBatchPacket;
+import com.PinkCats.bandwidthoptimizer.network.server.ServerChunkCacheBatchingManager;
 import com.PinkCats.bandwidthoptimizer.network.server.ServerToClientBatchingManager;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -63,6 +66,20 @@ public final class ModNetwork {
                 ClientboundChunkCacheUsePacket::encode,
                 ClientboundChunkCacheUsePacket::decode,
                 ClientboundChunkCacheUsePacket::handle
+        );
+        CHANNEL.registerMessage(
+                nextId(),
+                ClientboundChunkCacheDeltaPacket.class,
+                ClientboundChunkCacheDeltaPacket::encode,
+                ClientboundChunkCacheDeltaPacket::decode,
+                ClientboundChunkCacheDeltaPacket::handle
+        );
+        CHANNEL.registerMessage(
+                nextId(),
+                ClientboundChunkCacheBatchPacket.class,
+                ClientboundChunkCacheBatchPacket::encode,
+                ClientboundChunkCacheBatchPacket::decode,
+                ClientboundChunkCacheBatchPacket::handle
         );
         CHANNEL.registerMessage(
                 nextId(),
@@ -170,12 +187,20 @@ public final class ModNetwork {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), packet);
     }
 
-    public static void sendChunkCacheRefreshToPlayer(ServerPlayer player, ClientboundChunkCacheRefreshPacket packet) {
+    public static void sendChunkCacheBatchToPlayerDirect(ServerPlayer player, ClientboundChunkCacheBatchPacket packet) {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), packet);
     }
 
-    public static void sendChunkCacheUseToPlayer(ServerPlayer player, ClientboundChunkCacheUsePacket packet) {
-        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), packet);
+    public static void sendChunkCacheRefreshToPlayer(ServerPlayer player, ClientboundChunkCacheRefreshPacket packet) {
+        ServerChunkCacheBatchingManager.enqueueRefresh(player, packet, packet.encodedPacketBytes().length);
+    }
+
+    public static void sendChunkCacheUseToPlayer(ServerPlayer player, ClientboundChunkCacheUsePacket packet, long rawBaselineBytes) {
+        ServerChunkCacheBatchingManager.enqueueUse(player, packet, rawBaselineBytes);
+    }
+
+    public static void sendChunkCacheDeltaToPlayer(ServerPlayer player, ClientboundChunkCacheDeltaPacket packet) {
+        ServerChunkCacheBatchingManager.enqueueDelta(player, packet);
     }
 
     public static void sendServerConfigToPlayer(ServerPlayer player) {
