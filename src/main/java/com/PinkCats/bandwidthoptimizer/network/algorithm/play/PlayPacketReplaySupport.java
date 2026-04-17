@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.network.algorithm.play;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.compat.network.CustomPayloadBypassCompat;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.ConnectionProtocol;
 import net.minecraft.network.FriendlyByteBuf;
@@ -66,10 +67,6 @@ public final class PlayPacketReplaySupport {
     );
 
     private static final ResourceLocation INTERNAL_CHANNEL = ResourceLocation.fromNamespaceAndPath(Bandwidthoptimizer.MODID, "main");
-    private static final Set<ResourceLocation> CUSTOM_PAYLOAD_BYPASS_CHANNELS = Set.of(
-            ResourceLocation.fromNamespaceAndPath("yes_steve_model", "2_6_0")
-    );
-
     private PlayPacketReplaySupport() {
     }
 
@@ -97,7 +94,7 @@ public final class PlayPacketReplaySupport {
             return "internal_transport";
         }
         if (packet instanceof ClientboundCustomPayloadPacket customPayloadPacket
-                && CUSTOM_PAYLOAD_BYPASS_CHANNELS.contains(customPayloadPacket.getIdentifier())) {
+                && CustomPayloadBypassCompat.shouldBypass(customPayloadPacket.getIdentifier())) {
             return "custom_payload_bypass_channel:" + customPayloadPacket.getIdentifier();
         }
         if (!WHITELIST.contains(packet.getClass())) {

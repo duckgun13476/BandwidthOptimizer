@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.network.compat;
+package com.PinkCats.bandwidthoptimizer.compat.network;
 
 import net.minecraft.resources.ResourceLocation;
 
