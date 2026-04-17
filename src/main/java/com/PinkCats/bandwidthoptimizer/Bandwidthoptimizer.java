@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.command.PacketTrafficCommand;
 import com.PinkCats.bandwidthoptimizer.network.ModNetwork;
 import com.PinkCats.bandwidthoptimizer.network.runtime.ZstdRuntimeSupport;
+import com.PinkCats.bandwidthoptimizer.network.server.ServerPlayPacketBatchingManager;
 import com.PinkCats.bandwidthoptimizer.optimise.chunkcache.ServerChunkCacheManager;
 import com.mojang.logging.LogUtils;
 import net.minecraftforge.common.MinecraftForge;
@@ -46,16 +47,36 @@ public class Bandwidthoptimizer {
     @SubscribeEvent
     public static void syncConfigOnLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
-            ServerChunkCacheManager.resetPlayer(serverPlayer);
+            resetRuntimeState(serverPlayer);
             ModNetwork.sendServerConfigToPlayer(serverPlayer);
+        }
+    }
+
+    @SubscribeEvent
+    public static void resetStateOnRespawn(PlayerEvent.PlayerRespawnEvent event) {
+        if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            resetRuntimeState(serverPlayer);
+        }
+    }
+
+    @SubscribeEvent
+    public static void resetStateOnDimensionChange(PlayerEvent.PlayerChangedDimensionEvent event) {
+        if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            resetRuntimeState(serverPlayer);
         }
     }
 
     @SubscribeEvent
     public static void clearStateOnLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            ServerPlayPacketBatchingManager.removePlayer(serverPlayer);
             ServerChunkCacheManager.removePlayer(serverPlayer);
         }
+    }
+
+    private static void resetRuntimeState(net.minecraft.server.level.ServerPlayer serverPlayer) {
+        ServerPlayPacketBatchingManager.resetPlayer(serverPlayer);
+        ServerChunkCacheManager.resetPlayer(serverPlayer);
     }
 
 

@@ -74,6 +74,27 @@ public final class ServerPlayPacketBatchingManager {
         player.server.execute(() -> flushOnServerThread(player.getUUID(), player, pendingBatch));
     }
 
+    public static void resetPlayer(ServerPlayer player) {
+        if (player == null) {
+            return;
+        }
+        UUID playerId = player.getUUID();
+        PendingBatch pendingBatch = PENDING_BATCHES.remove(playerId);
+        if (pendingBatch != null) {
+            pendingBatch.clear();
+        }
+        PlayerBatchSession session = BATCH_SESSIONS.remove(playerId);
+        if (session != null) {
+            synchronized (session) {
+                session.invalidate();
+            }
+        }
+    }
+
+    public static void removePlayer(ServerPlayer player) {
+        resetPlayer(player);
+    }
+
     public static boolean shouldBypassForConnectionWarmup(ServerPlayer player) {
         if (player == null || player.connection == null || player.connection.connection == null) {
             return true;
@@ -167,6 +188,12 @@ public final class ServerPlayPacketBatchingManager {
             }
 
             player.server.execute(() -> {
+                synchronized (session) {
+                    if (!session.matchesConnection(connectionIdentity, connectionGeneration)) {
+                        finishPendingBatch(playerId, player, pendingBatch);
+                        return;
+                    }
+                }
                 if (player.connection == null
                         || player.connection.connection == null
                         || player.connection.connection != connectionIdentity
@@ -309,6 +336,13 @@ public final class ServerPlayPacketBatchingManager {
             }
         }
 
+        private void clear() {
+            synchronized (this.entries) {
+                this.entries.clear();
+                this.flushScheduled.set(false);
+            }
+        }
+
         private void scheduleFlush(ServerPlayer player) {
             if (!this.flushScheduled.compareAndSet(false, true)) {
                 return;
@@ -372,6 +406,16 @@ public final class ServerPlayPacketBatchingManager {
                 this.warmupUntilMillis = nowMillis + CONNECTION_WARMUP_MILLIS;
                 this.resetSessionPending = true;
             }
+        }
+
+        private void invalidate() {
+            this.payloadSession.resetAll();
+            this.connectionIdentity = null;
+            this.sessionId = ThreadLocalRandom.current().nextLong();
+            this.nextSequence = 0L;
+            this.connectionGeneration++;
+            this.warmupUntilMillis = 0L;
+            this.resetSessionPending = true;
         }
 
         private boolean matchesConnection(Object expectedConnectionIdentity, long expectedGeneration) {
