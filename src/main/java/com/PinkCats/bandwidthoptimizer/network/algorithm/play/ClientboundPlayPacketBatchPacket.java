@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.network.algorithm.play;
 
 import com.PinkCats.bandwidthoptimizer.network.client.ClientPlayPacketBatchHandler;
+import com.PinkCats.bandwidthoptimizer.network.client.ClientRespawnTransportBarrier;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraftforge.api.distmarker.Dist;
@@ -60,6 +61,10 @@ public record ClientboundPlayPacketBatchPacket(
 
     public static void handle(ClientboundPlayPacketBatchPacket packet, Supplier<NetworkEvent.Context> contextSupplier) {
         NetworkEvent.Context context = contextSupplier.get();
+        if (ClientRespawnTransportBarrier.shouldDropInternalTransport()) {
+            context.setPacketHandled(true);
+            return;
+        }
         DistExecutor.unsafeRunWhenOn(
                 Dist.CLIENT,
                 () -> () -> ClientPlayPacketBatchHandler.handle(packet)

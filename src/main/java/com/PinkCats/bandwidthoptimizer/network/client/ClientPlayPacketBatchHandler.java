@@ -25,6 +25,12 @@ public final class ClientPlayPacketBatchHandler {
     private ClientPlayPacketBatchHandler() {
     }
 
+    public static void resetForRespawnBoundary() {
+        BATCH_DECODE_SESSION.resetAll();
+        lastSessionId = Long.MIN_VALUE;
+        lastSequence = -1L;
+    }
+
     public static void handle(ClientboundPlayPacketBatchPacket batchPacket) {
         Minecraft minecraft = Minecraft.getInstance();
         ClientPacketListener listener = minecraft.getConnection();

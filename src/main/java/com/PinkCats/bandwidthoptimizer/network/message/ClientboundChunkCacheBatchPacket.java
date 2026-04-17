@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.network.message;
 
 import com.PinkCats.bandwidthoptimizer.network.client.ClientChunkCacheBatchHandler;
+import com.PinkCats.bandwidthoptimizer.network.client.ClientRespawnTransportBarrier;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraftforge.api.distmarker.Dist;
@@ -50,6 +51,10 @@ public record ClientboundChunkCacheBatchPacket(
 
     public static void handle(ClientboundChunkCacheBatchPacket packet, Supplier<NetworkEvent.Context> contextSupplier) {
         NetworkEvent.Context context = contextSupplier.get();
+        if (ClientRespawnTransportBarrier.shouldDropInternalTransport()) {
+            context.setPacketHandled(true);
+            return;
+        }
         context.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(
                 Dist.CLIENT,
                 () -> () -> ClientChunkCacheBatchHandler.handleBatch(packet)

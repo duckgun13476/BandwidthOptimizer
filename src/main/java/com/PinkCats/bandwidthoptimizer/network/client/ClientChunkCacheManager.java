@@ -58,6 +58,14 @@ public final class ClientChunkCacheManager {
         }
     }
 
+    public static void resetForRespawnBoundary() {
+        synchronized (LOCK) {
+            currentSessionId = Long.MIN_VALUE;
+            CACHE.clear();
+            currentTotalBytes = 0L;
+        }
+    }
+
     public static void handleRefresh(ClientboundChunkCacheRefreshPacket packet) {
         long now = System.currentTimeMillis();
         CacheKey key = new CacheKey(packet.dimensionId(), new ChunkPos(packet.chunkX(), packet.chunkZ()).toLong());

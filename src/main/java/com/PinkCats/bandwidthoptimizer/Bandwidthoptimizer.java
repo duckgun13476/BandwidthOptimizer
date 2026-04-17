@@ -76,6 +76,10 @@ public class Bandwidthoptimizer {
         }
     }
 
+    public static void prepareForClientRespawnBoundary(net.minecraft.server.level.ServerPlayer serverPlayer) {
+        resetRuntimeState(serverPlayer);
+    }
+
     private static void resetRuntimeState(net.minecraft.server.level.ServerPlayer serverPlayer) {
         ServerPlayPacketBatchingManager.resetPlayer(serverPlayer);
         ServerChunkCacheBatchingManager.resetPlayer(serverPlayer);

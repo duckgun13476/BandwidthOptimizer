@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
 
+import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.network.algorithm.play.BypassedPlayPacketStats;
 import com.PinkCats.bandwidthoptimizer.network.algorithm.play.PlayPacketReplaySupport;
 import com.PinkCats.bandwidthoptimizer.network.algorithm.play.ServerOptimizationTelemetryManager;
@@ -14,6 +15,7 @@ import net.minecraft.network.ConnectionProtocol;
 import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
+import net.minecraft.network.protocol.game.ClientboundRespawnPacket;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -56,6 +58,10 @@ public abstract class ConnectionSendMonitorMixin {
         if (this.channel instanceof LocalChannel) {
             ServerPlayPacketBatchingManager.flushPendingNow(serverGamePacketListener.player);
             return;
+        }
+
+        if (packet instanceof ClientboundRespawnPacket) {
+            Bandwidthoptimizer.prepareForClientRespawnBoundary(serverGamePacketListener.player);
         }
 
         if (PlayPacketReplaySupport.isInternalTransport(packet)) {

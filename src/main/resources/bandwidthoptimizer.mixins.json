@@ -14,6 +14,7 @@
     "minecraft.MinecraftServerPacketStatsMixin"
   ],
   "client": [
+    "minecraft.ClientPacketListenerRespawnMonitorMixin"
   ],
   "injectors": {
     "defaultRequire": 1
