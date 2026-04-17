@@ -14,6 +14,7 @@ import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundLightUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
@@ -22,6 +23,7 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -146,20 +148,14 @@ public final class ServerChunkCacheManager {
         }
 
         long now = System.currentTimeMillis();
-        int viewDistance = Math.max(2, level.getServer().getPlayerList().getViewDistance());
         ResourceLocation dimensionId = level.dimension().location();
         CacheKey key = new CacheKey(dimensionId, chunkPos.toLong());
         byte[] encodedPacketBytes = PlayPacketReplaySupport.encodePacket(packet);
+        List<ServerPlayer> trackedPlayers = ((ServerChunkCache) level.getChunkSource()).chunkMap.getPlayers(chunkPos, false);
 
-        for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
-            if (player.serverLevel() != level) {
-                continue;
-            }
+        for (ServerPlayer player : trackedPlayers) {
             PlayerState state = STATES.get(player.getUUID());
             if (state == null) {
-                continue;
-            }
-            if (isChunkInRange(chunkPos.x, chunkPos.z, player.chunkPosition().x, player.chunkPosition().z, viewDistance)) {
                 continue;
             }
 
@@ -275,15 +271,6 @@ public final class ServerChunkCacheManager {
                 || packet instanceof ClientboundSectionBlocksUpdatePacket
                 || packet instanceof ClientboundLightUpdatePacket
                 || packet instanceof ClientboundBlockEntityDataPacket;
-    }
-
-    private static boolean isChunkInRange(int chunkX, int chunkZ, int playerChunkX, int playerChunkZ, int viewDistance) {
-        int xDistance = Math.max(0, Math.abs(chunkX - playerChunkX) - 1);
-        int zDistance = Math.max(0, Math.abs(chunkZ - playerChunkZ) - 1);
-        long major = (long) Math.max(0, Math.max(xDistance, zDistance) - 1);
-        long minor = (long) Math.min(xDistance, zDistance);
-        long distance = minor * minor + major * major;
-        return distance < (long) viewDistance * (long) viewDistance;
     }
 
     private static final class PlayerState {
