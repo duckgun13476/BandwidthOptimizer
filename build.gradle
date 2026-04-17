@@ -279,6 +279,13 @@ tasks.register('runTemplateHitMining', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.experient.network.TemplateHitMiningMain'
 }
 
+tasks.register('runReplayMappedHeaderExperiment', JavaExec) {
+    group = 'verification'
+    description = 'Measures the incremental savings from mapped custom-payload headers on top of replay batching algorithms.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.PinkCats.bandwidthoptimizer.experient.network.ReplayMappedHeaderExperimentMain'
+}
+
 tasks.register('PublishInfo') {
     group = 'Publishing'
     description = 'Prints local publishing configuration and token availability.'
