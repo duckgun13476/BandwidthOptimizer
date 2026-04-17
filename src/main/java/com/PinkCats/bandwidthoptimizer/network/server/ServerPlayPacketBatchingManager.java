@@ -74,6 +74,22 @@ public final class ServerPlayPacketBatchingManager {
         player.server.execute(() -> flushOnServerThread(player.getUUID(), player, pendingBatch));
     }
 
+    public static void resetPlayer(ServerPlayer player) {
+        if (player == null) {
+            return;
+        }
+        UUID playerId = player.getUUID();
+        PendingBatch pendingBatch = PENDING_BATCHES.remove(playerId);
+        if (pendingBatch != null) {
+            pendingBatch.clear();
+        }
+        BATCH_SESSIONS.remove(playerId);
+    }
+
+    public static void removePlayer(ServerPlayer player) {
+        resetPlayer(player);
+    }
+
     public static boolean shouldBypassForConnectionWarmup(ServerPlayer player) {
         if (player == null || player.connection == null || player.connection.connection == null) {
             return true;
@@ -306,6 +322,13 @@ public final class ServerPlayPacketBatchingManager {
         private boolean isEmpty() {
             synchronized (this.entries) {
                 return this.entries.isEmpty();
+            }
+        }
+
+        private void clear() {
+            synchronized (this.entries) {
+                this.entries.clear();
+                this.flushScheduled.set(false);
             }
         }
 
