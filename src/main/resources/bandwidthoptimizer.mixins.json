@@ -4,18 +4,8 @@
   "package": "com.PinkCats.bandwidthoptimizer.mixin",
   "compatibilityLevel": "JAVA_17",
   "refmap": "bandwidthoptimizer.refmap.json",
-  "mixins": [
-    "minecraft.ChunkHolderChunkCacheDeltaMixin",
-    "minecraft.ConnectionSendMonitorMixin",
-    "minecraft.ConnectionWireMonitorMixin",
-    "minecraft.ConnectionReplayInvokerMixin",
-    "minecraft.PacketEncoderMonitorMixin",
-    "minecraft.PacketDecoderMonitorMixin",
-    "minecraft.MinecraftServerPacketStatsMixin"
-  ],
-  "client": [
-    "minecraft.ClientPacketListenerRespawnMonitorMixin"
-  ],
+  "mixins": [],
+  "client": [],
   "injectors": {
     "defaultRequire": 1
   },

@@ -2,7 +2,6 @@ package com.PinkCats.bandwidthoptimizer.network.client;
 
 import com.PinkCats.bandwidthoptimizer.network.ModNetwork;
 import com.PinkCats.bandwidthoptimizer.network.message.ClientToServerOptimizationTelemetrySubscriptionPacket;
-import com.PinkCats.bandwidthoptimizer.network.server.ServerPlayPacketBatchingManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -127,7 +126,7 @@ public final class ClientOptimizationHudOverlay {
         lines.add("  Bypass " + formatBytes(bypassTotal) + " / 2 min " + formatBytes(bypassRecent));
         lines.add("  Batch " + snapshot.totalBatchCount() + " / Pkt " + snapshot.totalPacketCount()
                 + " / Algo " + snapshot.algorithmId()
-                + " / Win " + ServerPlayPacketBatchingManager.WINDOW_MILLIS + "ms");
+                + " / LegacyTransport " + (ModNetwork.isLegacyTransportEnabled() ? "on" : "off"));
     }
 
     private static void addServerLines(List<String> lines, ClientServerOptimizationStats.Snapshot snapshot) {

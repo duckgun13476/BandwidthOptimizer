@@ -3,9 +3,6 @@ package com.PinkCats.bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.command.PacketTrafficCommand;
 import com.PinkCats.bandwidthoptimizer.network.ModNetwork;
 import com.PinkCats.bandwidthoptimizer.network.runtime.ZstdRuntimeSupport;
-import com.PinkCats.bandwidthoptimizer.network.server.ServerChunkCacheBatchingManager;
-import com.PinkCats.bandwidthoptimizer.network.server.ServerPlayPacketBatchingManager;
-import com.PinkCats.bandwidthoptimizer.optimise.chunkcache.ServerChunkCacheManager;
 import com.mojang.logging.LogUtils;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
@@ -49,7 +46,9 @@ public class Bandwidthoptimizer {
     public static void syncConfigOnLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
             resetRuntimeState(serverPlayer);
-            ModNetwork.sendServerConfigToPlayer(serverPlayer);
+            if (ModNetwork.isLegacyTransportEnabled()) {
+                ModNetwork.sendServerConfigToPlayer(serverPlayer);
+            }
         }
     }
 
@@ -70,9 +69,7 @@ public class Bandwidthoptimizer {
     @SubscribeEvent
     public static void clearStateOnLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
-            ServerPlayPacketBatchingManager.removePlayer(serverPlayer);
-            ServerChunkCacheBatchingManager.removePlayer(serverPlayer);
-            ServerChunkCacheManager.removePlayer(serverPlayer);
+            resetRuntimeState(serverPlayer);
         }
     }
 
@@ -80,10 +77,11 @@ public class Bandwidthoptimizer {
         resetRuntimeState(serverPlayer);
     }
 
+    // Phase 0 of the transport refactor intentionally keeps runtime transport state inert.
     private static void resetRuntimeState(net.minecraft.server.level.ServerPlayer serverPlayer) {
-        ServerPlayPacketBatchingManager.resetPlayer(serverPlayer);
-        ServerChunkCacheBatchingManager.resetPlayer(serverPlayer);
-        ServerChunkCacheManager.resetPlayer(serverPlayer);
+        if (!ModNetwork.isLegacyTransportEnabled()) {
+            return;
+        }
     }
 
 
