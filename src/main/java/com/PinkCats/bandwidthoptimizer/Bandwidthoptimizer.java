@@ -1,8 +1,8 @@
 package com.PinkCats.bandwidthoptimizer;
 
-import com.PinkCats.bandwidthoptimizer.command.PacketTrafficCommand;
-import com.PinkCats.bandwidthoptimizer.network.ModNetwork;
-import com.PinkCats.bandwidthoptimizer.network.runtime.ZstdRuntimeSupport;
+import com.PinkCats.bandwidthoptimizer.Old.command.PacketTrafficCommand;
+import com.PinkCats.bandwidthoptimizer.Old.network.ModNetwork;
+import com.PinkCats.bandwidthoptimizer.Old.network.runtime.ZstdRuntimeSupport;
 import com.mojang.logging.LogUtils;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;

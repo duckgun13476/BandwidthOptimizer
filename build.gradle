@@ -234,56 +234,63 @@ tasks.register('runLocalNetworkTest', JavaExec) {
     group = 'verification'
     description = 'Runs the local packet encode/decode round trip without starting Minecraft.'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.PinkCats.bandwidthoptimizer.experient.network.LocalNetworkRoundTripMain'
+    mainClass = 'com.PinkCats.bandwidthoptimizer.old.network.LocalNetworkRoundTripMain'
+}
+
+tasks.register('runChannelSimulate', JavaExec) {
+    group = 'verification'
+    description = 'Runs the single-process vanilla packet encode/compress/decode/handle simulator.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.PinkCats.bandwidthoptimizer.experient.ChannelSimulate'
 }
 
 tasks.register('runPacketDumpReplay', JavaExec) {
     group = 'verification'
     description = 'Replays one dumped packet line through the local attachment processing flow.'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.PinkCats.bandwidthoptimizer.experient.network.PacketDumpReplayMain'
+    mainClass = 'com.PinkCats.bandwidthoptimizer.old.network.PacketDumpReplayMain'
 }
 
 tasks.register('runPacketDumpTimelineReplay', JavaExec) {
     group = 'verification'
     description = 'Replays a JSONL dump timeline using captured_at_ms ordering.'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.PinkCats.bandwidthoptimizer.experient.network.PacketDumpTimelineReplayMain'
+    mainClass = 'com.PinkCats.bandwidthoptimizer.old.network.PacketDumpTimelineReplayMain'
 }
 
 tasks.register('runSimilarPacketInspector', JavaExec) {
     group = 'verification'
     description = 'Inspects similar packet dumps and compares raw payload differences.'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.PinkCats.bandwidthoptimizer.experient.network.SimilarPacketInspectorMain'
+    mainClass = 'com.PinkCats.bandwidthoptimizer.old.network.SimilarPacketInspectorMain'
 }
 
 tasks.register('runPacketClassSimilarity', JavaExec) {
     group = 'verification'
     description = 'Compares packet class profiles and prints the classes most similar to the top traffic class.'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.PinkCats.bandwidthoptimizer.experient.network.PacketClassSimilarityMain'
+    mainClass = 'com.PinkCats.bandwidthoptimizer.old.network.PacketClassSimilarityMain'
 }
 
 tasks.register('runNonWhitelistedPlayPacketReport', JavaExec) {
     group = 'verification'
     description = 'Reports clientbound PLAY packet classes that are outside the replay whitelist, with packet/byte share totals.'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.PinkCats.bandwidthoptimizer.experient.network.NonWhitelistedPlayPacketReportMain'
+    mainClass = 'com.PinkCats.bandwidthoptimizer.old.network.NonWhitelistedPlayPacketReportMain'
 }
 
 tasks.register('runTemplateHitMining', JavaExec) {
     group = 'verification'
     description = 'Summarizes dynamic template hit counts from the replay JSONL output.'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.PinkCats.bandwidthoptimizer.experient.network.TemplateHitMiningMain'
+    mainClass = 'com.PinkCats.bandwidthoptimizer.old.network.TemplateHitMiningMain'
 }
 
 tasks.register('runReplayMappedHeaderExperiment', JavaExec) {
     group = 'verification'
     description = 'Measures the incremental savings from mapped custom-payload headers on top of replay batching algorithms.'
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.PinkCats.bandwidthoptimizer.experient.network.ReplayMappedHeaderExperimentMain'
+    mainClass = 'com.PinkCats.bandwidthoptimizer.old.network.ReplayMappedHeaderExperimentMain'
 }
 
 tasks.register('PublishInfo') {

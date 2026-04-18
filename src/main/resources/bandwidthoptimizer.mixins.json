@@ -4,7 +4,10 @@
   "package": "com.PinkCats.bandwidthoptimizer.mixin",
   "compatibilityLevel": "JAVA_17",
   "refmap": "bandwidthoptimizer.refmap.json",
-  "mixins": [],
+  "mixins": [
+    "minecraft.PacketOutPipeMixin",
+    "minecraft.PacketInPipeMixin"
+  ],
   "client": [],
   "injectors": {
     "defaultRequire": 1

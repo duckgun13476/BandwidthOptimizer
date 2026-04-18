@@ -1,6 +1,6 @@
 package com.PinkCats.bandwidthoptimizer;
 
-import com.PinkCats.bandwidthoptimizer.network.ModNetwork;
+import com.PinkCats.bandwidthoptimizer.Old.network.ModNetwork;
 import net.minecraftforge.common.ForgeConfigSpec;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
