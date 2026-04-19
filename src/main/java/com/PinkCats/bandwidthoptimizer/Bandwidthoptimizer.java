@@ -4,7 +4,7 @@ import com.PinkCats.bandwidthoptimizer.Old.command.PacketTrafficCommand;
 import com.PinkCats.bandwidthoptimizer.Old.network.ModNetwork;
 import com.PinkCats.bandwidthoptimizer.Old.network.runtime.ZstdRuntimeSupport;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelFrameJsonlLogger;
-import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntime;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;
 import com.mojang.logging.LogUtils;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
@@ -28,7 +28,7 @@ public class Bandwidthoptimizer {
     public Bandwidthoptimizer() {
         ZstdRuntimeSupport.configureNativeTempFolder();
         ChannelFrameJsonlLogger.initializeOutputFiles();
-        ChannelTransportRuntime.initialize();
+        ChannelTransportRuntimeGuard.initialize();
 
 
         // Only for 1.20.1 forge
