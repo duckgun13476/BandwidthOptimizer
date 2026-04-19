@@ -1,0 +1,31 @@
+package com.PinkCats.bandwidthoptimizer.channel.mes;
+
+//Packet Recorder
+public record ChannelCapturedFrame(
+        String direction,
+        String protocolName,
+        String packetClassName,
+        int packetId,
+        int byteLength,
+        byte[] encodedBytes,
+        long capturedAtMillis
+) {
+
+
+    public ChannelCapturedFrame withPacketClassName(String newPacketClassName) {
+        return new ChannelCapturedFrame(
+                this.direction,
+                this.protocolName,
+                newPacketClassName,
+                this.packetId,
+                this.byteLength,
+                copyEncodedBytes(),
+                this.capturedAtMillis
+        );
+    }
+
+
+    public byte[] copyEncodedBytes() {
+        return this.encodedBytes.clone();
+    }
+}

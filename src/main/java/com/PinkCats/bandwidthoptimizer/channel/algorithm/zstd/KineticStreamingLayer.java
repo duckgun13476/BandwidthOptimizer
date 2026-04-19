@@ -1,0 +1,153 @@
+package com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd;
+
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.KineticAlgorithmLayer;
+import com.github.luben.zstd.EndDirective;
+import com.github.luben.zstd.ZstdCompressCtx;
+import com.github.luben.zstd.ZstdDecompressCtx;
+
+import java.io.ByteArrayOutputStream;
+import java.nio.ByteBuffer;
+import java.util.Arrays;
+
+
+public final class KineticStreamingLayer implements KineticAlgorithmLayer {
+
+    private static final int DIRECT_BUFFER_BYTES = 64 * 1024;
+
+    private final int compressionLevel;
+    private final ZstdCompressCtx compressCtx;
+    private final ZstdDecompressCtx decompressCtx;
+    private byte[] pendingDecodedBytes = new byte[0];
+
+    public KineticStreamingLayer(int compressionLevel) {
+        this.compressionLevel = compressionLevel;
+        this.compressCtx = new ZstdCompressCtx().setLevel(compressionLevel);
+        this.decompressCtx = new ZstdDecompressCtx();
+    }
+
+    @Override
+    public byte[] encode(byte[] inputBytes) {
+        byte[] safeInputBytes = copyBytesOrEmpty(inputBytes);
+        byte[] framedPacketBytes = ChannelStreamingPacketCodec.encodeFramedPacket(safeInputBytes);
+        return compressStreaming(framedPacketBytes);
+    }
+
+    @Override
+    public byte[] decode(byte[] inputBytes) {
+        byte[] safeInputBytes = copyBytesOrEmpty(inputBytes);
+        appendDecodedBytes(decompressStreaming(safeInputBytes));
+        byte[] nextPacketBatch = extractNextPacketBatch();
+        if (nextPacketBatch == null) {
+            throw new IllegalStateException("Channel streaming zstd decode produced no complete packet frame");
+        }
+        return ChannelStreamingPacketCodec.decodeSinglePacketBatch(nextPacketBatch);
+    }
+
+    @Override
+    public void reset() {
+        this.compressCtx.reset();
+        this.compressCtx.setLevel(this.compressionLevel);
+        this.decompressCtx.reset();
+        this.pendingDecodedBytes = new byte[0];
+    }
+
+    // This function compresses one framed packet batch into a complete zstd stream chunk.
+    private byte[] compressStreaming(byte[] inputBytes) {
+        ByteBuffer sourceBuffer = ByteBuffer.allocateDirect(inputBytes.length);
+        sourceBuffer.put(inputBytes);
+        sourceBuffer.flip();
+
+        ByteBuffer targetBuffer = ByteBuffer.allocateDirect(DIRECT_BUFFER_BYTES);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        while (sourceBuffer.hasRemaining()) {
+            targetBuffer.clear();
+            boolean flushed = this.compressCtx.compressDirectByteBufferStream(targetBuffer, sourceBuffer, EndDirective.CONTINUE);
+            writeBuffer(output, targetBuffer);
+            if (flushed && !sourceBuffer.hasRemaining()) {
+                break;
+            }
+        }
+
+        while (true) {
+            targetBuffer.clear();
+            boolean flushed = this.compressCtx.compressDirectByteBufferStream(targetBuffer, sourceBuffer, EndDirective.END);
+            writeBuffer(output, targetBuffer);
+            if (flushed) {
+                break;
+            }
+        }
+
+        return output.toByteArray();
+    }
+
+    // This function inflates one transport body into newly produced clear-text bytes.
+    private byte[] decompressStreaming(byte[] inputBytes) {
+        ByteBuffer sourceBuffer = ByteBuffer.allocateDirect(inputBytes.length);
+        sourceBuffer.put(inputBytes);
+        sourceBuffer.flip();
+
+        ByteBuffer targetBuffer = ByteBuffer.allocateDirect(DIRECT_BUFFER_BYTES);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        while (sourceBuffer.hasRemaining()) {
+            targetBuffer.clear();
+            this.decompressCtx.decompressDirectByteBufferStream(targetBuffer, sourceBuffer);
+            writeBuffer(output, targetBuffer);
+        }
+
+        return output.toByteArray();
+    }
+
+    // This function appends the latest decoded clear-text bytes into the pending buffer.
+    private void appendDecodedBytes(byte[] decodedBytes) {
+        if (decodedBytes.length == 0) {
+            return;
+        }
+
+        byte[] mergedBytes = Arrays.copyOf(this.pendingDecodedBytes, this.pendingDecodedBytes.length + decodedBytes.length);
+        System.arraycopy(decodedBytes, 0, mergedBytes, this.pendingDecodedBytes.length, decodedBytes.length);
+        this.pendingDecodedBytes = mergedBytes;
+    }
+
+    // This function tries to cut the next complete packet batch from the pending clear-text buffer.
+    private byte[] extractNextPacketBatch() {
+        if (this.pendingDecodedBytes.length == 0) {
+            return null;
+        }
+
+        ChannelStreamingPacketCodec.VarIntRead lengthRead = ChannelStreamingPacketCodec.tryReadVarInt(this.pendingDecodedBytes, 0);
+        if (lengthRead == null) {
+            return null;
+        }
+
+        int packetBatchLength = lengthRead.value();
+        int packetBatchStart = lengthRead.nextIndex();
+        int packetBatchEnd = packetBatchStart + packetBatchLength;
+        if (packetBatchLength < 0 || packetBatchEnd > this.pendingDecodedBytes.length) {
+            return null;
+        }
+
+        byte[] packetBatchBytes = Arrays.copyOfRange(this.pendingDecodedBytes, packetBatchStart, packetBatchEnd);
+        this.pendingDecodedBytes = Arrays.copyOfRange(this.pendingDecodedBytes, packetBatchEnd, this.pendingDecodedBytes.length);
+        return packetBatchBytes;
+    }
+
+    // This function copies the written part of a direct ByteBuffer into the output stream.
+    private static void writeBuffer(ByteArrayOutputStream output, ByteBuffer buffer) {
+        int writtenBytes = buffer.position();
+        if (writtenBytes <= 0) {
+            return;
+        }
+
+        byte[] chunkBytes = new byte[writtenBytes];
+        buffer.flip();
+        buffer.get(chunkBytes);
+        output.write(chunkBytes, 0, chunkBytes.length);
+    }
+
+    // This function turns a nullable byte array into a private immutable working copy.
+    private static byte[] copyBytesOrEmpty(byte[] sourceBytes) {
+        return sourceBytes == null ? new byte[0] : Arrays.copyOf(sourceBytes, sourceBytes.length);
+    }
+}
