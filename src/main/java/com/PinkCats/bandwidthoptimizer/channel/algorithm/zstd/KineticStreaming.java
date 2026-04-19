@@ -1,16 +1,16 @@
 package com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd;
 
 import com.PinkCats.bandwidthoptimizer.Config;
-import com.PinkCats.bandwidthoptimizer.channel.algorithm.AlgorithmInterface;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorithmSession;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.KineticChannel;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.TransportAlgorithm;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.batch.KineticBatchLayer;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.mapping.KineticMapTableLayer;
 
 import java.util.Arrays;
 
 // This algorithm module owns the streaming-zstd implementation used by transport.
-public final class KineticStreaming implements AlgorithmInterface {
+public final class KineticStreaming implements TransportAlgorithm {
     private static final int DEFAULT_COMPRESSION_LEVEL = 4;
 
     @Override

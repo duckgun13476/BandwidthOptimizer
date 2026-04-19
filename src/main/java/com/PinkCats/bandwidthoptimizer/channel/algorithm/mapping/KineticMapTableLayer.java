@@ -1,9 +1,9 @@
 package com.PinkCats.bandwidthoptimizer.channel.algorithm.mapping;
 
-import com.PinkCats.bandwidthoptimizer.channel.algorithm.KineticAlgorithmLayer;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.TransportLayer;
 
 // This placeholder layer is reserved for future map-table or template-matching logic.
-public final class KineticMapTableLayer implements KineticAlgorithmLayer {
+public final class KineticMapTableLayer implements TransportLayer {
 
     @Override
     public byte[] encode(byte[] inputBytes) {

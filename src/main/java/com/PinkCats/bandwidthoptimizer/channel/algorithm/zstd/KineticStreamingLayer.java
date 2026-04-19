@@ -1,6 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd;
 
-import com.PinkCats.bandwidthoptimizer.channel.algorithm.KineticAlgorithmLayer;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.TransportLayer;
 import com.github.luben.zstd.EndDirective;
 import com.github.luben.zstd.ZstdCompressCtx;
 import com.github.luben.zstd.ZstdDecompressCtx;
@@ -10,7 +10,7 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 
-public final class KineticStreamingLayer implements KineticAlgorithmLayer {
+public final class KineticStreamingLayer implements TransportLayer {
 
     private static final int DIRECT_BUFFER_BYTES = 64 * 1024;
 

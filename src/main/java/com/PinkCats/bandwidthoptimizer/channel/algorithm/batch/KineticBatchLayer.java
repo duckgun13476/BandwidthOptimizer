@@ -1,9 +1,9 @@
 package com.PinkCats.bandwidthoptimizer.channel.algorithm.batch;
 
-import com.PinkCats.bandwidthoptimizer.channel.algorithm.KineticAlgorithmLayer;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.TransportLayer;
 
 // This placeholder layer is reserved for future packet batching logic.
-public final class KineticBatchLayer implements KineticAlgorithmLayer {
+public final class KineticBatchLayer implements TransportLayer {
 
     @Override
     public byte[] encode(byte[] inputBytes) {
