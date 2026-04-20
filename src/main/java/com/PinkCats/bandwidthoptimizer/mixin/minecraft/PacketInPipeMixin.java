@@ -1,9 +1,9 @@
 package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
 
 import com.PinkCats.bandwidthoptimizer.channel.access.PacketDecoderFlowAccess;
-import com.PinkCats.bandwidthoptimizer.channel.ChannelCaptureHooks;
+import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
-import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelCapturedFrame;
+import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.PacketDecoder;

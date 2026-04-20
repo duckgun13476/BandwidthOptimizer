@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.channel.mes;
+package com.PinkCats.bandwidthoptimizer.channel.capture;
 
 //Packet Recorder
 public record ChannelCapturedFrame(

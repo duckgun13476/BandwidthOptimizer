@@ -1,27 +1,25 @@
-package com.PinkCats.bandwidthoptimizer.channel;
+package com.PinkCats.bandwidthoptimizer.channel.capture;
 
+import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.Packet;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
-// 这个类是“通道主桩函数入口”。
-// mixin 只负责把时机接进来，真正的抓包逻辑都放在这里，后面透明通用层也会从这里继续扩展。
+
 public final class ChannelCaptureHooks {
 
-    // 保存最近一次出站编码包快照，方便后续调试和继续接传输逻辑。
+
     private static final AtomicReference<ChannelCapturedFrame> LAST_OUTBOUND_FRAME = new AtomicReference<>();
-    // 保存最近一次入站待解码包快照，方便后续调试和继续接传输逻辑。
+
     private static final AtomicReference<ChannelCapturedFrame> LAST_INBOUND_FRAME = new AtomicReference<>();
 
-    // 工具类不允许实例化。
-    private ChannelCaptureHooks() {
-    }
 
-    // 这个函数在出站方向使用。
-    // 作用是在原版 PacketEncoder 写完一个包之后，把这一包刚生成的编码字节保存下来。
+    private ChannelCaptureHooks() {}
+
     public static void captureOutboundEncodedPacket(ChannelHandlerContext context, Packet<?> packet, ByteBuf encodedBuffer, int startIndexInclusive) {
         if (context == null || packet == null || encodedBuffer == null) {
             return;
@@ -33,7 +31,7 @@ public final class ChannelCaptureHooks {
         }
 
         byte[] encodedBytes = copyBytes(encodedBuffer, startIndexInclusive, endIndexExclusive);
-        LAST_OUTBOUND_FRAME.set(new ChannelCapturedFrame(
+        ChannelCapturedFrame frame = new ChannelCapturedFrame(
                 "OUTBOUND",
                 readProtocolName(context),
                 packet.getClass().getName(),
@@ -41,18 +39,18 @@ public final class ChannelCaptureHooks {
                 encodedBytes.length,
                 encodedBytes,
                 System.currentTimeMillis()
-        ));
+        );
+        LAST_OUTBOUND_FRAME.set(frame);
+        ChannelFrameJsonlLogger.appendOutboundFrame(frame);
     }
 
-    // 这个函数在入站方向使用。
-    // 作用是在原版 PacketDecoder 还没把字节还原成 Packet 对象之前，先保存当前待解码字节。
-    public static void captureInboundPreDecode(ChannelHandlerContext context, ByteBuf encodedBuffer) {
+    public static ChannelCapturedFrame beginInboundPreDecode(ChannelHandlerContext context, ByteBuf encodedBuffer) {
         if (context == null || encodedBuffer == null || !encodedBuffer.isReadable()) {
-            return;
+            return null;
         }
 
         byte[] encodedBytes = copyBytes(encodedBuffer, encodedBuffer.readerIndex(), encodedBuffer.writerIndex());
-        LAST_INBOUND_FRAME.set(new ChannelCapturedFrame(
+        return new ChannelCapturedFrame(
                 "INBOUND",
                 readProtocolName(context),
                 "<pre-decode>",
@@ -60,26 +58,45 @@ public final class ChannelCaptureHooks {
                 encodedBytes.length,
                 encodedBytes,
                 System.currentTimeMillis()
-        ));
+        );
     }
 
-    // 这个函数返回最近一次出站快照，给调试和后续传输层使用。
+    public static void finishInboundDecode(ChannelCapturedFrame pendingFrame, List<Object> out, int outputSizeBeforeDecode) {
+        if (pendingFrame == null) {
+            return;
+        }
+
+        ChannelCapturedFrame completedFrame = pendingFrame;
+        if (out != null) {
+            for (int index = outputSizeBeforeDecode; index < out.size(); index++) {
+                Object decodedObject = out.get(index);
+                if (decodedObject instanceof Packet<?> packet) {
+                    completedFrame = pendingFrame.withPacketClassName(packet.getClass().getName());
+                    break;
+                }
+            }
+        }
+
+        LAST_INBOUND_FRAME.set(completedFrame);
+        ChannelFrameJsonlLogger.appendInboundFrame(completedFrame);
+    }
+
+
     public static ChannelCapturedFrame lastOutboundFrame() {
         return LAST_OUTBOUND_FRAME.get();
     }
 
-    // 这个函数返回最近一次入站快照，给调试和后续传输层使用。
+
     public static ChannelCapturedFrame lastInboundFrame() {
         return LAST_INBOUND_FRAME.get();
     }
 
-    // 这个函数清空当前保存的出站和入站快照，方便测试从空状态开始。
+
     public static void clearCapturedFrames() {
         LAST_OUTBOUND_FRAME.set(null);
         LAST_INBOUND_FRAME.set(null);
     }
 
-    // 这个函数把 ByteBuf 指定范围复制成独立 byte[]，避免后面 Netty 复用或释放缓冲区影响我们。
     private static byte[] copyBytes(ByteBuf buffer, int startIndexInclusive, int endIndexExclusive) {
         int length = Math.max(endIndexExclusive - startIndexInclusive, 0);
         byte[] bytes = new byte[length];
@@ -89,14 +106,11 @@ public final class ChannelCaptureHooks {
         return bytes;
     }
 
-    // 这个函数读取当前连接上的协议名，方便知道这份快照属于哪个协议阶段。
     private static String readProtocolName(ChannelHandlerContext context) {
         Object protocol = context.channel().attr(Connection.ATTRIBUTE_PROTOCOL).get();
         return protocol == null ? "null" : String.valueOf(protocol);
     }
 
-    // 这个函数尝试从编码包字节开头读出 packet id。
-    // 如果字节不完整，或者前面的 VarInt 读不出来，就返回 -1。
     private static int tryReadLeadingVarInt(byte[] encodedBytes) {
         int value = 0;
         int position = 0;

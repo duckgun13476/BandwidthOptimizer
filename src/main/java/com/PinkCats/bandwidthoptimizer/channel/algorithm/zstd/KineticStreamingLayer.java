@@ -116,7 +116,7 @@ public final class KineticStreamingLayer implements TransportLayer {
             return null;
         }
 
-        ChannelStreamingPacketCodec.VarIntRead lengthRead = ChannelStreamingPacketCodec.tryReadVarInt(this.pendingDecodedBytes, 0);
+        ChannelStreamingPacketCodec.VarIntRead lengthRead = ChannelStreamingPacketCodec.tryReadVarInt(this.pendingDecodedBytes);
         if (lengthRead == null) {
             return null;
         }

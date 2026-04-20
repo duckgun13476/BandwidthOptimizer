@@ -1,6 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
 
-import com.PinkCats.bandwidthoptimizer.channel.ChannelCaptureHooks;
+import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;

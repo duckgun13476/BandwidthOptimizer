@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel.mes;
 
 import com.PinkCats.bandwidthoptimizer.Old.network.payload.PayloadInspectionSupport;
+import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import net.minecraftforge.fml.loading.FMLEnvironment;
 
 import java.io.BufferedWriter;
