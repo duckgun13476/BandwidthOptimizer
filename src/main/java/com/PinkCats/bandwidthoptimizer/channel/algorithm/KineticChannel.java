@@ -71,13 +71,10 @@ public final class KineticChannel {
     }
 
 
-
-
-
     // Verify
     private static boolean isBatchLayerEnabled() {return false;}
-    private static boolean isMapTableLayerEnabled() {return false;}
-    private static boolean isZstdLayerEnabled() {return true;}
+    private static boolean isMapTableLayerEnabled() {return ChannelTransportLayerRuntimeConfig.isMappingEnabled();}
+    private static boolean isZstdLayerEnabled() {return ChannelTransportLayerRuntimeConfig.isZstdEnabled();}
 
 
     // -> transport frame。
