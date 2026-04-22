@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd;
 
 import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorithmSession;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorithmId;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.ChannelTransportOperationTelemetry;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.TransportAlgorithm;
@@ -15,7 +16,7 @@ public final class KineticStreaming implements TransportAlgorithm {
     private static final int DEFAULT_COMPRESSION_LEVEL = 4;
 
     @Override
-    public String id() {
+    public ChannelTransportAlgorithmId id() {
         return ChannelTransportLayerRuntimeConfig.algorithmId();
     }
 

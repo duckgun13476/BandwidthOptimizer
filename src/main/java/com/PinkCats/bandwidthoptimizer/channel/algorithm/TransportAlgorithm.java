@@ -2,7 +2,6 @@ package com.PinkCats.bandwidthoptimizer.channel.algorithm;
 
 public interface TransportAlgorithm {
 
-    String id();
-
+    ChannelTransportAlgorithmId id();
     ChannelTransportAlgorithmSession createSession();
 }

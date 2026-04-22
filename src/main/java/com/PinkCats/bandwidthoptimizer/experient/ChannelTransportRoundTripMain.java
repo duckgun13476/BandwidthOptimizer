@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.experient;
 
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorithmId;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.KineticChannel;
 
 import java.nio.charset.StandardCharsets;
@@ -15,7 +16,7 @@ public final class ChannelTransportRoundTripMain {
     public static void main(String[] args) {
         ChannelTransportSession senderSession = new ChannelTransportSession();
         ChannelTransportSession receiverSession = new ChannelTransportSession();
-        String algorithmId = senderSession.algorithmId();
+        ChannelTransportAlgorithmId algorithmId = senderSession.algorithmId();
         List<TestCase> testCases = List.of(
                 new TestCase("compressible-large", repeatedBytes(), true),
                 new TestCase("mixed-small", utf8Bytes("channel-transport"), false),
@@ -40,7 +41,7 @@ public final class ChannelTransportRoundTripMain {
     private static void verifyRoundTrip(
             ChannelTransportSession senderSession,
             ChannelTransportSession receiverSession,
-            String algorithmId,
+            ChannelTransportAlgorithmId algorithmId,
             TestCase testCase
     ) {
         var wrappedFrame = KineticChannel.processOutboundPacket(senderSession, testCase.packetBytes());
@@ -57,7 +58,7 @@ public final class ChannelTransportRoundTripMain {
             throw new IllegalStateException("Round trip payload mismatch for " + testCase.name());
         }
 
-        if (testCase.expectShrink() && algorithmUsesZstd(algorithmId)
+        if (testCase.expectShrink() && algorithmId.usesZstd()
                 && wrappedFrame.zstdBodyBytes() >= testCase.packetBytes().length) {
             throw new IllegalStateException(
                     "Expected transport body shrink for " + testCase.name()
@@ -93,10 +94,6 @@ public final class ChannelTransportRoundTripMain {
             return "n/a";
         }
         return String.format(Locale.ROOT, "%.3fx", (double) currentBytes / (double) baselineBytes);
-    }
-
-    private static boolean algorithmUsesZstd(String algorithmId) {
-        return algorithmId != null && algorithmId.contains("zstd");
     }
 
 

@@ -1,8 +1,10 @@
 package com.PinkCats.bandwidthoptimizer.channel.algorithm.mes;
 
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorithmId;
+
 // packet report.
 public record ChannelTransportOperationTelemetry(
-        String algorithmId,
+        ChannelTransportAlgorithmId algorithmId,
         boolean mappingEnabled,
         boolean zstdEnabled,
         int mappingStageBytes,
@@ -16,7 +18,7 @@ public record ChannelTransportOperationTelemetry(
 ) {
 
     public static ChannelTransportOperationTelemetry passthrough(
-            String algorithmId,
+            ChannelTransportAlgorithmId algorithmId,
             boolean mappingEnabled,
             boolean zstdEnabled,
             int mappingStageBytes

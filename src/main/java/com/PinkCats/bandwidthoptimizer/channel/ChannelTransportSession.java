@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorithmSession;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorithmId;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorithms;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.ChannelTransportOperationTelemetry;
@@ -10,7 +11,6 @@ import java.util.Arrays;
 
 // Log and manage session
 public final class ChannelTransportSession {
-
 
     private final TransportAlgorithm algorithm = ChannelTransportAlgorithms.defaultAlgorithm();
     private final ChannelTransportAlgorithmSession outboundSession = this.algorithm.createSession();
@@ -65,5 +65,8 @@ public final class ChannelTransportSession {
     public record PacketResult(byte[] bytes, ChannelTransportOperationTelemetry telemetry) {
     }
 
-    public String algorithmId() {return this.algorithm.id();}
+
+    public ChannelTransportAlgorithmId algorithmId() {
+        return this.algorithm.id();
+    }
 }
