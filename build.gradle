@@ -270,13 +270,6 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
 }
 
-tasks.register('runLocalNetworkTest', JavaExec) {
-    group = 'verification'
-    description = 'Runs the local packet encode/decode round trip without starting Minecraft.'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.PinkCats.bandwidthoptimizer.old.network.LocalNetworkRoundTripMain'
-}
-
 tasks.register('runChannelSimulate', JavaExec) {
     group = 'verification'
     description = 'Runs the single-process vanilla packet encode/compress/decode/handle simulator.'
@@ -296,27 +289,6 @@ tasks.register('runChannelTransportRoundTrip', JavaExec) {
     description = 'Verifies the extracted channel transport algorithm and frame codec without touching the Old framework.'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.PinkCats.bandwidthoptimizer.experient.ChannelTransportRoundTripMain'
-}
-
-// 这个函数把本地测试服改成离线校验模式，避免 userdev 客户端自动进服时被正版认证拦住。
-def configureLocalTestServerProperties(File propertiesFile) {
-    Properties properties = new Properties()
-    if (propertiesFile.exists()) {
-        propertiesFile.withInputStream { input ->
-            properties.load(input)
-        }
-    } else {
-        propertiesFile.parentFile.mkdirs()
-    }
-
-    properties.setProperty('online-mode', 'false')
-    properties.setProperty('enforce-secure-profile', 'false')
-    properties.setProperty('server-ip', '')
-    properties.setProperty('server-port', '25565')
-
-    propertiesFile.withOutputStream { output ->
-        properties.store(output, 'BandwidthOptimizer local packet-capture test server')
-    }
 }
 
 // 这个函数启动一个现有的 Gradle run 任务，并把外层启动日志单独落盘，方便排查启动阶段错误。
@@ -419,141 +391,6 @@ def waitForLogMarker(File logFile, List<String> successMarkers, List<String> fai
     }
 
     throw new GradleException("${stageLabel} 超时。请检查 ${logFile.absolutePath}")
-}
-
-// 这个函数等待 jsonl 出现内容，用来确认客户端和服务端之间确实已经产生了网络流量。
-def waitForCapturedTraffic(File sendJsonl, File receiveJsonl, long timeoutMillis) {
-    long deadline = System.currentTimeMillis() + timeoutMillis
-
-    while (System.currentTimeMillis() < deadline) {
-        long sendLength = sendJsonl.exists() ? sendJsonl.length() : 0L
-        long receiveLength = receiveJsonl.exists() ? receiveJsonl.length() : 0L
-        if (sendLength > 0L || receiveLength > 0L) {
-            return
-        }
-        sleep(1000)
-    }
-
-    throw new GradleException('客户端启动后仍未捕获到任何 jsonl 流量。')
-}
-
-tasks.register('runAll') {
-    group = 'application'
-    description = 'Starts the Forge server and client in separate processes for packet-capture testing.'
-
-    doLast {
-        // runServer 和 runClient 都是前台常驻任务，不能靠 dependsOn 在同一个 Gradle 进程里同时跑。
-        // 这里额外起两个外部进程，但它们执行的仍然是现有的 runServer / runClient 任务本身。
-        String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
-        boolean isWindows = osName.contains('windows')
-        String projectDirPath = project.projectDir.absolutePath
-        String wrapperPath = new File(project.projectDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
-
-        Closure launchExistingRunTask = { String taskName ->
-            if (isWindows) {
-                project.exec {
-                    commandLine 'powershell', '-NoProfile', '-Command',
-                            "Start-Process -FilePath '${wrapperPath}' -ArgumentList '${taskName}' -WorkingDirectory '${projectDirPath}'"
-                }
-            } else {
-                project.exec {
-                    commandLine 'sh', '-c', "'${wrapperPath}' ${taskName} >/dev/null 2>&1 &"
-                }
-            }
-        }
-
-        if (isWindows) {
-            // 先启动现有的 runServer，再稍等片刻启动现有的 runClient，方便本地直接连入测试。
-            launchExistingRunTask('runServer')
-
-            sleep(3000)
-
-            launchExistingRunTask('runClient')
-        } else {
-            // 非 Windows 环境同样只启动现有的 runServer / runClient 任务。
-            launchExistingRunTask('runServer')
-
-            sleep(3000)
-
-            launchExistingRunTask('runClient')
-        }
-
-        println "runAll 已启动服务端和客户端。"
-        println "服务端工作目录: ${project.file('run/server').absolutePath}"
-        println "客户端工作目录: ${project.file('run/client').absolutePath}"
-    }
-}
-
-tasks.named('runAll').configure {
-    description = 'Starts the Forge server, waits for readiness, then quick-plays the client into localhost for packet capture.'
-    actions.clear()
-
-    doLast {
-        // 这个配置会覆盖旧的 runAll 行为，先等服务端 ready，再让客户端自动直连本地测试服。
-        String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
-        boolean isWindows = osName.contains('windows')
-        File projectDirFile = project.projectDir
-        String wrapperPath = new File(projectDirFile, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
-
-        File serverDir = project.file('run/server')
-        File clientDir = project.file('run/client')
-        File serverLatestLog = project.file('run/server/logs/latest.log')
-        File clientLatestLog = project.file('run/client/logs/latest.log')
-        File serverTaskLog = project.file('run/runall-server-task.log')
-        File clientTaskLog = project.file('run/runall-client-task.log')
-        File clientSendJsonl = project.file('run/client/send.jsonl')
-        File clientReceiveJsonl = project.file('run/client/receive.jsonl')
-        File serverProperties = project.file('run/server/server.properties')
-
-        configureLocalTestServerProperties(serverProperties)
-
-        println 'runAll: 正在启动本地测试服务端。'
-        Process serverProcess = startExistingRunTaskProcess(projectDirFile, isWindows, wrapperPath, 'runServer', buildExperientEnabledGradleArgs(), null, serverTaskLog, 'runServer')
-        waitForLogMarker(
-                serverLatestLog,
-                ['Done ('],
-                ['FAILED', 'Encountered an unexpected exception', 'Perhaps a server is already running on that port'],
-                180000L,
-                '服务端启动'
-        )
-
-        List<String> clientGradleArgs = buildExperientAutoConnectGradleArgs('127.0.0.1:25565', 'BO RunAll Local', 20L)
-
-        println 'runAll: 服务端已就绪，正在启动客户端，并由 experient 自动发起单次直连 127.0.0.1:25565。'
-        Process clientProcess = startExistingRunTaskProcess(
-                projectDirFile,
-                isWindows,
-                wrapperPath,
-                'runClient',
-                clientGradleArgs,
-                null,
-                clientTaskLog,
-                'runClient'
-        )
-
-        waitForLogMarker(
-                clientLatestLog,
-                ['Connecting to 127.0.0.1, 25565', 'Connecting to 127.0.0.1:25565'],
-                ['Failed to connect to the server', 'disconnect.genericReason', 'Connection refused', 'Internal Exception'],
-                180000L,
-                '客户端连接'
-        )
-
-        waitForCapturedTraffic(clientSendJsonl, clientReceiveJsonl, 180000L)
-
-        println 'runAll: 客户端已发起连接，并且 jsonl 已开始写入。'
-        println "服务端目录: ${serverDir.absolutePath}"
-        println "客户端目录: ${clientDir.absolutePath}"
-        println "服务端外层任务日志: ${serverTaskLog.absolutePath}"
-        println "客户端外层任务日志: ${clientTaskLog.absolutePath}"
-
-        if (!serverProcess.isAlive()) {
-            println 'runAll: 服务端外层任务进程已退出，请优先查看 run/runall-server-task.log。'
-        }
-        if (!clientProcess.isAlive()) {
-            println 'runAll: 客户端外层任务进程已退出，请优先查看 run/runall-client-task.log。'
-        }
-    }
 }
 
 // 这个函数专门给 runAll 准备一个独立测试世界，避免旧 world 的 session.lock 干扰本次启动。
@@ -766,9 +603,9 @@ def forceStopRunAllProcesses(Project projectRef, File projectDirFile, boolean is
     }
 }
 
-tasks.named('runAll').configure {
+tasks.register('runAll') {
+    group = 'application'
     description = 'Starts the Forge server, waits for readiness, then lets the experient client auto-connect once into localhost and verify four-way jsonl traffic.'
-    actions.clear()
 
     doLast {
         // 这是 runAll 的最终自举流程：清理旧进程、清理旧探针、启动新服务端、自动进服、验证四向抓包。
@@ -776,6 +613,10 @@ tasks.named('runAll').configure {
         boolean isWindows = osName.contains('windows')
         File projectDirFile = project.projectDir
         String wrapperPath = new File(projectDirFile, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        // 这几个参数专门给 transport 观察窗口使用，便于固定抓包时长后自动收尾。
+        long observeSeconds = readRunAllLongProperty(project, 'boRunAllObserveSeconds', 0L)
+        long settleMillis = readRunAllLongProperty(project, 'boRunAllSettleMillis', 3000L)
+        long settleTimeoutMillis = readRunAllLongProperty(project, 'boRunAllSettleTimeoutMillis', 15000L)
 
         File serverDir = project.file('run/server')
         File clientDir = project.file('run/client')
@@ -859,6 +700,20 @@ tasks.named('runAll').configure {
         }
 
         println 'runAll: 正在等待客户端退出，退出后会自动关闭服务端。'
+        // 这个分支把 runAll 变成固定观察窗口，给 transport 实验预留一段稳定抓包时间。
+        if (observeSeconds > 0L) {
+            println "runAll: 正在观察 transport ${observeSeconds} 秒，到时后会强制结束客户端和服务端。"
+            sleep(observeSeconds * 1000L)
+            forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
+            waitForFilesToSettle(
+                    [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl],
+                    settleMillis,
+                    settleTimeoutMillis
+            )
+            println 'runAll: 观察窗口已经结束，客户端和服务端已被强制关闭。'
+            return
+        }
+
         clientProcess.waitFor()
 
         println 'runAll: 检测到客户端已退出，正在关闭服务端。'
