@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -48,7 +49,10 @@ public final class ChannelTransportRuntimeGuard {
             transportAvailable = true;
             unavailableReason = "";
             Bandwidthoptimizer.LOGGER.info(
-                    "[Transport] Zstd runtime ready. probeRawBytes={}, probeTransportBodyBytes={}, ratio={}",
+                    "[Transport] Runtime ready. algorithmId={}, mapEnabled={}, zstdEnabled={}, probeRawBytes={}, probeTransportBodyBytes={}, ratio={}",
+                    probeSession.algorithmId(),
+                    ChannelTransportLayerRuntimeConfig.isMappingEnabled(),
+                    ChannelTransportLayerRuntimeConfig.isZstdEnabled(),
                     probeBytes.length,
                     encodedBytes.length,
                     ratioText(encodedBytes.length, probeBytes.length)
@@ -57,7 +61,8 @@ public final class ChannelTransportRuntimeGuard {
             transportAvailable = false;
             unavailableReason = throwable.getClass().getSimpleName() + ": " + throwable.getMessage();
             Bandwidthoptimizer.LOGGER.warn(
-                    "[Transport] Zstd runtime unavailable, transparent transport disabled. reason={}",
+                    "[Transport] Runtime unavailable, transparent transport disabled. algorithmId={}, reason={}",
+                    ChannelTransportLayerRuntimeConfig.algorithmId(),
                     unavailableReason,
                     throwable
             );
