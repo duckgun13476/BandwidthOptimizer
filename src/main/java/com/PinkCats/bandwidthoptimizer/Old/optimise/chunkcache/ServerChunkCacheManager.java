@@ -151,7 +151,7 @@ public final class ServerChunkCacheManager {
         ResourceLocation dimensionId = level.dimension().location();
         CacheKey key = new CacheKey(dimensionId, chunkPos.toLong());
         byte[] encodedPacketBytes = ClientboundPlayPacketCodec.encodePacket(packet);
-        List<ServerPlayer> trackedPlayers = ((ServerChunkCache) level.getChunkSource()).chunkMap.getPlayers(chunkPos, false);
+        List<ServerPlayer> trackedPlayers = level.getChunkSource().chunkMap.getPlayers(chunkPos, false);
 
         for (ServerPlayer player : trackedPlayers) {
             PlayerState state = STATES.get(player.getUUID());
