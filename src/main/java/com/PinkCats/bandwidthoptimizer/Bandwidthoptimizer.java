@@ -2,9 +2,9 @@ package com.PinkCats.bandwidthoptimizer;
 
 import com.PinkCats.bandwidthoptimizer.command.PacketTrafficCommand;
 import com.PinkCats.bandwidthoptimizer.Old.network.ModNetwork;
-import com.PinkCats.bandwidthoptimizer.Old.network.runtime.ZstdRuntimeSupport;
 import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.ZstdRuntimeSupport;
 import com.mojang.logging.LogUtils;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;

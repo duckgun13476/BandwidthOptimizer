@@ -1,9 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.Old.network.message;
 
-import com.PinkCats.bandwidthoptimizer.Old.network.client.ClientAttachmentPacketHandler;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkEvent;
 
 import java.util.function.Supplier;
@@ -33,10 +30,7 @@ public record ServerToClientAttachmentPacket(
 
     public static void handle(ServerToClientAttachmentPacket packet, Supplier<NetworkEvent.Context> contextSupplier) {
         NetworkEvent.Context context = contextSupplier.get();
-        context.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(
-                Dist.CLIENT,
-                () -> () -> ClientAttachmentPacketHandler.handle(packet)
-        ));
+        // 旧 attachment 客户端处理器已经随 legacy batch 算法删除，这里保留消息结构给命令层做最小兼容占位。
         context.setPacketHandled(true);
     }
 }

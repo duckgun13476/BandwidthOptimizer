@@ -6,7 +6,7 @@ import com.PinkCats.bandwidthoptimizer.Old.network.message.ClientToServerChunkCa
 import com.PinkCats.bandwidthoptimizer.Old.network.message.ClientboundChunkCacheDeltaPacket;
 import com.PinkCats.bandwidthoptimizer.Old.network.message.ClientboundChunkCacheRefreshPacket;
 import com.PinkCats.bandwidthoptimizer.Old.network.message.ClientboundChunkCacheUsePacket;
-import com.PinkCats.bandwidthoptimizer.Old.network.algorithm.play.PlayPacketReplaySupport;
+import com.PinkCats.bandwidthoptimizer.chunk.packet.ClientboundPlayPacketCodec;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
@@ -75,7 +75,7 @@ public final class ServerChunkCacheManager {
                 return true;
             }
 
-            byte[] encodedPacketBytes = PlayPacketReplaySupport.encodePacket(packet);
+            byte[] encodedPacketBytes = ClientboundPlayPacketCodec.encodePacket(packet);
             ClientboundChunkCacheRefreshPacket refreshPacket = new ClientboundChunkCacheRefreshPacket(state.sessionId, dimensionId, targetChunk.x, targetChunk.z, encodedPacketBytes);
             ModNetwork.sendChunkCacheRefreshToPlayer(player, refreshPacket);
             state.entries.put(key, new ChunkEntry(now, now, encodedPacketBytes.length));
@@ -150,7 +150,7 @@ public final class ServerChunkCacheManager {
         long now = System.currentTimeMillis();
         ResourceLocation dimensionId = level.dimension().location();
         CacheKey key = new CacheKey(dimensionId, chunkPos.toLong());
-        byte[] encodedPacketBytes = PlayPacketReplaySupport.encodePacket(packet);
+        byte[] encodedPacketBytes = ClientboundPlayPacketCodec.encodePacket(packet);
         List<ServerPlayer> trackedPlayers = ((ServerChunkCache) level.getChunkSource()).chunkMap.getPlayers(chunkPos, false);
 
         for (ServerPlayer player : trackedPlayers) {
@@ -194,7 +194,7 @@ public final class ServerChunkCacheManager {
                 null,
                 null
         );
-        byte[] encodedPacketBytes = PlayPacketReplaySupport.encodePacket(rebuiltPacket);
+        byte[] encodedPacketBytes = ClientboundPlayPacketCodec.encodePacket(rebuiltPacket);
         return new ClientboundChunkCacheRefreshPacket(sessionId, dimensionId, chunkX, chunkZ, encodedPacketBytes);
     }
 

@@ -8,7 +8,7 @@ import com.PinkCats.bandwidthoptimizer.Old.network.message.ClientToServerChunkCa
 import com.PinkCats.bandwidthoptimizer.Old.network.message.ClientboundChunkCacheDeltaPacket;
 import com.PinkCats.bandwidthoptimizer.Old.network.message.ClientboundChunkCacheRefreshPacket;
 import com.PinkCats.bandwidthoptimizer.Old.network.message.ClientboundChunkCacheUsePacket;
-import com.PinkCats.bandwidthoptimizer.Old.network.algorithm.play.PlayPacketReplaySupport;
+import com.PinkCats.bandwidthoptimizer.chunk.packet.ClientboundPlayPacketCodec;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.Connection;
@@ -175,7 +175,7 @@ public final class ClientChunkCacheManager {
         if (listener == null) {
             return;
         }
-        Packet<ClientGamePacketListener> packet = PlayPacketReplaySupport.decodePacket(encodedPacketBytes);
+        Packet<ClientGamePacketListener> packet = ClientboundPlayPacketCodec.decodePacket(encodedPacketBytes);
         Connection connection = listener.getConnection();
         try {
             ((ConnectionReplayInvokerMixin) (Object) connection).bandwidthoptimizer$invokeChannelRead0(null, packet);

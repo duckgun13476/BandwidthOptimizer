@@ -1,8 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.Old.network.message;
 
-import com.PinkCats.bandwidthoptimizer.Old.network.algorithm.play.ServerOptimizationTelemetryManager;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
 
 import java.util.function.Supplier;
@@ -22,12 +20,7 @@ public record ClientToServerOptimizationTelemetrySubscriptionPacket(boolean subs
             Supplier<NetworkEvent.Context> contextSupplier
     ) {
         NetworkEvent.Context context = contextSupplier.get();
-        context.enqueueWork(() -> {
-            ServerPlayer sender = context.getSender();
-            if (sender != null) {
-                ServerOptimizationTelemetryManager.setSubscribed(sender, packet.subscribed());
-            }
-        });
+        // 旧 telemetry 订阅链已经和被删除的 legacy transport 算法一起下线，这里只保留空处理壳避免遗留引用断编译。
         context.setPacketHandled(true);
     }
 }

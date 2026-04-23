@@ -7,6 +7,8 @@ import java.io.IOException
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.Locale
 import java.util.Properties
 import java.util.concurrent.TimeUnit
@@ -131,6 +133,29 @@ minecraft {
                     }
                 }
             }
+
+            // 这组属性把 runAll 透传下来的 transport 实验开关继续桥接到真实游戏进程。
+            if ((project.findProperty('boExperimentalTransport') ?: 'false').toString().toBoolean()) {
+                property 'bandwidthoptimizer.experimentalTransport', 'true'
+            }
+            if (project.hasProperty('boTransportMappingEnabled')) {
+                property 'bandwidthoptimizer.transport.mappingEnabled', project.property('boTransportMappingEnabled').toString()
+            }
+            if (project.hasProperty('boTransportZstdEnabled')) {
+                property 'bandwidthoptimizer.transport.zstdEnabled', project.property('boTransportZstdEnabled').toString()
+            }
+            if (project.hasProperty('boTransportBatchEnabled')) {
+                property 'bandwidthoptimizer.transport.batchEnabled', project.property('boTransportBatchEnabled').toString()
+            }
+            if (project.hasProperty('boTransportBatchWindowMillis')) {
+                property 'bandwidthoptimizer.transport.batchWindowMillis', project.property('boTransportBatchWindowMillis').toString()
+            }
+            if (project.hasProperty('boTransportPacketIdMappingEnabled')) {
+                property 'bandwidthoptimizer.transport.packetIdMappingEnabled', project.property('boTransportPacketIdMappingEnabled').toString()
+            }
+            if (project.hasProperty('boTransportTelemetryDumpFileName')) {
+                property 'bandwidthoptimizer.transport.telemetryDumpFileName', project.property('boTransportTelemetryDumpFileName').toString()
+            }
         }
 
         server {
@@ -140,6 +165,27 @@ minecraft {
             property 'forge.enabledGameTestNamespaces', mod_id
             if ((project.findProperty('boExperientEnabled') ?: 'false').toString().toBoolean()) {
                 property 'bandwidthoptimizer.experient.enabled', 'true'
+            }
+            if ((project.findProperty('boExperimentalTransport') ?: 'false').toString().toBoolean()) {
+                property 'bandwidthoptimizer.experimentalTransport', 'true'
+            }
+            if (project.hasProperty('boTransportMappingEnabled')) {
+                property 'bandwidthoptimizer.transport.mappingEnabled', project.property('boTransportMappingEnabled').toString()
+            }
+            if (project.hasProperty('boTransportZstdEnabled')) {
+                property 'bandwidthoptimizer.transport.zstdEnabled', project.property('boTransportZstdEnabled').toString()
+            }
+            if (project.hasProperty('boTransportBatchEnabled')) {
+                property 'bandwidthoptimizer.transport.batchEnabled', project.property('boTransportBatchEnabled').toString()
+            }
+            if (project.hasProperty('boTransportBatchWindowMillis')) {
+                property 'bandwidthoptimizer.transport.batchWindowMillis', project.property('boTransportBatchWindowMillis').toString()
+            }
+            if (project.hasProperty('boTransportPacketIdMappingEnabled')) {
+                property 'bandwidthoptimizer.transport.packetIdMappingEnabled', project.property('boTransportPacketIdMappingEnabled').toString()
+            }
+            if (project.hasProperty('boTransportTelemetryDumpFileName')) {
+                property 'bandwidthoptimizer.transport.telemetryDumpFileName', project.property('boTransportTelemetryDumpFileName').toString()
             }
             args '--nogui'
         }
@@ -361,10 +407,31 @@ def buildExperientEnabledGradleArgs() {
     return ['-PboExperientEnabled=true']
 }
 
-// 这个函数把 experient 自动连服需要的 Gradle 属性组装成参数列表，供 runAll 系列重复复用。
-def buildExperientAutoConnectGradleArgs(String address, String serverName, long delayTicks) {
+// 这个函数把 runAll 需要透传给子进程的 transport 实验属性转成 Gradle 参数，避免客户端和服务端看到的开关不一致。
+def appendOptionalRunAllProperty(List<String> args, Project projectRef, String propertyName) {
+    if (projectRef.hasProperty(propertyName)) {
+        args.add("-P${propertyName}=${projectRef.property(propertyName).toString()}")
+    }
+}
+
+// 这个函数组装 runAll 公共 Gradle 参数，统一包含 experient 和 transport 实验开关。
+def buildRunAllSharedGradleArgs(Project projectRef) {
     List<String> args = []
     args.addAll(buildExperientEnabledGradleArgs())
+    appendOptionalRunAllProperty(args, projectRef, 'boExperimentalTransport')
+    appendOptionalRunAllProperty(args, projectRef, 'boTransportMappingEnabled')
+    appendOptionalRunAllProperty(args, projectRef, 'boTransportZstdEnabled')
+    appendOptionalRunAllProperty(args, projectRef, 'boTransportBatchEnabled')
+    appendOptionalRunAllProperty(args, projectRef, 'boTransportBatchWindowMillis')
+    appendOptionalRunAllProperty(args, projectRef, 'boTransportPacketIdMappingEnabled')
+    appendOptionalRunAllProperty(args, projectRef, 'boTransportTelemetryDumpFileName')
+    return args
+}
+
+// 这个函数把 experient 自动连服需要的 Gradle 属性组装成参数列表，供 runAll 系列重复复用。
+def buildExperientAutoConnectGradleArgs(Project projectRef, String address, String serverName, long delayTicks) {
+    List<String> args = []
+    args.addAll(buildRunAllSharedGradleArgs(projectRef))
     args.addAll([
             "-PboExperientAutoConnectAddress=${address}",
             "-PboExperientAutoConnectName=${serverName}",
@@ -603,6 +670,201 @@ def forceStopRunAllProcesses(Project projectRef, File projectDirFile, boolean is
     }
 }
 
+// 这个函数给 transport 报告任务组装单轮 runAll 参数，统一固定 zstd 和 telemetry dump，并允许场景覆盖其它算法开关。
+def buildTransportReportScenarioGradleArgs(Project projectRef, Map<String, String> scenarioProperties) {
+    List<String> args = ['--console=plain', '-PboExperimentalTransport=true', '-PboTransportZstdEnabled=true']
+    String observeSeconds = projectRef.findProperty('boRunAllObserveSeconds')?.toString()?.trim()
+    args.add("-PboRunAllObserveSeconds=${(observeSeconds == null || observeSeconds.isEmpty()) ? '15' : observeSeconds}")
+    appendOptionalRunAllProperty(args, projectRef, 'boRunAllSettleMillis')
+    appendOptionalRunAllProperty(args, projectRef, 'boRunAllSettleTimeoutMillis')
+    args.add("-PboTransportTelemetryDumpFileName=transport-telemetry-dump.properties")
+
+    String batchWindowMillis = projectRef.findProperty('boTransportBatchWindowMillis')?.toString()?.trim()
+    if (batchWindowMillis == null || batchWindowMillis.isEmpty()) {
+        batchWindowMillis = '10'
+    }
+    args.add("-PboTransportBatchWindowMillis=${batchWindowMillis}")
+
+    scenarioProperties.each { String key, String value ->
+        args.add("-P${key}=${value}")
+    }
+    return args
+}
+
+// 这个函数等待嵌套的 runAll 进程结束；若超时则主动杀掉，避免某个场景卡住整轮对比。
+def waitForScenarioProcess(Process process, long timeoutMillis) {
+    if (process.waitFor(timeoutMillis, TimeUnit.MILLISECONDS)) {
+        return [timedOut: false, exitCode: process.exitValue()]
+    }
+
+    process.destroy()
+    process.waitFor(5L, TimeUnit.SECONDS)
+    if (process.isAlive()) {
+        process.destroyForcibly()
+        process.waitFor(5L, TimeUnit.SECONDS)
+    }
+    return [timedOut: true, exitCode: -1]
+}
+
+// 这个函数把单轮场景产出的 telemetry dump 复制到报告目录里，避免下一轮 runAll 清理工作目录时把上一轮结果覆盖掉。
+def copyScenarioArtifactIfExists(File sourceFile, File targetFile) {
+    if (!sourceFile.exists()) {
+        return false
+    }
+
+    targetFile.parentFile.mkdirs()
+    Files.copy(sourceFile.toPath(), targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+    return true
+}
+
+// 这个函数让 test 包里的默认场景列表先导出成 tsv，后续自动测试任务只需要读取这份清单。
+def writeDefaultTransportReportScenarioList(Project projectRef, File scenarioListFile) {
+    scenarioListFile.parentFile.mkdirs()
+    projectRef.javaexec {
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelTransportReportScenarioListMain'
+        args '--output', scenarioListFile.absolutePath
+    }
+}
+
+// 这个函数读取 test 包导出的默认场景清单，把每一行转成 Gradle 任务后续要执行的场景定义。
+def readTransportReportScenarios(File scenarioListFile) {
+    List<String> lines = Files.readAllLines(scenarioListFile.toPath(), StandardCharsets.UTF_8)
+    List<Map<String, String>> scenarios = []
+    lines.drop(1).each { String line ->
+        if (line == null || line.isBlank()) {
+            return
+        }
+
+        List<String> columns = line.split('\t', -1).toList()
+        if (columns.size() < 6) {
+            throw new GradleException("Transport report scenario line is invalid: ${line}")
+        }
+
+        scenarios.add([
+                id                            : columns[0],
+                displayName                   : columns[1],
+                baseline                      : columns[2],
+                boTransportMappingEnabled     : columns[3],
+                boTransportBatchEnabled       : columns[4],
+                boTransportPacketIdMappingEnabled: columns[5]
+        ])
+    }
+    return scenarios
+}
+
+tasks.register('runChannelTransportReport') {
+    group = 'verification'
+    description = 'Runs multiple transport algorithm scenarios on top of runAll, then dumps a consolidated txt compression report.'
+
+    doLast {
+        // 这是 transport 自动测试总入口：依次跑四个固定场景，保留每轮 dump 和控制台日志，最后汇总成一个 txt 报告。
+        String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+        boolean isWindows = osName.contains('windows')
+        File projectDirFile = project.projectDir
+        String wrapperPath = new File(projectDirFile, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        long scenarioTimeoutMillis = readRunAllLongProperty(project, 'boTransportReportScenarioTimeoutMillis', 480000L)
+        long scenarioRetryCount = readRunAllLongProperty(project, 'boTransportReportScenarioRetries', 1L)
+        File reportDir = project.file('run/transport-report')
+        File scenarioListFile = new File(reportDir, 'scenario-defaults.tsv')
+        File manifestFile = new File(reportDir, 'scenario-manifest.tsv')
+        File reportFile = new File(reportDir, 'transport-algorithm-report.txt')
+        File scenarioDumpFileServer = project.file('run/server/transport-telemetry-dump.properties')
+        File scenarioDumpFileClient = project.file('run/client/transport-telemetry-dump.properties')
+
+        List<Map<String, String>> scenarios = [
+                [id: 'sza', displayName: 'SZA 仅 Zstd', baseline: 'true', boTransportMappingEnabled: 'false', boTransportBatchEnabled: 'false', boTransportPacketIdMappingEnabled: 'false'],
+                [id: 'tda_sza', displayName: 'TDA_SZA 模板字典 + Zstd', baseline: 'false', boTransportMappingEnabled: 'true', boTransportBatchEnabled: 'false', boTransportPacketIdMappingEnabled: 'false'],
+                [id: 'batch_sza', displayName: 'BATCH_SZA Batch + Zstd', baseline: 'false', boTransportMappingEnabled: 'false', boTransportBatchEnabled: 'true', boTransportPacketIdMappingEnabled: 'false'],
+                [id: 'batch_header_sza', displayName: 'BATCH_HM_SZA Batch + 包头映射 + Zstd', baseline: 'false', boTransportMappingEnabled: 'false', boTransportBatchEnabled: 'true', boTransportPacketIdMappingEnabled: 'true']
+        ]
+
+        delete(reportDir)
+        reportDir.mkdirs()
+        writeDefaultTransportReportScenarioList(project, scenarioListFile)
+        scenarios = readTransportReportScenarios(scenarioListFile)
+
+        manifestFile.withWriter('UTF-8') { writer ->
+            writer.writeLine('id\tdisplayName\tbaseline\tmappingEnabled\tbatchEnabled\tpacketIdMappingEnabled\tlogPath\tserverDumpPath\tclientDumpPath\texitCode\ttimedOut')
+        }
+
+        scenarios.each { Map<String, String> scenario ->
+            File scenarioLogFile = new File(reportDir, "${scenario.id}.console.log")
+            File archivedServerDumpFile = new File(reportDir, "${scenario.id}.server.dump.properties")
+            File archivedClientDumpFile = new File(reportDir, "${scenario.id}.client.dump.properties")
+            Map<String, Object> scenarioResult = [timedOut: true, exitCode: -1]
+            boolean serverDumpCopied = false
+            boolean clientDumpCopied = false
+            long totalAttempts = scenarioRetryCount + 1L
+
+            for (long attemptIndex = 1L; attemptIndex <= totalAttempts; attemptIndex++) {
+                clearRunAllProbeFiles([scenarioLogFile, scenarioDumpFileServer, scenarioDumpFileClient, archivedServerDumpFile, archivedClientDumpFile])
+
+            println "runChannelTransportReport: 正在执行场景 ${scenario.displayName}"
+            List<String> scenarioArgs = buildTransportReportScenarioGradleArgs(project, [
+                    boTransportMappingEnabled         : scenario.boTransportMappingEnabled,
+                    boTransportBatchEnabled           : scenario.boTransportBatchEnabled,
+                    boTransportPacketIdMappingEnabled : scenario.boTransportPacketIdMappingEnabled
+            ])
+            Process scenarioProcess = startExistingRunTaskProcess(
+                    projectDirFile,
+                    isWindows,
+                    wrapperPath,
+                    'runAll',
+                    scenarioArgs,
+                    null,
+                    scenarioLogFile,
+                    "report-${scenario.id}-attempt${attemptIndex}"
+            )
+            scenarioResult = waitForScenarioProcess(scenarioProcess, scenarioTimeoutMillis)
+            stopExistingRunAllProcesses(project, projectDirFile, isWindows)
+            sleep(2000)
+            serverDumpCopied = copyScenarioArtifactIfExists(scenarioDumpFileServer, archivedServerDumpFile)
+            clientDumpCopied = copyScenarioArtifactIfExists(scenarioDumpFileClient, archivedClientDumpFile)
+
+                if ((scenarioResult.exitCode as int) == 0 && !scenarioResult.timedOut && serverDumpCopied && clientDumpCopied) {
+                    break
+                }
+
+                if (attemptIndex < totalAttempts) {
+                    println "runChannelTransportReport: 场景 ${scenario.displayName} 第 ${attemptIndex} 次未拿到完整结果，准备重试。"
+                }
+            }
+
+            manifestFile.append(
+                    [
+                            scenario.id,
+                            scenario.displayName,
+                            scenario.baseline,
+                            scenario.boTransportMappingEnabled,
+                            scenario.boTransportBatchEnabled,
+                            scenario.boTransportPacketIdMappingEnabled,
+                            scenarioLogFile.absolutePath,
+                            serverDumpCopied ? archivedServerDumpFile.absolutePath : '',
+                            clientDumpCopied ? archivedClientDumpFile.absolutePath : '',
+                            scenarioResult.exitCode.toString(),
+                            scenarioResult.timedOut.toString()
+                    ].join('\t') + System.lineSeparator(),
+                    'UTF-8'
+            )
+
+            if (scenarioResult.timedOut) {
+                println "runChannelTransportReport: 场景 ${scenario.displayName} 超时，结果已记入报告。"
+            } else if ((scenarioResult.exitCode as int) != 0) {
+                println "runChannelTransportReport: 场景 ${scenario.displayName} 退出码=${scenarioResult.exitCode}，结果已记入报告。"
+            }
+        }
+
+        project.javaexec {
+            classpath = sourceSets.main.runtimeClasspath
+            mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelTransportCompressionReportMain'
+            args '--manifest', manifestFile.absolutePath, '--output', reportFile.absolutePath
+        }
+
+        println "runChannelTransportReport: 报告已生成 ${reportFile.absolutePath}"
+    }
+}
+
 tasks.register('runAll') {
     group = 'application'
     description = 'Starts the Forge server, waits for readiness, then lets the experient client auto-connect once into localhost and verify four-way jsonl traffic.'
@@ -647,7 +909,7 @@ tasks.register('runAll') {
         configureRunAllServerProperties(serverProperties)
 
         println 'runAll: 正在启动本地测试服务端。'
-        Process serverProcess = startExistingRunTaskProcess(projectDirFile, isWindows, wrapperPath, 'runServer', buildExperientEnabledGradleArgs(), null, serverTaskLog, 'runServer')
+        Process serverProcess = startExistingRunTaskProcess(projectDirFile, isWindows, wrapperPath, 'runServer', buildRunAllSharedGradleArgs(project), null, serverTaskLog, 'runServer')
         waitForLogMarker(
                 serverTaskLog,
                 ['Done ('],
@@ -656,7 +918,7 @@ tasks.register('runAll') {
                 '服务端启动'
         )
 
-        List<String> clientGradleArgs = buildExperientAutoConnectGradleArgs('127.0.0.1:25565', 'BO RunAll Local', 20L)
+        List<String> clientGradleArgs = buildExperientAutoConnectGradleArgs(project, '127.0.0.1:25565', 'BO RunAll Local', 20L)
 
         println 'runAll: 服务端已就绪，正在启动客户端，并由 experient 自动发起单次直连 127.0.0.1:25565。'
         Process clientProcess = startExistingRunTaskProcess(
@@ -774,7 +1036,7 @@ tasks.register('runAllAutoExitCompare') {
             println "runAllAutoExitCompare: exitTrigger=${exitTrigger}, exitDelaySeconds=${exitDelaySeconds}, settleMillis=${settleMillis}"
 
             println 'runAllAutoExitCompare: 正在启动本地测试服务端。'
-            serverProcess = startExistingRunTaskProcess(projectDirFile, isWindows, wrapperPath, 'runServer', buildExperientEnabledGradleArgs(), null, serverTaskLog, 'runServer')
+            serverProcess = startExistingRunTaskProcess(projectDirFile, isWindows, wrapperPath, 'runServer', buildRunAllSharedGradleArgs(project), null, serverTaskLog, 'runServer')
             waitForLogMarker(
                     serverTaskLog,
                     ['Done ('],
@@ -783,7 +1045,7 @@ tasks.register('runAllAutoExitCompare') {
                     '服务端启动'
             )
 
-            List<String> clientGradleArgs = buildExperientAutoConnectGradleArgs('127.0.0.1:25565', 'BO RunAll AutoExit', 20L)
+            List<String> clientGradleArgs = buildExperientAutoConnectGradleArgs(project, '127.0.0.1:25565', 'BO RunAll AutoExit', 20L)
 
             println 'runAllAutoExitCompare: 服务端已就绪，正在启动客户端，并由 experient 自动发起单次直连 127.0.0.1:25565。'
             clientProcess = startExistingRunTaskProcess(
@@ -836,55 +1098,6 @@ tasks.register('runAllAutoExitCompare') {
             forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
         }
     }
-}
-
-tasks.register('runPacketDumpReplay', JavaExec) {
-    group = 'verification'
-    description = 'Replays one dumped packet line through the local attachment processing flow.'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.PinkCats.bandwidthoptimizer.old.network.PacketDumpReplayMain'
-}
-
-tasks.register('runPacketDumpTimelineReplay', JavaExec) {
-    group = 'verification'
-    description = 'Replays a JSONL dump timeline using captured_at_ms ordering.'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.PinkCats.bandwidthoptimizer.old.network.PacketDumpTimelineReplayMain'
-}
-
-tasks.register('runSimilarPacketInspector', JavaExec) {
-    group = 'verification'
-    description = 'Inspects similar packet dumps and compares raw payload differences.'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.PinkCats.bandwidthoptimizer.old.network.SimilarPacketInspectorMain'
-}
-
-tasks.register('runPacketClassSimilarity', JavaExec) {
-    group = 'verification'
-    description = 'Compares packet class profiles and prints the classes most similar to the top traffic class.'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.PinkCats.bandwidthoptimizer.old.network.PacketClassSimilarityMain'
-}
-
-tasks.register('runNonWhitelistedPlayPacketReport', JavaExec) {
-    group = 'verification'
-    description = 'Reports clientbound PLAY packet classes that are outside the replay whitelist, with packet/byte share totals.'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.PinkCats.bandwidthoptimizer.old.network.NonWhitelistedPlayPacketReportMain'
-}
-
-tasks.register('runTemplateHitMining', JavaExec) {
-    group = 'verification'
-    description = 'Summarizes dynamic template hit counts from the replay JSONL output.'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.PinkCats.bandwidthoptimizer.old.network.TemplateHitMiningMain'
-}
-
-tasks.register('runReplayMappedHeaderExperiment', JavaExec) {
-    group = 'verification'
-    description = 'Measures the incremental savings from mapped custom-payload headers on top of replay batching algorithms.'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.PinkCats.bandwidthoptimizer.old.network.ReplayMappedHeaderExperimentMain'
 }
 
 tasks.register('PublishInfo') {
