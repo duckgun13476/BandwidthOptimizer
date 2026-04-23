@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.channel.capture;
 
 //Packet Recorder
 public record ChannelCapturedFrame(
+        String channelId,
         String direction,
         String protocolName,
         String packetClassName,
@@ -14,6 +15,7 @@ public record ChannelCapturedFrame(
 
     public ChannelCapturedFrame withPacketClassName(String newPacketClassName) {
         return new ChannelCapturedFrame(
+                this.channelId,
                 this.direction,
                 this.protocolName,
                 newPacketClassName,

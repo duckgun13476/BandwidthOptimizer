@@ -120,6 +120,7 @@ public final class ChannelFrameJsonlLogger {
         return "{"
                 + "\"captured_at_ms\":" + frame.capturedAtMillis() + ","
                 + "\"physical_side\":\"" + escapeJson(FMLEnvironment.dist.name()) + "\","
+                + "\"channel_id\":\"" + escapeJson(frame.channelId()) + "\","
                 + "\"direction\":\"" + escapeJson(frame.direction()) + "\","
                 + "\"protocol\":\"" + escapeJson(frame.protocolName()) + "\","
                 + "\"packet_class\":\"" + escapeJson(frame.packetClassName()) + "\","

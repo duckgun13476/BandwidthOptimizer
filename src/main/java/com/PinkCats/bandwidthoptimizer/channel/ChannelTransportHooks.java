@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.channel.access.PacketDecoderFlowAccess;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.KineticChannel;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.batch.ChannelTransportBatchManager;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.Incomplete;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
@@ -41,6 +42,12 @@ public final class ChannelTransportHooks {
             }
 
             byte[] originalPacketBytes = ByteBufUtil.getBytes(out, startIndexInclusive, endIndexExclusive - startIndexInclusive, false);
+            if (ChannelTransportBatchManager.shouldBatchOutboundPacket(context)) {
+                out.writerIndex(startIndexInclusive);
+                ChannelTransportBatchManager.enqueueOutboundPacket(context, originalPacketBytes);
+                return;
+            }
+
             ChannelTransportSession transportSession = ChannelTransportStateManager.getOrCreateSession(context.channel());
             ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame =
                     KineticChannel.processOutboundPacket(transportSession, originalPacketBytes);
@@ -76,9 +83,69 @@ public final class ChannelTransportHooks {
             return false;
         }
 
-        ByteBuf restoredBuffer = Unpooled.wrappedBuffer(unwrappedFrame.restoredPacketBytes());
-        int outputSizeBeforeDecode = out.size();
-        ChannelCapturedFrame pendingInboundFrame = ChannelCaptureHooks.beginInboundPreDecode(context, restoredBuffer);
+        try {
+            if (ChannelTransportBatchManager.shouldReplayInboundAsBatch(unwrappedFrame)) {
+                ChannelTransportBatchManager.replayInboundBatch(
+                        context,
+                        decodeInboundReplayEntries(context, unwrappedFrame, packetDecoderFlowAccess)
+                );
+            } else {
+                decodeInboundPacketsIntoOutput(context, unwrappedFrame, out, packetDecoderFlowAccess);
+            }
+            in.readerIndex(in.writerIndex());
+            ChannelTransportTelemetry.recordInboundUnwrap(readProtocolName(context), unwrappedFrame);
+            return true;
+        } catch (Throwable throwable) {
+            ChannelTransportRuntimeGuard.disableTransport("inbound-unwrap", throwable);
+            throw throwable;
+        }
+    }
+
+    private static <T extends PacketListener> void decodeInboundPacketsIntoOutput(
+            ChannelHandlerContext context,
+            ChannelTransportPacketCodec.UnwrappedTransportFrame unwrappedFrame,
+            List<Object> out,
+            PacketDecoderFlowAccess packetDecoderFlowAccess
+    ) throws Exception {
+        for (byte[] restoredPacketBytes : unwrappedFrame.restoredPacketBytesList()) {
+            ChannelCapturedFrame pendingInboundFrame = beginInboundCapture(context, restoredPacketBytes);
+            int outputSizeBeforeDecode = out.size();
+            Packet<? super T> restoredPacket = decodeRestoredPacket(context, restoredPacketBytes, packetDecoderFlowAccess);
+            out.add(restoredPacket);
+            ChannelCaptureHooks.finishInboundDecode(pendingInboundFrame, out, outputSizeBeforeDecode);
+        }
+    }
+
+    private static <T extends PacketListener> List<ChannelTransportBatchManager.InboundReplayEntry> decodeInboundReplayEntries(
+            ChannelHandlerContext context,
+            ChannelTransportPacketCodec.UnwrappedTransportFrame unwrappedFrame,
+            PacketDecoderFlowAccess packetDecoderFlowAccess
+    ) throws Exception {
+        List<ChannelTransportBatchManager.InboundReplayEntry> replayEntries = new java.util.ArrayList<>(unwrappedFrame.restoredPacketCount());
+        for (byte[] restoredPacketBytes : unwrappedFrame.restoredPacketBytesList()) {
+            replayEntries.add(new ChannelTransportBatchManager.InboundReplayEntry(
+                    restoredPacketBytes,
+                    decodeRestoredPacket(context, restoredPacketBytes, packetDecoderFlowAccess)
+            ));
+        }
+        return List.copyOf(replayEntries);
+    }
+
+    private static ChannelCapturedFrame beginInboundCapture(ChannelHandlerContext context, byte[] restoredPacketBytes) {
+        ByteBuf restoredBuffer = Unpooled.wrappedBuffer(restoredPacketBytes);
+        try {
+            return ChannelCaptureHooks.beginInboundPreDecode(context, restoredBuffer);
+        } finally {
+            restoredBuffer.release();
+        }
+    }
+
+    private static <T extends PacketListener> Packet<? super T> decodeRestoredPacket(
+            ChannelHandlerContext context,
+            byte[] restoredPacketBytes,
+            PacketDecoderFlowAccess packetDecoderFlowAccess
+    ) throws IOException {
+        ByteBuf restoredBuffer = Unpooled.wrappedBuffer(restoredPacketBytes);
         try {
             FriendlyByteBuf friendlyBuffer = new FriendlyByteBuf(restoredBuffer);
             int readableBytes = friendlyBuffer.readableBytes();
@@ -102,14 +169,7 @@ public final class ChannelTransportHooks {
                 );
             }
 
-            out.add(packet);
-            in.readerIndex(in.writerIndex());
-            ChannelCaptureHooks.finishInboundDecode(pendingInboundFrame, out, outputSizeBeforeDecode);
-            ChannelTransportTelemetry.recordInboundUnwrap(readProtocolName(context), unwrappedFrame);
-            return true;
-        } catch (Throwable throwable) {
-            ChannelTransportRuntimeGuard.disableTransport("inbound-unwrap", throwable);
-            throw throwable;
+            return packet;
         } finally {
             restoredBuffer.release();
         }

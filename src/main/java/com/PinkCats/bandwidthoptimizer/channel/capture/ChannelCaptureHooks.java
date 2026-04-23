@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel.capture;
 
 import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
+import com.PinkCats.bandwidthoptimizer.test.ChannelTransportCompressionCaptureManager;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.Connection;
@@ -32,6 +33,7 @@ public final class ChannelCaptureHooks {
 
         byte[] encodedBytes = copyBytes(encodedBuffer, startIndexInclusive, endIndexExclusive);
         ChannelCapturedFrame frame = new ChannelCapturedFrame(
+                readChannelId(context),
                 "OUTBOUND",
                 readProtocolName(context),
                 packet.getClass().getName(),
@@ -41,6 +43,7 @@ public final class ChannelCaptureHooks {
                 System.currentTimeMillis()
         );
         LAST_OUTBOUND_FRAME.set(frame);
+        ChannelTransportCompressionCaptureManager.recordCapturedFrame(frame);
         ChannelFrameJsonlLogger.appendOutboundFrame(frame);
     }
 
@@ -51,6 +54,7 @@ public final class ChannelCaptureHooks {
 
         byte[] encodedBytes = copyBytes(encodedBuffer, encodedBuffer.readerIndex(), encodedBuffer.writerIndex());
         return new ChannelCapturedFrame(
+                readChannelId(context),
                 "INBOUND",
                 readProtocolName(context),
                 "<pre-decode>",
@@ -78,6 +82,7 @@ public final class ChannelCaptureHooks {
         }
 
         LAST_INBOUND_FRAME.set(completedFrame);
+        ChannelTransportCompressionCaptureManager.recordCapturedFrame(completedFrame);
         ChannelFrameJsonlLogger.appendInboundFrame(completedFrame);
     }
 
@@ -109,6 +114,11 @@ public final class ChannelCaptureHooks {
     private static String readProtocolName(ChannelHandlerContext context) {
         Object protocol = context.channel().attr(Connection.ATTRIBUTE_PROTOCOL).get();
         return protocol == null ? "null" : String.valueOf(protocol);
+    }
+
+
+    private static String readChannelId(ChannelHandlerContext context) {
+        return context == null ? "<null-channel>" : context.channel().id().asLongText();
     }
 
     private static int tryReadLeadingVarInt(byte[] encodedBytes) {
