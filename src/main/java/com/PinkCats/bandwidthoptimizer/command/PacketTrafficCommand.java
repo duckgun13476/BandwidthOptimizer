@@ -3,7 +3,7 @@ package com.PinkCats.bandwidthoptimizer.command;
 import com.PinkCats.bandwidthoptimizer.Old.network.ModNetwork;
 import com.PinkCats.bandwidthoptimizer.Old.network.message.ServerToClientAttachmentPacket;
 import com.PinkCats.bandwidthoptimizer.Old.optimise.monitor.PacketTrafficMonitor;
-import com.PinkCats.bandwidthoptimizer.test.ChannelTransportCompressionCommand;
+import com.PinkCats.bandwidthoptimizer.report.ChannelTransportCompressionCommand;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
