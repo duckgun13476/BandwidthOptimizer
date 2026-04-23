@@ -5,6 +5,10 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.ChannelTransportOperationTelemetry;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
@@ -14,15 +18,20 @@ public final class ChannelTransportTelemetry {
     private static final long SAMPLE_LOG_LIMIT = 8L;
     private static final long SHRINK_SAMPLE_LOG_LIMIT = 8L;
     private static final long SUMMARY_LOG_INTERVAL = 512L;
+    private static final String TELEMETRY_DUMP_FILE_NAME_PROPERTY = "bandwidthoptimizer.transport.telemetryDumpFileName";
+    private static final long TELEMETRY_DUMP_INTERVAL_MILLIS = 1000L;
+    private static final Object TELEMETRY_DUMP_LOCK = new Object();
 
     private static final AtomicLong OUTBOUND_WRAP_COUNT = new AtomicLong();
     private static final AtomicLong INBOUND_UNWRAP_COUNT = new AtomicLong();
     private static final AtomicLong OUTBOUND_SHRINK_SAMPLE_COUNT = new AtomicLong();
+    private static final AtomicLong LAST_TELEMETRY_DUMP_AT_MILLIS = new AtomicLong();
 
     private static final LongAdder OUTBOUND_RAW_PACKET_BYTES = new LongAdder();
     private static final LongAdder OUTBOUND_MAPPING_STAGE_BYTES = new LongAdder();
     private static final LongAdder OUTBOUND_TRANSPORT_BODY_BYTES = new LongAdder();
     private static final LongAdder OUTBOUND_TRANSPORT_FRAME_BYTES = new LongAdder();
+    private static final LongAdder OUTBOUND_ORIGINAL_PACKET_COUNT = new LongAdder();
     private static final LongAdder OUTBOUND_SHRUNK_FRAME_COUNT = new LongAdder();
     private static final LongAdder OUTBOUND_EXPANDED_FRAME_COUNT = new LongAdder();
     private static final LongAdder OUTBOUND_LITERAL_ENTRY_COUNT = new LongAdder();
@@ -37,6 +46,7 @@ public final class ChannelTransportTelemetry {
     private static final LongAdder INBOUND_TRANSPORT_BODY_BYTES = new LongAdder();
     private static final LongAdder INBOUND_MAPPING_STAGE_BYTES = new LongAdder();
     private static final LongAdder INBOUND_RESTORED_PACKET_BYTES = new LongAdder();
+    private static final LongAdder INBOUND_RESTORED_PACKET_COUNT = new LongAdder();
     private static final LongAdder INBOUND_LITERAL_ENTRY_COUNT = new LongAdder();
     private static final LongAdder INBOUND_EXACT_REFERENCE_COUNT = new LongAdder();
     private static final LongAdder INBOUND_TEMPLATE_REFERENCE_COUNT = new LongAdder();
@@ -57,6 +67,7 @@ public final class ChannelTransportTelemetry {
                 safeTelemetry(wrappedFrame.telemetry(), wrappedFrame.originalPacketBytes());
         long wrapCount = OUTBOUND_WRAP_COUNT.incrementAndGet();
         OUTBOUND_RAW_PACKET_BYTES.add(wrappedFrame.originalPacketBytes());
+        OUTBOUND_ORIGINAL_PACKET_COUNT.add(wrappedFrame.originalPacketCount());
         OUTBOUND_MAPPING_STAGE_BYTES.add(telemetry.mappingStageBytes());
         OUTBOUND_TRANSPORT_BODY_BYTES.add(wrappedFrame.zstdBodyBytes());
         OUTBOUND_TRANSPORT_FRAME_BYTES.add(wrappedFrame.transportFrameLength());
@@ -74,9 +85,11 @@ public final class ChannelTransportTelemetry {
 
         if (wrapCount <= SAMPLE_LOG_LIMIT) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[Transport][WrapSample] index={}, protocol={}, algorithm={}, rawPacketBytes={}, mappingBytes={}, transportBodyBytes={}, transportFrameBytes={}, mapRatio={}, zstdVsMapRatio={}, frameRatio={}, entryKind={}, exactAdds={}, templateAdds={}, exactRemovals={}, templateRemovals={}, frameEffect={}, savedVsRaw={}",
+                    "[Transport][WrapSample] index={}, protocol={}, frameKind={}, packetCount={}, algorithm={}, rawPacketBytes={}, mappingBytes={}, transportBodyBytes={}, transportFrameBytes={}, mapRatio={}, zstdVsMapRatio={}, frameRatio={}, entryKind={}, exactAdds={}, templateAdds={}, exactRemovals={}, templateRemovals={}, frameEffect={}, savedVsRaw={}",
                     wrapCount,
                     protocolName,
+                    wrappedFrame.frameKind(),
+                    wrappedFrame.originalPacketCount(),
                     telemetry.algorithmId(),
                     wrappedFrame.originalPacketBytes(),
                     telemetry.mappingStageBytes(),
@@ -99,9 +112,11 @@ public final class ChannelTransportTelemetry {
             long shrinkSampleCount = OUTBOUND_SHRINK_SAMPLE_COUNT.incrementAndGet();
             if (shrinkSampleCount <= SHRINK_SAMPLE_LOG_LIMIT) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[Transport][WrapShrink] index={}, protocol={}, algorithm={}, rawPacketBytes={}, mappingBytes={}, transportBodyBytes={}, transportFrameBytes={}, mapRatio={}, zstdVsMapRatio={}, frameRatio={}, entryKind={}, savedVsRaw={}",
+                        "[Transport][WrapShrink] index={}, protocol={}, frameKind={}, packetCount={}, algorithm={}, rawPacketBytes={}, mappingBytes={}, transportBodyBytes={}, transportFrameBytes={}, mapRatio={}, zstdVsMapRatio={}, frameRatio={}, entryKind={}, savedVsRaw={}",
                         wrapCount,
                         protocolName,
+                        wrappedFrame.frameKind(),
+                        wrappedFrame.originalPacketCount(),
                         telemetry.algorithmId(),
                         wrappedFrame.originalPacketBytes(),
                         telemetry.mappingStageBytes(),
@@ -118,9 +133,10 @@ public final class ChannelTransportTelemetry {
 
         if (wrapCount % SUMMARY_LOG_INTERVAL == 0L) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[Transport][WrapSummary] algorithm={}, frames={}, shrunkFrames={}, expandedFrames={}, rawPacketBytes={}, mappingBytes={}, transportBodyBytes={}, transportFrameBytes={}, mapRatio={}, zstdVsMapRatio={}, frameRatio={}, savedVsRaw={}, mapLiterals={}, mapExactRefs={}, mapTemplateRefs={}, mapExactAdds={}, mapTemplateAdds={}, mapExactRemovals={}, mapTemplateRemovals={}",
+                    "[Transport][WrapSummary] algorithm={}, frames={}, rawPackets={}, shrunkFrames={}, expandedFrames={}, rawPacketBytes={}, mappingBytes={}, transportBodyBytes={}, transportFrameBytes={}, mapRatio={}, zstdVsMapRatio={}, frameRatio={}, savedVsRaw={}, mapLiterals={}, mapExactRefs={}, mapTemplateRefs={}, mapExactAdds={}, mapTemplateAdds={}, mapExactRemovals={}, mapTemplateRemovals={}",
                     telemetry.algorithmId(),
                     wrapCount,
+                    OUTBOUND_ORIGINAL_PACKET_COUNT.sum(),
                     OUTBOUND_SHRUNK_FRAME_COUNT.sum(),
                     OUTBOUND_EXPANDED_FRAME_COUNT.sum(),
                     OUTBOUND_RAW_PACKET_BYTES.sum(),
@@ -140,6 +156,8 @@ public final class ChannelTransportTelemetry {
                     OUTBOUND_TEMPLATE_REMOVAL_COUNT.sum()
             );
         }
+
+        maybeWriteTelemetryDumpFile();
     }
 
     public static void recordInboundUnwrap(String protocolName, ChannelTransportPacketCodec.UnwrappedTransportFrame unwrappedFrame) {
@@ -153,7 +171,8 @@ public final class ChannelTransportTelemetry {
         INBOUND_TRANSPORT_FRAME_BYTES.add(unwrappedFrame.inboundFrameBytes());
         INBOUND_TRANSPORT_BODY_BYTES.add(unwrappedFrame.zstdBodyBytes());
         INBOUND_MAPPING_STAGE_BYTES.add(telemetry.mappingStageBytes());
-        INBOUND_RESTORED_PACKET_BYTES.add(unwrappedFrame.restoredPacketBytes().length);
+        INBOUND_RESTORED_PACKET_BYTES.add(unwrappedFrame.restoredPacketBytes());
+        INBOUND_RESTORED_PACKET_COUNT.add(unwrappedFrame.restoredPacketCount());
         updateMappingCounters(
                 telemetry,
                 INBOUND_LITERAL_ENTRY_COUNT,
@@ -167,17 +186,19 @@ public final class ChannelTransportTelemetry {
 
         if (unwrapCount <= SAMPLE_LOG_LIMIT) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[Transport][UnwrapSample] index={}, protocol={}, algorithm={}, inboundFrameBytes={}, transportBodyBytes={}, mappingBytes={}, restoredPacketBytes={}, frameRatio={}, bodyRatio={}, mapRatio={}, bodyVsMapRatio={}, entryKind={}, exactAdds={}, templateAdds={}, exactRemovals={}, templateRemovals={}",
+                    "[Transport][UnwrapSample] index={}, protocol={}, frameKind={}, packetCount={}, algorithm={}, inboundFrameBytes={}, transportBodyBytes={}, mappingBytes={}, restoredPacketBytes={}, frameRatio={}, bodyRatio={}, mapRatio={}, bodyVsMapRatio={}, entryKind={}, exactAdds={}, templateAdds={}, exactRemovals={}, templateRemovals={}",
                     unwrapCount,
                     protocolName,
+                    unwrappedFrame.frameKind(),
+                    unwrappedFrame.restoredPacketCount(),
                     telemetry.algorithmId(),
                     unwrappedFrame.inboundFrameBytes(),
                     unwrappedFrame.zstdBodyBytes(),
                     telemetry.mappingStageBytes(),
-                    unwrappedFrame.restoredPacketBytes().length,
-                    ratioText(unwrappedFrame.inboundFrameBytes(), unwrappedFrame.restoredPacketBytes().length),
-                    ratioText(unwrappedFrame.zstdBodyBytes(), unwrappedFrame.restoredPacketBytes().length),
-                    ratioText(telemetry.mappingStageBytes(), unwrappedFrame.restoredPacketBytes().length),
+                    unwrappedFrame.restoredPacketBytes(),
+                    ratioText(unwrappedFrame.inboundFrameBytes(), unwrappedFrame.restoredPacketBytes()),
+                    ratioText(unwrappedFrame.zstdBodyBytes(), unwrappedFrame.restoredPacketBytes()),
+                    ratioText(telemetry.mappingStageBytes(), unwrappedFrame.restoredPacketBytes()),
                     ratioText(unwrappedFrame.zstdBodyBytes(), telemetry.mappingStageBytes()),
                     entryKindText(telemetry),
                     telemetry.exactAdditionCount(),
@@ -189,9 +210,10 @@ public final class ChannelTransportTelemetry {
 
         if (unwrapCount % SUMMARY_LOG_INTERVAL == 0L) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[Transport][UnwrapSummary] algorithm={}, frames={}, inboundFrameBytes={}, transportBodyBytes={}, mappingBytes={}, restoredPacketBytes={}, frameRatio={}, bodyRatio={}, mapRatio={}, bodyVsMapRatio={}, mapLiterals={}, mapExactRefs={}, mapTemplateRefs={}, mapExactAdds={}, mapTemplateAdds={}, mapExactRemovals={}, mapTemplateRemovals={}",
+                    "[Transport][UnwrapSummary] algorithm={}, frames={}, restoredPackets={}, inboundFrameBytes={}, transportBodyBytes={}, mappingBytes={}, restoredPacketBytes={}, frameRatio={}, bodyRatio={}, mapRatio={}, bodyVsMapRatio={}, mapLiterals={}, mapExactRefs={}, mapTemplateRefs={}, mapExactAdds={}, mapTemplateAdds={}, mapExactRemovals={}, mapTemplateRemovals={}",
                     telemetry.algorithmId(),
                     unwrapCount,
+                    INBOUND_RESTORED_PACKET_COUNT.sum(),
                     INBOUND_TRANSPORT_FRAME_BYTES.sum(),
                     INBOUND_TRANSPORT_BODY_BYTES.sum(),
                     INBOUND_MAPPING_STAGE_BYTES.sum(),
@@ -209,6 +231,8 @@ public final class ChannelTransportTelemetry {
                     INBOUND_TEMPLATE_REMOVAL_COUNT.sum()
             );
         }
+
+        maybeWriteTelemetryDumpFile();
     }
 
     private static ChannelTransportOperationTelemetry safeTelemetry(
@@ -283,5 +307,71 @@ public final class ChannelTransportTelemetry {
             return "expand";
         }
         return "equal";
+    }
+
+    private static void maybeWriteTelemetryDumpFile() {
+        String dumpFileName = System.getProperty(TELEMETRY_DUMP_FILE_NAME_PROPERTY);
+        if (dumpFileName == null || dumpFileName.isBlank()) {
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        long lastDumpAt = LAST_TELEMETRY_DUMP_AT_MILLIS.get();
+        if (now - lastDumpAt < TELEMETRY_DUMP_INTERVAL_MILLIS) {
+            return;
+        }
+
+        synchronized (TELEMETRY_DUMP_LOCK) {
+            long refreshedLastDumpAt = LAST_TELEMETRY_DUMP_AT_MILLIS.get();
+            long refreshedNow = System.currentTimeMillis();
+            if (refreshedNow - refreshedLastDumpAt < TELEMETRY_DUMP_INTERVAL_MILLIS) {
+                return;
+            }
+
+            try {
+                writeTelemetryDumpFile(Path.of(dumpFileName));
+                LAST_TELEMETRY_DUMP_AT_MILLIS.set(refreshedNow);
+            } catch (IOException exception) {
+                Bandwidthoptimizer.LOGGER.warn("[Transport] Failed to write telemetry dump file {}", dumpFileName, exception);
+            }
+        }
+    }
+
+
+    private static void writeTelemetryDumpFile(Path dumpFilePath) throws IOException {
+        Path parentPath = dumpFilePath.getParent();
+        if (parentPath != null) {
+            Files.createDirectories(parentPath);
+        }
+        Files.writeString(dumpFilePath, buildTelemetryDumpText(), StandardCharsets.UTF_8);
+    }
+
+    private static String buildTelemetryDumpText() {
+        StringBuilder builder = new StringBuilder(512);
+        appendDumpLine(builder, "updatedAtMillis", Long.toString(System.currentTimeMillis()));
+        appendDumpLine(builder, "algorithmId", ChannelTransportLayerRuntimeConfig.algorithmId().toString());
+        appendDumpLine(builder, "mappingEnabled", Boolean.toString(ChannelTransportLayerRuntimeConfig.isMappingEnabled()));
+        appendDumpLine(builder, "zstdEnabled", Boolean.toString(ChannelTransportLayerRuntimeConfig.isZstdEnabled()));
+        appendDumpLine(builder, "packetIdMappingEnabled", Boolean.toString(ChannelTransportLayerRuntimeConfig.isPacketIdMappingEnabled()));
+        appendDumpLine(builder, "outbound.frames", Long.toString(OUTBOUND_WRAP_COUNT.get()));
+        appendDumpLine(builder, "outbound.rawPackets", Long.toString(OUTBOUND_ORIGINAL_PACKET_COUNT.sum()));
+        appendDumpLine(builder, "outbound.rawPacketBytes", Long.toString(OUTBOUND_RAW_PACKET_BYTES.sum()));
+        appendDumpLine(builder, "outbound.mappingBytes", Long.toString(OUTBOUND_MAPPING_STAGE_BYTES.sum()));
+        appendDumpLine(builder, "outbound.transportBodyBytes", Long.toString(OUTBOUND_TRANSPORT_BODY_BYTES.sum()));
+        appendDumpLine(builder, "outbound.transportFrameBytes", Long.toString(OUTBOUND_TRANSPORT_FRAME_BYTES.sum()));
+        appendDumpLine(builder, "outbound.frameRatio", ratioText(OUTBOUND_TRANSPORT_FRAME_BYTES.sum(), OUTBOUND_RAW_PACKET_BYTES.sum()));
+        appendDumpLine(builder, "outbound.savedVsRaw", Long.toString(OUTBOUND_RAW_PACKET_BYTES.sum() - OUTBOUND_TRANSPORT_FRAME_BYTES.sum()));
+        appendDumpLine(builder, "inbound.frames", Long.toString(INBOUND_UNWRAP_COUNT.get()));
+        appendDumpLine(builder, "inbound.restoredPackets", Long.toString(INBOUND_RESTORED_PACKET_COUNT.sum()));
+        appendDumpLine(builder, "inbound.inboundFrameBytes", Long.toString(INBOUND_TRANSPORT_FRAME_BYTES.sum()));
+        appendDumpLine(builder, "inbound.transportBodyBytes", Long.toString(INBOUND_TRANSPORT_BODY_BYTES.sum()));
+        appendDumpLine(builder, "inbound.mappingBytes", Long.toString(INBOUND_MAPPING_STAGE_BYTES.sum()));
+        appendDumpLine(builder, "inbound.restoredPacketBytes", Long.toString(INBOUND_RESTORED_PACKET_BYTES.sum()));
+        appendDumpLine(builder, "inbound.frameRatio", ratioText(INBOUND_TRANSPORT_FRAME_BYTES.sum(), INBOUND_RESTORED_PACKET_BYTES.sum()));
+        return builder.toString();
+    }
+
+    private static void appendDumpLine(StringBuilder builder, String key, String value) {
+        builder.append(key).append('=').append(value).append('\n');
     }
 }

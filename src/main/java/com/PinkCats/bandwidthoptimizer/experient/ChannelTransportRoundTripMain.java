@@ -54,7 +54,11 @@ public final class ChannelTransportRoundTripMain {
             throw new IllegalStateException("Unwrap unexpectedly returned null for " + testCase.name());
         }
 
-        if (!Arrays.equals(testCase.packetBytes(), unwrappedFrame.restoredPacketBytes())) {
+        if (unwrappedFrame.restoredPacketCount() != 1) {
+            throw new IllegalStateException("Round trip unexpectedly restored " + unwrappedFrame.restoredPacketCount() + " packets for " + testCase.name());
+        }
+
+        if (!Arrays.equals(testCase.packetBytes(), unwrappedFrame.restoredPacketBytesList().get(0))) {
             throw new IllegalStateException("Round trip payload mismatch for " + testCase.name());
         }
 

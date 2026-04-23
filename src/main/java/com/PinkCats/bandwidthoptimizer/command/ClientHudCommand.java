@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.Old.command;
+package com.PinkCats.bandwidthoptimizer.command;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Old.network.client.ClientOptimizationHudOverlay;

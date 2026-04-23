@@ -1,8 +1,9 @@
-package com.PinkCats.bandwidthoptimizer.Old.command;
+package com.PinkCats.bandwidthoptimizer.command;
 
 import com.PinkCats.bandwidthoptimizer.Old.network.ModNetwork;
 import com.PinkCats.bandwidthoptimizer.Old.network.message.ServerToClientAttachmentPacket;
 import com.PinkCats.bandwidthoptimizer.Old.optimise.monitor.PacketTrafficMonitor;
+import com.PinkCats.bandwidthoptimizer.test.ChannelTransportCompressionCommand;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -17,6 +18,7 @@ import java.util.UUID;
 public final class PacketTrafficCommand {
     private PacketTrafficCommand() {
     }
+
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("bandwidthoptimizer")
@@ -49,14 +51,18 @@ public final class PacketTrafficCommand {
                                                 context.getSource(),
                                                 IntegerArgumentType.getInteger(context, "value")
                                         )))))
+                .then(Commands.literal("test")
+                        .then(ChannelTransportCompressionCommand.buildCommand()))
                 );
     }
+
 
     private static int root(CommandSourceStack source) {
         source.sendSuccess(() -> Component.literal(
                 "BandwidthOptimizer commands: /bandwidthoptimizer packettraffic start|stop|clear|status|runpackettest"
                         + " | /bandwidthoptimizer channel ping <payload>"
                         + " | /bandwidthoptimizer channel increment [value]"
+                        + " | /bandwidthoptimizer test transportreport run [ticks]"
                         + " | /bandwidthoptimizer hud"
         ), false);
         return Command.SINGLE_SUCCESS;

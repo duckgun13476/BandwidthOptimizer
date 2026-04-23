@@ -1,6 +1,6 @@
 package com.PinkCats.bandwidthoptimizer;
 
-import com.PinkCats.bandwidthoptimizer.Old.command.PacketTrafficCommand;
+import com.PinkCats.bandwidthoptimizer.command.PacketTrafficCommand;
 import com.PinkCats.bandwidthoptimizer.Old.network.ModNetwork;
 import com.PinkCats.bandwidthoptimizer.Old.network.runtime.ZstdRuntimeSupport;
 import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
