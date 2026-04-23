@@ -1,10 +1,10 @@
 package com.PinkCats.bandwidthoptimizer;
 
-import com.PinkCats.bandwidthoptimizer.command.PacketTrafficCommand;
 import com.PinkCats.bandwidthoptimizer.Old.network.ModNetwork;
 import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.ZstdRuntimeSupport;
+import com.PinkCats.bandwidthoptimizer.command.BandwidthOptimizerCommand;
 import com.mojang.logging.LogUtils;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
@@ -43,7 +43,7 @@ public class Bandwidthoptimizer {
 
     @SubscribeEvent
     public static void registerCommands(RegisterCommandsEvent event) {
-        PacketTrafficCommand.register(event.getDispatcher());
+        BandwidthOptimizerCommand.register(event.getDispatcher());
     }
 
     @SubscribeEvent

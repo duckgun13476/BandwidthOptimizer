@@ -2,7 +2,7 @@ package com.PinkCats.bandwidthoptimizer.Old.network.client;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
-import com.PinkCats.bandwidthoptimizer.Old.minecraft.ConnectionReplayInvokerMixin;
+import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ConnectionChannelReadInvokerMixin;
 import com.PinkCats.bandwidthoptimizer.Old.network.ModNetwork;
 import com.PinkCats.bandwidthoptimizer.Old.network.message.ClientToServerChunkCacheMissPacket;
 import com.PinkCats.bandwidthoptimizer.Old.network.message.ClientboundChunkCacheDeltaPacket;
@@ -178,7 +178,7 @@ public final class ClientChunkCacheManager {
         Packet<ClientGamePacketListener> packet = ClientboundPlayPacketCodec.decodePacket(encodedPacketBytes);
         Connection connection = listener.getConnection();
         try {
-            ((ConnectionReplayInvokerMixin) (Object) connection).bandwidthoptimizer$invokeChannelRead0(null, packet);
+            ((ConnectionChannelReadInvokerMixin) (Object) connection).bandwidthoptimizer$invokeChannelRead0(null, packet);
         } catch (Throwable error) {
             Bandwidthoptimizer.LOGGER.warn(
                     "[ChunkCache][Client][ReplayFallback] packet={}, reason={}",
