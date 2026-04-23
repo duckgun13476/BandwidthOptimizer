@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.Old.network.runtime;
+package com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import net.minecraftforge.fml.loading.FMLPaths;
@@ -11,8 +11,7 @@ public final class ZstdRuntimeSupport {
 
     private static final String TEMP_FOLDER_PROPERTY = "ZstdTempFolder";
 
-    private ZstdRuntimeSupport() {
-    }
+    private ZstdRuntimeSupport() {}
 
     public static void configureNativeTempFolder() {
         String configured = System.getProperty(TEMP_FOLDER_PROPERTY);
