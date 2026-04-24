@@ -5,7 +5,9 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStateManager;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
+import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
@@ -114,8 +116,17 @@ public final class ChannelTransportBatchManager {
             int outputSizeBeforeDecode = 0;
             List<Object> decodedPackets = new ArrayList<>(1);
             decodedPackets.add(packet);
+            ChannelCapturedFrame pendingInboundFrame = ChannelCaptureHooks.beginInboundPreDecode(context, restoredBuffer);
+
+
+            ChunkInboundObservationService.observeInboundDecodedPackets(
+                    context,
+                    pendingInboundFrame,
+                    decodedPackets,
+                    outputSizeBeforeDecode
+            );
             ChannelCaptureHooks.finishInboundDecode(
-                    ChannelCaptureHooks.beginInboundPreDecode(context, restoredBuffer),
+                    pendingInboundFrame,
                     decodedPackets,
                     outputSizeBeforeDecode
             );

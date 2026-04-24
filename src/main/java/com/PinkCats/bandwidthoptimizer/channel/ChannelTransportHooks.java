@@ -7,6 +7,7 @@ import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.Incomplete;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkInboundDecodeResult;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkOutboundObservationService;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher;
@@ -147,6 +148,13 @@ public final class ChannelTransportHooks {
             int outputSizeBeforeDecode = out.size();
             Packet<? super T> restoredPacket = decodeRestoredPacket(context, restoredPacketBytes, packetDecoderFlowAccess);
             out.add(restoredPacket);
+
+            ChunkInboundObservationService.observeInboundDecodedPackets(
+                    context,
+                    pendingInboundFrame,
+                    out,
+                    outputSizeBeforeDecode
+            );
             ChannelCaptureHooks.finishInboundDecode(pendingInboundFrame, out, outputSizeBeforeDecode);
         }
     }

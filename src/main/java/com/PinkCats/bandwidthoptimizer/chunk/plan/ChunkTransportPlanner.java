@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.plan;
 
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
+import com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatchBuilder;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.state.peer.ChunkPeerChunkStateSnapshot;
@@ -19,6 +20,23 @@ public final class ChunkTransportPlanner {
             ChunkSnapshotFingerprint snapshotFingerprint,
             ChunkPeerChunkStateSnapshot chunkSnapshot,
             ChunkGlobalStoreObservation storeObservation
+    ) {
+        return planOutboundTransport(
+                descriptor,
+                snapshotFingerprint,
+                chunkSnapshot,
+                storeObservation,
+                ChunkPatchBuilder.ChunkPatchBuildResult.unavailable("patch_not_evaluated")
+        );
+    }
+
+
+    public static ChunkPlanDecision planOutboundTransport(
+            ChunkPacketDescriptor descriptor,
+            ChunkSnapshotFingerprint snapshotFingerprint,
+            ChunkPeerChunkStateSnapshot chunkSnapshot,
+            ChunkGlobalStoreObservation storeObservation,
+            ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult
     ) {
         if (descriptor == null || snapshotFingerprint == null || !descriptor.hasChunkCoordinate()) {
             return buildFallbackDecision(descriptor, snapshotFingerprint, "missing_chunk_or_snapshot_state");
@@ -64,9 +82,21 @@ public final class ChunkTransportPlanner {
             );
         }
 
+        if (shouldUsePatch(patchBuildResult)) {
+            return buildDecision(
+                    ChunkPlanDecisionKind.PUBLISH_PATCH,
+                    patchBuildResult.reason(),
+                    descriptor,
+                    snapshotFingerprint,
+                    chunkSnapshot,
+                    storeObservation,
+                    chunkSnapshot.fullSnapshotVersion()
+            );
+        }
+
         return buildDecision(
-                ChunkPlanDecisionKind.PUBLISH_PATCH,
-                "delta_after_acknowledged_full_snapshot",
+                ChunkPlanDecisionKind.BYPASS,
+                buildDeltaBypassReason(patchBuildResult),
                 descriptor,
                 snapshotFingerprint,
                 chunkSnapshot,
@@ -176,6 +206,21 @@ public final class ChunkTransportPlanner {
                 && hasAcknowledgedCurrentFullSnapshot(chunkSnapshot)
                 && snapshotFingerprint != null
                 && snapshotFingerprint.hashHex().equals(chunkSnapshot.knownSnapshotHash());
+    }
+
+
+    private static boolean shouldUsePatch(ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult) {
+        return patchBuildResult != null
+                && patchBuildResult.patch() != null
+                && patchBuildResult.beneficial();
+    }
+
+
+    private static String buildDeltaBypassReason(ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult) {
+        if (patchBuildResult == null || patchBuildResult.reason() == null || patchBuildResult.reason().isBlank()) {
+            return "delta_patch_unavailable";
+        }
+        return patchBuildResult.reason();
     }
 
 

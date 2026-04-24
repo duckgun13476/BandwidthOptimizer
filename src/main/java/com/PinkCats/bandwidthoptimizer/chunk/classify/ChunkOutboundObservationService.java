@@ -3,7 +3,9 @@ package com.PinkCats.bandwidthoptimizer.chunk.classify;
 import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkPlanDecision;
 import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkPlanPreviewService;
 import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkTransportPlanner;
+import com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatchBuilder;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkProtocolPreviewService;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkShadowSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprintService;
@@ -37,13 +39,24 @@ public final class ChunkOutboundObservationService {
                 ChunkSnapshotFingerprintService.fingerprintOutboundPacket(encodedPacketBytes);
         ChunkPeerChunkStateSnapshot chunkSnapshotBeforeObserve =
                 ChunkPeerStateManager.snapshotOutboundChunk(context, descriptor.coordinate());
+        ChunkShadowSnapshot localChunkSnapshotBeforeObserve =
+                ChunkShadowSnapshotManager.snapshotChunk(context.channel().id().asLongText(), descriptor.coordinate());
+        ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult =
+                ChunkPatchBuilder.buildPatchFromSnapshot(
+                        localChunkSnapshotBeforeObserve,
+                        descriptor,
+                        packet,
+                        encodedPacketBytes,
+                        snapshotFingerprint
+                );
         ChunkGlobalStoreObservation storeObservation =
                 ChunkGlobalSnapshotStore.observeOutboundSnapshot(descriptor, snapshotFingerprint);
         ChunkPlanDecision decision = ChunkTransportPlanner.planOutboundTransport(
                 descriptor,
                 snapshotFingerprint,
                 chunkSnapshotBeforeObserve,
-                storeObservation
+                storeObservation,
+                patchBuildResult
         );
         ChunkPeerObservationSnapshot observation = ChunkPeerStateManager.observeOutboundChunkPacket(
                 context,

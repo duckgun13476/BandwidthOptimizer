@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.channel.access.PacketDecoderFlowAccess;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.PacketDecoder;
@@ -56,6 +57,12 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
 
     @Inject(method = "decode", at = @At("RETURN"))
     private void bandwidthoptimizer$finishDecodeFrame(ChannelHandlerContext context, ByteBuf in, List<Object> out, CallbackInfo ci) {
+        ChunkInboundObservationService.observeInboundDecodedPackets(
+                context,
+                this.bandwidthoptimizer$pendingInboundFrame,
+                out,
+                this.bandwidthoptimizer$outputSizeBeforeDecode
+        );
 
         //Log
         ChannelCaptureHooks.finishInboundDecode(this.bandwidthoptimizer$pendingInboundFrame, out, this.bandwidthoptimizer$outputSizeBeforeDecode);

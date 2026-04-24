@@ -3,6 +3,9 @@ package com.PinkCats.bandwidthoptimizer.chunk.integration.transport;
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketClassifier;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketDescriptor;
+import com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatch;
+import com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatchApplier;
+import com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatchBuilder;
 import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkPlanDecision;
 import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkPlanDecisionKind;
 import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkTransportPlanner;
@@ -10,6 +13,9 @@ import com.PinkCats.bandwidthoptimizer.chunk.packet.ClientboundPlayPacketCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrameCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrameOp;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkLanePacketSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkLaneSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkShadowSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprintService;
@@ -62,15 +68,29 @@ public final class ChunkTransportDispatcher {
         ChunkPeerChunkStateSnapshot knownChunkSnapshot =
                 ChunkPeerStateManager.snapshotOutboundChunk(context, descriptor.coordinate());
         ChunkPeerStateSnapshot peerSnapshot = ChunkPeerStateManager.snapshotOutboundChannel(context);
+        ChunkShadowSnapshot localChunkSnapshot =
+                ChunkShadowSnapshotManager.snapshotChunk(readChannelId(context), descriptor.coordinate());
+        ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult = ChunkPatchBuilder.buildPatchFromSnapshot(
+                localChunkSnapshot,
+                descriptor,
+                packet,
+                originalPacketBytes,
+                fingerprint
+        );
         RuntimeChunkTransportDecision runtimeDecision =
-                decideRuntimeTransport(descriptor, fingerprint, peerSnapshot, knownChunkSnapshot);
+                decideRuntimeTransport(
+                        descriptor,
+                        fingerprint,
+                        peerSnapshot,
+                        knownChunkSnapshot,
+                        patchBuildResult,
+                        originalPacketBytes
+                );
         if (runtimeDecision == null) {
             return null;
         }
 
-        byte[] envelopePayloadBytes = runtimeDecision.operation() == ChunkHotspotFrameOp.PUBLISH_REF
-                ? new byte[0]
-                : originalPacketBytes;
+        byte[] envelopePayloadBytes = runtimeDecision.copyTransportPayloadBytes();
         byte[] encodedEnvelopeBytes = ChunkTransportEnvelopeCodec.encodeEnvelope(
                 new ChunkTransportEnvelope(runtimeDecision.frame(), envelopePayloadBytes)
         );
@@ -90,7 +110,7 @@ public final class ChunkTransportDispatcher {
                     runtimeDecision.frame().epoch(),
                     runtimeDecision.frame().observedPacketCount(),
                     descriptor.coordinate().logText(),
-                    runtimeDecision.operation() == ChunkHotspotFrameOp.PUBLISH_REF ? 0 : originalPacketBytes == null ? 0 : originalPacketBytes.length,
+                    envelopePayloadBytes.length,
                     encodedEnvelopeBytes.length,
                     fingerprint.shortHash()
             );
@@ -148,14 +168,10 @@ public final class ChunkTransportDispatcher {
         }
 
         if (envelope.frame().operation() == ChunkHotspotFrameOp.PUBLISH_PATCH) {
-            ChunkRuntimeReferenceStore.RuntimeFullSnapshot runtimeFullSnapshot = ChunkRuntimeReferenceStore.findFullSnapshot(
-                    readChannelId(context),
-                    envelope.frame().coordinate()
-            );
-            if (!hasMatchingRuntimeFullSnapshot(runtimeFullSnapshot, envelope.frame())) {
-                ChunkTransportControlFrameSender.sendNack(context, envelope.frame(), "runtime_patch_missing_base");
+            byte[] restoredPacketBytes = tryRestorePatchedPacket(context, envelope);
+            if (restoredPacketBytes == null) {
+                return ChunkInboundDecodeResult.consumeControlFrame();
             }
-            byte[] restoredPacketBytes = envelope.copyOriginalPacketBytes();
             observeInboundSnapshot(context, envelope.frame(), restoredPacketBytes);
             logInboundFrame(context, packetBytes, envelope, restoredPacketBytes, INBOUND_PATCH_FRAME_COUNT);
             return ChunkInboundDecodeResult.passthrough(restoredPacketBytes);
@@ -189,7 +205,9 @@ public final class ChunkTransportDispatcher {
             ChunkPacketDescriptor descriptor,
             ChunkSnapshotFingerprint fingerprint,
             ChunkPeerStateSnapshot peerSnapshot,
-            ChunkPeerChunkStateSnapshot knownChunkSnapshot
+            ChunkPeerChunkStateSnapshot knownChunkSnapshot,
+            ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult,
+            byte[] originalPacketBytes
     ) {
         if (!shouldUseRuntimeChunkTransport(descriptor) || fingerprint == null) {
             return null;
@@ -199,7 +217,8 @@ public final class ChunkTransportDispatcher {
                 descriptor,
                 fingerprint,
                 knownChunkSnapshot,
-                null
+                null,
+                patchBuildResult
         );
         if (decision == null || decision.decisionKind() == ChunkPlanDecisionKind.BYPASS) {
             return null;
@@ -207,7 +226,8 @@ public final class ChunkTransportDispatcher {
 
         return new RuntimeChunkTransportDecision(
                 mapOperation(decision.decisionKind()),
-                buildRuntimeFrame(descriptor, peerSnapshot, decision)
+                buildRuntimeFrame(descriptor, peerSnapshot, decision),
+                resolveTransportPayloadBytes(decision, patchBuildResult, originalPacketBytes)
         );
     }
 
@@ -246,6 +266,61 @@ public final class ChunkTransportDispatcher {
     }
 
 
+    private static byte[] resolveTransportPayloadBytes(
+            ChunkPlanDecision decision,
+            ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult,
+            byte[] originalPacketBytes
+    ) {
+        if (decision == null || decision.decisionKind() == ChunkPlanDecisionKind.PUBLISH_REF) {
+            return new byte[0];
+        }
+
+        if (decision.decisionKind() == ChunkPlanDecisionKind.PUBLISH_PATCH
+                && patchBuildResult != null
+                && patchBuildResult.patch() != null
+                && patchBuildResult.beneficial()) {
+            return patchBuildResult.copyEncodedPatchBytes();
+        }
+
+        return originalPacketBytes == null ? new byte[0] : originalPacketBytes.clone();
+    }
+
+
+    private static byte[] tryRestorePatchedPacket(ChannelHandlerContext context, ChunkTransportEnvelope envelope) {
+        if (context == null || envelope == null || envelope.frame() == null) {
+            return null;
+        }
+
+        String channelId = readChannelId(context);
+        ChunkPatch chunkPatch;
+        try {
+            chunkPatch = ChunkPatch.decode(envelope.copyOriginalPacketBytes());
+        } catch (RuntimeException exception) {
+            ChunkTransportControlFrameSender.sendNack(context, envelope.frame(), "runtime_patch_decode_failed");
+            return null;
+        }
+
+        ChunkShadowSnapshot chunkSnapshot = ChunkShadowSnapshotManager.snapshotChunk(channelId, envelope.frame().coordinate());
+        if (!hasMatchingSnapshotFullBase(chunkSnapshot, envelope.frame())) {
+            ChunkTransportControlFrameSender.sendNack(context, envelope.frame(), "runtime_patch_missing_full_base");
+            return null;
+        }
+
+        ChunkLanePacketSnapshot basePacketSnapshot = resolvePatchBasePacketSnapshot(chunkSnapshot, envelope.frame(), chunkPatch);
+        byte[] basePacketBytes = basePacketSnapshot == null ? new byte[0] : basePacketSnapshot.copyOriginalPacketBytes();
+        if (!chunkPatch.basePayloadHash().isBlank() && basePacketSnapshot == null) {
+            ChunkTransportControlFrameSender.sendNack(context, envelope.frame(), "runtime_patch_missing_lane_base");
+            return null;
+        }
+
+        try {
+            return ChunkPatchApplier.applyPatch(chunkPatch, basePacketBytes);
+        } catch (RuntimeException exception) {
+            ChunkTransportControlFrameSender.sendNack(context, envelope.frame(), "runtime_patch_apply_failed");
+            return null;
+        }
+    }
+
     private static void observeInboundSnapshot(
             ChannelHandlerContext context,
             ChunkHotspotFrame frame,
@@ -272,6 +347,43 @@ public final class ChunkTransportDispatcher {
 
     private static Packet<ClientGamePacketListener> decodeClientboundPlayPacket(byte[] restoredPacketBytes) {
         return ClientboundPlayPacketCodec.decodePacket(restoredPacketBytes);
+    }
+
+
+    private static boolean hasMatchingSnapshotFullBase(ChunkShadowSnapshot chunkSnapshot, ChunkHotspotFrame frame) {
+        return chunkSnapshot != null
+                && frame != null
+                && chunkSnapshot.hasFullSnapshot()
+                && chunkSnapshot.fullSnapshotVersion() == frame.fullSnapshotVersion()
+                && chunkSnapshot.fullSnapshotHash() != null
+                && chunkSnapshot.fullSnapshotHash().equals(frame.baseSnapshotHash());
+    }
+
+
+    private static ChunkLanePacketSnapshot resolvePatchBasePacketSnapshot(
+            ChunkShadowSnapshot chunkSnapshot,
+            ChunkHotspotFrame frame,
+            ChunkPatch chunkPatch
+    ) {
+        if (chunkSnapshot == null || frame == null || chunkPatch == null) {
+            return null;
+        }
+
+        ChunkLaneSnapshot laneSnapshot = chunkSnapshot.laneSnapshot(frame.laneKind());
+        if (laneSnapshot == null) {
+            return null;
+        }
+
+        ChunkLanePacketSnapshot basePacketSnapshot = laneSnapshot.packet(chunkPatch.semanticKey());
+        if (basePacketSnapshot == null) {
+            return null;
+        }
+
+        if (!chunkPatch.basePayloadHash().isBlank()
+                && !chunkPatch.basePayloadHash().equals(basePacketSnapshot.payloadHash())) {
+            return null;
+        }
+        return basePacketSnapshot;
     }
 
 
@@ -417,7 +529,15 @@ public final class ChunkTransportDispatcher {
 
     private record RuntimeChunkTransportDecision(
             ChunkHotspotFrameOp operation,
-            ChunkHotspotFrame frame
+            ChunkHotspotFrame frame,
+            byte[] transportPayloadBytes
     ) {
+        private RuntimeChunkTransportDecision {
+            transportPayloadBytes = transportPayloadBytes == null ? new byte[0] : transportPayloadBytes.clone();
+        }
+
+        private byte[] copyTransportPayloadBytes() {
+            return this.transportPayloadBytes.clone();
+        }
     }
 }
