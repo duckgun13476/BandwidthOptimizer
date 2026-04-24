@@ -71,6 +71,17 @@ final class ChunkPeerState {
         );
     }
 
+
+    synchronized ChunkPeerChunkStateSnapshot snapshotChunk(ChunkPacketCoordinate coordinate) {
+        if (coordinate == null || !coordinate.present()) {
+            return null;
+        }
+
+        ChunkPeerChunkState chunkState = this.chunkStates.get(ChunkPeerChunkKey.fromCoordinate(coordinate));
+        return chunkState == null ? null : chunkState.snapshotForQuery();
+    }
+
+
     private ChunkPeerChunkStateSnapshot updateChunkState(
             ChunkPacketDescriptor descriptor,
             ChunkSnapshotFingerprint snapshotFingerprint

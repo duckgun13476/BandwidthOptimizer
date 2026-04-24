@@ -42,12 +42,6 @@ public final class ChannelTransportHooks {
 
         String protocolName = readProtocolName(context);
         byte[] originalPacketBytes = ByteBufUtil.getBytes(out, startIndexInclusive, endIndexExclusive - startIndexInclusive, false);
-        ChunkOutboundObservationService.observeOutboundPacket(
-                context,
-                protocolName,
-                packet,
-                originalPacketBytes
-        );
         byte[] transportInputPacketBytes = ChunkTransportDispatcher.tryEncodeOutboundPacket(
                 context,
                 protocolName,
@@ -57,6 +51,12 @@ public final class ChannelTransportHooks {
         if (transportInputPacketBytes == null) {
             transportInputPacketBytes = originalPacketBytes;
         }
+        ChunkOutboundObservationService.observeOutboundPacket(
+                context,
+                protocolName,
+                packet,
+                originalPacketBytes
+        );
 
         if (!ChannelTransportRuntimeGuard.isTransportAvailable()
                 || shouldUseTransportForCurrentProtocol(protocolName)) {

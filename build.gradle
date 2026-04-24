@@ -824,6 +824,7 @@ tasks.register('runAll') {
         File serverReceiveJsonl = project.file('run/server/receive.jsonl')
         File clientSendJsonl = project.file('run/client/send.jsonl')
         File clientReceiveJsonl = project.file('run/client/receive.jsonl')
+        File captureResetRequest = project.file('run/bo-runall-capture-reset.request')
         File serverProperties = project.file('run/server/server.properties')
 
         stopExistingRunAllProcesses(project, projectDirFile, isWindows)
@@ -837,7 +838,8 @@ tasks.register('runAll') {
                 serverSendJsonl,
                 serverReceiveJsonl,
                 clientSendJsonl,
-                clientReceiveJsonl
+                clientReceiveJsonl,
+                captureResetRequest
         ])
 
         configureRunAllServerProperties(serverProperties)
@@ -945,6 +947,7 @@ tasks.register('runAllAutoExitCompare') {
         File serverReceiveJsonl = project.file('run/server/receive.jsonl')
         File clientSendJsonl = project.file('run/client/send.jsonl')
         File clientReceiveJsonl = project.file('run/client/receive.jsonl')
+        File captureResetRequest = project.file('run/bo-runall-capture-reset.request')
         File serverLoginMarker = project.file('run/server/bo-runall-player-logged-in.marker')
         File serverProperties = project.file('run/server/server.properties')
 
@@ -958,6 +961,7 @@ tasks.register('runAllAutoExitCompare') {
                 serverReceiveJsonl,
                 clientSendJsonl,
                 clientReceiveJsonl,
+                captureResetRequest,
                 serverLoginMarker
         ])
 

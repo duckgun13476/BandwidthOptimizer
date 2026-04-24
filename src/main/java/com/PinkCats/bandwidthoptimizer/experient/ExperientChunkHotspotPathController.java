@@ -19,9 +19,9 @@ public final class ExperientChunkHotspotPathController {
     private static final int INITIAL_DELAY_TICKS = 80;
     private static final int STEP_DELAY_TICKS = 60;
     private static final double[][] WAYPOINT_OFFSETS = {
-            {96.0D, 0.0D},
-            {96.0D, 96.0D},
-            {0.0D, 96.0D},
+            {320.0D, 0.0D},
+            {320.0D, 320.0D},
+            {0.0D, 320.0D},
             {0.0D, 0.0D}
     };
 

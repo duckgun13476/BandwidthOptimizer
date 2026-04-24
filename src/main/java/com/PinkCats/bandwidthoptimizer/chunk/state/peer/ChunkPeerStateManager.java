@@ -1,7 +1,9 @@
 package com.PinkCats.bandwidthoptimizer.chunk.state.peer;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketCoordinate;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketDescriptor;
+import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkRuntimeReferenceStore;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalStoreObservation;
 import io.netty.channel.Channel;
@@ -107,18 +109,23 @@ public final class ChunkPeerStateManager {
         );
     }
 
-
     public static void clearPlayerState(ServerPlayer player, String reason) {
         if (player == null)
             return;
 
         Long removedEpoch = PLAYER_EPOCHS.remove(player.getUUID());
+        String channelId = readPlayerChannelId(player);
+        if (channelId != null && !channelId.isBlank()) {
+            CHANNEL_STATES.remove(channelId);
+            ChunkRuntimeReferenceStore.clearChannel(channelId);
+        }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkPeer][Lifecycle] player={}, uuid={}, reason={}, removedEpoch={}",
+                "[ChunkPeer][Lifecycle] player={}, uuid={}, reason={}, removedEpoch={}, removedChannelState={}",
                 player.getGameProfile().getName(),
                 player.getUUID(),
                 reason,
-                removedEpoch == null ? "<none>" : removedEpoch
+                removedEpoch == null ? "<none>" : removedEpoch,
+                channelId == null || channelId.isBlank() ? "<none>" : channelId
         );
     }
 
@@ -128,6 +135,15 @@ public final class ChunkPeerStateManager {
             return null;
         ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
         return state == null ? null : state.snapshot();
+    }
+
+    public static ChunkPeerChunkStateSnapshot snapshotOutboundChunk(ChannelHandlerContext context, ChunkPacketCoordinate coordinate) {
+        if (context == null || coordinate == null || !coordinate.present()) {
+            return null;
+        }
+
+        ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
+        return state == null ? null : state.snapshotChunk(coordinate);
     }
 
     private static String readPlayerChannelId(ServerPlayer player) {

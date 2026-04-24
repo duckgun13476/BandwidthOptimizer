@@ -92,6 +92,10 @@ final class ChunkPeerChunkState {
         this.deltaBytesSinceFullSnapshot += this.lastEncodedBytes;
     }
 
+    ChunkPeerChunkStateSnapshot snapshotForQuery() {
+        return snapshot();
+    }
+
 
     private ChunkPeerChunkStateSnapshot snapshot() {
         return new ChunkPeerChunkStateSnapshot(
