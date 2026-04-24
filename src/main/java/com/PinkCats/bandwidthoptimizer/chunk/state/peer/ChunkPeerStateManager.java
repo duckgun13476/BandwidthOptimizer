@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketCoordinate;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkRuntimeReferenceStore;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalStoreObservation;
 import io.netty.channel.Channel;
@@ -146,6 +147,42 @@ public final class ChunkPeerStateManager {
         return state == null ? null : state.snapshotChunk(coordinate);
     }
 
+
+    public static ChunkPeerChunkStateSnapshot acknowledgeOutboundChunk(ChannelHandlerContext context, ChunkHotspotFrame frame) {
+        if (context == null || frame == null || frame.coordinate() == null || !frame.coordinate().present()) {
+            return null;
+        }
+
+        ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
+        ChunkPeerChunkStateSnapshot chunkSnapshot = state == null
+                ? null
+                : state.acknowledgeChunk(frame.coordinate(), frame.fullSnapshotVersion(), frame.payloadHash());
+        logControlUpdate("Ack", context, frame, chunkSnapshot);
+        return chunkSnapshot;
+    }
+
+    public static ChunkPeerChunkStateSnapshot negativeAcknowledgeOutboundChunk(ChannelHandlerContext context, ChunkHotspotFrame frame) {
+        if (context == null || frame == null || frame.coordinate() == null || !frame.coordinate().present()) {
+            return null;
+        }
+
+        ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
+        ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.negativeAcknowledgeChunk(frame.coordinate());
+        logControlUpdate("Nack", context, frame, chunkSnapshot);
+        return chunkSnapshot;
+    }
+
+    public static ChunkPeerChunkStateSnapshot invalidateOutboundChunk(ChannelHandlerContext context, ChunkHotspotFrame frame) {
+        if (context == null || frame == null || frame.coordinate() == null || !frame.coordinate().present()) {
+            return null;
+        }
+
+        ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
+        ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.invalidateChunk(frame.coordinate());
+        logControlUpdate("Invalidate", context, frame, chunkSnapshot);
+        return chunkSnapshot;
+    }
+
     private static String readPlayerChannelId(ServerPlayer player) {
         Object listener = readObjectField(player, "connection");
         if (listener == null)
@@ -244,5 +281,30 @@ public final class ChunkPeerStateManager {
             }
         }
         return null;
+    }
+
+    private static void logControlUpdate(
+            String label,
+            ChannelHandlerContext context,
+            ChunkHotspotFrame frame,
+            ChunkPeerChunkStateSnapshot chunkSnapshot
+    ) {
+        Bandwidthoptimizer.LOGGER.info(
+                "[ChunkPeer][{}] channel={}, epoch={}, chunk={}, fullVersion={}, payloadHash={}, state={}",
+                label,
+                context.channel().id().asLongText(),
+                frame.epoch(),
+                frame.coordinate().logText(),
+                frame.fullSnapshotVersion(),
+                shortenHash(frame.payloadHash()),
+                chunkSnapshot == null ? "<missing>" : chunkSnapshot.summaryText()
+        );
+    }
+
+    private static String shortenHash(String hashHex) {
+        if (hashHex == null || hashHex.isBlank()) {
+            return "<none>";
+        }
+        return hashHex.length() <= 12 ? hashHex : hashHex.substring(0, 12);
     }
 }

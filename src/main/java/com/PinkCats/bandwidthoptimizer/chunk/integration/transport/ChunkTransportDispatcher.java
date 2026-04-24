@@ -25,9 +25,15 @@ public final class ChunkTransportDispatcher {
     private static final AtomicLong OUTBOUND_FULL_FRAME_COUNT = new AtomicLong();
     private static final AtomicLong OUTBOUND_REF_FRAME_COUNT = new AtomicLong();
     private static final AtomicLong OUTBOUND_PATCH_FRAME_COUNT = new AtomicLong();
+    private static final AtomicLong OUTBOUND_ACK_FRAME_COUNT = new AtomicLong();
+    private static final AtomicLong OUTBOUND_NACK_FRAME_COUNT = new AtomicLong();
+    private static final AtomicLong OUTBOUND_INVALIDATE_FRAME_COUNT = new AtomicLong();
     private static final AtomicLong INBOUND_FULL_FRAME_COUNT = new AtomicLong();
     private static final AtomicLong INBOUND_REF_FRAME_COUNT = new AtomicLong();
     private static final AtomicLong INBOUND_PATCH_FRAME_COUNT = new AtomicLong();
+    private static final AtomicLong INBOUND_ACK_FRAME_COUNT = new AtomicLong();
+    private static final AtomicLong INBOUND_NACK_FRAME_COUNT = new AtomicLong();
+    private static final AtomicLong INBOUND_INVALIDATE_FRAME_COUNT = new AtomicLong();
 
     private ChunkTransportDispatcher() {
     }
@@ -88,10 +94,10 @@ public final class ChunkTransportDispatcher {
         return encodedEnvelopeBytes;
     }
 
-    //  transport -> packet
-    public static byte[] tryDecodeInboundPacket(ChannelHandlerContext context, byte[] packetBytes) {
+
+    public static ChunkInboundDecodeResult tryDecodeInboundPacket(ChannelHandlerContext context, byte[] packetBytes) {
         if (!ChunkTransportEnvelopeCodec.looksLikeEnvelope(packetBytes)) {
-            return packetBytes;
+            return ChunkInboundDecodeResult.passthrough(packetBytes);
         }
 
         ChunkTransportEnvelope envelope = ChunkTransportEnvelopeCodec.decodeEnvelope(packetBytes);
@@ -102,31 +108,61 @@ public final class ChunkTransportDispatcher {
                     envelope.frame().payloadHash(),
                     restoredPacketBytes
             );
+            ChunkRuntimeReferenceStore.storeFullSnapshot(readChannelId(context), envelope.frame(), restoredPacketBytes);
+            ChunkTransportControlFrameSender.sendAck(context, envelope.frame(), "runtime_full_received");
             logInboundFrame(context, packetBytes, envelope, restoredPacketBytes, INBOUND_FULL_FRAME_COUNT);
-            return restoredPacketBytes;
+            return ChunkInboundDecodeResult.passthrough(restoredPacketBytes);
         }
 
         if (envelope.frame().operation() == ChunkHotspotFrameOp.PUBLISH_REF) {
+            ChunkRuntimeReferenceStore.RuntimeFullSnapshot runtimeFullSnapshot = ChunkRuntimeReferenceStore.findFullSnapshot(
+                    readChannelId(context),
+                    envelope.frame().coordinate()
+            );
             byte[] restoredPacketBytes = ChunkRuntimeReferenceStore.findPacketBytes(
                     readChannelId(context),
                     envelope.frame().payloadHash()
             );
-            if (restoredPacketBytes == null) {
-                throw new IllegalStateException(
-                        "Missing runtime ref-only payload for hash "
-                                + shortenHash(envelope.frame().payloadHash())
-                                + " on channel "
-                                + readChannelId(context)
-                );
+            if (restoredPacketBytes == null || !hasMatchingRuntimeFullSnapshot(runtimeFullSnapshot, envelope.frame())) {
+                ChunkTransportControlFrameSender.sendNack(context, envelope.frame(), "runtime_ref_missing_base");
+                logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_NACK_FRAME_COUNT);
+                return ChunkInboundDecodeResult.consumeControlFrame();
             }
             logInboundFrame(context, packetBytes, envelope, restoredPacketBytes, INBOUND_REF_FRAME_COUNT);
-            return restoredPacketBytes;
+            return ChunkInboundDecodeResult.passthrough(restoredPacketBytes);
         }
 
         if (envelope.frame().operation() == ChunkHotspotFrameOp.PUBLISH_PATCH) {
+            ChunkRuntimeReferenceStore.RuntimeFullSnapshot runtimeFullSnapshot = ChunkRuntimeReferenceStore.findFullSnapshot(
+                    readChannelId(context),
+                    envelope.frame().coordinate()
+            );
+            if (!hasMatchingRuntimeFullSnapshot(runtimeFullSnapshot, envelope.frame())) {
+                ChunkTransportControlFrameSender.sendNack(context, envelope.frame(), "runtime_patch_missing_base");
+            }
             byte[] restoredPacketBytes = envelope.copyOriginalPacketBytes();
             logInboundFrame(context, packetBytes, envelope, restoredPacketBytes, INBOUND_PATCH_FRAME_COUNT);
-            return restoredPacketBytes;
+            return ChunkInboundDecodeResult.passthrough(restoredPacketBytes);
+        }
+
+        if (envelope.frame().operation() == ChunkHotspotFrameOp.ACK) {
+            ChunkPeerStateManager.acknowledgeOutboundChunk(context, envelope.frame());
+            logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_ACK_FRAME_COUNT);
+            return ChunkInboundDecodeResult.consumeControlFrame();
+        }
+
+        if (envelope.frame().operation() == ChunkHotspotFrameOp.NACK) {
+            ChunkPeerStateManager.negativeAcknowledgeOutboundChunk(context, envelope.frame());
+            ChunkTransportControlFrameSender.sendInvalidate(context, envelope.frame(), "runtime_nack_received");
+            logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_NACK_FRAME_COUNT);
+            return ChunkInboundDecodeResult.consumeControlFrame();
+        }
+
+        if (envelope.frame().operation() == ChunkHotspotFrameOp.INVALIDATE) {
+            ChunkPeerStateManager.invalidateOutboundChunk(context, envelope.frame());
+            ChunkRuntimeReferenceStore.invalidateFullSnapshot(readChannelId(context), envelope.frame().coordinate());
+            logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_INVALIDATE_FRAME_COUNT);
+            return ChunkInboundDecodeResult.consumeControlFrame();
         }
 
         throw new IllegalStateException("Unsupported chunk transport operation in runtime MVP: " + envelope.frame().operation().logName());
@@ -151,7 +187,7 @@ public final class ChunkTransportDispatcher {
             }
             return new RuntimeChunkTransportDecision(
                     ChunkHotspotFrameOp.PUBLISH_FULL,
-                    buildRuntimeFullFrame(descriptor, fingerprint, peerSnapshot)
+                    buildRuntimeFullFrame(descriptor, fingerprint, peerSnapshot, knownChunkSnapshot)
             );
         }
 
@@ -168,10 +204,12 @@ public final class ChunkTransportDispatcher {
     private static ChunkHotspotFrame buildRuntimeFullFrame(
             ChunkPacketDescriptor descriptor,
             ChunkSnapshotFingerprint fingerprint,
-            ChunkPeerStateSnapshot peerSnapshot
+            ChunkPeerStateSnapshot peerSnapshot,
+            ChunkPeerChunkStateSnapshot knownChunkSnapshot
     ) {
         long epoch = peerSnapshot == null ? 0L : peerSnapshot.epoch();
         long observedPackets = peerSnapshot == null ? 0L : peerSnapshot.observedPacketCount();
+        long fullSnapshotVersion = resolvePublishedFullSnapshotVersion(knownChunkSnapshot, fingerprint);
         return new ChunkHotspotFrame(
                 ChunkHotspotFrameCodec.PROTOCOL_VERSION,
                 ChunkHotspotFrameOp.PUBLISH_FULL,
@@ -183,7 +221,7 @@ public final class ChunkTransportDispatcher {
                 descriptor.laneKind(),
                 descriptor.coordinate(),
                 Math.max(fingerprint.encodedBytes(), 0),
-                0L,
+                fullSnapshotVersion,
                 0L,
                 fingerprint.hashHex(),
                 fingerprint.hashHex(),
@@ -259,6 +297,7 @@ public final class ChunkTransportDispatcher {
     private static boolean shouldUseRuntimePatch(ChunkPeerChunkStateSnapshot knownChunkSnapshot) {
         return knownChunkSnapshot != null
                 && knownChunkSnapshot.knownSnapshotPublished()
+                && hasAcknowledgedCurrentFullSnapshot(knownChunkSnapshot)
                 && knownChunkSnapshot.fullSnapshotVersion() > 0L;
     }
 
@@ -269,11 +308,53 @@ public final class ChunkTransportDispatcher {
     ) {
         return knownChunkSnapshot != null
                 && knownChunkSnapshot.knownSnapshotPublished()
+                && hasAcknowledgedCurrentFullSnapshot(knownChunkSnapshot)
                 && knownChunkSnapshot.totalObservedPacketCount() > 0L
                 && fingerprint != null
                 && fingerprint.hashHex().equals(knownChunkSnapshot.knownSnapshotHash());
     }
 
+    private static boolean hasAcknowledgedCurrentFullSnapshot(ChunkPeerChunkStateSnapshot knownChunkSnapshot) {
+        return knownChunkSnapshot != null
+                && knownChunkSnapshot.receiverSnapshotAcknowledged()
+                && knownChunkSnapshot.fullSnapshotVersion() > 0L
+                && knownChunkSnapshot.fullSnapshotVersion() == knownChunkSnapshot.acknowledgedSnapshotVersion()
+                && knownChunkSnapshot.knownSnapshotHash() != null
+                && knownChunkSnapshot.knownSnapshotHash().equals(knownChunkSnapshot.acknowledgedSnapshotHash());
+    }
+
+    private static boolean hasMatchingRuntimeFullSnapshot(
+            ChunkRuntimeReferenceStore.RuntimeFullSnapshot runtimeFullSnapshot,
+            ChunkHotspotFrame frame
+    ) {
+        return runtimeFullSnapshot != null
+                && frame != null
+                && frame.coordinate() != null
+                && frame.coordinate().present()
+                && runtimeFullSnapshot.coordinate() != null
+                && runtimeFullSnapshot.coordinate().present()
+                && runtimeFullSnapshot.coordinate().chunkX() == frame.coordinate().chunkX()
+                && runtimeFullSnapshot.coordinate().chunkZ() == frame.coordinate().chunkZ()
+                && runtimeFullSnapshot.fullSnapshotVersion() == frame.fullSnapshotVersion()
+                && runtimeFullSnapshot.payloadHash() != null
+                && runtimeFullSnapshot.payloadHash().equals(frame.baseSnapshotHash());
+    }
+
+    private static long resolvePublishedFullSnapshotVersion(
+            ChunkPeerChunkStateSnapshot knownChunkSnapshot,
+            ChunkSnapshotFingerprint fingerprint
+    ) {
+        if (fingerprint == null || fingerprint.hashHex() == null || fingerprint.hashHex().isBlank()) {
+            return knownChunkSnapshot == null ? 0L : knownChunkSnapshot.fullSnapshotVersion();
+        }
+        if (knownChunkSnapshot == null || !knownChunkSnapshot.knownSnapshotPublished()) {
+            return 1L;
+        }
+        if (fingerprint.hashHex().equals(knownChunkSnapshot.knownSnapshotHash())) {
+            return Math.max(knownChunkSnapshot.fullSnapshotVersion(), 1L);
+        }
+        return knownChunkSnapshot.fullSnapshotVersion() + 1L;
+    }
 
     private static long incrementOutboundFrameCount(ChunkHotspotFrameOp operation) {
         if (operation == ChunkHotspotFrameOp.PUBLISH_REF) {
@@ -281,6 +362,15 @@ public final class ChunkTransportDispatcher {
         }
         if (operation == ChunkHotspotFrameOp.PUBLISH_PATCH) {
             return OUTBOUND_PATCH_FRAME_COUNT.incrementAndGet();
+        }
+        if (operation == ChunkHotspotFrameOp.ACK) {
+            return OUTBOUND_ACK_FRAME_COUNT.incrementAndGet();
+        }
+        if (operation == ChunkHotspotFrameOp.NACK) {
+            return OUTBOUND_NACK_FRAME_COUNT.incrementAndGet();
+        }
+        if (operation == ChunkHotspotFrameOp.INVALIDATE) {
+            return OUTBOUND_INVALIDATE_FRAME_COUNT.incrementAndGet();
         }
         return OUTBOUND_FULL_FRAME_COUNT.incrementAndGet();
     }
@@ -315,6 +405,32 @@ public final class ChunkTransportDispatcher {
                 restoredPacketBytes.length,
                 packetBytes == null ? 0 : packetBytes.length,
                 shortenHash(envelope.frame().payloadHash())
+        );
+    }
+
+    private static void logInboundControlFrame(
+            ChannelHandlerContext context,
+            byte[] packetBytes,
+            ChunkHotspotFrame frame,
+            AtomicLong inboundCounter
+    ) {
+        ChunkHotspotStats.recordInboundFrame(frame, 0, packetBytes == null ? 0 : packetBytes.length);
+        ChunkHotspotVerifyHooks.flushCurrentReport();
+        long frameCount = inboundCounter.incrementAndGet();
+        if (!shouldLogSample(frameCount)) {
+            return;
+        }
+
+        Bandwidthoptimizer.LOGGER.info(
+                "[ChunkTransport][Control][Recv] channel={}, op={}, count={}, epoch={}, chunk={}, fullVersion={}, payloadHash={}, reason={}",
+                readChannelId(context),
+                frame.operation().logName(),
+                frameCount,
+                frame.epoch(),
+                frame.coordinate().logText(),
+                frame.fullSnapshotVersion(),
+                shortenHash(frame.payloadHash()),
+                frame.reason()
         );
     }
 

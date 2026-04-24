@@ -81,6 +81,26 @@ final class ChunkPeerState {
         return chunkState == null ? null : chunkState.snapshotForQuery();
     }
 
+    synchronized ChunkPeerChunkStateSnapshot acknowledgeChunk(
+            ChunkPacketCoordinate coordinate,
+            long fullSnapshotVersion,
+            String acknowledgedSnapshotHash
+    ) {
+        ChunkPeerChunkState chunkState = getChunkStateForControl(coordinate);
+        return chunkState == null ? null : chunkState.recordAcknowledgement(fullSnapshotVersion, acknowledgedSnapshotHash);
+    }
+
+    synchronized ChunkPeerChunkStateSnapshot negativeAcknowledgeChunk(ChunkPacketCoordinate coordinate) {
+        ChunkPeerChunkState chunkState = getChunkStateForControl(coordinate);
+        return chunkState == null ? null : chunkState.recordNegativeAcknowledgement();
+    }
+
+
+    synchronized ChunkPeerChunkStateSnapshot invalidateChunk(ChunkPacketCoordinate coordinate) {
+        ChunkPeerChunkState chunkState = getChunkStateForControl(coordinate);
+        return chunkState == null ? null : chunkState.recordInvalidate();
+    }
+
 
     private ChunkPeerChunkStateSnapshot updateChunkState(
             ChunkPacketDescriptor descriptor,
@@ -92,5 +112,12 @@ final class ChunkPeerState {
         ChunkPeerChunkKey chunkKey = ChunkPeerChunkKey.fromCoordinate(descriptor.coordinate());
         ChunkPeerChunkState chunkState = this.chunkStates.computeIfAbsent(chunkKey, ChunkPeerChunkState::new);
         return chunkState.recordObservation(descriptor, snapshotFingerprint, this.epoch, this.observedPacketCount);
+    }
+
+    private ChunkPeerChunkState getChunkStateForControl(ChunkPacketCoordinate coordinate) {
+        if (coordinate == null || !coordinate.present()) {
+            return null;
+        }
+        return this.chunkStates.get(ChunkPeerChunkKey.fromCoordinate(coordinate));
     }
 }

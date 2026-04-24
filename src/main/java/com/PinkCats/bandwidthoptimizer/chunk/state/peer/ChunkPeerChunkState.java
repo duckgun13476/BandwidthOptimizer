@@ -8,8 +8,10 @@ final class ChunkPeerChunkState {
 
     private final ChunkPeerChunkKey chunkKey;
     private boolean knownSnapshotPublished;
+    private boolean receiverSnapshotAcknowledged;
     private long totalObservedPacketCount;
     private long fullSnapshotVersion;
+    private long acknowledgedSnapshotVersion;
     private long mutationVersion;
     private long lightLaneVersion;
     private long sectionBlocksLaneVersion;
@@ -21,12 +23,16 @@ final class ChunkPeerChunkState {
     private String lastLaneKind = "";
     private String knownSnapshotHash = "";
     private String knownSnapshotShortHash = "";
+    private String acknowledgedSnapshotHash = "";
     private String lastPayloadHash = "";
     private String lastPayloadShortHash = "";
     private int lastEncodedBytes;
     private int lastFullSnapshotEncodedBytes;
     private long lastObservedChannelPacketCount;
     private long lastObservedAtMillis;
+    private long lastAcknowledgedAtMillis;
+    private long lastNegativeAckAtMillis;
+    private long lastInvalidatedAtMillis;
     private long epoch;
 
     ChunkPeerChunkState(ChunkPeerChunkKey chunkKey) {
@@ -72,8 +78,10 @@ final class ChunkPeerChunkState {
 
     private void applyFullSnapshotObservation() {
         this.knownSnapshotPublished = true;
-        if (!this.lastPayloadHash.equals(this.knownSnapshotHash)) {
+        boolean snapshotChanged = !this.lastPayloadHash.equals(this.knownSnapshotHash);
+        if (snapshotChanged) {
             this.fullSnapshotVersion++;
+            clearReceiverAcknowledgement();
         }
         this.knownSnapshotHash = this.lastPayloadHash;
         this.knownSnapshotShortHash = this.lastPayloadShortHash;
@@ -92,8 +100,44 @@ final class ChunkPeerChunkState {
         this.deltaBytesSinceFullSnapshot += this.lastEncodedBytes;
     }
 
+
+    ChunkPeerChunkStateSnapshot recordAcknowledgement(long fullSnapshotVersion, String acknowledgedSnapshotHash) {
+        this.lastAcknowledgedAtMillis = System.currentTimeMillis();
+        if (!this.knownSnapshotPublished
+                || fullSnapshotVersion <= 0L
+                || this.fullSnapshotVersion != fullSnapshotVersion
+                || acknowledgedSnapshotHash == null
+                || acknowledgedSnapshotHash.isBlank()
+                || !acknowledgedSnapshotHash.equals(this.knownSnapshotHash)) {
+            return snapshot();
+        }
+
+        this.receiverSnapshotAcknowledged = true;
+        this.acknowledgedSnapshotVersion = fullSnapshotVersion;
+        this.acknowledgedSnapshotHash = acknowledgedSnapshotHash;
+        return snapshot();
+    }
+
+    ChunkPeerChunkStateSnapshot recordNegativeAcknowledgement() {
+        this.lastNegativeAckAtMillis = System.currentTimeMillis();
+        clearReceiverAcknowledgement();
+        return snapshot();
+    }
+
+    ChunkPeerChunkStateSnapshot recordInvalidate() {
+        this.lastInvalidatedAtMillis = System.currentTimeMillis();
+        clearReceiverAcknowledgement();
+        return snapshot();
+    }
+
     ChunkPeerChunkStateSnapshot snapshotForQuery() {
         return snapshot();
+    }
+
+    private void clearReceiverAcknowledgement() {
+        this.receiverSnapshotAcknowledged = false;
+        this.acknowledgedSnapshotVersion = 0L;
+        this.acknowledgedSnapshotHash = "";
     }
 
 
@@ -102,8 +146,10 @@ final class ChunkPeerChunkState {
                 this.chunkKey,
                 this.epoch,
                 this.knownSnapshotPublished,
+                this.receiverSnapshotAcknowledged,
                 this.totalObservedPacketCount,
                 this.fullSnapshotVersion,
+                this.acknowledgedSnapshotVersion,
                 this.mutationVersion,
                 this.lightLaneVersion,
                 this.sectionBlocksLaneVersion,
@@ -115,12 +161,16 @@ final class ChunkPeerChunkState {
                 this.lastLaneKind,
                 this.knownSnapshotHash,
                 this.knownSnapshotShortHash,
+                this.acknowledgedSnapshotHash,
                 this.lastPayloadHash,
                 this.lastPayloadShortHash,
                 this.lastEncodedBytes,
                 this.lastFullSnapshotEncodedBytes,
                 this.lastObservedChannelPacketCount,
-                this.lastObservedAtMillis
+                this.lastObservedAtMillis,
+                this.lastAcknowledgedAtMillis,
+                this.lastNegativeAckAtMillis,
+                this.lastInvalidatedAtMillis
         );
     }
 }

@@ -7,6 +7,7 @@ import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.Incomplete;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
+import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkInboundDecodeResult;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkOutboundObservationService;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher;
 import io.netty.buffer.ByteBuf;
@@ -136,8 +137,12 @@ public final class ChannelTransportHooks {
             PacketDecoderFlowAccess packetDecoderFlowAccess
     ) throws Exception {
         for (byte[] transportRestoredPacketBytes : unwrappedFrame.restoredPacketBytesList()) {
-            byte[] restoredPacketBytes =
+            ChunkInboundDecodeResult inboundDecodeResult =
                     ChunkTransportDispatcher.tryDecodeInboundPacket(context, transportRestoredPacketBytes);
+            if (!inboundDecodeResult.shouldDecodeVanillaPacket()) {
+                continue;
+            }
+            byte[] restoredPacketBytes = inboundDecodeResult.restoredPacketBytes();
             ChannelCapturedFrame pendingInboundFrame = beginInboundCapture(context, restoredPacketBytes);
             int outputSizeBeforeDecode = out.size();
             Packet<? super T> restoredPacket = decodeRestoredPacket(context, restoredPacketBytes, packetDecoderFlowAccess);
@@ -154,8 +159,12 @@ public final class ChannelTransportHooks {
         List<ChannelTransportBatchManager.InboundReplayEntry> replayEntries =
                 new java.util.ArrayList<>(unwrappedFrame.restoredPacketCount());
         for (byte[] transportRestoredPacketBytes : unwrappedFrame.restoredPacketBytesList()) {
-            byte[] restoredPacketBytes =
+            ChunkInboundDecodeResult inboundDecodeResult =
                     ChunkTransportDispatcher.tryDecodeInboundPacket(context, transportRestoredPacketBytes);
+            if (!inboundDecodeResult.shouldDecodeVanillaPacket()) {
+                continue;
+            }
+            byte[] restoredPacketBytes = inboundDecodeResult.restoredPacketBytes();
             replayEntries.add(new ChannelTransportBatchManager.InboundReplayEntry(
                     restoredPacketBytes,
                     decodeRestoredPacket(context, restoredPacketBytes, packetDecoderFlowAccess)
