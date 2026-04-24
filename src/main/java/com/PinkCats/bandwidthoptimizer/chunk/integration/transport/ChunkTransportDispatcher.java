@@ -1,10 +1,11 @@
 package com.PinkCats.bandwidthoptimizer.chunk.integration.transport;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkLaneKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketClassifier;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketDescriptor;
+import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkPlanDecision;
+import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkPlanDecisionKind;
+import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkTransportPlanner;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrameCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrameOp;
@@ -94,7 +95,6 @@ public final class ChunkTransportDispatcher {
         return encodedEnvelopeBytes;
     }
 
-
     public static ChunkInboundDecodeResult tryDecodeInboundPacket(ChannelHandlerContext context, byte[] packetBytes) {
         if (!ChunkTransportEnvelopeCodec.looksLikeEnvelope(packetBytes)) {
             return ChunkInboundDecodeResult.passthrough(packetBytes);
@@ -178,41 +178,33 @@ public final class ChunkTransportDispatcher {
             return null;
         }
 
-        if (descriptor.hotspotKind() == ChunkHotspotKind.FULL_CHUNK) {
-            if (shouldUseRuntimeReference(knownChunkSnapshot, fingerprint)) {
-                return new RuntimeChunkTransportDecision(
-                        ChunkHotspotFrameOp.PUBLISH_REF,
-                        buildRuntimeRefFrame(descriptor, fingerprint, peerSnapshot, knownChunkSnapshot)
-                );
-            }
-            return new RuntimeChunkTransportDecision(
-                    ChunkHotspotFrameOp.PUBLISH_FULL,
-                    buildRuntimeFullFrame(descriptor, fingerprint, peerSnapshot, knownChunkSnapshot)
-            );
-        }
-
-        if (!shouldUseRuntimePatch(knownChunkSnapshot)) {
+        ChunkPlanDecision decision = ChunkTransportPlanner.planOutboundTransport(
+                descriptor,
+                fingerprint,
+                knownChunkSnapshot,
+                null
+        );
+        if (decision == null || decision.decisionKind() == ChunkPlanDecisionKind.BYPASS) {
             return null;
         }
 
         return new RuntimeChunkTransportDecision(
-                ChunkHotspotFrameOp.PUBLISH_PATCH,
-                buildRuntimePatchFrame(descriptor, fingerprint, peerSnapshot, knownChunkSnapshot)
+                mapOperation(decision.decisionKind()),
+                buildRuntimeFrame(descriptor, peerSnapshot, decision)
         );
     }
 
-    private static ChunkHotspotFrame buildRuntimeFullFrame(
+
+    private static ChunkHotspotFrame buildRuntimeFrame(
             ChunkPacketDescriptor descriptor,
-            ChunkSnapshotFingerprint fingerprint,
             ChunkPeerStateSnapshot peerSnapshot,
-            ChunkPeerChunkStateSnapshot knownChunkSnapshot
+            ChunkPlanDecision decision
     ) {
         long epoch = peerSnapshot == null ? 0L : peerSnapshot.epoch();
         long observedPackets = peerSnapshot == null ? 0L : peerSnapshot.observedPacketCount();
-        long fullSnapshotVersion = resolvePublishedFullSnapshotVersion(knownChunkSnapshot, fingerprint);
         return new ChunkHotspotFrame(
                 ChunkHotspotFrameCodec.PROTOCOL_VERSION,
-                ChunkHotspotFrameOp.PUBLISH_FULL,
+                mapOperation(decision.decisionKind()),
                 epoch,
                 observedPackets,
                 descriptor.protocolName(),
@@ -220,70 +212,13 @@ public final class ChunkTransportDispatcher {
                 descriptor.hotspotKind(),
                 descriptor.laneKind(),
                 descriptor.coordinate(),
-                Math.max(fingerprint.encodedBytes(), 0),
-                fullSnapshotVersion,
-                0L,
-                fingerprint.hashHex(),
-                fingerprint.hashHex(),
-                0L,
-                "runtime_full_publish"
-        );
-    }
-
-    private static ChunkHotspotFrame buildRuntimePatchFrame(
-            ChunkPacketDescriptor descriptor,
-            ChunkSnapshotFingerprint fingerprint,
-            ChunkPeerStateSnapshot peerSnapshot,
-            ChunkPeerChunkStateSnapshot knownChunkSnapshot
-    ) {
-        long epoch = peerSnapshot == null ? 0L : peerSnapshot.epoch();
-        long observedPackets = peerSnapshot == null ? 0L : peerSnapshot.observedPacketCount();
-        return new ChunkHotspotFrame(
-                ChunkHotspotFrameCodec.PROTOCOL_VERSION,
-                ChunkHotspotFrameOp.PUBLISH_PATCH,
-                epoch,
-                observedPackets,
-                descriptor.protocolName(),
-                descriptor.packetClassName(),
-                descriptor.hotspotKind(),
-                descriptor.laneKind(),
-                descriptor.coordinate(),
-                Math.max(fingerprint.encodedBytes(), 0),
-                knownChunkSnapshot == null ? 0L : knownChunkSnapshot.fullSnapshotVersion(),
-                resolveLaneVersion(descriptor.laneKind(), knownChunkSnapshot),
-                knownChunkSnapshot == null ? fingerprint.hashHex() : knownChunkSnapshot.knownSnapshotHash(),
-                fingerprint.hashHex(),
-                knownChunkSnapshot == null ? 0L : knownChunkSnapshot.deltaBytesSinceFullSnapshot(),
-                "runtime_passthrough_patch_publish"
-        );
-    }
-
-    private static ChunkHotspotFrame buildRuntimeRefFrame(
-            ChunkPacketDescriptor descriptor,
-            ChunkSnapshotFingerprint fingerprint,
-            ChunkPeerStateSnapshot peerSnapshot,
-            ChunkPeerChunkStateSnapshot knownChunkSnapshot
-    ) {
-        long epoch = peerSnapshot == null ? 0L : peerSnapshot.epoch();
-        long observedPackets = peerSnapshot == null ? 0L : peerSnapshot.observedPacketCount();
-        long fullSnapshotVersion = knownChunkSnapshot == null ? 0L : knownChunkSnapshot.fullSnapshotVersion();
-        return new ChunkHotspotFrame(
-                ChunkHotspotFrameCodec.PROTOCOL_VERSION,
-                ChunkHotspotFrameOp.PUBLISH_REF,
-                epoch,
-                observedPackets,
-                descriptor.protocolName(),
-                descriptor.packetClassName(),
-                descriptor.hotspotKind(),
-                descriptor.laneKind(),
-                descriptor.coordinate(),
-                0,
-                fullSnapshotVersion,
-                0L,
-                knownChunkSnapshot == null ? fingerprint.hashHex() : knownChunkSnapshot.knownSnapshotHash(),
-                fingerprint.hashHex(),
-                0L,
-                "runtime_ref_only_publish"
+                resolveOriginalEncodedBytes(decision),
+                decision.fullSnapshotVersion(),
+                decision.laneVersion(),
+                resolveBaseSnapshotHash(decision),
+                decision.currentPayloadHash(),
+                decision.deltaBytesSinceFullSnapshot(),
+                decision.reason()
         );
     }
 
@@ -294,33 +229,32 @@ public final class ChunkTransportDispatcher {
     }
 
 
-    private static boolean shouldUseRuntimePatch(ChunkPeerChunkStateSnapshot knownChunkSnapshot) {
-        return knownChunkSnapshot != null
-                && knownChunkSnapshot.knownSnapshotPublished()
-                && hasAcknowledgedCurrentFullSnapshot(knownChunkSnapshot)
-                && knownChunkSnapshot.fullSnapshotVersion() > 0L;
+    private static ChunkHotspotFrameOp mapOperation(ChunkPlanDecisionKind decisionKind) {
+        if (decisionKind == ChunkPlanDecisionKind.PUBLISH_FULL) {
+            return ChunkHotspotFrameOp.PUBLISH_FULL;
+        }
+        if (decisionKind == ChunkPlanDecisionKind.PUBLISH_REF) {
+            return ChunkHotspotFrameOp.PUBLISH_REF;
+        }
+        return ChunkHotspotFrameOp.PUBLISH_PATCH;
     }
 
 
-    private static boolean shouldUseRuntimeReference(
-            ChunkPeerChunkStateSnapshot knownChunkSnapshot,
-            ChunkSnapshotFingerprint fingerprint
-    ) {
-        return knownChunkSnapshot != null
-                && knownChunkSnapshot.knownSnapshotPublished()
-                && hasAcknowledgedCurrentFullSnapshot(knownChunkSnapshot)
-                && knownChunkSnapshot.totalObservedPacketCount() > 0L
-                && fingerprint != null
-                && fingerprint.hashHex().equals(knownChunkSnapshot.knownSnapshotHash());
+    private static String resolveBaseSnapshotHash(ChunkPlanDecision decision) {
+        if (decision == null) {
+            return "";
+        }
+        if (decision.decisionKind() == ChunkPlanDecisionKind.PUBLISH_FULL) {
+            return decision.currentPayloadHash();
+        }
+        return decision.knownSnapshotHash();
     }
 
-    private static boolean hasAcknowledgedCurrentFullSnapshot(ChunkPeerChunkStateSnapshot knownChunkSnapshot) {
-        return knownChunkSnapshot != null
-                && knownChunkSnapshot.receiverSnapshotAcknowledged()
-                && knownChunkSnapshot.fullSnapshotVersion() > 0L
-                && knownChunkSnapshot.fullSnapshotVersion() == knownChunkSnapshot.acknowledgedSnapshotVersion()
-                && knownChunkSnapshot.knownSnapshotHash() != null
-                && knownChunkSnapshot.knownSnapshotHash().equals(knownChunkSnapshot.acknowledgedSnapshotHash());
+    private static int resolveOriginalEncodedBytes(ChunkPlanDecision decision) {
+        if (decision == null || decision.decisionKind() == ChunkPlanDecisionKind.PUBLISH_REF) {
+            return 0;
+        }
+        return Math.max(decision.encodedBytes(), 0);
     }
 
     private static boolean hasMatchingRuntimeFullSnapshot(
@@ -338,22 +272,6 @@ public final class ChunkTransportDispatcher {
                 && runtimeFullSnapshot.fullSnapshotVersion() == frame.fullSnapshotVersion()
                 && runtimeFullSnapshot.payloadHash() != null
                 && runtimeFullSnapshot.payloadHash().equals(frame.baseSnapshotHash());
-    }
-
-    private static long resolvePublishedFullSnapshotVersion(
-            ChunkPeerChunkStateSnapshot knownChunkSnapshot,
-            ChunkSnapshotFingerprint fingerprint
-    ) {
-        if (fingerprint == null || fingerprint.hashHex() == null || fingerprint.hashHex().isBlank()) {
-            return knownChunkSnapshot == null ? 0L : knownChunkSnapshot.fullSnapshotVersion();
-        }
-        if (knownChunkSnapshot == null || !knownChunkSnapshot.knownSnapshotPublished()) {
-            return 1L;
-        }
-        if (fingerprint.hashHex().equals(knownChunkSnapshot.knownSnapshotHash())) {
-            return Math.max(knownChunkSnapshot.fullSnapshotVersion(), 1L);
-        }
-        return knownChunkSnapshot.fullSnapshotVersion() + 1L;
     }
 
     private static long incrementOutboundFrameCount(ChunkHotspotFrameOp operation) {
@@ -374,7 +292,6 @@ public final class ChunkTransportDispatcher {
         }
         return OUTBOUND_FULL_FRAME_COUNT.incrementAndGet();
     }
-
 
     private static void logInboundFrame(
             ChannelHandlerContext context,
@@ -434,39 +351,21 @@ public final class ChunkTransportDispatcher {
         );
     }
 
-    private static long resolveLaneVersion(ChunkLaneKind laneKind, ChunkPeerChunkStateSnapshot knownChunkSnapshot) {
-        if (laneKind == null || knownChunkSnapshot == null) {
-            return 0L;
-        }
-        if (laneKind == ChunkLaneKind.LIGHT) {
-            return knownChunkSnapshot.lightLaneVersion();
-        }
-        if (laneKind == ChunkLaneKind.SECTION_BLOCKS) {
-            return knownChunkSnapshot.sectionBlocksLaneVersion();
-        }
-        if (laneKind == ChunkLaneKind.BLOCK) {
-            return knownChunkSnapshot.blockLaneVersion();
-        }
-        if (laneKind == ChunkLaneKind.BLOCK_ENTITY) {
-            return knownChunkSnapshot.blockEntityLaneVersion();
-        }
-        return 0L;
-    }
-
-
     private static boolean shouldLogSample(long frameCount) {
         return frameCount <= 5L || frameCount % 100L == 0L;
     }
 
     private static String readChannelId(ChannelHandlerContext context) {
-        if (context == null)
+        if (context == null) {
             return "<null>";
+        }
         return context.channel().id().asLongText();
     }
 
     private static String shortenHash(String hashHex) {
-        if (hashHex == null || hashHex.isBlank())
+        if (hashHex == null || hashHex.isBlank()) {
             return "<none>";
+        }
         return hashHex.length() <= 12 ? hashHex : hashHex.substring(0, 12);
     }
 
