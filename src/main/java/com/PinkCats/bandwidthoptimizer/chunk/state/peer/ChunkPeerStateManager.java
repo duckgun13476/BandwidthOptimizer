@@ -5,6 +5,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketCoordinate;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkRuntimeReferenceStore;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrame;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalStoreObservation;
 import io.netty.channel.Channel;
@@ -119,6 +120,7 @@ public final class ChunkPeerStateManager {
         if (channelId != null && !channelId.isBlank()) {
             CHANNEL_STATES.remove(channelId);
             ChunkRuntimeReferenceStore.clearChannel(channelId);
+            ChunkShadowSnapshotManager.clearChannel(channelId);
         }
         Bandwidthoptimizer.LOGGER.info(
                 "[ChunkPeer][Lifecycle] player={}, uuid={}, reason={}, removedEpoch={}, removedChannelState={}",
@@ -189,6 +191,7 @@ public final class ChunkPeerStateManager {
 
         ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
         ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.invalidateChunk(frame.coordinate());
+        ChunkShadowSnapshotManager.invalidateChunk(context.channel().id().asLongText(), frame.coordinate());
         logControlUpdate("Invalidate", context, frame, chunkSnapshot);
         return chunkSnapshot;
     }
@@ -206,6 +209,7 @@ public final class ChunkPeerStateManager {
 
         ChunkPeerState state = CHANNEL_STATES.get(channel.id().asLongText());
         ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.invalidateChunk(coordinate);
+        ChunkShadowSnapshotManager.invalidateChunk(channel.id().asLongText(), coordinate);
         Bandwidthoptimizer.LOGGER.info(
                 "[ChunkPeer][LifecycleInvalidate] player={}, uuid={}, channel={}, reason={}, chunk={}, state={}",
                 player.getGameProfile().getName(),

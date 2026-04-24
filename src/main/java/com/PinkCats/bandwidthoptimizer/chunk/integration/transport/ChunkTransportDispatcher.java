@@ -6,9 +6,11 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkPlanDecision;
 import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkPlanDecisionKind;
 import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkTransportPlanner;
+import com.PinkCats.bandwidthoptimizer.chunk.packet.ClientboundPlayPacketCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrameCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrameOp;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprintService;
 import com.PinkCats.bandwidthoptimizer.chunk.state.peer.ChunkPeerChunkStateSnapshot;
@@ -18,6 +20,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.verify.stats.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.stats.ChunkHotspotVerifyHooks;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientGamePacketListener;
 
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -103,6 +106,7 @@ public final class ChunkTransportDispatcher {
         ChunkTransportEnvelope envelope = ChunkTransportEnvelopeCodec.decodeEnvelope(packetBytes);
         if (envelope.frame().operation() == ChunkHotspotFrameOp.PUBLISH_FULL) {
             byte[] restoredPacketBytes = envelope.copyOriginalPacketBytes();
+            observeInboundSnapshot(context, envelope.frame(), restoredPacketBytes);
             ChunkRuntimeReferenceStore.storePacketBytes(
                     readChannelId(context),
                     envelope.frame().payloadHash(),
@@ -115,15 +119,26 @@ public final class ChunkTransportDispatcher {
         }
 
         if (envelope.frame().operation() == ChunkHotspotFrameOp.PUBLISH_REF) {
-            ChunkRuntimeReferenceStore.RuntimeFullSnapshot runtimeFullSnapshot = ChunkRuntimeReferenceStore.findFullSnapshot(
-                    readChannelId(context),
-                    envelope.frame().coordinate()
+            String channelId = readChannelId(context);
+            byte[] restoredPacketBytes = ChunkShadowSnapshotManager.materializeFullChunkPacket(
+                    channelId,
+                    envelope.frame().coordinate(),
+                    envelope.frame().fullSnapshotVersion(),
+                    envelope.frame().baseSnapshotHash()
             );
-            byte[] restoredPacketBytes = ChunkRuntimeReferenceStore.findPacketBytes(
-                    readChannelId(context),
-                    envelope.frame().payloadHash()
-            );
-            if (restoredPacketBytes == null || !hasMatchingRuntimeFullSnapshot(runtimeFullSnapshot, envelope.frame())) {
+            boolean restoredFromSnapshot = restoredPacketBytes != null;
+            ChunkRuntimeReferenceStore.RuntimeFullSnapshot runtimeFullSnapshot = null;
+            if (!restoredFromSnapshot) {
+                runtimeFullSnapshot = ChunkRuntimeReferenceStore.findFullSnapshot(
+                        channelId,
+                        envelope.frame().coordinate()
+                );
+                restoredPacketBytes = ChunkRuntimeReferenceStore.findPacketBytes(
+                        channelId,
+                        envelope.frame().payloadHash()
+                );
+            }
+            if (restoredPacketBytes == null || (!restoredFromSnapshot && !hasMatchingRuntimeFullSnapshot(runtimeFullSnapshot, envelope.frame()))) {
                 ChunkTransportControlFrameSender.sendNack(context, envelope.frame(), "runtime_ref_missing_base");
                 logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_NACK_FRAME_COUNT);
                 return ChunkInboundDecodeResult.consumeControlFrame();
@@ -141,6 +156,7 @@ public final class ChunkTransportDispatcher {
                 ChunkTransportControlFrameSender.sendNack(context, envelope.frame(), "runtime_patch_missing_base");
             }
             byte[] restoredPacketBytes = envelope.copyOriginalPacketBytes();
+            observeInboundSnapshot(context, envelope.frame(), restoredPacketBytes);
             logInboundFrame(context, packetBytes, envelope, restoredPacketBytes, INBOUND_PATCH_FRAME_COUNT);
             return ChunkInboundDecodeResult.passthrough(restoredPacketBytes);
         }
@@ -161,6 +177,7 @@ public final class ChunkTransportDispatcher {
         if (envelope.frame().operation() == ChunkHotspotFrameOp.INVALIDATE) {
             ChunkPeerStateManager.invalidateOutboundChunk(context, envelope.frame());
             ChunkRuntimeReferenceStore.invalidateFullSnapshot(readChannelId(context), envelope.frame().coordinate());
+            ChunkShadowSnapshotManager.invalidateChunk(readChannelId(context), envelope.frame().coordinate());
             logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_INVALIDATE_FRAME_COUNT);
             return ChunkInboundDecodeResult.consumeControlFrame();
         }
@@ -226,6 +243,35 @@ public final class ChunkTransportDispatcher {
         return descriptor != null
                 && descriptor.hotspotKind() != null
                 && descriptor.hasChunkCoordinate();
+    }
+
+
+    private static void observeInboundSnapshot(
+            ChannelHandlerContext context,
+            ChunkHotspotFrame frame,
+            byte[] restoredPacketBytes
+    ) {
+        if (context == null || frame == null || restoredPacketBytes == null) {
+            return;
+        }
+
+        Packet<ClientGamePacketListener> restoredPacket = decodeClientboundPlayPacket(restoredPacketBytes);
+        ChunkPacketDescriptor descriptor = ChunkPacketClassifier.classifyOutboundPlayPacket("PLAY", restoredPacket);
+        if (descriptor == null) {
+            return;
+        }
+
+        ChunkShadowSnapshotManager.observeInboundPacket(
+                readChannelId(context),
+                frame.epoch(),
+                descriptor,
+                restoredPacket,
+                restoredPacketBytes
+        );
+    }
+
+    private static Packet<ClientGamePacketListener> decodeClientboundPlayPacket(byte[] restoredPacketBytes) {
+        return ClientboundPlayPacketCodec.decodePacket(restoredPacketBytes);
     }
 
 

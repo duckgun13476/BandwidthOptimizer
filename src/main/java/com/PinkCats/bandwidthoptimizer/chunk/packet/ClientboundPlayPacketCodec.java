@@ -9,10 +9,8 @@ import net.minecraft.network.protocol.game.ClientGamePacketListener;
 
 public final class ClientboundPlayPacketCodec {
 
-    private ClientboundPlayPacketCodec() {
-    }
+    private ClientboundPlayPacketCodec() {}
 
-    // 这个函数把原版 clientbound PLAY 包编码成“packet id + packet body”字节，供 chunk cache 直接复用。
     public static byte[] encodePacket(Packet<?> packet) {
         FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
         try {
@@ -29,7 +27,6 @@ public final class ClientboundPlayPacketCodec {
         }
     }
 
-    // 这个函数把缓存里的原始字节恢复成原版 clientbound PLAY 包，后续可以继续回到原版分发链。
     public static Packet<ClientGamePacketListener> decodePacket(byte[] bytes) {
         FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(bytes));
         try {
