@@ -12,6 +12,8 @@ import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprintSe
 import com.PinkCats.bandwidthoptimizer.chunk.state.peer.ChunkPeerChunkStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.state.peer.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.chunk.state.peer.ChunkPeerStateSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.verify.stats.ChunkHotspotStats;
+import com.PinkCats.bandwidthoptimizer.chunk.verify.stats.ChunkHotspotVerifyHooks;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
 
@@ -27,7 +29,7 @@ public final class ChunkTransportDispatcher {
     private ChunkTransportDispatcher() {
     }
 
-    // 这个函数在真正发包前根据连接已知状态决定是发 full 还是 ref；当前 runtime 只处理 FULL_CHUNK 这一类热点包。
+
     public static byte[] tryEncodeOutboundPacket(
             ChannelHandlerContext context,
             String protocolName,
@@ -55,6 +57,12 @@ public final class ChunkTransportDispatcher {
         byte[] encodedEnvelopeBytes = ChunkTransportEnvelopeCodec.encodeEnvelope(
                 new ChunkTransportEnvelope(frame, envelopePayloadBytes)
         );
+        ChunkHotspotStats.recordOutboundFrame(
+                frame,
+                originalPacketBytes == null ? 0 : originalPacketBytes.length,
+                encodedEnvelopeBytes.length
+        );
+        ChunkHotspotVerifyHooks.flushCurrentReport();
         long frameCount = shouldUseReference
                 ? OUTBOUND_REF_FRAME_COUNT.incrementAndGet()
                 : OUTBOUND_FULL_FRAME_COUNT.incrementAndGet();
@@ -89,7 +97,7 @@ public final class ChunkTransportDispatcher {
                     envelope.frame().payloadHash(),
                     restoredPacketBytes
             );
-            logInboundFrame(context, packetBytes, envelope, restoredPacketBytes, OUTBOUND_FULL_FRAME_COUNT, INBOUND_FULL_FRAME_COUNT);
+            logInboundFrame(context, packetBytes, envelope, restoredPacketBytes, INBOUND_FULL_FRAME_COUNT);
             return restoredPacketBytes;
         }
 
@@ -106,7 +114,7 @@ public final class ChunkTransportDispatcher {
                                 + readChannelId(context)
                 );
             }
-            logInboundFrame(context, packetBytes, envelope, restoredPacketBytes, OUTBOUND_REF_FRAME_COUNT, INBOUND_REF_FRAME_COUNT);
+            logInboundFrame(context, packetBytes, envelope, restoredPacketBytes, INBOUND_REF_FRAME_COUNT);
             return restoredPacketBytes;
         }
 
@@ -193,9 +201,14 @@ public final class ChunkTransportDispatcher {
             byte[] packetBytes,
             ChunkTransportEnvelope envelope,
             byte[] restoredPacketBytes,
-            AtomicLong ignoredOutboundCounter,
             AtomicLong inboundCounter
     ) {
+        ChunkHotspotStats.recordInboundFrame(
+                envelope.frame(),
+                restoredPacketBytes == null ? 0 : restoredPacketBytes.length,
+                packetBytes == null ? 0 : packetBytes.length
+        );
+        ChunkHotspotVerifyHooks.flushCurrentReport();
         long frameCount = inboundCounter.incrementAndGet();
         if (!shouldLogSample(frameCount)) {
             return;

@@ -5,6 +5,7 @@ import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.ZstdRuntimeSupport;
 import com.PinkCats.bandwidthoptimizer.chunk.lifecycle.ChunkLifecycleCoordinator;
+import com.PinkCats.bandwidthoptimizer.chunk.verify.stats.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.command.BandwidthOptimizerCommand;
 import com.mojang.logging.LogUtils;
 import net.minecraftforge.common.MinecraftForge;
@@ -29,6 +30,7 @@ public class Bandwidthoptimizer {
     public Bandwidthoptimizer() {
         ZstdRuntimeSupport.configureNativeTempFolder();
         ChannelFrameJsonlLogger.initializeOutputFiles();
+        ChunkHotspotVerifyHooks.initializeOutputFiles();
         ChannelTransportRuntimeGuard.initialize();
 
 

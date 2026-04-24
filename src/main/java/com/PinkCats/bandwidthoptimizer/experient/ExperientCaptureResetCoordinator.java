@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.experient;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
+import com.PinkCats.bandwidthoptimizer.chunk.verify.stats.ChunkHotspotVerifyHooks;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -50,6 +51,7 @@ public final class ExperientCaptureResetCoordinator {
             return false;
 
         ChannelFrameJsonlLogger.initializeOutputFiles();
+        ChunkHotspotVerifyHooks.resetOutputFiles();
         lastAppliedAttemptCount = requestedAttemptCount;
         Bandwidthoptimizer.LOGGER.info(
                 "[ExperientCaptureReset] Applied capture reset on {} side for retry attempt {}",

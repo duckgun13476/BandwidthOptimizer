@@ -1,11 +1,16 @@
 package com.PinkCats.bandwidthoptimizer.experient;
 
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrameOp;
+
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 // 1. server/send.jsonl <-> client/receive.jsonl
@@ -17,6 +22,8 @@ public final class ChannelJsonlCompareMain {
     private static final Path DEFAULT_CLIENT_RECEIVE = Path.of("run", "client", "receive.jsonl");
     private static final Path DEFAULT_CLIENT_SEND = Path.of("run", "client", "send.jsonl");
     private static final Path DEFAULT_SERVER_RECEIVE = Path.of("run", "server", "receive.jsonl");
+    private static final Path DEFAULT_SERVER_CHUNK_HOTSPOT_STATS = Path.of("run", "server", "chunk-hotspot-stats.properties");
+    private static final Path DEFAULT_CLIENT_CHUNK_HOTSPOT_STATS = Path.of("run", "client", "chunk-hotspot-stats.properties");
 
     private ChannelJsonlCompareMain() {}
 
@@ -45,8 +52,10 @@ public final class ChannelJsonlCompareMain {
             }
         }
 
-        printReports(reports, allMatched);
-        return allMatched ? 0 : 1;
+        ChunkHotspotVerificationReport chunkHotspotVerificationReport = verifyChunkHotspotReports();
+        boolean overallMatched = allMatched && chunkHotspotVerificationReport.matchedOrSkipped();
+        printReports(reports, chunkHotspotVerificationReport, overallMatched);
+        return overallMatched ? 0 : 1;
     }
 
     private static List<ComparisonTarget> createTargets(String[] args) {
@@ -247,10 +256,12 @@ public final class ChannelJsonlCompareMain {
         return value.substring(0, 96) + "...(len=" + value.length() + ")";
     }
 
-
-
-
-    private static void printReports(List<ComparisonReport> reports, boolean allMatched) {
+    // 这个函数把 jsonl 等价性结果和 chunk 特化层统计对齐结果一起输出，形成统一的主验证出口。
+    private static void printReports(
+            List<ComparisonReport> reports,
+            ChunkHotspotVerificationReport chunkHotspotVerificationReport,
+            boolean allMatched
+    ) {
         System.out.println("=== ChannelJsonlCompare ===");
         for (ComparisonReport report : reports) {
             if (report.matched()) {
@@ -269,7 +280,144 @@ public final class ChannelJsonlCompareMain {
             }
         }
 
-        System.out.println(allMatched ? "总体结果: 匹配" : "总体结果: 不匹配");
+        printChunkHotspotVerificationReport(chunkHotspotVerificationReport);
+        System.out.println(allMatched ? "Result: Match" : "Result: Mismatch");
+    }
+
+    private static ChunkHotspotVerificationReport verifyChunkHotspotReports() throws IOException {
+        ChunkHotspotStatsFile serverStats = readChunkHotspotStatsFile(DEFAULT_SERVER_CHUNK_HOTSPOT_STATS);
+        ChunkHotspotStatsFile clientStats = readChunkHotspotStatsFile(DEFAULT_CLIENT_CHUNK_HOTSPOT_STATS);
+        if (serverStats == null || clientStats == null) {
+            return ChunkHotspotVerificationReport.skipped(serverStats, clientStats);
+        }
+
+        List<String> mismatches = new ArrayList<>();
+        compareChunkDirection("server[outbound] -> client[inbound]", serverStats, "outbound", clientStats, "inbound", mismatches);
+        compareChunkDirection("client[outbound] -> server[inbound]", clientStats, "outbound", serverStats, "inbound", mismatches);
+        return new ChunkHotspotVerificationReport(serverStats, clientStats, mismatches);
+    }
+
+    private static ChunkHotspotStatsFile readChunkHotspotStatsFile(Path path) throws IOException {
+        if (!Files.exists(path)) {
+            return null;
+        }
+
+        Map<String, String> values = new HashMap<>();
+        for (String line : Files.readAllLines(path, StandardCharsets.UTF_8)) {
+            String trimmedLine = line == null ? "" : line.trim();
+            if (trimmedLine.isEmpty() || trimmedLine.startsWith("#")) {
+                continue;
+            }
+
+            int separatorIndex = trimmedLine.indexOf('=');
+            if (separatorIndex <= 0) {
+                throw new IllegalArgumentException("chunk stats 文件格式非法: " + path.toAbsolutePath() + " -> " + trimmedLine);
+            }
+            values.put(
+                    trimmedLine.substring(0, separatorIndex).trim(),
+                    trimmedLine.substring(separatorIndex + 1).trim()
+            );
+        }
+        return new ChunkHotspotStatsFile(path, Map.copyOf(values));
+    }
+
+    private static void compareChunkDirection(
+            String label,
+            ChunkHotspotStatsFile leftReport,
+            String leftPrefix,
+            ChunkHotspotStatsFile rightReport,
+            String rightPrefix,
+            List<String> mismatches
+    ) {
+        compareChunkStatField(label, leftReport, leftPrefix + "_total_frames", rightReport, rightPrefix + "_total_frames", mismatches);
+        compareChunkStatField(label, leftReport, leftPrefix + "_total_logical_packet_bytes", rightReport, rightPrefix + "_total_logical_packet_bytes", mismatches);
+        compareChunkStatField(label, leftReport, leftPrefix + "_total_wire_frame_bytes", rightReport, rightPrefix + "_total_wire_frame_bytes", mismatches);
+
+        for (ChunkHotspotFrameOp operation : ChunkHotspotFrameOp.values()) {
+            String operationName = operation.logName();
+            compareChunkStatField(label, leftReport, leftPrefix + "_" + operationName + "_frames", rightReport, rightPrefix + "_" + operationName + "_frames", mismatches);
+            compareChunkStatField(label, leftReport, leftPrefix + "_" + operationName + "_logical_packet_bytes", rightReport, rightPrefix + "_" + operationName + "_logical_packet_bytes", mismatches);
+            compareChunkStatField(label, leftReport, leftPrefix + "_" + operationName + "_wire_frame_bytes", rightReport, rightPrefix + "_" + operationName + "_wire_frame_bytes", mismatches);
+        }
+    }
+
+    private static void compareChunkStatField(
+            String label,
+            ChunkHotspotStatsFile leftReport,
+            String leftKey,
+            ChunkHotspotStatsFile rightReport,
+            String rightKey,
+            List<String> mismatches
+    ) {
+        long leftValue = readChunkStatLong(leftReport, leftKey);
+        long rightValue = readChunkStatLong(rightReport, rightKey);
+        if (leftValue != rightValue) {
+            mismatches.add(label + ": " + leftKey + "=" + leftValue + " != " + rightKey + "=" + rightValue);
+        }
+    }
+
+    private static long readChunkStatLong(ChunkHotspotStatsFile report, String key) {
+        if (report == null) {
+            throw new IllegalArgumentException("chunk stats 报告缺失，无法读取字段: " + key);
+        }
+
+        String rawValue = report.values().get(key);
+        if (rawValue == null) {
+            throw new IllegalArgumentException("chunk stats 缺少字段: " + report.path().toAbsolutePath() + " -> " + key);
+        }
+
+        try {
+            return Long.parseLong(rawValue);
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException("chunk stats 字段不是整数: " + report.path().toAbsolutePath() + " -> " + key + "=" + rawValue, exception);
+        }
+    }
+
+    private static void printChunkHotspotVerificationReport(ChunkHotspotVerificationReport report) {
+        System.out.println("=== ChunkHotspotVerify ===");
+        if (report == null || report.skipped()) {
+            System.out.println("chunk hotspot stats: 跳过（未找到 server/client 统计文件）");
+            return;
+        }
+
+        System.out.println("server stats: " + formatChunkHotspotSummary(report.serverStats()));
+        System.out.println("client stats: " + formatChunkHotspotSummary(report.clientStats()));
+        if (report.matched()) {
+            System.out.println("chunk hotspot stats: 匹配");
+            return;
+        }
+
+        System.out.println("chunk hotspot stats: 不匹配");
+        int printedCount = 0;
+        for (String mismatch : report.mismatches()) {
+            printedCount++;
+            System.out.println("  " + printedCount + ". " + mismatch);
+            if (printedCount >= MAX_MISMATCHES_TO_PRINT) {
+                break;
+            }
+        }
+        if (report.mismatches().size() > MAX_MISMATCHES_TO_PRINT) {
+            System.out.println("  已达到前 " + MAX_MISMATCHES_TO_PRINT + " 个差异上限，后续不再继续输出。");
+        }
+    }
+
+    private static String formatChunkHotspotSummary(ChunkHotspotStatsFile statsFile) {
+        if (statsFile == null) {
+            return "<missing>";
+        }
+
+        return "path=" + statsFile.path().toAbsolutePath()
+                + ", side=" + statsFile.values().getOrDefault("physical_side", "<unknown>")
+                + ", outboundFrames=" + readChunkStatLong(statsFile, "outbound_total_frames")
+                + ", outboundFull=" + readChunkStatLong(statsFile, "outbound_publish_full_frames")
+                + ", outboundRef=" + readChunkStatLong(statsFile, "outbound_publish_ref_frames")
+                + ", outboundPatch=" + readChunkStatLong(statsFile, "outbound_publish_patch_frames")
+                + ", inboundFrames=" + readChunkStatLong(statsFile, "inbound_total_frames")
+                + ", inboundFull=" + readChunkStatLong(statsFile, "inbound_publish_full_frames")
+                + ", inboundRef=" + readChunkStatLong(statsFile, "inbound_publish_ref_frames")
+                + ", inboundPatch=" + readChunkStatLong(statsFile, "inbound_publish_patch_frames")
+                + ", outboundSavedVsLogicalBytes=" + readChunkStatLong(statsFile, "outbound_total_saved_vs_logical_bytes")
+                + ", inboundSavedVsLogicalBytes=" + readChunkStatLong(statsFile, "inbound_total_saved_vs_logical_bytes");
     }
 
     private record ComparisonTarget(String label, Path leftPath, Path rightPath) { }
@@ -301,6 +449,32 @@ public final class ChannelJsonlCompareMain {
 
 
     private record MismatchDetail(long lineNumber, String message) {}
+
+    private record ChunkHotspotStatsFile(Path path, Map<String, String> values) {
+    }
+
+    private record ChunkHotspotVerificationReport(
+            ChunkHotspotStatsFile serverStats,
+            ChunkHotspotStatsFile clientStats,
+            List<String> mismatches,
+            boolean skipped
+    ) {
+        private ChunkHotspotVerificationReport(ChunkHotspotStatsFile serverStats, ChunkHotspotStatsFile clientStats, List<String> mismatches) {
+            this(serverStats, clientStats, List.copyOf(mismatches), false);
+        }
+
+        private static ChunkHotspotVerificationReport skipped(ChunkHotspotStatsFile serverStats, ChunkHotspotStatsFile clientStats) {
+            return new ChunkHotspotVerificationReport(serverStats, clientStats, List.of(), true);
+        }
+
+        private boolean matched() {
+            return !this.skipped && this.mismatches.isEmpty();
+        }
+
+        private boolean matchedOrSkipped() {
+            return this.skipped || this.mismatches.isEmpty();
+        }
+    }
 
     private static char unescapeJsonChar(char current) {
         return switch (current) {
