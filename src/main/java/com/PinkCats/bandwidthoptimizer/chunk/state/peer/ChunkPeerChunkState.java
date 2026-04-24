@@ -127,6 +127,15 @@ final class ChunkPeerChunkState {
     ChunkPeerChunkStateSnapshot recordInvalidate() {
         this.lastInvalidatedAtMillis = System.currentTimeMillis();
         clearReceiverAcknowledgement();
+        this.knownSnapshotPublished = false;
+        this.knownSnapshotHash = "";
+        this.knownSnapshotShortHash = "";
+        this.deltaPacketCountSinceFullSnapshot = 0L;
+        this.deltaBytesSinceFullSnapshot = 0L;
+        this.lightLaneVersion = 0L;
+        this.sectionBlocksLaneVersion = 0L;
+        this.blockLaneVersion = 0L;
+        this.blockEntityLaneVersion = 0L;
         return snapshot();
     }
 

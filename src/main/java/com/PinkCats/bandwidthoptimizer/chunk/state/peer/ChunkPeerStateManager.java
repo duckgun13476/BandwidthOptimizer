@@ -147,6 +147,16 @@ public final class ChunkPeerStateManager {
         return state == null ? null : state.snapshotChunk(coordinate);
     }
 
+    public static ChunkPeerChunkStateSnapshot snapshotPlayerChunk(ServerPlayer player, ChunkPacketCoordinate coordinate) {
+        Channel channel = readPlayerChannel(player);
+        if (channel == null || coordinate == null || !coordinate.present()) {
+            return null;
+        }
+
+        ChunkPeerState state = CHANNEL_STATES.get(channel.id().asLongText());
+        return state == null ? null : state.snapshotChunk(coordinate);
+    }
+
 
     public static ChunkPeerChunkStateSnapshot acknowledgeOutboundChunk(ChannelHandlerContext context, ChunkHotspotFrame frame) {
         if (context == null || frame == null || frame.coordinate() == null || !frame.coordinate().present()) {
@@ -183,7 +193,41 @@ public final class ChunkPeerStateManager {
         return chunkSnapshot;
     }
 
+
+    public static ChunkPeerChunkStateSnapshot invalidatePlayerChunk(
+            ServerPlayer player,
+            ChunkPacketCoordinate coordinate,
+            String reason
+    ) {
+        Channel channel = readPlayerChannel(player);
+        if (channel == null || coordinate == null || !coordinate.present()) {
+            return null;
+        }
+
+        ChunkPeerState state = CHANNEL_STATES.get(channel.id().asLongText());
+        ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.invalidateChunk(coordinate);
+        Bandwidthoptimizer.LOGGER.info(
+                "[ChunkPeer][LifecycleInvalidate] player={}, uuid={}, channel={}, reason={}, chunk={}, state={}",
+                player.getGameProfile().getName(),
+                player.getUUID(),
+                channel.id().asLongText(),
+                reason,
+                coordinate.logText(),
+                chunkSnapshot == null ? "<missing>" : chunkSnapshot.summaryText()
+        );
+        return chunkSnapshot;
+    }
+
+    public static Channel findPlayerChannel(ServerPlayer player) {
+        return readPlayerChannel(player);
+    }
+
     private static String readPlayerChannelId(ServerPlayer player) {
+        Channel channel = readPlayerChannel(player);
+        return channel == null ? null : channel.id().asLongText();
+    }
+
+    private static Channel readPlayerChannel(ServerPlayer player) {
         Object listener = readObjectField(player, "connection");
         if (listener == null)
             return null;
@@ -195,8 +239,7 @@ public final class ChunkPeerStateManager {
         if (connection == null)
             return null;
 
-        Channel channel = readTypedField(connection, Channel.class, "channel");
-        return channel == null ? null : channel.id().asLongText();
+        return readTypedField(connection, Channel.class, "channel");
     }
 
     private static Object readObjectMethod(Object target, String methodName) {

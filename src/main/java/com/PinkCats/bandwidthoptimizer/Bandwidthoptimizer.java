@@ -11,6 +11,8 @@ import com.mojang.logging.LogUtils;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.level.ChunkEvent;
+import net.minecraftforge.event.level.ChunkWatchEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
@@ -81,6 +83,24 @@ public class Bandwidthoptimizer {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
             ChunkLifecycleCoordinator.onPlayerLogout(serverPlayer);
             resetLegacyRuntimeState(serverPlayer);
+        }
+    }
+
+
+    @SubscribeEvent
+    public static void invalidateStateOnChunkUnwatch(ChunkWatchEvent.UnWatch event) {
+        if (event.getPlayer() != null && event.getLevel() != null && event.getPos() != null) {
+            ChunkLifecycleCoordinator.onPlayerStopWatchingChunk(event.getPlayer(), event.getPos(), event.getLevel());
+        }
+    }
+
+
+    @SubscribeEvent
+    public static void invalidateStateOnChunkUnload(ChunkEvent.Unload event) {
+        if (event.getLevel() instanceof net.minecraft.server.level.ServerLevel serverLevel
+                && event.getChunk() != null
+                && event.getChunk().getPos() != null) {
+            ChunkLifecycleCoordinator.onServerChunkUnload(serverLevel, event.getChunk().getPos());
         }
     }
 

@@ -97,7 +97,11 @@ final class ChunkPeerState {
 
 
     synchronized ChunkPeerChunkStateSnapshot invalidateChunk(ChunkPacketCoordinate coordinate) {
-        ChunkPeerChunkState chunkState = getChunkStateForControl(coordinate);
+        if (coordinate == null || !coordinate.present()) {
+            return null;
+        }
+
+        ChunkPeerChunkState chunkState = this.chunkStates.remove(ChunkPeerChunkKey.fromCoordinate(coordinate));
         return chunkState == null ? null : chunkState.recordInvalidate();
     }
 
