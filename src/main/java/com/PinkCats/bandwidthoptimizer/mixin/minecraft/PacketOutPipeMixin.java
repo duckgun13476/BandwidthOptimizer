@@ -34,6 +34,6 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> {
         ChannelCaptureHooks.captureOutboundEncodedPacket(context, packet, out, this.bandwidthoptimizer$writerIndexBefore);
 
         //handle
-        ChannelTransportHooks.tryToWrapOutboundPacket(context, out, this.bandwidthoptimizer$writerIndexBefore);
+        ChannelTransportHooks.tryToWrapOutboundPacket(context, packet, out, this.bandwidthoptimizer$writerIndexBefore);
     }
 }
