@@ -7,6 +7,8 @@ import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.Incomplete;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkOutboundObservationService;
+import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
@@ -23,34 +25,54 @@ import java.util.List;
 
 public final class ChannelTransportHooks {
 
-    private ChannelTransportHooks() {}
+    private ChannelTransportHooks() {
+    }
 
     // Send handle
-    public static void tryToWrapOutboundPacket(ChannelHandlerContext context, ByteBuf out, int startIndexInclusive) {
-
+    public static void tryToWrapOutboundPacket(ChannelHandlerContext context, Packet<?> packet, ByteBuf out, int startIndexInclusive) {
         // Fulfillment
-        if (context == null || out == null ||
-                !ChannelTransportRuntimeGuard.isTransportAvailable() ||
-                shouldUseTransportForCurrentProtocol(context))
+        if (context == null || out == null) {
             return;
+        }
 
+        int endIndexExclusive = out.writerIndex();
+        if (endIndexExclusive <= startIndexInclusive) {
+            return;
+        }
+
+        String protocolName = readProtocolName(context);
+        byte[] originalPacketBytes = ByteBufUtil.getBytes(out, startIndexInclusive, endIndexExclusive - startIndexInclusive, false);
+        ChunkOutboundObservationService.observeOutboundPacket(
+                context,
+                protocolName,
+                packet,
+                originalPacketBytes
+        );
+        byte[] transportInputPacketBytes = ChunkTransportDispatcher.tryEncodeOutboundPacket(
+                context,
+                protocolName,
+                packet,
+                originalPacketBytes
+        );
+        if (transportInputPacketBytes == null) {
+            transportInputPacketBytes = originalPacketBytes;
+        }
+
+        if (!ChannelTransportRuntimeGuard.isTransportAvailable()
+                || shouldUseTransportForCurrentProtocol(protocolName)) {
+            return;
+        }
 
         try {
-            int endIndexExclusive = out.writerIndex();
-            if (endIndexExclusive <= startIndexInclusive) {
-                return;
-            }
-
-            byte[] originalPacketBytes = ByteBufUtil.getBytes(out, startIndexInclusive, endIndexExclusive - startIndexInclusive, false);
             if (ChannelTransportBatchManager.shouldBatchOutboundPacket(context)) {
                 out.writerIndex(startIndexInclusive);
-                ChannelTransportBatchManager.enqueueOutboundPacket(context, originalPacketBytes);
+                ChannelTransportBatchManager.enqueueOutboundPacket(context, transportInputPacketBytes);
                 return;
             }
 
             ChannelTransportSession transportSession = ChannelTransportStateManager.getOrCreateSession(context.channel());
             ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame =
-                    KineticChannel.processOutboundPacket(transportSession, originalPacketBytes);
+                    KineticChannel.processOutboundPacket(transportSession, transportInputPacketBytes);
             if (wrappedFrame == null) {
                 return;
             }
@@ -70,8 +92,13 @@ public final class ChannelTransportHooks {
             List<Object> out,
             PacketDecoderFlowAccess packetDecoderFlowAccess
     ) throws Exception {
-        if (context == null || in == null || out == null || packetDecoderFlowAccess == null || !in.isReadable()
-                || !ChannelTransportRuntimeGuard.isTransportAvailable() || shouldUseTransportForCurrentProtocol(context)) {
+        if (context == null
+                || in == null
+                || out == null
+                || packetDecoderFlowAccess == null
+                || !in.isReadable()
+                || !ChannelTransportRuntimeGuard.isTransportAvailable()
+                || shouldUseTransportForCurrentProtocol(readProtocolName(context))) {
             return false;
         }
 
@@ -101,13 +128,16 @@ public final class ChannelTransportHooks {
         }
     }
 
+
     private static <T extends PacketListener> void decodeInboundPacketsIntoOutput(
             ChannelHandlerContext context,
             ChannelTransportPacketCodec.UnwrappedTransportFrame unwrappedFrame,
             List<Object> out,
             PacketDecoderFlowAccess packetDecoderFlowAccess
     ) throws Exception {
-        for (byte[] restoredPacketBytes : unwrappedFrame.restoredPacketBytesList()) {
+        for (byte[] transportRestoredPacketBytes : unwrappedFrame.restoredPacketBytesList()) {
+            byte[] restoredPacketBytes =
+                    ChunkTransportDispatcher.tryDecodeInboundPacket(context, transportRestoredPacketBytes);
             ChannelCapturedFrame pendingInboundFrame = beginInboundCapture(context, restoredPacketBytes);
             int outputSizeBeforeDecode = out.size();
             Packet<? super T> restoredPacket = decodeRestoredPacket(context, restoredPacketBytes, packetDecoderFlowAccess);
@@ -121,8 +151,11 @@ public final class ChannelTransportHooks {
             ChannelTransportPacketCodec.UnwrappedTransportFrame unwrappedFrame,
             PacketDecoderFlowAccess packetDecoderFlowAccess
     ) throws Exception {
-        List<ChannelTransportBatchManager.InboundReplayEntry> replayEntries = new java.util.ArrayList<>(unwrappedFrame.restoredPacketCount());
-        for (byte[] restoredPacketBytes : unwrappedFrame.restoredPacketBytesList()) {
+        List<ChannelTransportBatchManager.InboundReplayEntry> replayEntries =
+                new java.util.ArrayList<>(unwrappedFrame.restoredPacketCount());
+        for (byte[] transportRestoredPacketBytes : unwrappedFrame.restoredPacketBytesList()) {
+            byte[] restoredPacketBytes =
+                    ChunkTransportDispatcher.tryDecodeInboundPacket(context, transportRestoredPacketBytes);
             replayEntries.add(new ChannelTransportBatchManager.InboundReplayEntry(
                     restoredPacketBytes,
                     decodeRestoredPacket(context, restoredPacketBytes, packetDecoderFlowAccess)
@@ -175,8 +208,6 @@ public final class ChannelTransportHooks {
         }
     }
 
-
-
     private static String readProtocolName(ChannelHandlerContext context) {
         Object protocol = context.channel().attr(Connection.ATTRIBUTE_PROTOCOL).get();
         return protocol == null ? "null" : String.valueOf(protocol);
@@ -190,11 +221,8 @@ public final class ChannelTransportHooks {
         return protocol;
     }
 
-
     @Incomplete("Only PLAY packet now")
-    private static boolean shouldUseTransportForCurrentProtocol(ChannelHandlerContext context) {
-        return !"PLAY".equalsIgnoreCase(readProtocolName(context));
+    private static boolean shouldUseTransportForCurrentProtocol(String protocolName) {
+        return !"PLAY".equalsIgnoreCase(protocolName);
     }
-
-
 }
