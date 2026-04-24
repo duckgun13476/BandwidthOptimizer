@@ -46,64 +46,16 @@ java {
 }
 
 minecraft {
-    // The mappings can be changed at any time and must be in the following format.
-    // Channel:   Version:
-    // official   MCVersion             Official field/method names from Mojang mapping files
-    // parchment  YYYY.MM.DD-MCVersion  Open community-sourced parameter names and javadocs layered on top of official
-    //
-    // You must be aware of the Mojang license when using the 'official' or 'parchment' mappings.
-    // See more information here: https://github.com/MinecraftForge/MCPConfig/blob/master/Mojang.md
-    //
-    // Parchment is an unofficial project maintained by ParchmentMC, separate from MinecraftForge
-    // Additional setup is needed to use their mappings: https://parchmentmc.org/docs/getting-started
-    //
-    // Use non-default mappings at your own risk. They may not always work.
-    // Simply re-run your setup task after changing the mappings to update your workspace.
     mappings channel: mapping_channel, version: mapping_version
-
-    // When true, this property will have all Eclipse/IntelliJ IDEA run configurations run the "prepareX" task for the given run configuration before launching the game.
-    // In most cases, it is not necessary to enable.
-    // enableEclipsePrepareRuns = true
-    // enableIdeaPrepareRuns = true
-
-    // This property allows configuring Gradle's ProcessResources task(s) to run on IDE output locations before launching the game.
-    // It is REQUIRED to be set to true for this template to function.
-    // See https://docs.gradle.org/current/dsl/org.gradle.language.jvm.tasks.ProcessResources.html
     copyIdeResources = true
 
-    // When true, this property will add the folder name of all declared run configurations to generated IDE run configurations.
-    // The folder name can be set on a run configuration using the "folderName" property.
-    // By default, the folder name of a run configuration is the name of the Gradle project containing it.
-    // generateRunFolders = true
-
-    // This property enables access transformers for use in development.
-    // They will be applied to the Minecraft artifact.
-    // The access transformer file can be anywhere in the project.
-    // However, it must be at "META-INF/accesstransformer.cfg" in the final mod jar to be loaded by Forge.
-    // This default location is a best practice to automatically put the file in the right place in the final jar.
-    // See https://docs.minecraftforge.net/en/latest/advanced/accesstransformers/ for more information.
-    // accessTransformer = file('src/main/resources/META-INF/accesstransformer.cfg')
-
-    // Default run configurations.
-    // These can be tweaked, removed, or duplicated as needed.
     runs {
-        // applies to all the run configs below
+
         configureEach {
             workingDirectory project.file('run')
             property 'mixin.debug', 'true'
             property 'mixin.debug.export', 'true'
-
-            // Recommended logging data for a userdev environment
-            // The markers can be added/remove as needed separated by commas.
-            // "SCAN": For mods scan.
-            // "REGISTRIES": For firing of registry events.
-            // "REGISTRYDUMP": For getting the contents of all registries.
             property 'forge.logging.markers', 'REGISTRIES'
-
-
-            // Recommended logging level for the console
-            // You can set various levels here.
-            // Please read: https://stackoverflow.com/questions/2031163/when-to-use-the-different-log-levels
             property 'forge.logging.console.level', 'debug'
 
             mods {
@@ -114,7 +66,7 @@ minecraft {
         }
 
         client {
-            // 客户端单独使用自己的运行目录，避免和服务端共用抓包输出文件。
+
             workingDirectory project.file('run/client')
 
             // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
@@ -131,12 +83,24 @@ minecraft {
                     if (project.hasProperty('boExperientAutoConnectDelayTicks')) {
                         property 'bandwidthoptimizer.experient.autoConnectDelayTicks', project.property('boExperientAutoConnectDelayTicks').toString()
                     }
+                    if (project.hasProperty('boExperientAutoConnectMaxAttempts')) {
+                        property 'bandwidthoptimizer.experient.autoConnectMaxAttempts', project.property('boExperientAutoConnectMaxAttempts').toString()
+                    }
+                    if (project.hasProperty('boExperientAutoConnectRetryDelayTicks')) {
+                        property 'bandwidthoptimizer.experient.autoConnectRetryDelayTicks', project.property('boExperientAutoConnectRetryDelayTicks').toString()
+                    }
                 }
             }
 
             // 这组属性把 runAll 透传下来的 transport 实验开关继续桥接到真实游戏进程。
             if ((project.findProperty('boExperimentalTransport') ?: 'false').toString().toBoolean()) {
                 property 'bandwidthoptimizer.experimentalTransport', 'true'
+            }
+            if ((project.findProperty('boExperimentalChunkHotspotTransport') ?: 'false').toString().toBoolean()) {
+                property 'bandwidthoptimizer.experimentalChunkHotspotTransport', 'true'
+            }
+            if ((project.findProperty('boExperientChunkHotspotPathEnabled') ?: 'false').toString().toBoolean()) {
+                property 'bandwidthoptimizer.experient.chunkHotspotPathEnabled', 'true'
             }
             if (project.hasProperty('boTransportMappingEnabled')) {
                 property 'bandwidthoptimizer.transport.mappingEnabled', project.property('boTransportMappingEnabled').toString()
@@ -169,6 +133,12 @@ minecraft {
             if ((project.findProperty('boExperimentalTransport') ?: 'false').toString().toBoolean()) {
                 property 'bandwidthoptimizer.experimentalTransport', 'true'
             }
+            if ((project.findProperty('boExperimentalChunkHotspotTransport') ?: 'false').toString().toBoolean()) {
+                property 'bandwidthoptimizer.experimentalChunkHotspotTransport', 'true'
+            }
+            if ((project.findProperty('boExperientChunkHotspotPathEnabled') ?: 'false').toString().toBoolean()) {
+                property 'bandwidthoptimizer.experient.chunkHotspotPathEnabled', 'true'
+            }
             if (project.hasProperty('boTransportMappingEnabled')) {
                 property 'bandwidthoptimizer.transport.mappingEnabled', project.property('boTransportMappingEnabled').toString()
             }
@@ -190,9 +160,6 @@ minecraft {
             args '--nogui'
         }
 
-        // This run config launches GameTestServer and runs all registered gametests, then exits.
-        // By default, the server will crash when no gametests are provided.
-        // The gametest system is also enabled by default for other run configs under the /test command.
         gameTestServer {
             property 'forge.enabledGameTestNamespaces', mod_id
         }
@@ -217,14 +184,7 @@ mixin {
 sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 repositories {
-    // Put repositories for dependencies here
-    // ForgeGradle automatically adds the Forge maven and Maven Central for you
 
-    // If you have mod jar dependencies in ./libs, you can declare them as a repository like so.
-    // See https://docs.gradle.org/current/userguide/declaring_repositories.html#sub:flat_dir_resolver
-    // flatDir {
-    //     dir 'libs'
-    // }
 }
 
 configurations {
@@ -234,42 +194,15 @@ configurations {
 dependencies {
     String zstdJniVersion = '1.5.7-7'
 
-    // Specify the version of Minecraft to use.
-    // Any artifact can be supplied so long as it has a "userdev" classifier artifact and is a compatible patcher artifact.
-    // The "userdev" classifier will be requested and setup by ForgeGradle.
-    // If the group id is "net.minecraft" and the artifact id is one of ["client", "server", "joined"],
-    // then special handling is done to allow a setup of a vanilla dependency without the use of an external repository.
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
-
-    // Example mod dependency with JEI - using fg.deobf() ensures the dependency is remapped to your development mappings
-    // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
-    // compileOnly fg.deobf("mezz.jei:jei-${mc_version}-common-api:${jei_version}")
-    // compileOnly fg.deobf("mezz.jei:jei-${mc_version}-forge-api:${jei_version}")
-    // runtimeOnly fg.deobf("mezz.jei:jei-${mc_version}-forge:${jei_version}")
-
-    // Example mod dependency using a mod jar from ./libs with a flat dir repository
-    // This maps to ./libs/coolmod-${mc_version}-${coolmod_version}.jar
-    // The group id is ignored when searching -- in this case, it is "blank"
-    // implementation fg.deobf("blank:coolmod-${mc_version}:${coolmod_version}")
-
-    // For more info:
-    // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
-    // http://www.gradle.org/docs/current/userguide/dependency_management.html
 
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
     implementation "com.github.luben:zstd-jni:${zstdJniVersion}"
-    // Forge userdev 不会自动把普通第三方库放进游戏运行环境；这里额外声明 minecraftLibrary，
-    // 让 runClient / runServer 里的 ModLauncher 也能真正看到 zstd-jni。
     minecraftLibrary "com.github.luben:zstd-jni:${zstdJniVersion}"
-    // 当前产物仍然沿用本项目已有的 fat-jar 方式，把 zstd-jni 一起打进最终模组包。
     bundledLibs "com.github.luben:zstd-jni:${zstdJniVersion}"
-
 }
 
-// This block of code expands all declared replace properties in the specified resource targets.
-// A missing property will result in an error. Properties are expanded using ${} Groovy notation.
-// When "copyIdeResources" is enabled, this will also run before the game launches in IDE environments.
-// See https://docs.gradle.org/current/dsl/org.gradle.language.jvm.tasks.ProcessResources.html
+
 tasks.named('processResources', ProcessResources).configure {
     var replaceProperties = [minecraft_version   : minecraft_version, minecraft_version_range: minecraft_version_range,
                              forge_version       : forge_version, forge_version_range: forge_version_range,
@@ -308,7 +241,6 @@ tasks.named('jar', Jar).configure {
         exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
     }
 
-    // This is the preferred method to reobfuscate your jar file
     finalizedBy 'reobfJar'
 }
 
@@ -337,8 +269,7 @@ tasks.register('runChannelTransportRoundTrip', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.experient.ChannelTransportRoundTripMain'
 }
 
-// 这个函数启动一个现有的 Gradle run 任务，并把外层启动日志单独落盘，方便排查启动阶段错误。
-// Starts an existing Gradle run task and tees child-process output to both file and the current runAll console.
+
 def startExistingRunTaskProcess(File projectDir, boolean isWindows, String wrapperPath, String taskName, List<String> extraGradleArgs, String taskArgs, File outputFile, String consoleLabel) {
     outputFile.parentFile.mkdirs()
     if (outputFile.exists()) {
@@ -371,8 +302,7 @@ def startExistingRunTaskProcess(File projectDir, boolean isWindows, String wrapp
     return process
 }
 
-// 这个函数异步转发 runServer / runClient 子进程输出，让前台终端实时可见，同时保留完整落盘日志。
-// Streams runServer / runClient output asynchronously so the user sees live logs while runAll still keeps full log files.
+
 def streamRunTaskOutputToConsole(Process process, File outputFile, String consoleLabel) {
     String safeConsoleLabel = (consoleLabel == null || consoleLabel.isBlank()) ? 'run-task' : consoleLabel
     Thread.startDaemon("runAll-log-pump-${safeConsoleLabel}") {
@@ -419,6 +349,8 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     List<String> args = []
     args.addAll(buildExperientEnabledGradleArgs())
     appendOptionalRunAllProperty(args, projectRef, 'boExperimentalTransport')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperimentalChunkHotspotTransport')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathEnabled')
     appendOptionalRunAllProperty(args, projectRef, 'boTransportMappingEnabled')
     appendOptionalRunAllProperty(args, projectRef, 'boTransportZstdEnabled')
     appendOptionalRunAllProperty(args, projectRef, 'boTransportBatchEnabled')
@@ -437,6 +369,8 @@ def buildExperientAutoConnectGradleArgs(Project projectRef, String address, Stri
             "-PboExperientAutoConnectName=${serverName}",
             "-PboExperientAutoConnectDelayTicks=${delayTicks}"
     ])
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientAutoConnectMaxAttempts')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientAutoConnectRetryDelayTicks')
     return args
 }
 

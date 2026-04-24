@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.Old.network.ModNetwork;
 import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.ZstdRuntimeSupport;
+import com.PinkCats.bandwidthoptimizer.chunk.lifecycle.ChunkLifecycleCoordinator;
 import com.PinkCats.bandwidthoptimizer.command.BandwidthOptimizerCommand;
 import com.mojang.logging.LogUtils;
 import net.minecraftforge.common.MinecraftForge;
@@ -49,7 +50,8 @@ public class Bandwidthoptimizer {
     @SubscribeEvent
     public static void syncConfigOnLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
-            resetRuntimeState(serverPlayer);
+            ChunkLifecycleCoordinator.onPlayerLogin(serverPlayer);
+            resetLegacyRuntimeState(serverPlayer);
             if (ModNetwork.isLegacyTransportEnabled()) {
                 ModNetwork.sendServerConfigToPlayer(serverPlayer);
             }
@@ -59,30 +61,33 @@ public class Bandwidthoptimizer {
     @SubscribeEvent
     public static void resetStateOnRespawn(PlayerEvent.PlayerRespawnEvent event) {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
-            resetRuntimeState(serverPlayer);
+            ChunkLifecycleCoordinator.onPlayerRespawn(serverPlayer);
+            resetLegacyRuntimeState(serverPlayer);
         }
     }
 
     @SubscribeEvent
     public static void resetStateOnDimensionChange(PlayerEvent.PlayerChangedDimensionEvent event) {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
-            resetRuntimeState(serverPlayer);
+            ChunkLifecycleCoordinator.onPlayerDimensionChange(serverPlayer);
+            resetLegacyRuntimeState(serverPlayer);
         }
     }
 
     @SubscribeEvent
     public static void clearStateOnLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
-            resetRuntimeState(serverPlayer);
+            ChunkLifecycleCoordinator.onPlayerLogout(serverPlayer);
+            resetLegacyRuntimeState(serverPlayer);
         }
     }
 
     public static void prepareForClientRespawnBoundary(net.minecraft.server.level.ServerPlayer serverPlayer) {
-        resetRuntimeState(serverPlayer);
+        ChunkLifecycleCoordinator.prepareForClientRespawnBoundary(serverPlayer);
+        resetLegacyRuntimeState(serverPlayer);
     }
 
-    // Phase 0 of the transport refactor intentionally keeps runtime transport state inert.
-    private static void resetRuntimeState(net.minecraft.server.level.ServerPlayer serverPlayer) {
+    private static void resetLegacyRuntimeState(net.minecraft.server.level.ServerPlayer serverPlayer) {
         if (!ModNetwork.isLegacyTransportEnabled()) {
             return;
         }
