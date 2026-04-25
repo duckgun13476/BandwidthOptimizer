@@ -55,14 +55,17 @@ public final class ChunkTransportDispatcher {
             Packet<?> packet,
             byte[] originalPacketBytes
     ) {
-        if (!ChunkTransportRuntimeConfig.isEnabled()) {
+        if (!ChunkTransportRuntimeConfig.isEnabled())
             return null;
-        }
 
         ChunkPacketDescriptor descriptor = ChunkPacketClassifier.classifyOutboundPlayPacket(protocolName, packet);
-        if (!shouldUseRuntimeChunkTransport(descriptor)) {
+        if (!shouldUseRuntimeChunkTransport(descriptor))
             return null;
-        }
+
+        ChunkTransportBoundaryController.ChunkTransportPermit transportPermit =
+                ChunkTransportBoundaryController.permitChunkTransport(context, descriptor);
+        if (!transportPermit.allowed())
+            return null;
 
         ChunkSnapshotFingerprint fingerprint = ChunkSnapshotFingerprintService.fingerprintOutboundPacket(originalPacketBytes);
         ChunkPeerChunkStateSnapshot knownChunkSnapshot =

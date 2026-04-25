@@ -44,6 +44,14 @@ public final class ChannelTransportBatchManager {
         return true;
     }
 
+    // prevent Delay packet queue problem
+    public static void flushOutboundBatchNow(ChannelHandlerContext context) {
+        if (context == null || !ChannelTransportBatchRuntimeConfig.isBatchEnabled()) {
+            return;
+        }
+        flushOutboundBatch(context.channel());
+    }
+
     // Prevent sensitive overtake problem
     public static boolean shouldBatchOutboundPacket(ChannelHandlerContext context) {
         if (context == null || !ChannelTransportBatchRuntimeConfig.isBatchEnabled())

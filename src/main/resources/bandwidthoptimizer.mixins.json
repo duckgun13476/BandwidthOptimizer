@@ -6,6 +6,7 @@
   "refmap": "bandwidthoptimizer.refmap.json",
   "mixins": [
     "minecraft.ConnectionChannelReadInvokerMixin",
+    "minecraft.ConnectionSendBoundaryMixin",
     "minecraft.ChunkHolderChunkCacheDeltaMixin",
     "minecraft.PacketOutPipeMixin",
     "minecraft.PacketInPipeMixin"

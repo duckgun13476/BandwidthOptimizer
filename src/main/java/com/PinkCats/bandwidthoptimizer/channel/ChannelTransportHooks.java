@@ -9,6 +9,7 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkInboundDecodeResult;
+import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportBoundaryController;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkOutboundObservationService;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher;
 import io.netty.buffer.ByteBuf;
@@ -27,10 +28,8 @@ import java.util.List;
 
 public final class ChannelTransportHooks {
 
-    private ChannelTransportHooks() {
-    }
+    private ChannelTransportHooks() {}
 
-    // Send handle
     public static void tryToWrapOutboundPacket(ChannelHandlerContext context, Packet<?> packet, ByteBuf out, int startIndexInclusive) {
         // Fulfillment
         if (context == null || out == null) {
@@ -44,6 +43,8 @@ public final class ChannelTransportHooks {
 
         String protocolName = readProtocolName(context);
         byte[] originalPacketBytes = ByteBufUtil.getBytes(out, startIndexInclusive, endIndexExclusive - startIndexInclusive, false);
+        ChunkTransportBoundaryController.OutboundBoundaryDecision boundaryDecision =
+                ChunkTransportBoundaryController.beginOutboundPacket(context, protocolName, packet);
         byte[] transportInputPacketBytes = ChunkTransportDispatcher.tryEncodeOutboundPacket(
                 context,
                 protocolName,
@@ -59,6 +60,9 @@ public final class ChannelTransportHooks {
                 packet,
                 originalPacketBytes
         );
+        if (boundaryDecision.forceDirectTransport()) {
+            ChannelTransportBatchManager.flushOutboundBatchNow(context);
+        }
 
         if (!ChannelTransportRuntimeGuard.isTransportAvailable()
                 || shouldUseTransportForCurrentProtocol(protocolName)) {
@@ -66,7 +70,7 @@ public final class ChannelTransportHooks {
         }
 
         try {
-            if (ChannelTransportBatchManager.shouldBatchOutboundPacket(context)) {
+            if (!boundaryDecision.forceDirectTransport() && ChannelTransportBatchManager.shouldBatchOutboundPacket(context)) {
                 out.writerIndex(startIndexInclusive);
                 ChannelTransportBatchManager.enqueueOutboundPacket(context, transportInputPacketBytes);
                 return;

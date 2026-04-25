@@ -34,10 +34,16 @@ public final class ChunkTransportControlFrameSender {
 
 
     public static boolean sendNack(ChannelHandlerContext context, ChunkHotspotFrame sourceFrame, String reason) {
+        if (isRuntimeFailureReason(reason) && context != null && sourceFrame != null) {
+            ChunkTransportBoundaryController.recordRuntimeFailure(context.channel(), sourceFrame.coordinate(), reason);
+        }
         return sendControlFrame(context, buildControlFrame(ChunkHotspotFrameOp.NACK, sourceFrame, reason));
     }
 
     public static boolean sendInvalidate(ChannelHandlerContext context, ChunkHotspotFrame sourceFrame, String reason) {
+        if (isRuntimeFailureReason(reason) && context != null && sourceFrame != null) {
+            ChunkTransportBoundaryController.recordRuntimeFailure(context.channel(), sourceFrame.coordinate(), reason);
+        }
         return sendControlFrame(context, buildControlFrame(ChunkHotspotFrameOp.INVALIDATE, sourceFrame, reason));
     }
 
@@ -161,6 +167,10 @@ public final class ChunkTransportControlFrameSender {
     private static String readProtocolName(Channel channel) {
         Object protocol = channel.attr(net.minecraft.network.Connection.ATTRIBUTE_PROTOCOL).get();
         return protocol == null ? "null" : String.valueOf(protocol);
+    }
+
+    private static boolean isRuntimeFailureReason(String reason) {
+        return reason != null && reason.startsWith("runtime_");
     }
 
     private static String shortenHash(String hashHex) {
