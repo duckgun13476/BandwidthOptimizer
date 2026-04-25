@@ -2,7 +2,9 @@ package com.PinkCats.bandwidthoptimizer.experient;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -17,7 +19,10 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class ExperientChunkHotspotPathController {
 
     private static final int INITIAL_DELAY_TICKS = 80;
+    private static final int LIGHT_PULSE_DELAY_TICKS = 20;
     private static final int STEP_DELAY_TICKS = 60;
+    private static final int LIGHT_PROBE_Y_OFFSET = 4;
+    private static final boolean[] LIGHT_PULSE_SEQUENCE = {true, false, true, false};
     private static final double[][] WAYPOINT_OFFSETS = {
             {320.0D, 0.0D},
             {320.0D, 320.0D},
@@ -45,6 +50,7 @@ public final class ExperientChunkHotspotPathController {
                         serverPlayer.getX(),
                         serverPlayer.getY(),
                         serverPlayer.getZ(),
+                        0,
                         0,
                         INITIAL_DELAY_TICKS
                 )
@@ -96,6 +102,10 @@ public final class ExperientChunkHotspotPathController {
             return state.withDelayTicksRemaining(state.delayTicksRemaining() - 1);
         }
 
+        if (state.nextLightPulseIndex() < LIGHT_PULSE_SEQUENCE.length) {
+            return applyLightPulse(serverPlayer, state);
+        }
+
         if (state.nextWaypointIndex() >= WAYPOINT_OFFSETS.length) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ExperientChunkPath] Completed scripted path for player={}",
@@ -123,8 +133,30 @@ public final class ExperientChunkHotspotPathController {
                 state.originX(),
                 state.originY(),
                 state.originZ(),
+                state.nextLightPulseIndex(),
                 state.nextWaypointIndex() + 1,
                 STEP_DELAY_TICKS
+        );
+    }
+
+    private static PathState applyLightPulse(ServerPlayer serverPlayer, PathState state) {
+        BlockPos probePos = BlockPos.containing(
+                state.originX(),
+                state.originY() + LIGHT_PROBE_Y_OFFSET,
+                state.originZ()
+        );
+        boolean placeLightBlock = LIGHT_PULSE_SEQUENCE[state.nextLightPulseIndex()];
+        serverPlayer.serverLevel().setBlockAndUpdate(
+                probePos,
+                placeLightBlock ? Blocks.SEA_LANTERN.defaultBlockState() : Blocks.AIR.defaultBlockState()
+        );
+        return new PathState(
+                state.originX(),
+                state.originY(),
+                state.originZ(),
+                state.nextLightPulseIndex() + 1,
+                state.nextWaypointIndex(),
+                LIGHT_PULSE_DELAY_TICKS
         );
     }
 
@@ -156,6 +188,7 @@ public final class ExperientChunkHotspotPathController {
             double originX,
             double originY,
             double originZ,
+            int nextLightPulseIndex,
             int nextWaypointIndex,
             int delayTicksRemaining
     ) {
@@ -165,6 +198,7 @@ public final class ExperientChunkHotspotPathController {
                     this.originX,
                     this.originY,
                     this.originZ,
+                    this.nextLightPulseIndex,
                     this.nextWaypointIndex,
                     Math.max(delayTicksRemaining, 0)
             );
