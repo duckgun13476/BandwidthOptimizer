@@ -1,11 +1,12 @@
 package com.PinkCats.bandwidthoptimizer.chunk.patch;
 
+import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkLanePacketSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkLaneSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkShadowSnapshot;
-import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotSemanticKeyResolver;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotSemanticKeyResolver;
 import net.minecraft.network.protocol.Packet;
 
 import java.util.Arrays;
@@ -13,7 +14,6 @@ import java.util.Arrays;
 public final class ChunkPatchBuilder {
 
     private ChunkPatchBuilder() {}
-
 
     public static ChunkPatchBuildResult buildPatchFromSnapshot(
             ChunkShadowSnapshot chunkSnapshot,
@@ -27,14 +27,8 @@ public final class ChunkPatchBuilder {
         }
 
         String semanticKey = ChunkSnapshotSemanticKeyResolver.resolveSemanticKey(descriptor, packet);
-        ChunkLanePacketSnapshot basePacketSnapshot = null;
-        if (chunkSnapshot != null) {
-            ChunkLaneSnapshot laneSnapshot = chunkSnapshot.laneSnapshot(descriptor.laneKind());
-            if (laneSnapshot != null) {
-                basePacketSnapshot = laneSnapshot.packet(semanticKey);
-            }
-        }
-        return buildPatch(semanticKey, basePacketSnapshot, targetPacketBytes, targetFingerprint);
+        ChunkLanePacketSnapshot basePacketSnapshot = resolveBasePacketSnapshot(chunkSnapshot, descriptor, semanticKey);
+        return buildPatch(descriptor, semanticKey, basePacketSnapshot, targetPacketBytes);
     }
 
 
@@ -44,71 +38,57 @@ public final class ChunkPatchBuilder {
 
 
     public static ChunkPatchBuildResult buildPatch(
+            ChunkPacketDescriptor descriptor,
             String semanticKey,
             ChunkLanePacketSnapshot basePacketSnapshot,
-            byte[] targetPacketBytes,
-            ChunkSnapshotFingerprint targetFingerprint
+            byte[] targetPacketBytes
     ) {
-        if (targetPacketBytes == null || targetFingerprint == null) {
+        if (targetPacketBytes == null) {
             return ChunkPatchBuildResult.unavailable("missing_target_packet");
         }
 
-        byte[] safeTargetPacketBytes = Arrays.copyOf(targetPacketBytes, targetPacketBytes.length);
-        byte[] basePacketBytes = basePacketSnapshot == null
-                ? new byte[0]
-                : basePacketSnapshot.copyOriginalPacketBytes();
-        String basePayloadHash = basePacketSnapshot == null ? "" : basePacketSnapshot.payloadHash();
-
-        int prefixLength = resolveCommonPrefixLength(basePacketBytes, safeTargetPacketBytes);
-        int suffixLength = resolveCommonSuffixLength(basePacketBytes, safeTargetPacketBytes, prefixLength);
-        int targetReplaceStart = prefixLength;
-        int targetReplaceEndExclusive = safeTargetPacketBytes.length - suffixLength;
-        int baseReplaceLength = basePacketBytes.length - prefixLength - suffixLength;
-        byte[] replacementBytes = Arrays.copyOfRange(safeTargetPacketBytes, targetReplaceStart, targetReplaceEndExclusive);
-
-        ChunkPatch chunkPatch = new ChunkPatch(
-                semanticKey,
-                basePayloadHash,
-                targetFingerprint.hashHex(),
-                safeTargetPacketBytes.length,
-                prefixLength,
-                baseReplaceLength,
-                replacementBytes
-        );
-        byte[] encodedPatchBytes = chunkPatch.encode();
-        boolean beneficial = encodedPatchBytes.length < safeTargetPacketBytes.length;
-        String reason = beneficial ? "patch_smaller_than_full" : "patch_not_smaller_than_full";
-        if (basePacketSnapshot == null) {
-            reason = beneficial ? "patch_from_empty_base" : "missing_base_packet";
+        ChunkPatchBuildResult genericPatchResult =
+                ChunkGenericReplacePatchCodec.buildPatch(semanticKey, basePacketSnapshot, targetPacketBytes);
+        if (descriptor == null || descriptor.hotspotKind() != ChunkHotspotKind.SECTION_BLOCKS_UPDATE) {
+            return genericPatchResult;
         }
-        return new ChunkPatchBuildResult(chunkPatch, encodedPatchBytes, beneficial, reason);
+
+        ChunkPatchBuildResult sectionPatchResult =
+                SectionBlocksChunkPatchCodec.buildPatch(semanticKey, basePacketSnapshot, targetPacketBytes);
+        return preferSmallerPatch(sectionPatchResult, genericPatchResult);
     }
 
-
-    private static int resolveCommonPrefixLength(byte[] basePacketBytes, byte[] targetPacketBytes) {
-        int maxCommonLength = Math.min(basePacketBytes.length, targetPacketBytes.length);
-        int prefixLength = 0;
-        while (prefixLength < maxCommonLength && basePacketBytes[prefixLength] == targetPacketBytes[prefixLength]) {
-            prefixLength++;
+    private static ChunkLanePacketSnapshot resolveBasePacketSnapshot(
+            ChunkShadowSnapshot chunkSnapshot,
+            ChunkPacketDescriptor descriptor,
+            String semanticKey
+    ) {
+        if (chunkSnapshot == null || descriptor == null) {
+            return null;
         }
-        return prefixLength;
+
+        ChunkLaneSnapshot laneSnapshot = chunkSnapshot.laneSnapshot(descriptor.laneKind());
+        if (laneSnapshot == null) {
+            return null;
+        }
+        return laneSnapshot.packet(semanticKey);
     }
 
-
-    private static int resolveCommonSuffixLength(byte[] basePacketBytes, byte[] targetPacketBytes, int prefixLength) {
-        int baseRemainingLength = basePacketBytes.length - prefixLength;
-        int targetRemainingLength = targetPacketBytes.length - prefixLength;
-        int maxCommonLength = Math.min(baseRemainingLength, targetRemainingLength);
-        int suffixLength = 0;
-        while (suffixLength < maxCommonLength) {
-            int baseIndex = basePacketBytes.length - 1 - suffixLength;
-            int targetIndex = targetPacketBytes.length - 1 - suffixLength;
-            if (basePacketBytes[baseIndex] != targetPacketBytes[targetIndex]) {
-                break;
-            }
-            suffixLength++;
+    private static ChunkPatchBuildResult preferSmallerPatch(
+            ChunkPatchBuildResult preferredPatchResult,
+            ChunkPatchBuildResult fallbackPatchResult
+    ) {
+        if (preferredPatchResult == null || preferredPatchResult.patch() == null) {
+            return fallbackPatchResult == null
+                    ? ChunkPatchBuildResult.unavailable("patch_not_available")
+                    : fallbackPatchResult;
         }
-        return suffixLength;
+        if (fallbackPatchResult == null || fallbackPatchResult.patch() == null) {
+            return preferredPatchResult;
+        }
+        return preferredPatchResult.encodedPatchBytesLength() <= fallbackPatchResult.encodedPatchBytesLength()
+                ? preferredPatchResult
+                : fallbackPatchResult;
     }
 
     public record ChunkPatchBuildResult(

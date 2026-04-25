@@ -6,46 +6,39 @@ import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
 
 import java.util.Arrays;
+import java.util.HexFormat;
 
 public record ChunkPatch(
+        ChunkPatchMode patchMode,
         String semanticKey,
         String basePayloadHash,
-        String targetPayloadHash,
         int targetLength,
-        int prefixLength,
-        int baseReplaceLength,
-        byte[] replacementBytes
+        byte[] patchPayloadBytes
 ) {
 
-    private static final int PATCH_CODEC_VERSION = 1;
+    private static final int PATCH_CODEC_VERSION = 2;
 
     public ChunkPatch {
+        patchMode = patchMode == null ? ChunkPatchMode.GENERIC_REPLACE : patchMode;
         semanticKey = semanticKey == null || semanticKey.isBlank() ? "default" : semanticKey;
         basePayloadHash = basePayloadHash == null ? "" : basePayloadHash;
-        targetPayloadHash = targetPayloadHash == null ? "" : targetPayloadHash;
         targetLength = Math.max(targetLength, 0);
-        prefixLength = Math.max(prefixLength, 0);
-        baseReplaceLength = Math.max(baseReplaceLength, 0);
-        replacementBytes = replacementBytes == null
+        patchPayloadBytes = patchPayloadBytes == null
                 ? new byte[0]
-                : Arrays.copyOf(replacementBytes, replacementBytes.length);
+                : Arrays.copyOf(patchPayloadBytes, patchPayloadBytes.length);
     }
-
-
 
     public byte[] encode() {
         ByteBuf byteBuf = Unpooled.buffer();
         try {
             FriendlyByteBuf friendlyByteBuf = new FriendlyByteBuf(byteBuf);
             friendlyByteBuf.writeVarInt(PATCH_CODEC_VERSION);
+            friendlyByteBuf.writeVarInt(this.patchMode.codecId());
             friendlyByteBuf.writeUtf(this.semanticKey);
-            friendlyByteBuf.writeUtf(this.basePayloadHash);
-            friendlyByteBuf.writeUtf(this.targetPayloadHash);
+            writeHashBytes(friendlyByteBuf, this.basePayloadHash);
             friendlyByteBuf.writeVarInt(this.targetLength);
-            friendlyByteBuf.writeVarInt(this.prefixLength);
-            friendlyByteBuf.writeVarInt(this.baseReplaceLength);
-            friendlyByteBuf.writeVarInt(this.replacementBytes.length);
-            friendlyByteBuf.writeBytes(this.replacementBytes);
+            friendlyByteBuf.writeVarInt(this.patchPayloadBytes.length);
+            friendlyByteBuf.writeBytes(this.patchPayloadBytes);
             return ByteBufUtil.getBytes(byteBuf);
         } finally {
             byteBuf.release();
@@ -67,13 +60,11 @@ public record ChunkPatch(
             }
 
             ChunkPatch chunkPatch = new ChunkPatch(
+                    ChunkPatchMode.fromCodecId(friendlyByteBuf.readVarInt()),
                     friendlyByteBuf.readUtf(),
-                    friendlyByteBuf.readUtf(),
-                    friendlyByteBuf.readUtf(),
+                    readHashHex(friendlyByteBuf),
                     friendlyByteBuf.readVarInt(),
-                    friendlyByteBuf.readVarInt(),
-                    friendlyByteBuf.readVarInt(),
-                    readReplacementBytes(friendlyByteBuf)
+                    readPatchPayloadBytes(friendlyByteBuf)
             );
             if (friendlyByteBuf.isReadable()) {
                 throw new IllegalArgumentException("Chunk patch left extra bytes: " + friendlyByteBuf.readableBytes());
@@ -84,27 +75,47 @@ public record ChunkPatch(
         }
     }
 
-
-
-    public byte[] copyReplacementBytes() {
-        return Arrays.copyOf(this.replacementBytes, this.replacementBytes.length);
+    public byte[] copyPatchPayloadBytes() {
+        return Arrays.copyOf(this.patchPayloadBytes, this.patchPayloadBytes.length);
     }
 
     public String summaryText() {
-        return "semanticKey=" + this.semanticKey
+        return "mode=" + this.patchMode.logName()
+                + ", semanticKey=" + this.semanticKey
                 + ", targetLength=" + this.targetLength
-                + ", prefixLength=" + this.prefixLength
-                + ", baseReplaceLength=" + this.baseReplaceLength
-                + ", replacementBytes=" + this.replacementBytes.length
-                + ", basePayloadHash=" + shortenHash(this.basePayloadHash)
-                + ", targetPayloadHash=" + shortenHash(this.targetPayloadHash);
+                + ", payloadBytes=" + this.patchPayloadBytes.length
+                + ", basePayloadHash=" + shortenHash(this.basePayloadHash);
     }
 
-    private static byte[] readReplacementBytes(FriendlyByteBuf friendlyByteBuf) {
-        int replacementLength = friendlyByteBuf.readVarInt();
-        byte[] replacementBytes = new byte[replacementLength];
-        friendlyByteBuf.readBytes(replacementBytes);
-        return replacementBytes;
+    private static void writeHashBytes(FriendlyByteBuf friendlyByteBuf, String hashHex) {
+        byte[] hashBytes = decodeHashHex(hashHex);
+        friendlyByteBuf.writeVarInt(hashBytes.length);
+        friendlyByteBuf.writeBytes(hashBytes);
+    }
+
+    private static String readHashHex(FriendlyByteBuf friendlyByteBuf) {
+        int hashLength = friendlyByteBuf.readVarInt();
+        if (hashLength <= 0) {
+            return "";
+        }
+
+        byte[] hashBytes = new byte[hashLength];
+        friendlyByteBuf.readBytes(hashBytes);
+        return HexFormat.of().formatHex(hashBytes);
+    }
+
+    private static byte[] readPatchPayloadBytes(FriendlyByteBuf friendlyByteBuf) {
+        int payloadLength = friendlyByteBuf.readVarInt();
+        byte[] payloadBytes = new byte[payloadLength];
+        friendlyByteBuf.readBytes(payloadBytes);
+        return payloadBytes;
+    }
+
+    private static byte[] decodeHashHex(String hashHex) {
+        if (hashHex == null || hashHex.isBlank()) {
+            return new byte[0];
+        }
+        return HexFormat.of().parseHex(hashHex);
     }
 
     private static String shortenHash(String hashHex) {

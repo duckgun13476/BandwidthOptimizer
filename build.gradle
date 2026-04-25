@@ -102,6 +102,9 @@ minecraft {
             if ((project.findProperty('boExperientChunkHotspotPathEnabled') ?: 'false').toString().toBoolean()) {
                 property 'bandwidthoptimizer.experient.chunkHotspotPathEnabled', 'true'
             }
+            if ((project.findProperty('boExperientChunkHotspotPathStopAfterSection') ?: 'false').toString().toBoolean()) {
+                property 'bandwidthoptimizer.experient.chunkHotspotPathStopAfterSection', 'true'
+            }
             if (project.hasProperty('boTransportMappingEnabled')) {
                 property 'bandwidthoptimizer.transport.mappingEnabled', project.property('boTransportMappingEnabled').toString()
             }
@@ -138,6 +141,9 @@ minecraft {
             }
             if ((project.findProperty('boExperientChunkHotspotPathEnabled') ?: 'false').toString().toBoolean()) {
                 property 'bandwidthoptimizer.experient.chunkHotspotPathEnabled', 'true'
+            }
+            if ((project.findProperty('boExperientChunkHotspotPathStopAfterSection') ?: 'false').toString().toBoolean()) {
+                property 'bandwidthoptimizer.experient.chunkHotspotPathStopAfterSection', 'true'
             }
             if (project.hasProperty('boTransportMappingEnabled')) {
                 property 'bandwidthoptimizer.transport.mappingEnabled', project.property('boTransportMappingEnabled').toString()
@@ -351,6 +357,7 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     appendOptionalRunAllProperty(args, projectRef, 'boExperimentalTransport')
     appendOptionalRunAllProperty(args, projectRef, 'boExperimentalChunkHotspotTransport')
     appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathEnabled')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathStopAfterSection')
     appendOptionalRunAllProperty(args, projectRef, 'boTransportMappingEnabled')
     appendOptionalRunAllProperty(args, projectRef, 'boTransportZstdEnabled')
     appendOptionalRunAllProperty(args, projectRef, 'boTransportBatchEnabled')

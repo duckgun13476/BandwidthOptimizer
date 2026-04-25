@@ -137,8 +137,8 @@ public final class ChunkTransportPlanner {
         }
 
         boolean receiverAcknowledgedCurrentFullSnapshot = hasAcknowledgedCurrentFullSnapshot(chunkSnapshot);
-        boolean allowLightPatchBeforeAck = canAllowLightPatchBeforeAck(descriptor, chunkSnapshot);
-        if (!receiverAcknowledgedCurrentFullSnapshot && !allowLightPatchBeforeAck) {
+        boolean allowPatchBeforeAck = canAllowPatchBeforeAck(descriptor, chunkSnapshot);
+        if (!receiverAcknowledgedCurrentFullSnapshot && !allowPatchBeforeAck) {
             return buildDecision(
                     ChunkPlanDecisionKind.BYPASS,
                     "delta_before_receiver_ack",
@@ -167,7 +167,7 @@ public final class ChunkTransportPlanner {
         if (shouldUsePatch(descriptor, patchBuildResult, costEstimate)) {
             return buildDecision(
                     ChunkPlanDecisionKind.PUBLISH_PATCH,
-                    buildPatchReason(patchBuildResult, receiverAcknowledgedCurrentFullSnapshot),
+                    buildPatchReason(descriptor, patchBuildResult, receiverAcknowledgedCurrentFullSnapshot),
                     descriptor,
                     snapshotFingerprint,
                     chunkSnapshot,
@@ -184,7 +184,7 @@ public final class ChunkTransportPlanner {
                         patchBuildResult,
                         costEstimate,
                         receiverAcknowledgedCurrentFullSnapshot,
-                        allowLightPatchBeforeAck
+                        allowPatchBeforeAck
                 ),
                 descriptor,
                 snapshotFingerprint,
@@ -304,14 +304,14 @@ public final class ChunkTransportPlanner {
             ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult,
             ChunkPlanCostEstimate costEstimate,
             boolean receiverAcknowledgedCurrentFullSnapshot,
-            boolean allowLightPatchBeforeAck
+            boolean allowPatchBeforeAck
     ) {
         if (!isPatchLaneEnabled(descriptor)) {
             return "patch_lane_not_enabled_yet";
         }
 
-        if (!receiverAcknowledgedCurrentFullSnapshot && allowLightPatchBeforeAck) {
-            return buildLightPatchBeforeAckBypassReason(patchBuildResult, costEstimate);
+        if (!receiverAcknowledgedCurrentFullSnapshot && allowPatchBeforeAck) {
+            return buildPatchBeforeAckBypassReason(descriptor, patchBuildResult, costEstimate);
         }
 
         if (patchBuildResult == null || patchBuildResult.patch() == null) {
@@ -339,12 +339,14 @@ public final class ChunkTransportPlanner {
         return patchBuildResult.reason();
     }
 
+
     private static String buildPatchReason(
+            ChunkPacketDescriptor descriptor,
             ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult,
             boolean receiverAcknowledgedCurrentFullSnapshot
     ) {
         if (!receiverAcknowledgedCurrentFullSnapshot) {
-            return "light_patch_after_published_full_before_ack";
+            return resolvePatchReasonPrefix(descriptor) + "_patch_after_published_full_before_ack";
         }
         if (patchBuildResult == null || patchBuildResult.reason() == null || patchBuildResult.reason().isBlank()) {
             return "patch_transport_smaller_than_bypass";
@@ -352,41 +354,54 @@ public final class ChunkTransportPlanner {
         return patchBuildResult.reason();
     }
 
-    private static boolean canAllowLightPatchBeforeAck(
+    private static boolean canAllowPatchBeforeAck(
             ChunkPacketDescriptor descriptor,
             ChunkPeerChunkStateSnapshot chunkSnapshot
     ) {
         return descriptor != null
-                && descriptor.hotspotKind() == ChunkHotspotKind.LIGHT_UPDATE
+                && isPatchLaneEnabled(descriptor)
                 && hasKnownPublishedSnapshot(chunkSnapshot)
                 && chunkSnapshot != null
                 && chunkSnapshot.fullSnapshotVersion() > 0L;
     }
 
-    private static String buildLightPatchBeforeAckBypassReason(
+    private static String buildPatchBeforeAckBypassReason(
+            ChunkPacketDescriptor descriptor,
             ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult,
             ChunkPlanCostEstimate costEstimate
     ) {
+        String reasonPrefix = resolvePatchReasonPrefix(descriptor);
         if (patchBuildResult == null || patchBuildResult.patch() == null) {
             if (patchBuildResult == null || patchBuildResult.reason() == null || patchBuildResult.reason().isBlank()) {
-                return "light_patch_unavailable_before_ack";
+                return reasonPrefix + "_patch_unavailable_before_ack";
             }
             return patchBuildResult.reason();
         }
 
         if (costEstimate == null || costEstimate.patchTransportBytes() <= 0) {
-            return "light_patch_estimate_unavailable_before_ack";
+            return reasonPrefix + "_patch_estimate_unavailable_before_ack";
         }
 
         if (costEstimate.patchTransportBytes() >= costEstimate.bypassBytes()) {
-            return "light_patch_not_smaller_than_bypass_before_ack";
+            return reasonPrefix + "_patch_not_smaller_than_bypass_before_ack";
         }
 
         if (costEstimate.patchTransportBytes() >= costEstimate.fullTransportBytes()) {
-            return "light_patch_not_smaller_than_transport_full_before_ack";
+            return reasonPrefix + "_patch_not_smaller_than_transport_full_before_ack";
         }
 
-        return "light_patch_waiting_preconditions_before_ack";
+        return reasonPrefix + "_patch_waiting_preconditions_before_ack";
+    }
+
+
+    private static String resolvePatchReasonPrefix(ChunkPacketDescriptor descriptor) {
+        if (descriptor != null && descriptor.hotspotKind() == ChunkHotspotKind.SECTION_BLOCKS_UPDATE) {
+            return "section";
+        }
+        if (descriptor != null && descriptor.hotspotKind() == ChunkHotspotKind.LIGHT_UPDATE) {
+            return "light";
+        }
+        return "delta";
     }
 
     private static boolean shouldForceRefresh(ChunkPeerChunkStateSnapshot chunkSnapshot) {
@@ -544,9 +559,10 @@ public final class ChunkTransportPlanner {
         );
     }
 
-    // 当前阶段只完成了 light lane patch，section/block/block entity 继续按待办顺序推进。
     private static boolean isPatchLaneEnabled(ChunkPacketDescriptor descriptor) {
-        return descriptor != null && descriptor.hotspotKind() == ChunkHotspotKind.LIGHT_UPDATE;
+        return descriptor != null
+                && (descriptor.hotspotKind() == ChunkHotspotKind.LIGHT_UPDATE
+                || descriptor.hotspotKind() == ChunkHotspotKind.SECTION_BLOCKS_UPDATE);
     }
 
     private static int estimateTransportBytes(

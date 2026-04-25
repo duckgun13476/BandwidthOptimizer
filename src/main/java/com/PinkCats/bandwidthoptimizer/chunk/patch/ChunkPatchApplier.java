@@ -10,7 +10,7 @@ public final class ChunkPatchApplier {
     private ChunkPatchApplier() {}
 
 
-    public static byte[] applyPatch(ChunkPatch chunkPatch, byte[] basePacketBytes) {
+    public static byte[] applyPatch(ChunkPatch chunkPatch, byte[] basePacketBytes, String expectedTargetPayloadHash) {
         if (chunkPatch == null) {
             throw new IllegalArgumentException("chunkPatch must not be null");
         }
@@ -20,48 +20,15 @@ public final class ChunkPatchApplier {
                 : Arrays.copyOf(basePacketBytes, basePacketBytes.length);
         verifyBasePacket(chunkPatch, safeBasePacketBytes);
 
-        int prefixLength = chunkPatch.prefixLength();
-        int baseReplaceLength = chunkPatch.baseReplaceLength();
-        int baseSuffixStart = prefixLength + baseReplaceLength;
-        int suffixLength = safeBasePacketBytes.length - baseSuffixStart;
-        int expectedTargetLength = prefixLength + chunkPatch.replacementBytes().length + suffixLength;
-        if (expectedTargetLength != chunkPatch.targetLength()) {
-            throw new IllegalStateException(
-                    "Chunk patch target length mismatch. expected="
-                            + expectedTargetLength
-                            + ", target="
-                            + chunkPatch.targetLength()
-            );
-        }
-
-        byte[] targetPacketBytes = new byte[chunkPatch.targetLength()];
-        System.arraycopy(safeBasePacketBytes, 0, targetPacketBytes, 0, prefixLength);
-        System.arraycopy(chunkPatch.replacementBytes(), 0, targetPacketBytes, prefixLength, chunkPatch.replacementBytes().length);
-        System.arraycopy(
-                safeBasePacketBytes,
-                baseSuffixStart,
-                targetPacketBytes,
-                prefixLength + chunkPatch.replacementBytes().length,
-                suffixLength
-        );
-        verifyTargetPacket(chunkPatch, targetPacketBytes);
+        byte[] targetPacketBytes = switch (chunkPatch.patchMode()) {
+            case GENERIC_REPLACE -> ChunkGenericReplacePatchCodec.applyPatch(chunkPatch, safeBasePacketBytes);
+            case SECTION_SAME_POSITIONS -> SectionBlocksChunkPatchCodec.applyPatch(chunkPatch, safeBasePacketBytes);
+        };
+        verifyTargetPacket(expectedTargetPayloadHash, targetPacketBytes);
         return targetPacketBytes;
     }
 
-
-
     private static void verifyBasePacket(ChunkPatch chunkPatch, byte[] basePacketBytes) {
-        if (chunkPatch.prefixLength() + chunkPatch.baseReplaceLength() > basePacketBytes.length) {
-            throw new IllegalStateException(
-                    "Chunk patch base range overflow. prefix="
-                            + chunkPatch.prefixLength()
-                            + ", replace="
-                            + chunkPatch.baseReplaceLength()
-                            + ", baseLength="
-                            + basePacketBytes.length
-            );
-        }
-
         if (chunkPatch.basePayloadHash().isBlank()) {
             return;
         }
@@ -77,18 +44,16 @@ public final class ChunkPatchApplier {
         }
     }
 
-
-
-    private static void verifyTargetPacket(ChunkPatch chunkPatch, byte[] targetPacketBytes) {
-        if (chunkPatch.targetPayloadHash().isBlank()) {
+    private static void verifyTargetPacket(String expectedTargetPayloadHash, byte[] targetPacketBytes) {
+        if (expectedTargetPayloadHash == null || expectedTargetPayloadHash.isBlank()) {
             return;
         }
 
         ChunkSnapshotFingerprint targetFingerprint = ChunkSnapshotFingerprintService.fingerprintOutboundPacket(targetPacketBytes);
-        if (!chunkPatch.targetPayloadHash().equals(targetFingerprint.hashHex())) {
+        if (!expectedTargetPayloadHash.equals(targetFingerprint.hashHex())) {
             throw new IllegalStateException(
                     "Chunk patch target hash mismatch. expected="
-                            + chunkPatch.targetPayloadHash()
+                            + expectedTargetPayloadHash
                             + ", actual="
                             + targetFingerprint.hashHex()
             );

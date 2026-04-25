@@ -28,7 +28,6 @@ public final class ChunkTransportBoundaryController {
     private static final int LOGIN_WARMUP_CHUNK_PACKETS = 24;
     private static final int RESPAWN_WARMUP_CHUNK_PACKETS = 24;
     private static final int CACHE_CONTROL_WARMUP_CHUNK_PACKETS = 16;
-    private static final int BUNDLE_WARMUP_CHUNK_PACKETS = 8;
     private static final int FORGET_CHUNK_WARMUP_CHUNK_PACKETS = 4;
     private static final int MAX_TRACKED_FAILED_CHUNKS = 512;
     private static final int CHANNEL_FAILURE_THRESHOLD = 3;
@@ -100,7 +99,7 @@ public final class ChunkTransportBoundaryController {
             return new BoundaryTrigger(true, FORGET_CHUNK_WARMUP_CHUNK_PACKETS, "forget_chunk_boundary");
         }
         if (packet instanceof BundlePacket<?> || packet instanceof BundleDelimiterPacket) {
-            return new BoundaryTrigger(true, BUNDLE_WARMUP_CHUNK_PACKETS, "bundle_boundary");
+            return new BoundaryTrigger(true, 0, "bundle_boundary");
         }
         return BoundaryTrigger.NONE;
     }

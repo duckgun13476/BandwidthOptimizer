@@ -64,8 +64,9 @@ public final class ChunkTransportDispatcher {
 
         ChunkTransportBoundaryController.ChunkTransportPermit transportPermit =
                 ChunkTransportBoundaryController.permitChunkTransport(context, descriptor);
-        if (!transportPermit.allowed())
+        if (!transportPermit.allowed()) {
             return null;
+        }
 
         ChunkSnapshotFingerprint fingerprint = ChunkSnapshotFingerprintService.fingerprintOutboundPacket(originalPacketBytes);
         ChunkPeerChunkStateSnapshot knownChunkSnapshot =
@@ -317,7 +318,7 @@ public final class ChunkTransportDispatcher {
         }
 
         try {
-            return ChunkPatchApplier.applyPatch(chunkPatch, basePacketBytes);
+            return ChunkPatchApplier.applyPatch(chunkPatch, basePacketBytes, envelope.frame().payloadHash());
         } catch (RuntimeException exception) {
             ChunkTransportControlFrameSender.sendNack(context, envelope.frame(), "runtime_patch_apply_failed");
             return null;

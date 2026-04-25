@@ -20,9 +20,17 @@ public final class ExperientChunkHotspotPathController {
 
     private static final int INITIAL_DELAY_TICKS = 80;
     private static final int LIGHT_PULSE_DELAY_TICKS = 20;
+    private static final int SECTION_SETTLE_DELAY_TICKS = 200;
+    private static final int SECTION_PULSE_DELAY_TICKS = 20;
+    private static final int POST_SECTION_PULSE_DELAY_TICKS = 60;
     private static final int STEP_DELAY_TICKS = 60;
     private static final int LIGHT_PROBE_Y_OFFSET = 4;
+    private static final int SECTION_PROBE_Y_OFFSET = -8;
     private static final boolean[] LIGHT_PULSE_SEQUENCE = {true, false, true, false};
+    private static final boolean[] SECTION_PULSE_SEQUENCE = {true, false, true, false};
+    private static final int SECTION_PROBE_WIDTH = 6;
+    private static final int SECTION_PROBE_HEIGHT = 4;
+    private static final int SECTION_PROBE_DEPTH = 6;
     private static final double[][] WAYPOINT_OFFSETS = {
             {320.0D, 0.0D},
             {320.0D, 320.0D},
@@ -50,6 +58,7 @@ public final class ExperientChunkHotspotPathController {
                         serverPlayer.getX(),
                         serverPlayer.getY(),
                         serverPlayer.getZ(),
+                        0,
                         0,
                         0,
                         INITIAL_DELAY_TICKS
@@ -106,6 +115,18 @@ public final class ExperientChunkHotspotPathController {
             return applyLightPulse(serverPlayer, state);
         }
 
+        if (state.nextSectionPulseIndex() < SECTION_PULSE_SEQUENCE.length) {
+            return applySectionPulse(serverPlayer, state);
+        }
+
+        if (ExperientChunkHotspotPathRuntimeConfig.shouldStopAfterSection()) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ExperientChunkPath] Completed section-only scripted path for player={}",
+                    serverPlayer.getGameProfile().getName()
+            );
+            return null;
+        }
+
         if (state.nextWaypointIndex() >= WAYPOINT_OFFSETS.length) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ExperientChunkPath] Completed scripted path for player={}",
@@ -134,10 +155,12 @@ public final class ExperientChunkHotspotPathController {
                 state.originY(),
                 state.originZ(),
                 state.nextLightPulseIndex(),
+                state.nextSectionPulseIndex(),
                 state.nextWaypointIndex() + 1,
                 STEP_DELAY_TICKS
         );
     }
+
 
     private static PathState applyLightPulse(ServerPlayer serverPlayer, PathState state) {
         BlockPos probePos = BlockPos.containing(
@@ -150,14 +173,59 @@ public final class ExperientChunkHotspotPathController {
                 probePos,
                 placeLightBlock ? Blocks.SEA_LANTERN.defaultBlockState() : Blocks.AIR.defaultBlockState()
         );
+        int nextDelayTicks = state.nextLightPulseIndex() + 1 >= LIGHT_PULSE_SEQUENCE.length
+                ? SECTION_SETTLE_DELAY_TICKS
+                : LIGHT_PULSE_DELAY_TICKS;
         return new PathState(
                 state.originX(),
                 state.originY(),
                 state.originZ(),
                 state.nextLightPulseIndex() + 1,
+                state.nextSectionPulseIndex(),
                 state.nextWaypointIndex(),
-                LIGHT_PULSE_DELAY_TICKS
+                nextDelayTicks
         );
+    }
+
+    private static PathState applySectionPulse(ServerPlayer serverPlayer, PathState state) {
+        BlockPos anchorPos = resolveSectionProbeAnchor(state);
+        boolean useStonePattern = SECTION_PULSE_SEQUENCE[state.nextSectionPulseIndex()];
+        for (int offsetX = 0; offsetX < SECTION_PROBE_WIDTH; offsetX++) {
+            for (int offsetY = 0; offsetY < SECTION_PROBE_HEIGHT; offsetY++) {
+                for (int offsetZ = 0; offsetZ < SECTION_PROBE_DEPTH; offsetZ++) {
+                    serverPlayer.serverLevel().setBlockAndUpdate(
+                            anchorPos.offset(offsetX, offsetY, offsetZ),
+                            useStonePattern ? Blocks.STONE.defaultBlockState() : Blocks.ANDESITE.defaultBlockState()
+                    );
+                }
+            }
+        }
+        int nextDelayTicks = state.nextSectionPulseIndex() + 1 >= SECTION_PULSE_SEQUENCE.length
+                ? POST_SECTION_PULSE_DELAY_TICKS
+                : SECTION_PULSE_DELAY_TICKS;
+        return new PathState(
+                state.originX(),
+                state.originY(),
+                state.originZ(),
+                state.nextLightPulseIndex(),
+                state.nextSectionPulseIndex() + 1,
+                state.nextWaypointIndex(),
+                nextDelayTicks
+        );
+    }
+
+    private static BlockPos resolveSectionProbeAnchor(PathState state) {
+        int baseX = floorToBlock(state.originX());
+        int baseY = floorToBlock(state.originY()) + SECTION_PROBE_Y_OFFSET;
+        int baseZ = floorToBlock(state.originZ());
+        int sectionMinX = (baseX >> 4) << 4;
+        int sectionMinY = (baseY >> 4) << 4;
+        int sectionMinZ = (baseZ >> 4) << 4;
+        return new BlockPos(sectionMinX + 4, sectionMinY + 4, sectionMinZ + 4);
+    }
+
+    private static int floorToBlock(double value) {
+        return (int) Math.floor(value);
     }
 
     private static boolean teleportPlayer(ServerPlayer serverPlayer, double targetX, double targetY, double targetZ) {
@@ -189,6 +257,7 @@ public final class ExperientChunkHotspotPathController {
             double originY,
             double originZ,
             int nextLightPulseIndex,
+            int nextSectionPulseIndex,
             int nextWaypointIndex,
             int delayTicksRemaining
     ) {
@@ -199,6 +268,7 @@ public final class ExperientChunkHotspotPathController {
                     this.originY,
                     this.originZ,
                     this.nextLightPulseIndex,
+                    this.nextSectionPulseIndex,
                     this.nextWaypointIndex,
                     Math.max(delayTicksRemaining, 0)
             );
