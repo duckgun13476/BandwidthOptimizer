@@ -9,8 +9,13 @@ public record ChunkGlobalStoreObservation(
         boolean existingBeforeObserve,
         long observationCount,
         long totalObservedBytes,
+        long referenceCount,
         long hotspotDistinctEntryCount,
         long totalDistinctEntryCount,
+        long materializedSnapshotCount,
+        long retainedBlobBytes,
+        long blobBudgetBytes,
+        long totalBlobEvictions,
         String lastChunkText,
         int encodedBytes
 ) {
@@ -21,8 +26,13 @@ public record ChunkGlobalStoreObservation(
                 + ", hash=" + this.snapshotShortHash
                 + ", reused=" + this.existingBeforeObserve
                 + ", observedCount=" + this.observationCount
+                + ", refCount=" + this.referenceCount
                 + ", hotspotDistinctEntries=" + this.hotspotDistinctEntryCount
                 + ", totalDistinctEntries=" + this.totalDistinctEntryCount
+                + ", materializedSnapshots=" + this.materializedSnapshotCount
+                + ", retainedBlobBytes=" + this.retainedBlobBytes
+                + "/" + this.blobBudgetBytes
+                + ", evictedBlobs=" + this.totalBlobEvictions
                 + ", lastChunk=" + this.lastChunkText
                 + ", encodedBytes=" + this.encodedBytes;
     }

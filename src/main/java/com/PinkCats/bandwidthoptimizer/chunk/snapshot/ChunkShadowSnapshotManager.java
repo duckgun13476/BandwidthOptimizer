@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkLaneKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketCoordinate;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketDescriptor;
+import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalSnapshotStore;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
 
@@ -29,7 +30,10 @@ public final class ChunkShadowSnapshotManager {
     ) {
         if (context == null)
             return null;
-        return observePacket(context.channel().id().asLongText(), epoch, descriptor, packet, encodedPacketBytes);
+        ChunkShadowSnapshot snapshot =
+                observePacket(context.channel().id().asLongText(), epoch, descriptor, packet, encodedPacketBytes);
+        ChunkGlobalSnapshotStore.observeMaterializedSnapshot(context.channel().id().asLongText(), snapshot);
+        return snapshot;
     }
 
 
@@ -62,9 +66,18 @@ public final class ChunkShadowSnapshotManager {
         }
 
         ChannelShadowState state = CHANNEL_STATES.get(channelId);
-        return state == null
+        byte[] materializedPacketBytes = state == null
                 ? null
                 : state.materializeFullChunkPacket(coordinate, expectedFullSnapshotVersion, expectedPayloadHash);
+        if (materializedPacketBytes != null) {
+            return materializedPacketBytes;
+        }
+        return ChunkGlobalSnapshotStore.findMaterializedFullChunkPacket(
+                channelId,
+                coordinate,
+                expectedFullSnapshotVersion,
+                expectedPayloadHash
+        );
     }
 
     public static void invalidateChunk(String channelId, ChunkPacketCoordinate coordinate) {
@@ -75,6 +88,7 @@ public final class ChunkShadowSnapshotManager {
         ChannelShadowState state = CHANNEL_STATES.get(channelId);
         if (state != null)
             state.invalidateChunk(coordinate);
+        ChunkGlobalSnapshotStore.invalidateChunk(channelId, coordinate);
     }
 
 
@@ -83,6 +97,7 @@ public final class ChunkShadowSnapshotManager {
             return;
         }
         CHANNEL_STATES.remove(channelId);
+        ChunkGlobalSnapshotStore.clearChannel(channelId);
     }
 
     public static void clearAll() {

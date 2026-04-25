@@ -126,6 +126,12 @@ minecraft {
             if (project.hasProperty('boTransportTelemetryDumpFileName')) {
                 property 'bandwidthoptimizer.transport.telemetryDumpFileName', project.property('boTransportTelemetryDumpFileName').toString()
             }
+            if (project.hasProperty('boChunkGlobalStoreBudgetBytes')) {
+                property 'bandwidthoptimizer.chunkGlobalStoreBudgetBytes', project.property('boChunkGlobalStoreBudgetBytes').toString()
+            }
+            if (project.hasProperty('boChunkGlobalStoreMaxVersionsPerChunk')) {
+                property 'bandwidthoptimizer.chunkGlobalStoreMaxVersionsPerChunk', project.property('boChunkGlobalStoreMaxVersionsPerChunk').toString()
+            }
         }
 
         server {
@@ -168,6 +174,12 @@ minecraft {
             }
             if (project.hasProperty('boTransportTelemetryDumpFileName')) {
                 property 'bandwidthoptimizer.transport.telemetryDumpFileName', project.property('boTransportTelemetryDumpFileName').toString()
+            }
+            if (project.hasProperty('boChunkGlobalStoreBudgetBytes')) {
+                property 'bandwidthoptimizer.chunkGlobalStoreBudgetBytes', project.property('boChunkGlobalStoreBudgetBytes').toString()
+            }
+            if (project.hasProperty('boChunkGlobalStoreMaxVersionsPerChunk')) {
+                property 'bandwidthoptimizer.chunkGlobalStoreMaxVersionsPerChunk', project.property('boChunkGlobalStoreMaxVersionsPerChunk').toString()
             }
             args '--nogui'
         }
@@ -371,6 +383,8 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     appendOptionalRunAllProperty(args, projectRef, 'boTransportBatchWindowMillis')
     appendOptionalRunAllProperty(args, projectRef, 'boTransportPacketIdMappingEnabled')
     appendOptionalRunAllProperty(args, projectRef, 'boTransportTelemetryDumpFileName')
+    appendOptionalRunAllProperty(args, projectRef, 'boChunkGlobalStoreBudgetBytes')
+    appendOptionalRunAllProperty(args, projectRef, 'boChunkGlobalStoreMaxVersionsPerChunk')
     return args
 }
 

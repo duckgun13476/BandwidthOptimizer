@@ -50,7 +50,7 @@ public final class ChunkOutboundObservationService {
                         snapshotFingerprint
                 );
         ChunkGlobalStoreObservation storeObservation =
-                ChunkGlobalSnapshotStore.observeOutboundSnapshot(descriptor, snapshotFingerprint);
+                ChunkGlobalSnapshotStore.observeOutboundSnapshot(descriptor, snapshotFingerprint, encodedPacketBytes);
         ChunkPlanDecision decision = ChunkTransportPlanner.planOutboundTransport(
                 descriptor,
                 snapshotFingerprint,
