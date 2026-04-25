@@ -1,10 +1,10 @@
 package com.PinkCats.bandwidthoptimizer.chunk.lifecycle;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketCoordinate;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportControlFrameSender;
-import com.PinkCats.bandwidthoptimizer.chunk.state.peer.ChunkPeerChunkStateSnapshot;
-import com.PinkCats.bandwidthoptimizer.chunk.state.peer.ChunkPeerStateManager;
+import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerChunkStateSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;

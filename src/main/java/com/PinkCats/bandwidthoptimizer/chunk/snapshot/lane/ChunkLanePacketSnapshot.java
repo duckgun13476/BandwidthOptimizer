@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.chunk.snapshot;
+package com.PinkCats.bandwidthoptimizer.chunk.snapshot.lane;
 
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkLaneKind;

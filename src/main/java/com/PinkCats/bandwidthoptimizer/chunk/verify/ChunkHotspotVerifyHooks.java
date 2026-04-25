@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.chunk.verify.stats;
+package com.PinkCats.bandwidthoptimizer.chunk.verify;
 
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;

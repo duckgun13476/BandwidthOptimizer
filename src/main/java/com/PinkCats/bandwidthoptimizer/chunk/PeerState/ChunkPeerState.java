@@ -1,7 +1,7 @@
-package com.PinkCats.bandwidthoptimizer.chunk.state.peer;
+package com.PinkCats.bandwidthoptimizer.chunk.PeerState;
 
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketCoordinate;
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketDescriptor;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalStoreObservation;
 

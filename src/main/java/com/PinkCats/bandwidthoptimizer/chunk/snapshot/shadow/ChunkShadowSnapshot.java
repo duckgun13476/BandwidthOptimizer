@@ -1,7 +1,9 @@
-package com.PinkCats.bandwidthoptimizer.chunk.snapshot;
+package com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow;
 
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkLaneKind;
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketCoordinate;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.lane.ChunkLanePacketSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.lane.ChunkLaneSnapshot;
 
 import java.util.Collections;
 import java.util.EnumMap;

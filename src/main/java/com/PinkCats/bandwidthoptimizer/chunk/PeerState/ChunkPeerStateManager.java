@@ -1,11 +1,11 @@
-package com.PinkCats.bandwidthoptimizer.chunk.state.peer;
+package com.PinkCats.bandwidthoptimizer.chunk.PeerState;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketCoordinate;
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketDescriptor;
-import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkRuntimeReferenceStore;
-import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrame;
-import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkShadowSnapshotManager;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
+import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceStore;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalStoreObservation;
 import io.netty.channel.Channel;

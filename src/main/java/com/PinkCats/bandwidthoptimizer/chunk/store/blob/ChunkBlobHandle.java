@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.chunk.store.global;
+package com.PinkCats.bandwidthoptimizer.chunk.store.blob;
 
 import java.util.Arrays;
 

@@ -1,6 +1,9 @@
 package com.PinkCats.bandwidthoptimizer.chunk.snapshot;
 
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkLaneKind;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.lane.ChunkLanePacketSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.lane.ChunkLaneSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshot;
 
 import java.util.ArrayList;
 import java.util.List;

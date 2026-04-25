@@ -1,7 +1,9 @@
 package com.PinkCats.bandwidthoptimizer.chunk.store.global;
 
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketDescriptor;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
+import com.PinkCats.bandwidthoptimizer.chunk.store.blob.ChunkBlobHandle;
+import com.PinkCats.bandwidthoptimizer.chunk.store.blob.ChunkBlobRef;
 
 import java.util.Arrays;
 import java.util.LinkedHashSet;

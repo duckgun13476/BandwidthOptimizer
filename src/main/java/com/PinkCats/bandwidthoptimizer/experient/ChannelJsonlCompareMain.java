@@ -1,6 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.experient;
 
-import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrameOp;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
 
 import java.io.BufferedReader;
 import java.io.IOException;

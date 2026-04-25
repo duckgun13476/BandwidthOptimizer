@@ -8,7 +8,7 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
-import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkInboundDecodeResult;
+import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkInboundDecodeResult;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportBoundaryController;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkOutboundObservationService;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher;

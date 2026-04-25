@@ -1,7 +1,7 @@
-package com.PinkCats.bandwidthoptimizer.chunk.integration.transport;
+package com.PinkCats.bandwidthoptimizer.chunk.integration;
 
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketCoordinate;
-import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrame;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 
 import java.util.Arrays;
 import java.util.LinkedHashMap;

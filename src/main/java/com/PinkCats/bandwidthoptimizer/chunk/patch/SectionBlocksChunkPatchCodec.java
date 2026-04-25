@@ -1,6 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.chunk.patch;
 
-import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkLanePacketSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.lane.ChunkLanePacketSnapshot;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;

@@ -1,6 +1,6 @@
-package com.PinkCats.bandwidthoptimizer.chunk.integration.transport;
+package com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope;
 
-import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrame;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 
 import java.util.Arrays;
 

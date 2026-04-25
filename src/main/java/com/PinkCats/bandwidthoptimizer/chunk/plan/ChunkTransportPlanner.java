@@ -1,14 +1,14 @@
 package com.PinkCats.bandwidthoptimizer.chunk.plan;
 
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketCoordinate;
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketDescriptor;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatchBuilder;
-import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrame;
-import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrameCodec;
-import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrameOp;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameCodec;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
-import com.PinkCats.bandwidthoptimizer.chunk.state.peer.ChunkPeerChunkStateSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerChunkStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalStoreObservation;
 
 public final class ChunkTransportPlanner {

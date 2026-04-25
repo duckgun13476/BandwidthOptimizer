@@ -1,7 +1,7 @@
-package com.PinkCats.bandwidthoptimizer.chunk.integration.transport;
+package com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope;
 
-import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrame;
-import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrameCodec;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameCodec;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;

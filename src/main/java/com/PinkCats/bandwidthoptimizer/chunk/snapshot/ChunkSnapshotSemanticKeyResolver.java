@@ -1,7 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.chunk.snapshot;
 
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketDescriptor;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.network.protocol.Packet;

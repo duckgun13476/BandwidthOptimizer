@@ -1,7 +1,7 @@
-package com.PinkCats.bandwidthoptimizer.chunk.verify.stats;
+package com.PinkCats.bandwidthoptimizer.chunk.verify;
 
-import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrame;
-import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrameOp;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
 import net.minecraftforge.fml.loading.FMLEnvironment;
 
 import java.util.EnumMap;

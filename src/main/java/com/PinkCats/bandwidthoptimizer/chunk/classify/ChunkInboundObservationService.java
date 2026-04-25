@@ -1,10 +1,12 @@
 package com.PinkCats.bandwidthoptimizer.chunk.classify;
 
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketClassifier;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.packet.ClientboundPlayPacketCodec;
-import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkShadowSnapshotManager;
-import com.PinkCats.bandwidthoptimizer.chunk.state.peer.ChunkPeerStateManager;
-import com.PinkCats.bandwidthoptimizer.chunk.state.peer.ChunkPeerStateSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
+import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
+import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateSnapshot;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
 

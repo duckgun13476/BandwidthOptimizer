@@ -1,6 +1,6 @@
-package com.PinkCats.bandwidthoptimizer.chunk.state.peer;
+package com.PinkCats.bandwidthoptimizer.chunk.PeerState;
 
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketCoordinate;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
 
 public record ChunkPeerChunkKey(
         int chunkX,

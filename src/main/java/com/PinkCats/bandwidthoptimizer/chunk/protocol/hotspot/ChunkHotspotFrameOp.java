@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.chunk.protocol;
+package com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot;
 
 public enum ChunkHotspotFrameOp {
 

@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.chunk.state.peer;
+package com.PinkCats.bandwidthoptimizer.chunk.PeerState;
 
 public record ChunkPeerChunkStateSnapshot(
         ChunkPeerChunkKey chunkKey,

@@ -2,12 +2,13 @@ package com.PinkCats.bandwidthoptimizer.chunk.store.global;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkLaneKind;
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketCoordinate;
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketDescriptor;
-import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkLanePacketSnapshot;
-import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkLaneSnapshot;
-import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkShadowSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.lane.ChunkLanePacketSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.lane.ChunkLaneSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
+import com.PinkCats.bandwidthoptimizer.chunk.store.blob.ChunkBlobHandle;
 
 import java.util.HashMap;
 import java.util.Iterator;

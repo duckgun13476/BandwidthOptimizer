@@ -2,8 +2,8 @@ package com.PinkCats.bandwidthoptimizer.experient;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
-import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkShadowSnapshotManager;
-import com.PinkCats.bandwidthoptimizer.chunk.verify.stats.ChunkHotspotVerifyHooks;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
+import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

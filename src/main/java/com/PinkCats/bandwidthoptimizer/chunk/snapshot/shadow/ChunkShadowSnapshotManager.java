@@ -1,9 +1,15 @@
-package com.PinkCats.bandwidthoptimizer.chunk.snapshot;
+package com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow;
 
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkLaneKind;
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketCoordinate;
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketDescriptor;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprintService;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotMaterializer;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotSemanticKeyResolver;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.lane.ChunkLanePacketSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.lane.ChunkLaneSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalSnapshotStore;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;

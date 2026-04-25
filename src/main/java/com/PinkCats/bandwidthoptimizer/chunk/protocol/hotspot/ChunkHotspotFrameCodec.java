@@ -1,8 +1,8 @@
-package com.PinkCats.bandwidthoptimizer.chunk.protocol;
+package com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot;
 
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkLaneKind;
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketCoordinate;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;

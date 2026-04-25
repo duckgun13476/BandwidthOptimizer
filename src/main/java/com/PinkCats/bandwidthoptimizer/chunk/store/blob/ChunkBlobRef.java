@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.chunk.store.global;
+package com.PinkCats.bandwidthoptimizer.chunk.store.blob;
 
 public record ChunkBlobRef(
         String payloadHash,

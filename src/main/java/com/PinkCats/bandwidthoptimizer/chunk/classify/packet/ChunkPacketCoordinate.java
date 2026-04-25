@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.chunk.classify;
+package com.PinkCats.bandwidthoptimizer.chunk.classify.packet;
 
 public record ChunkPacketCoordinate(
         boolean present,

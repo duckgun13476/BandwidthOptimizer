@@ -1,6 +1,6 @@
-package com.PinkCats.bandwidthoptimizer.chunk.verify.stats;
+package com.PinkCats.bandwidthoptimizer.chunk.verify;
 
-import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrameOp;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
 
 import java.util.EnumMap;
 import java.util.Map;

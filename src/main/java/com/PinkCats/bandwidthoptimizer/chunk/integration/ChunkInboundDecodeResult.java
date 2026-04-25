@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.chunk.integration.transport;
+package com.PinkCats.bandwidthoptimizer.chunk.integration;
 
 
 public record ChunkInboundDecodeResult(

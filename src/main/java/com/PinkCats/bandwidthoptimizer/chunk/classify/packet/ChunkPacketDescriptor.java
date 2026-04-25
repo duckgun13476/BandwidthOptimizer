@@ -1,4 +1,7 @@
-package com.PinkCats.bandwidthoptimizer.chunk.classify;
+package com.PinkCats.bandwidthoptimizer.chunk.classify.packet;
+
+import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkLaneKind;
 
 public record ChunkPacketDescriptor(
         String protocolName,

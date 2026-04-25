@@ -1,18 +1,20 @@
 package com.PinkCats.bandwidthoptimizer.chunk.classify;
 
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketClassifier;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkPlanDecision;
 import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkPlanPreviewService;
 import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkTransportPlanner;
 import com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatchBuilder;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkProtocolPreviewService;
-import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkShadowSnapshot;
-import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkShadowSnapshotManager;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprintService;
-import com.PinkCats.bandwidthoptimizer.chunk.state.peer.ChunkPeerChunkStateSnapshot;
-import com.PinkCats.bandwidthoptimizer.chunk.state.peer.ChunkPeerObservationSnapshot;
-import com.PinkCats.bandwidthoptimizer.chunk.state.peer.ChunkPeerStateSnapshot;
-import com.PinkCats.bandwidthoptimizer.chunk.state.peer.ChunkPeerStateManager;
+import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerChunkStateSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerObservationSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalSnapshotStore;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalStoreObservation;
 import io.netty.channel.ChannelHandlerContext;
