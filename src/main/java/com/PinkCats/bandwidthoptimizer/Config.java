@@ -1,11 +1,9 @@
 package com.PinkCats.bandwidthoptimizer;
 
-import com.PinkCats.bandwidthoptimizer.Old.network.ModNetwork;
 import net.minecraftforge.common.ForgeConfigSpec;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.config.ModConfigEvent;
-import net.minecraftforge.server.ServerLifecycleHooks;
 
 @Mod.EventBusSubscriber(modid = Bandwidthoptimizer.MODID, bus = Mod.EventBusSubscriber.Bus.MOD)
 public class Config {
@@ -196,10 +194,8 @@ public class Config {
         SPEC = BUILDER.build();
     }
 
-    @SubscribeEvent
-    static void onLoad(final ModConfigEvent event) {
+    @SubscribeEvent static void onLoad(final ModConfigEvent event) {
         applyRuntimeConfig(currentLocalRuntimeConfig());
-        syncRuntimeConfigToOnlinePlayers();
     }
 
     public static RuntimeConfig currentLocalRuntimeConfig() {
@@ -255,14 +251,6 @@ public class Config {
 
     public static boolean optimizerDebugLoggingEnabled() {
         return enableOptimizerStatsLogs && enableTestMode;
-    }
-
-    private static void syncRuntimeConfigToOnlinePlayers() {
-        net.minecraft.server.MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
-        if (server == null) {
-            return;
-        }
-        server.getPlayerList().getPlayers().forEach(ModNetwork::sendServerConfigToPlayer);
     }
 
     public record RuntimeConfig(

@@ -1,6 +1,5 @@
 package com.PinkCats.bandwidthoptimizer.channel.mes;
 
-import com.PinkCats.bandwidthoptimizer.Old.network.payload.PayloadInspectionSupport;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import net.minecraftforge.fml.loading.FMLEnvironment;
 
@@ -12,7 +11,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-
 
 public final class ChannelFrameJsonlLogger {
 
@@ -28,8 +26,8 @@ public final class ChannelFrameJsonlLogger {
     private static boolean initialized;
     private static boolean shutdownHookInstalled;
 
-
-    private ChannelFrameJsonlLogger() {}
+    private ChannelFrameJsonlLogger() {
+    }
 
     public static void initializeOutputFiles() {
         synchronized (LOCK) {
@@ -41,7 +39,6 @@ public final class ChannelFrameJsonlLogger {
             installShutdownHookIfNeeded();
         }
     }
-
 
     public static void appendOutboundFrame(ChannelCapturedFrame frame) {
         appendFrame(frame, true);
@@ -144,7 +141,14 @@ public final class ChannelFrameJsonlLogger {
         return new FrameSerializedFields(payloadHex, wireFingerprint, semanticFingerprint);
     }
 
-    private static String hex(byte[] bytes) {return PayloadInspectionSupport.hex(bytes);}
+    private static String hex(byte[] bytes) {
+        byte[] safeBytes = bytes == null ? new byte[0] : bytes;
+        StringBuilder builder = new StringBuilder(safeBytes.length * 2);
+        for (byte value : safeBytes) {
+            builder.append(String.format("%02x", value & 0xFF));
+        }
+        return builder.toString();
+    }
 
     private static String sha256(String value) {
         try {
@@ -195,6 +199,7 @@ public final class ChannelFrameJsonlLogger {
             closeWritersUnsafe();
         }
     }
+
     private static void closeWritersUnsafe() {
         closeWriter(sendWriter);
         closeWriter(receiveWriter);
@@ -212,10 +217,6 @@ public final class ChannelFrameJsonlLogger {
         } catch (IOException ignored) {
         }
     }
-
-
-
-
 
     private record FrameSerializedFields(
             String payloadHex,
