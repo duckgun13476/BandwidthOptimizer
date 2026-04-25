@@ -17,7 +17,12 @@ public record ChunkPlanDecision(
         String currentPayloadShortHash,
         String laneName,
         String chunkText,
-        int encodedBytes
+        int encodedBytes,
+        int bypassBytes,
+        int fullTransportBytes,
+        int refTransportBytes,
+        int patchTransportBytes,
+        int selectedTransportBytes
 ) {
 
     public String summaryText() {
@@ -35,6 +40,11 @@ public record ChunkPlanDecision(
                 + ", knownSnapshotHash=" + this.knownSnapshotShortHash
                 + ", currentPayloadHash=" + this.currentPayloadShortHash
                 + ", chunk=" + this.chunkText
-                + ", encodedBytes=" + this.encodedBytes;
+                + ", encodedBytes=" + this.encodedBytes
+                + ", estimates={bypass=" + this.bypassBytes
+                + ", full=" + this.fullTransportBytes
+                + ", ref=" + this.refTransportBytes
+                + ", patch=" + this.patchTransportBytes + "}"
+                + ", selectedBytes=" + this.selectedTransportBytes;
     }
 }

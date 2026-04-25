@@ -20,7 +20,7 @@ public final class ChunkPlanPreviewService {
             return;
         }
 
-        if (shouldLog(channelSnapshot)) {
+        if (shouldLog(channelSnapshot, decision)) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkPlan][Preview] channel={}, epoch={}, observedPackets={}, {}",
                     channelSnapshot.channelId(),
@@ -31,8 +31,20 @@ public final class ChunkPlanPreviewService {
         }
     }
 
-    private static boolean shouldLog(ChunkPeerStateSnapshot snapshot) {
+
+
+    private static boolean shouldLog(ChunkPeerStateSnapshot snapshot, ChunkPlanDecision decision) {
+        if (snapshot == null || decision == null) {
+            return false;
+        }
+        if (decision.decisionKind() == ChunkPlanDecisionKind.PUBLISH_REF
+                || decision.decisionKind() == ChunkPlanDecisionKind.PUBLISH_PATCH) {
+            return true;
+        }
+        if (decision.reason().contains("budget") || decision.reason().contains("receiver_ack")) {
+            return true;
+        }
         long observedPacketCount = snapshot.observedPacketCount();
-        return observedPacketCount <= 5L || observedPacketCount % 100L == 0L;
+        return observedPacketCount <= 10L || observedPacketCount % 100L == 0L;
     }
 }

@@ -1,8 +1,12 @@
 package com.PinkCats.bandwidthoptimizer.chunk.plan;
 
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
-import com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatchBuilder;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketCoordinate;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkPacketDescriptor;
+import com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatchBuilder;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrame;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrameCodec;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.ChunkHotspotFrameOp;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.state.peer.ChunkPeerChunkStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalStoreObservation;
@@ -11,6 +15,8 @@ public final class ChunkTransportPlanner {
 
     private static final long MAX_DELTA_PACKETS_BEFORE_REFRESH = 64L;
     private static final long DELTA_BYTES_REFRESH_MULTIPLIER = 2L;
+    private static final int ENVELOPE_MAGIC_BYTES = 8;
+    private static final int UNAVAILABLE_ESTIMATED_BYTES = -1;
 
     private ChunkTransportPlanner() {}
 
@@ -30,7 +36,6 @@ public final class ChunkTransportPlanner {
         );
     }
 
-
     public static ChunkPlanDecision planOutboundTransport(
             ChunkPacketDescriptor descriptor,
             ChunkSnapshotFingerprint snapshotFingerprint,
@@ -42,10 +47,82 @@ public final class ChunkTransportPlanner {
             return buildFallbackDecision(descriptor, snapshotFingerprint, "missing_chunk_or_snapshot_state");
         }
 
+        long nextFullSnapshotVersion = resolvePublishedFullSnapshotVersion(chunkSnapshot, snapshotFingerprint);
+        ChunkPlanCostEstimate costEstimate = estimatePlanCosts(
+                descriptor,
+                snapshotFingerprint,
+                chunkSnapshot,
+                patchBuildResult,
+                nextFullSnapshotVersion
+        );
+
         if (descriptor.hotspotKind() == ChunkHotspotKind.FULL_CHUNK) {
-            return buildFullChunkDecision(descriptor, snapshotFingerprint, chunkSnapshot, storeObservation);
+            return buildFullChunkDecision(
+                    descriptor,
+                    snapshotFingerprint,
+                    chunkSnapshot,
+                    storeObservation,
+                    costEstimate,
+                    nextFullSnapshotVersion
+            );
         }
 
+        return buildDeltaDecision(
+                descriptor,
+                snapshotFingerprint,
+                chunkSnapshot,
+                storeObservation,
+                patchBuildResult,
+                costEstimate
+        );
+    }
+
+
+    private static ChunkPlanDecision buildFullChunkDecision(
+            ChunkPacketDescriptor descriptor,
+            ChunkSnapshotFingerprint snapshotFingerprint,
+            ChunkPeerChunkStateSnapshot chunkSnapshot,
+            ChunkGlobalStoreObservation storeObservation,
+            ChunkPlanCostEstimate costEstimate,
+            long nextFullSnapshotVersion
+    ) {
+        if (shouldUseReference(chunkSnapshot, snapshotFingerprint)
+                && costEstimate.refTransportBytes() > 0
+                && costEstimate.refTransportBytes() < costEstimate.fullTransportBytes()) {
+            return buildDecision(
+                    ChunkPlanDecisionKind.PUBLISH_REF,
+                    "reuse_acknowledged_full_snapshot",
+                    descriptor,
+                    snapshotFingerprint,
+                    chunkSnapshot,
+                    storeObservation,
+                    Math.max(chunkSnapshot == null ? 0L : chunkSnapshot.fullSnapshotVersion(), 0L),
+                    costEstimate
+            );
+        }
+
+        return buildDecision(
+                ChunkPlanDecisionKind.PUBLISH_FULL,
+                buildFullReason(chunkSnapshot, snapshotFingerprint),
+                descriptor,
+                snapshotFingerprint,
+                chunkSnapshot,
+                storeObservation,
+                nextFullSnapshotVersion,
+                costEstimate
+        );
+    }
+
+
+    private static ChunkPlanDecision buildDeltaDecision(
+            ChunkPacketDescriptor descriptor,
+            ChunkSnapshotFingerprint snapshotFingerprint,
+            ChunkPeerChunkStateSnapshot chunkSnapshot,
+            ChunkGlobalStoreObservation storeObservation,
+            ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult,
+            ChunkPlanCostEstimate costEstimate
+    ) {
+        long currentFullSnapshotVersion = chunkSnapshot == null ? 0L : chunkSnapshot.fullSnapshotVersion();
         if (!hasKnownPublishedSnapshot(chunkSnapshot)) {
             return buildDecision(
                     ChunkPlanDecisionKind.BYPASS,
@@ -54,7 +131,8 @@ public final class ChunkTransportPlanner {
                     snapshotFingerprint,
                     chunkSnapshot,
                     storeObservation,
-                    0L
+                    0L,
+                    costEstimate
             );
         }
 
@@ -66,71 +144,46 @@ public final class ChunkTransportPlanner {
                     snapshotFingerprint,
                     chunkSnapshot,
                     storeObservation,
-                    chunkSnapshot.fullSnapshotVersion()
+                    currentFullSnapshotVersion,
+                    costEstimate
             );
         }
 
         if (shouldForceRefresh(chunkSnapshot)) {
             return buildDecision(
-                    ChunkPlanDecisionKind.PUBLISH_FULL,
-                    buildRefreshReason(chunkSnapshot),
+                    ChunkPlanDecisionKind.BYPASS,
+                    buildRefreshBoundaryReason(chunkSnapshot),
                     descriptor,
                     snapshotFingerprint,
                     chunkSnapshot,
                     storeObservation,
-                    resolvePublishedFullSnapshotVersion(chunkSnapshot, snapshotFingerprint)
+                    currentFullSnapshotVersion,
+                    costEstimate
             );
         }
 
-        if (shouldUsePatch(patchBuildResult)) {
+        if (shouldUsePatch(patchBuildResult, costEstimate)) {
             return buildDecision(
                     ChunkPlanDecisionKind.PUBLISH_PATCH,
-                    patchBuildResult.reason(),
+                    buildPatchReason(patchBuildResult),
                     descriptor,
                     snapshotFingerprint,
                     chunkSnapshot,
                     storeObservation,
-                    chunkSnapshot.fullSnapshotVersion()
+                    currentFullSnapshotVersion,
+                    costEstimate
             );
         }
 
         return buildDecision(
                 ChunkPlanDecisionKind.BYPASS,
-                buildDeltaBypassReason(patchBuildResult),
+                buildDeltaBypassReason(patchBuildResult, costEstimate),
                 descriptor,
                 snapshotFingerprint,
                 chunkSnapshot,
                 storeObservation,
-                chunkSnapshot.fullSnapshotVersion()
-        );
-    }
-
-    private static ChunkPlanDecision buildFullChunkDecision(
-            ChunkPacketDescriptor descriptor,
-            ChunkSnapshotFingerprint snapshotFingerprint,
-            ChunkPeerChunkStateSnapshot chunkSnapshot,
-            ChunkGlobalStoreObservation storeObservation
-    ) {
-        if (shouldUseReference(chunkSnapshot, snapshotFingerprint)) {
-            return buildDecision(
-                    ChunkPlanDecisionKind.PUBLISH_REF,
-                    "reuse_acknowledged_full_snapshot",
-                    descriptor,
-                    snapshotFingerprint,
-                    chunkSnapshot,
-                    storeObservation,
-                    chunkSnapshot.fullSnapshotVersion()
-            );
-        }
-
-        return buildDecision(
-                ChunkPlanDecisionKind.PUBLISH_FULL,
-                buildFullReason(chunkSnapshot, snapshotFingerprint),
-                descriptor,
-                snapshotFingerprint,
-                chunkSnapshot,
-                storeObservation,
-                resolvePublishedFullSnapshotVersion(chunkSnapshot, snapshotFingerprint)
+                currentFullSnapshotVersion,
+                costEstimate
         );
     }
 
@@ -141,8 +194,12 @@ public final class ChunkTransportPlanner {
             ChunkSnapshotFingerprint snapshotFingerprint,
             ChunkPeerChunkStateSnapshot chunkSnapshot,
             ChunkGlobalStoreObservation storeObservation,
-            long fullSnapshotVersion
+            long fullSnapshotVersion,
+            ChunkPlanCostEstimate costEstimate
     ) {
+        ChunkPlanCostEstimate resolvedCostEstimate = costEstimate == null
+                ? ChunkPlanCostEstimate.unavailable(snapshotFingerprint == null ? 0 : Math.max(snapshotFingerprint.encodedBytes(), 0))
+                : costEstimate;
         return new ChunkPlanDecision(
                 decisionKind,
                 reason,
@@ -160,9 +217,15 @@ public final class ChunkTransportPlanner {
                 snapshotFingerprint.shortHash(),
                 descriptor.laneKind().logName(),
                 descriptor.coordinate().logText(),
-                Math.max(snapshotFingerprint.encodedBytes(), 0)
+                Math.max(snapshotFingerprint.encodedBytes(), 0),
+                resolvedCostEstimate.bypassBytes(),
+                resolvedCostEstimate.fullTransportBytes(),
+                resolvedCostEstimate.refTransportBytes(),
+                resolvedCostEstimate.patchTransportBytes(),
+                resolvedCostEstimate.selectedBytes(decisionKind)
         );
     }
+
 
     private static ChunkPlanDecision buildFallbackDecision(
             ChunkPacketDescriptor descriptor,
@@ -176,16 +239,22 @@ public final class ChunkTransportPlanner {
         String payloadHash = snapshotFingerprint == null ? "" : snapshotFingerprint.hashHex();
         String payloadShortHash = snapshotFingerprint == null ? "" : snapshotFingerprint.shortHash();
         int encodedBytes = snapshotFingerprint == null ? 0 : Math.max(snapshotFingerprint.encodedBytes(), 0);
+        ChunkPlanCostEstimate costEstimate = ChunkPlanCostEstimate.unavailable(encodedBytes);
         return new ChunkPlanDecision(
                 ChunkPlanDecisionKind.BYPASS,
-                reason, false,
-                0L, 0L, 0L, 0L, 0L, false,
-                0L, "", "",
+                reason,
+                false, 0L, 0L, 0L, 0L, 0L,
+                false, 0L, "", "",
                 payloadHash,
                 payloadShortHash,
                 laneName,
                 chunkText,
-                encodedBytes
+                encodedBytes,
+                costEstimate.bypassBytes(),
+                costEstimate.fullTransportBytes(),
+                costEstimate.refTransportBytes(),
+                costEstimate.patchTransportBytes(),
+                costEstimate.selectedBytes(ChunkPlanDecisionKind.BYPASS)
         );
     }
 
@@ -208,65 +277,98 @@ public final class ChunkTransportPlanner {
                 && snapshotFingerprint.hashHex().equals(chunkSnapshot.knownSnapshotHash());
     }
 
-
-    private static boolean shouldUsePatch(ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult) {
+    private static boolean shouldUsePatch(
+            ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult,
+            ChunkPlanCostEstimate costEstimate
+    ) {
         return patchBuildResult != null
                 && patchBuildResult.patch() != null
-                && patchBuildResult.beneficial();
+                && costEstimate != null
+                && costEstimate.patchTransportBytes() > 0
+                && costEstimate.patchTransportBytes() < costEstimate.bypassBytes()
+                && costEstimate.patchTransportBytes() < costEstimate.fullTransportBytes();
     }
 
+    private static String buildDeltaBypassReason(
+            ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult,
+            ChunkPlanCostEstimate costEstimate
+    ) {
+        if (patchBuildResult == null || patchBuildResult.patch() == null) {
+            if (patchBuildResult == null || patchBuildResult.reason() == null || patchBuildResult.reason().isBlank()) {
+                return "delta_patch_unavailable";
+            }
+            return patchBuildResult.reason();
+        }
 
-    private static String buildDeltaBypassReason(ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult) {
-        if (patchBuildResult == null || patchBuildResult.reason() == null || patchBuildResult.reason().isBlank()) {
+        if (costEstimate == null || costEstimate.patchTransportBytes() <= 0) {
+            return "delta_patch_estimate_unavailable";
+        }
+
+        if (costEstimate.patchTransportBytes() >= costEstimate.bypassBytes()) {
+            return "patch_not_smaller_than_bypass";
+        }
+
+        if (costEstimate.patchTransportBytes() >= costEstimate.fullTransportBytes()) {
+            return "patch_not_smaller_than_transport_full";
+        }
+
+        if (patchBuildResult.reason() == null || patchBuildResult.reason().isBlank()) {
             return "delta_patch_unavailable";
         }
         return patchBuildResult.reason();
     }
 
+    private static String buildPatchReason(ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult) {
+        if (patchBuildResult == null || patchBuildResult.reason() == null || patchBuildResult.reason().isBlank()) {
+            return "patch_transport_smaller_than_bypass";
+        }
+        return patchBuildResult.reason();
+    }
 
     private static boolean shouldForceRefresh(ChunkPeerChunkStateSnapshot chunkSnapshot) {
-        if (chunkSnapshot == null)
+        if (chunkSnapshot == null) {
             return false;
+        }
 
-        if (chunkSnapshot.deltaPacketCountSinceFullSnapshot() >= MAX_DELTA_PACKETS_BEFORE_REFRESH)
+        if (chunkSnapshot.deltaPacketCountSinceFullSnapshot() >= MAX_DELTA_PACKETS_BEFORE_REFRESH) {
             return true;
+        }
 
         int lastFullSnapshotBytes = Math.max(chunkSnapshot.lastFullSnapshotEncodedBytes(), 0);
-        if (lastFullSnapshotBytes <= 0)
+        if (lastFullSnapshotBytes <= 0) {
             return false;
+        }
 
         return chunkSnapshot.deltaBytesSinceFullSnapshot() >= lastFullSnapshotBytes * DELTA_BYTES_REFRESH_MULTIPLIER;
     }
 
-    // null Reason helper
+    private static String buildRefreshBoundaryReason(ChunkPeerChunkStateSnapshot chunkSnapshot) {
+        if (chunkSnapshot != null
+                && chunkSnapshot.deltaPacketCountSinceFullSnapshot() >= MAX_DELTA_PACKETS_BEFORE_REFRESH) {
+            return "delta_packet_budget_exceeded_wait_full_chunk_refresh";
+        }
+        return "delta_byte_budget_exceeded_wait_full_chunk_refresh";
+    }
+
     private static String buildFullReason(
             ChunkPeerChunkStateSnapshot chunkSnapshot,
             ChunkSnapshotFingerprint snapshotFingerprint
     ) {
-        if (!hasKnownPublishedSnapshot(chunkSnapshot) || chunkSnapshot.fullSnapshotVersion() <= 0L)
+        if (!hasKnownPublishedSnapshot(chunkSnapshot) || chunkSnapshot.fullSnapshotVersion() <= 0L) {
             return "initial_full_snapshot";
+        }
 
         if (!hasAcknowledgedCurrentFullSnapshot(chunkSnapshot)
-                && sameSnapshotHash(chunkSnapshot, snapshotFingerprint))
+                && sameSnapshotHash(chunkSnapshot, snapshotFingerprint)) {
             return "await_receiver_ack_for_full_snapshot";
+        }
 
-        if (sameSnapshotHash(chunkSnapshot, snapshotFingerprint))
+        if (sameSnapshotHash(chunkSnapshot, snapshotFingerprint)) {
             return "resend_full_snapshot";
+        }
 
         return "refresh_full_snapshot";
     }
-
-    // refresh Reason helper
-    private static String buildRefreshReason(ChunkPeerChunkStateSnapshot chunkSnapshot) {
-        if (chunkSnapshot != null
-                && chunkSnapshot.deltaPacketCountSinceFullSnapshot() >= MAX_DELTA_PACKETS_BEFORE_REFRESH) {
-            return "delta_packet_budget_exceeded";
-        }
-
-        return "delta_byte_budget_exceeded";
-    }
-
-
 
     private static long resolvePublishedFullSnapshotVersion(
             ChunkPeerChunkStateSnapshot chunkSnapshot,
@@ -287,31 +389,33 @@ public final class ChunkTransportPlanner {
         return chunkSnapshot.fullSnapshotVersion() + 1L;
     }
 
-
     private static long resolveLaneVersion(ChunkHotspotKind hotspotKind, ChunkPeerChunkStateSnapshot chunkSnapshot) {
-        if (hotspotKind == null || chunkSnapshot == null)
+        if (hotspotKind == null || chunkSnapshot == null) {
             return 0L;
+        }
 
-        if (hotspotKind == ChunkHotspotKind.LIGHT_UPDATE)
+        if (hotspotKind == ChunkHotspotKind.LIGHT_UPDATE) {
             return chunkSnapshot.lightLaneVersion();
+        }
 
-        if (hotspotKind == ChunkHotspotKind.SECTION_BLOCKS_UPDATE)
+        if (hotspotKind == ChunkHotspotKind.SECTION_BLOCKS_UPDATE) {
             return chunkSnapshot.sectionBlocksLaneVersion();
+        }
 
-        if (hotspotKind == ChunkHotspotKind.BLOCK_UPDATE)
+        if (hotspotKind == ChunkHotspotKind.BLOCK_UPDATE) {
             return chunkSnapshot.blockLaneVersion();
+        }
 
-        if (hotspotKind == ChunkHotspotKind.BLOCK_ENTITY_UPDATE)
+        if (hotspotKind == ChunkHotspotKind.BLOCK_ENTITY_UPDATE) {
             return chunkSnapshot.blockEntityLaneVersion();
+        }
 
         return 0L;
     }
 
-
     private static boolean hasKnownPublishedSnapshot(ChunkPeerChunkStateSnapshot chunkSnapshot) {
         return chunkSnapshot != null && chunkSnapshot.knownSnapshotPublished();
     }
-
 
     private static boolean sameSnapshotHash(
             ChunkPeerChunkStateSnapshot chunkSnapshot,
@@ -321,5 +425,161 @@ public final class ChunkTransportPlanner {
                 && snapshotFingerprint != null
                 && snapshotFingerprint.hashHex() != null
                 && snapshotFingerprint.hashHex().equals(chunkSnapshot.knownSnapshotHash());
+    }
+
+    private static ChunkPlanCostEstimate estimatePlanCosts(
+            ChunkPacketDescriptor descriptor,
+            ChunkSnapshotFingerprint snapshotFingerprint,
+            ChunkPeerChunkStateSnapshot chunkSnapshot,
+            ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult,
+            long nextFullSnapshotVersion
+    ) {
+        int bypassBytes = snapshotFingerprint == null ? 0 : Math.max(snapshotFingerprint.encodedBytes(), 0);
+        long stableFullSnapshotVersion = Math.max(chunkSnapshot == null ? 0L : chunkSnapshot.fullSnapshotVersion(), 0L);
+        long fullCandidateSnapshotVersion = descriptor.hotspotKind() == ChunkHotspotKind.FULL_CHUNK
+                ? Math.max(nextFullSnapshotVersion, 0L)
+                : stableFullSnapshotVersion;
+        int fullTransportBytes = estimateTransportBytes(
+                descriptor,
+                snapshotFingerprint,
+                chunkSnapshot,
+                ChunkPlanDecisionKind.PUBLISH_FULL,
+                fullCandidateSnapshotVersion,
+                bypassBytes,
+                "plan_cost_full"
+        );
+        int refTransportBytes = descriptor.hotspotKind() == ChunkHotspotKind.FULL_CHUNK
+                ? estimateTransportBytes(
+                descriptor,
+                snapshotFingerprint,
+                chunkSnapshot,
+                ChunkPlanDecisionKind.PUBLISH_REF,
+                stableFullSnapshotVersion,
+                0,
+                "plan_cost_ref"
+        )
+                : UNAVAILABLE_ESTIMATED_BYTES;
+        int patchTransportBytes = patchBuildResult != null && patchBuildResult.patch() != null
+                ? estimateTransportBytes(
+                descriptor,
+                snapshotFingerprint,
+                chunkSnapshot,
+                ChunkPlanDecisionKind.PUBLISH_PATCH,
+                stableFullSnapshotVersion,
+                patchBuildResult.encodedPatchBytesLength(),
+                "plan_cost_patch"
+        )
+                : UNAVAILABLE_ESTIMATED_BYTES;
+        return new ChunkPlanCostEstimate(
+                bypassBytes,
+                fullTransportBytes,
+                refTransportBytes,
+                patchTransportBytes
+        );
+    }
+
+    private static int estimateTransportBytes(
+            ChunkPacketDescriptor descriptor,
+            ChunkSnapshotFingerprint snapshotFingerprint,
+            ChunkPeerChunkStateSnapshot chunkSnapshot,
+            ChunkPlanDecisionKind decisionKind,
+            long fullSnapshotVersion,
+            int payloadBytes,
+            String reason
+    ) {
+        if (descriptor == null || descriptor.hotspotKind() == null || descriptor.laneKind() == null) {
+            return UNAVAILABLE_ESTIMATED_BYTES;
+        }
+
+        ChunkHotspotFrame frame = new ChunkHotspotFrame(
+                ChunkHotspotFrameCodec.PROTOCOL_VERSION,
+                mapOperation(decisionKind),
+                chunkSnapshot == null ? 0L : chunkSnapshot.epoch(),
+                chunkSnapshot == null ? 0L : chunkSnapshot.lastObservedChannelPacketCount(),
+                descriptor.protocolName() == null ? "PLAY" : descriptor.protocolName(),
+                descriptor.packetClassName() == null ? "<unknown>" : descriptor.packetClassName(),
+                descriptor.hotspotKind(),
+                descriptor.laneKind(),
+                descriptor.coordinate() == null ? ChunkPacketCoordinate.unknown() : descriptor.coordinate(),
+                decisionKind == ChunkPlanDecisionKind.PUBLISH_REF ? 0 : safeEncodedBytes(snapshotFingerprint),
+                Math.max(fullSnapshotVersion, 0L),
+                resolveLaneVersion(descriptor.hotspotKind(), chunkSnapshot),
+                resolveBaseSnapshotHash(decisionKind, chunkSnapshot, snapshotFingerprint),
+                snapshotFingerprint == null || snapshotFingerprint.hashHex() == null ? "" : snapshotFingerprint.hashHex(),
+                chunkSnapshot == null ? 0L : chunkSnapshot.deltaBytesSinceFullSnapshot(),
+                reason == null ? "" : reason
+        );
+        byte[] frameBytes = ChunkHotspotFrameCodec.encodeFrame(frame);
+        int safePayloadBytes = Math.max(payloadBytes, 0);
+        return ENVELOPE_MAGIC_BYTES
+                + computeVarIntBytes(frameBytes.length)
+                + frameBytes.length
+                + computeVarIntBytes(safePayloadBytes)
+                + safePayloadBytes;
+    }
+
+    private static String resolveBaseSnapshotHash(
+            ChunkPlanDecisionKind decisionKind,
+            ChunkPeerChunkStateSnapshot chunkSnapshot,
+            ChunkSnapshotFingerprint snapshotFingerprint
+    ) {
+        if (decisionKind == ChunkPlanDecisionKind.PUBLISH_FULL) {
+            return snapshotFingerprint == null || snapshotFingerprint.hashHex() == null ? "" : snapshotFingerprint.hashHex();
+        }
+        return chunkSnapshot == null || chunkSnapshot.knownSnapshotHash() == null ? "" : chunkSnapshot.knownSnapshotHash();
+    }
+
+    private static ChunkHotspotFrameOp mapOperation(ChunkPlanDecisionKind decisionKind) {
+        if (decisionKind == ChunkPlanDecisionKind.PUBLISH_FULL) {
+            return ChunkHotspotFrameOp.PUBLISH_FULL;
+        }
+        if (decisionKind == ChunkPlanDecisionKind.PUBLISH_REF) {
+            return ChunkHotspotFrameOp.PUBLISH_REF;
+        }
+        return ChunkHotspotFrameOp.PUBLISH_PATCH;
+    }
+
+    private static int safeEncodedBytes(ChunkSnapshotFingerprint snapshotFingerprint) {
+        return snapshotFingerprint == null ? 0 : Math.max(snapshotFingerprint.encodedBytes(), 0);
+    }
+
+    private static int computeVarIntBytes(int value) {
+        int remaining = value;
+        int byteCount = 1;
+        while ((remaining & -128) != 0) {
+            remaining >>>= 7;
+            byteCount++;
+        }
+        return byteCount;
+    }
+
+    private record ChunkPlanCostEstimate(
+            int bypassBytes,
+            int fullTransportBytes,
+            int refTransportBytes,
+            int patchTransportBytes
+    ) {
+
+        private static ChunkPlanCostEstimate unavailable(int bypassBytes) {
+            return new ChunkPlanCostEstimate(
+                    Math.max(bypassBytes, 0),
+                    UNAVAILABLE_ESTIMATED_BYTES,
+                    UNAVAILABLE_ESTIMATED_BYTES,
+                    UNAVAILABLE_ESTIMATED_BYTES
+            );
+        }
+
+        private int selectedBytes(ChunkPlanDecisionKind decisionKind) {
+            if (decisionKind == ChunkPlanDecisionKind.PUBLISH_FULL) {
+                return this.fullTransportBytes;
+            }
+            if (decisionKind == ChunkPlanDecisionKind.PUBLISH_REF) {
+                return this.refTransportBytes;
+            }
+            if (decisionKind == ChunkPlanDecisionKind.PUBLISH_PATCH) {
+                return this.patchTransportBytes;
+            }
+            return this.bypassBytes;
+        }
     }
 }
