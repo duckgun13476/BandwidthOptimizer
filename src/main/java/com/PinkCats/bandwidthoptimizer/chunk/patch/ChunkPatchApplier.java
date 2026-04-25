@@ -23,6 +23,7 @@ public final class ChunkPatchApplier {
         byte[] targetPacketBytes = switch (chunkPatch.patchMode()) {
             case GENERIC_REPLACE -> ChunkGenericReplacePatchCodec.applyPatch(chunkPatch, safeBasePacketBytes);
             case SECTION_SAME_POSITIONS -> SectionBlocksChunkPatchCodec.applyPatch(chunkPatch, safeBasePacketBytes);
+            case BLOCK_ENTITY_NBT_REPLACE -> BlockEntityDataChunkPatchCodec.applyPatch(chunkPatch, safeBasePacketBytes);
         };
         verifyTargetPacket(expectedTargetPayloadHash, targetPacketBytes);
         return targetPacketBytes;

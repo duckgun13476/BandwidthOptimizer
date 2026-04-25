@@ -401,6 +401,9 @@ public final class ChunkTransportPlanner {
         if (descriptor != null && descriptor.hotspotKind() == ChunkHotspotKind.LIGHT_UPDATE) {
             return "light";
         }
+        if (descriptor != null && descriptor.hotspotKind() == ChunkHotspotKind.BLOCK_ENTITY_UPDATE) {
+            return "block_entity";
+        }
         return "delta";
     }
 
@@ -562,7 +565,8 @@ public final class ChunkTransportPlanner {
     private static boolean isPatchLaneEnabled(ChunkPacketDescriptor descriptor) {
         return descriptor != null
                 && (descriptor.hotspotKind() == ChunkHotspotKind.LIGHT_UPDATE
-                || descriptor.hotspotKind() == ChunkHotspotKind.SECTION_BLOCKS_UPDATE);
+                || descriptor.hotspotKind() == ChunkHotspotKind.SECTION_BLOCKS_UPDATE
+                || descriptor.hotspotKind() == ChunkHotspotKind.BLOCK_ENTITY_UPDATE);
     }
 
     private static int estimateTransportBytes(

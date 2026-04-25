@@ -49,13 +49,23 @@ public final class ChunkPatchBuilder {
 
         ChunkPatchBuildResult genericPatchResult =
                 ChunkGenericReplacePatchCodec.buildPatch(semanticKey, basePacketSnapshot, targetPacketBytes);
-        if (descriptor == null || descriptor.hotspotKind() != ChunkHotspotKind.SECTION_BLOCKS_UPDATE) {
+        if (descriptor == null || descriptor.hotspotKind() == null) {
             return genericPatchResult;
         }
 
-        ChunkPatchBuildResult sectionPatchResult =
-                SectionBlocksChunkPatchCodec.buildPatch(semanticKey, basePacketSnapshot, targetPacketBytes);
-        return preferSmallerPatch(sectionPatchResult, genericPatchResult);
+        if (descriptor.hotspotKind() == ChunkHotspotKind.SECTION_BLOCKS_UPDATE) {
+            ChunkPatchBuildResult sectionPatchResult =
+                    SectionBlocksChunkPatchCodec.buildPatch(semanticKey, basePacketSnapshot, targetPacketBytes);
+            return preferSmallerPatch(sectionPatchResult, genericPatchResult);
+        }
+
+        if (descriptor.hotspotKind() == ChunkHotspotKind.BLOCK_ENTITY_UPDATE) {
+            ChunkPatchBuildResult blockEntityPatchResult =
+                    BlockEntityDataChunkPatchCodec.buildPatch(semanticKey, basePacketSnapshot, targetPacketBytes);
+            return preferSmallerPatch(blockEntityPatchResult, genericPatchResult);
+        }
+
+        return genericPatchResult;
     }
 
     private static ChunkLanePacketSnapshot resolveBasePacketSnapshot(
