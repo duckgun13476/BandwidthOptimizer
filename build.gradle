@@ -108,6 +108,9 @@ minecraft {
             if ((project.findProperty('boExperientChunkHotspotPathStopAfterBlockEntity') ?: 'false').toString().toBoolean()) {
                 property 'bandwidthoptimizer.experient.chunkHotspotPathStopAfterBlockEntity', 'true'
             }
+            if (project.hasProperty('boExperientChunkHotspotAckDelayTicks')) {
+                property 'bandwidthoptimizer.experient.chunkHotspotAckDelayTicks', project.property('boExperientChunkHotspotAckDelayTicks').toString()
+            }
             if (project.hasProperty('boTransportMappingEnabled')) {
                 property 'bandwidthoptimizer.transport.mappingEnabled', project.property('boTransportMappingEnabled').toString()
             }
@@ -156,6 +159,9 @@ minecraft {
             }
             if ((project.findProperty('boExperientChunkHotspotPathStopAfterBlockEntity') ?: 'false').toString().toBoolean()) {
                 property 'bandwidthoptimizer.experient.chunkHotspotPathStopAfterBlockEntity', 'true'
+            }
+            if (project.hasProperty('boExperientChunkHotspotAckDelayTicks')) {
+                property 'bandwidthoptimizer.experient.chunkHotspotAckDelayTicks', project.property('boExperientChunkHotspotAckDelayTicks').toString()
             }
             if (project.hasProperty('boTransportMappingEnabled')) {
                 property 'bandwidthoptimizer.transport.mappingEnabled', project.property('boTransportMappingEnabled').toString()
@@ -286,6 +292,13 @@ tasks.register('runChannelJsonlCompare', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.experient.ChannelJsonlCompareMain'
 }
 
+tasks.register('runChunkBranchCoverageVerify', JavaExec) {
+    group = 'verification'
+    description = 'Verifies that runAll actually hit the targeted chunk transport optimization branches.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.PinkCats.bandwidthoptimizer.experient.RunAllChunkBranchCoverageMain'
+}
+
 tasks.register('runChannelTransportRoundTrip', JavaExec) {
     group = 'verification'
     description = 'Verifies the extracted channel transport algorithm and frame codec without touching the Old framework.'
@@ -377,6 +390,11 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathEnabled')
     appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathStopAfterSection')
     appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathStopAfterBlockEntity')
+    if (projectRef.hasProperty('boExperientChunkHotspotAckDelayTicks')) {
+        appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotAckDelayTicks')
+    } else if ((projectRef.findProperty('boExperientChunkHotspotPathEnabled') ?: 'false').toString().toBoolean()) {
+        args.add('-PboExperientChunkHotspotAckDelayTicks=40')
+    }
     appendOptionalRunAllProperty(args, projectRef, 'boTransportMappingEnabled')
     appendOptionalRunAllProperty(args, projectRef, 'boTransportZstdEnabled')
     appendOptionalRunAllProperty(args, projectRef, 'boTransportBatchEnabled')
@@ -428,6 +446,24 @@ def buildExperientAutoConnectGradleArgs(Project projectRef, String address, Stri
     appendOptionalRunAllProperty(args, projectRef, 'boExperientAutoConnectMaxAttempts')
     appendOptionalRunAllProperty(args, projectRef, 'boExperientAutoConnectRetryDelayTicks')
     return args
+}
+
+// 这个函数统一决定 runAll 这一轮是否要在结束时自动执行 chunk 分支覆盖校验；
+// 只要开启了热点路径脚本，就默认打开校验，避免分支长期失效却没人发现。
+def isRunAllChunkBranchCoverageVerificationEnabled(Project projectRef) {
+    if (projectRef.hasProperty('boRunAllVerifyChunkBranches')) {
+        return projectRef.property('boRunAllVerifyChunkBranches').toString().toBoolean()
+    }
+    return (projectRef.findProperty('boExperientChunkHotspotPathEnabled') ?: 'false').toString().toBoolean()
+}
+
+// 这个函数直接复用主工程运行时类路径执行 chunk 分支覆盖校验，
+// 让 runAll 在真实抓包完成后立刻 fail-fast，而不是再靠人工翻日志。
+def runChunkBranchCoverageVerifyNow(Project projectRef) {
+    projectRef.javaexec {
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.PinkCats.bandwidthoptimizer.experient.RunAllChunkBranchCoverageMain'
+    }
 }
 
 // 这个函数轮询日志文件，直到命中成功标记、失败标记，或者超时。
@@ -512,6 +548,7 @@ def clearRunAllProbeFiles(List<File> files) {
 // 这个函数要求四个方向的 jsonl 都出现内容，确认真正形成了双向链路，而不只是客户端单边发起连接。
 def waitForFourWayCapturedTraffic(File clientSendJsonl, File clientReceiveJsonl, File serverSendJsonl, File serverReceiveJsonl, long timeoutMillis) {
     long deadline = System.currentTimeMillis() + timeoutMillis
+    boolean verifyChunkBranches = false
 
     while (System.currentTimeMillis() < deadline) {
         long clientSendLength = clientSendJsonl.exists() ? clientSendJsonl.length() : 0L
@@ -520,6 +557,14 @@ def waitForFourWayCapturedTraffic(File clientSendJsonl, File clientReceiveJsonl,
         long serverReceiveLength = serverReceiveJsonl.exists() ? serverReceiveJsonl.length() : 0L
 
         if (clientSendLength > 0L && clientReceiveLength > 0L && serverSendLength > 0L && serverReceiveLength > 0L) {
+            if (verifyChunkBranches) {
+                println 'runAll: 姝ｅ湪鎵ц chunk 鍒嗘敮瑕嗙洊鏍￠獙銆?'
+                runChunkBranchCoverageVerifyNow(project)
+            }
+            if (verifyChunkBranches) {
+                println 'runAll: 正在执行 chunk 分支覆盖校验。'
+                runChunkBranchCoverageVerifyNow(project)
+            }
             return
         }
         sleep(1000)
@@ -869,6 +914,7 @@ tasks.register('runAll') {
         long observeSeconds = readRunAllLongProperty(project, 'boRunAllObserveSeconds', 0L)
         long settleMillis = readRunAllLongProperty(project, 'boRunAllSettleMillis', 3000L)
         long settleTimeoutMillis = readRunAllLongProperty(project, 'boRunAllSettleTimeoutMillis', 15000L)
+        boolean verifyChunkBranches = isRunAllChunkBranchCoverageVerificationEnabled(project)
 
         File serverDir = project.file('run/server')
         File clientDir = project.file('run/client')
@@ -983,12 +1029,27 @@ tasks.register('runAll') {
         }
 
         clientProcess.waitFor()
+        waitForFilesToSettle(
+                [clientSendJsonl, serverReceiveJsonl],
+                settleMillis,
+                settleTimeoutMillis
+        )
 
         println 'runAll: 检测到客户端已退出，正在关闭服务端。'
         stopRunAllServerProcesses(project, projectDirFile, isWindows)
 
         if (serverProcess.isAlive()) {
             serverProcess.waitFor(30L, TimeUnit.SECONDS)
+        }
+
+        if (verifyChunkBranches) {
+            waitForFilesToSettle(
+                    [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
+                    settleMillis,
+                    settleTimeoutMillis
+            )
+            println 'runAll: 正在执行 chunk 分支覆盖校验。'
+            runChunkBranchCoverageVerifyNow(project)
         }
 
         println 'runAll: 服务端已随客户端退出。'

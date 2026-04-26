@@ -28,6 +28,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
+import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkHotspotAckDelayController;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
@@ -141,7 +142,9 @@ public final class ChunkTransportDispatcher {
                     restoredPacketBytes
             );
             ChunkRuntimeReferenceStore.storeFullSnapshot(readChannelId(context), envelope.frame(), restoredPacketBytes);
-            ChunkTransportControlFrameSender.sendAck(context, envelope.frame(), "runtime_full_received");
+            if (!ExperientChunkHotspotAckDelayController.maybeDelayAck(context, envelope.frame(), "runtime_full_received")) {
+                ChunkTransportControlFrameSender.sendAck(context, envelope.frame(), "runtime_full_received");
+            }
             logInboundFrame(context, packetBytes, envelope, restoredPacketBytes, INBOUND_FULL_FRAME_COUNT);
             return ChunkInboundDecodeResult.passthrough(restoredPacketBytes);
         }

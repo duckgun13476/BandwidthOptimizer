@@ -1,16 +1,25 @@
 package com.PinkCats.bandwidthoptimizer.experient;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import it.unimi.dsi.fastutil.shorts.ShortOpenHashSet;
+import it.unimi.dsi.fastutil.shorts.ShortSet;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientboundLightUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.SignBlockEntity;
 import net.minecraft.world.level.block.entity.SignText;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.lighting.LevelLightEngine;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -33,13 +42,18 @@ public final class ExperientChunkHotspotPathController {
     private static final int POST_BLOCK_ENTITY_PULSE_DELAY_TICKS = 60;
     private static final int FINAL_RETURN_SETTLE_TICKS = 200;
     private static final int LIGHT_PROBE_Y_OFFSET = 4;
+    private static final int BEFORE_ACK_LIGHT_PROBE_Y_OFFSET = -18;
+    private static final int BEFORE_ACK_PROBE_EMIT_REMAINING_TICKS = 4;
     private static final int SECTION_PROBE_Y_OFFSET = -8;
     private static final int BLOCK_ENTITY_PROBE_X_OFFSET = 2;
     private static final int BLOCK_ENTITY_PROBE_Y_OFFSET = 1;
     private static final int BLOCK_ENTITY_PROBE_Z_OFFSET = 2;
+    private static final int LIGHT_CHAMBER_RADIUS = 2;
+    private static final int MAX_LIGHT_ENGINE_UPDATE_PASSES = 8192;
     private static final boolean[] LIGHT_PULSE_SEQUENCE = {true, false, true, false};
     private static final boolean[] SECTION_PULSE_SEQUENCE = {true, false, true, false};
     private static final String[] BLOCK_ENTITY_VARIANT_SEQUENCE = {"0000", "0001", "0002", "0003"};
+    private static final String[] BEFORE_ACK_BLOCK_ENTITY_VARIANT_SEQUENCE = {"1000", "1001"};
     private static final String BLOCK_ENTITY_FRONT_LINE_ONE_PREFIX =
             "BO-BLOCK-ENTITY-PATCH-FRONT-LINE-ONE-STATIC-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX-";
     private static final String BLOCK_ENTITY_FRONT_LINE_TWO =
@@ -61,14 +75,14 @@ public final class ExperientChunkHotspotPathController {
     private static final int SECTION_PROBE_DEPTH = 6;
 
     private static final TeleportWaypoint[] TELEPORT_SEQUENCE = {
-            new TeleportWaypoint(320.0D, 0.0D, 8),
-            new TeleportWaypoint(0.0D, 0.0D, 8),
-            new TeleportWaypoint(320.0D, 0.0D, 8),
-            new TeleportWaypoint(0.0D, 0.0D, 12),
-            new TeleportWaypoint(0.0D, 320.0D, 8),
-            new TeleportWaypoint(0.0D, 0.0D, 8),
-            new TeleportWaypoint(0.0D, 320.0D, 8),
-            new TeleportWaypoint(0.0D, 0.0D, FINAL_RETURN_SETTLE_TICKS)
+            new TeleportWaypoint(320.0D, 0.0D, 12, true),
+            new TeleportWaypoint(0.0D, 0.0D, 8, false),
+            new TeleportWaypoint(320.0D, 0.0D, 8, false),
+            new TeleportWaypoint(0.0D, 0.0D, 12, false),
+            new TeleportWaypoint(0.0D, 320.0D, 12, true),
+            new TeleportWaypoint(0.0D, 0.0D, 8, false),
+            new TeleportWaypoint(0.0D, 320.0D, 8, false),
+            new TeleportWaypoint(0.0D, 0.0D, FINAL_RETURN_SETTLE_TICKS, false)
     };
 
     private static final Map<UUID, PathState> PLAYER_PATH_STATES = new ConcurrentHashMap<>();
@@ -143,6 +157,7 @@ public final class ExperientChunkHotspotPathController {
     //  light -> section -> block entity -> waypoint test
     private static PathState advancePath(ServerPlayer serverPlayer, PathState state) {
         if (state.delayTicksRemaining() > 0) {
+            maybeEmitDelayedBeforeAckProbeBurst(serverPlayer, state);
             return state.withDelayTicksRemaining(state.delayTicksRemaining() - 1);
         }
 
@@ -176,8 +191,8 @@ public final class ExperientChunkHotspotPathController {
 
         if (state.nextWaypointIndex() >= TELEPORT_SEQUENCE.length) {
             Bandwidthoptimizer.LOGGER.info(
-                "[ExperientChunkPath] Completed scripted path for player={}",
-                serverPlayer.getGameProfile().getName()
+                    "[ExperientChunkPath] Completed scripted path for player={}",
+                    serverPlayer.getGameProfile().getName()
             );
             disconnectPlayerAfterPathCompletion(serverPlayer);
             return null;
@@ -212,6 +227,31 @@ public final class ExperientChunkHotspotPathController {
     }
 
 
+    private static void maybeEmitDelayedBeforeAckProbeBurst(ServerPlayer serverPlayer, PathState state) {
+        if (state.nextWaypointIndex() <= 0) {
+            return;
+        }
+
+        TeleportWaypoint previousWaypoint = TELEPORT_SEQUENCE[state.nextWaypointIndex() - 1];
+        if (!previousWaypoint.triggerBeforeAckProbeBurst()
+                || state.delayTicksRemaining() != BEFORE_ACK_PROBE_EMIT_REMAINING_TICKS) {
+            return;
+        }
+
+        double targetX = state.originX() + previousWaypoint.offsetX();
+        double targetY = state.originY();
+        double targetZ = state.originZ() + previousWaypoint.offsetZ();
+        emitBeforeAckProbeBurst(serverPlayer, targetX, targetY, targetZ);
+        Bandwidthoptimizer.LOGGER.info(
+                "[ExperientChunkPath] Emitted delayed before-ack probes for player={}, target=({}, {}, {}), remainingTicks={}",
+                serverPlayer.getGameProfile().getName(),
+                formatDouble(targetX),
+                formatDouble(targetY),
+                formatDouble(targetZ),
+                state.delayTicksRemaining()
+        );
+    }
+
     private static PathState applyLightPulse(ServerPlayer serverPlayer, PathState state) {
         BlockPos probePos = BlockPos.containing(
                 state.originX(),
@@ -240,18 +280,9 @@ public final class ExperientChunkHotspotPathController {
 
     //  section block update，
     private static PathState applySectionPulse(ServerPlayer serverPlayer, PathState state) {
-        BlockPos anchorPos = resolveSectionProbeAnchor(state);
+        BlockPos anchorPos = resolveSectionProbeAnchor(state.originX(), state.originY(), state.originZ());
         boolean useStonePattern = SECTION_PULSE_SEQUENCE[state.nextSectionPulseIndex()];
-        for (int offsetX = 0; offsetX < SECTION_PROBE_WIDTH; offsetX++) {
-            for (int offsetY = 0; offsetY < SECTION_PROBE_HEIGHT; offsetY++) {
-                for (int offsetZ = 0; offsetZ < SECTION_PROBE_DEPTH; offsetZ++) {
-                    serverPlayer.serverLevel().setBlockAndUpdate(
-                            anchorPos.offset(offsetX, offsetY, offsetZ),
-                            useStonePattern ? Blocks.STONE.defaultBlockState() : Blocks.ANDESITE.defaultBlockState()
-                    );
-                }
-            }
-        }
+        applySectionPattern(serverPlayer, anchorPos, useStonePattern);
         int nextDelayTicks = state.nextSectionPulseIndex() + 1 >= SECTION_PULSE_SEQUENCE.length
                 ? POST_SECTION_PULSE_DELAY_TICKS
                 : SECTION_PULSE_DELAY_TICKS;
@@ -268,7 +299,7 @@ public final class ExperientChunkHotspotPathController {
     }
 
     private static PathState applyBlockEntityPulse(ServerPlayer serverPlayer, PathState state) {
-        BlockPos probePos = resolveBlockEntityProbePos(state);
+        BlockPos probePos = resolveBlockEntityProbePos(state.originX(), state.originY(), state.originZ());
         SignBlockEntity signBlockEntity = ensureBlockEntityProbeInstalled(serverPlayer, probePos);
         if (signBlockEntity == null) {
             Bandwidthoptimizer.LOGGER.warn(
@@ -288,7 +319,10 @@ public final class ExperientChunkHotspotPathController {
             );
         }
 
-        applyBlockEntityProbeText(signBlockEntity, state.nextBlockEntityPulseIndex());
+        applyBlockEntityProbeText(
+                signBlockEntity,
+                BLOCK_ENTITY_VARIANT_SEQUENCE[state.nextBlockEntityPulseIndex()]
+        );
         signBlockEntity.setChanged();
         broadcastBlockEntityProbeUpdate(serverPlayer, signBlockEntity);
 
@@ -307,22 +341,157 @@ public final class ExperientChunkHotspotPathController {
         );
     }
 
-    private static BlockPos resolveSectionProbeAnchor(PathState state) {
-        int baseX = floorToBlock(state.originX());
-        int baseY = floorToBlock(state.originY()) + SECTION_PROBE_Y_OFFSET;
-        int baseZ = floorToBlock(state.originZ());
-        int sectionMinX = (baseX >> 4) << 4;
-        int sectionMinY = (baseY >> 4) << 4;
-        int sectionMinZ = (baseZ >> 4) << 4;
+    private static void emitBeforeAckProbeBurst(ServerPlayer serverPlayer, double baseX, double baseY, double baseZ) {
+        emitBeforeAckLightBurst(serverPlayer, baseX, baseY, baseZ);
+        emitBeforeAckSectionBurst(serverPlayer, baseX, baseY, baseZ);
+        emitBeforeAckBlockEntityBurst(serverPlayer, baseX, baseY, baseZ);
+    }
+
+    private static void emitBeforeAckLightBurst(ServerPlayer serverPlayer, double baseX, double baseY, double baseZ) {
+        BlockPos probeCenter = BlockPos.containing(baseX, baseY + BEFORE_ACK_LIGHT_PROBE_Y_OFFSET, baseZ);
+        prepareLightProbeChamber(serverPlayer, probeCenter);
+        setLightProbeState(serverPlayer, probeCenter, true);
+        sendLightUpdateProbePacket(serverPlayer, probeCenter);
+        setLightProbeState(serverPlayer, probeCenter, false);
+        sendLightUpdateProbePacket(serverPlayer, probeCenter);
+    }
+
+    private static void emitBeforeAckSectionBurst(ServerPlayer serverPlayer, double baseX, double baseY, double baseZ) {
+        BlockPos anchorPos = resolveSectionProbeAnchor(baseX, baseY, baseZ);
+        BlockState firstPatternState = selectFirstBeforeAckSectionProbeState(
+                serverPlayer.serverLevel().getBlockState(anchorPos)
+        );
+        BlockState secondPatternState = selectSecondBeforeAckSectionProbeState(firstPatternState);
+        applyAndSendSectionPattern(serverPlayer, anchorPos, firstPatternState);
+        applyAndSendSectionPattern(serverPlayer, anchorPos, secondPatternState);
+    }
+
+    private static void emitBeforeAckBlockEntityBurst(ServerPlayer serverPlayer, double baseX, double baseY, double baseZ) {
+        BlockPos probePos = resolveBlockEntityProbePos(baseX, baseY, baseZ);
+        SignBlockEntity signBlockEntity = ensureBlockEntityProbeInstalled(serverPlayer, probePos);
+        if (signBlockEntity == null) {
+            return;
+        }
+
+        for (String variantSuffix : BEFORE_ACK_BLOCK_ENTITY_VARIANT_SEQUENCE) {
+            applyBlockEntityProbeText(signBlockEntity, variantSuffix);
+            signBlockEntity.setChanged();
+            broadcastBlockEntityProbeUpdate(serverPlayer, signBlockEntity);
+        }
+    }
+
+    private static void prepareLightProbeChamber(ServerPlayer serverPlayer, BlockPos probeCenter) {
+        for (int offsetX = -LIGHT_CHAMBER_RADIUS; offsetX <= LIGHT_CHAMBER_RADIUS; offsetX++) {
+            for (int offsetY = -LIGHT_CHAMBER_RADIUS; offsetY <= LIGHT_CHAMBER_RADIUS; offsetY++) {
+                for (int offsetZ = -LIGHT_CHAMBER_RADIUS; offsetZ <= LIGHT_CHAMBER_RADIUS; offsetZ++) {
+                    BlockPos currentPos = probeCenter.offset(offsetX, offsetY, offsetZ);
+                    boolean boundary = Math.abs(offsetX) == LIGHT_CHAMBER_RADIUS
+                            || Math.abs(offsetY) == LIGHT_CHAMBER_RADIUS
+                            || Math.abs(offsetZ) == LIGHT_CHAMBER_RADIUS;
+                    serverPlayer.serverLevel().setBlockAndUpdate(
+                            currentPos,
+                            boundary ? Blocks.DEEPSLATE.defaultBlockState() : Blocks.AIR.defaultBlockState()
+                    );
+                }
+            }
+        }
+    }
+
+    private static void setLightProbeState(ServerPlayer serverPlayer, BlockPos probeCenter, boolean enabled) {
+        serverPlayer.serverLevel().setBlockAndUpdate(
+                probeCenter,
+                enabled ? Blocks.SEA_LANTERN.defaultBlockState() : Blocks.AIR.defaultBlockState()
+        );
+    }
+
+    private static void sendLightUpdateProbePacket(ServerPlayer serverPlayer, BlockPos probeCenter) {
+        LevelLightEngine lightEngine = serverPlayer.serverLevel().getChunkSource().getLightEngine();
+        lightEngine.checkBlock(probeCenter);
+        int remainingPasses = MAX_LIGHT_ENGINE_UPDATE_PASSES;
+        while (lightEngine.hasLightWork() && remainingPasses-- > 0) {
+            lightEngine.runLightUpdates();
+        }
+        serverPlayer.connection.send(new ClientboundLightUpdatePacket(new ChunkPos(probeCenter), lightEngine, null, null));
+    }
+
+
+    private static void applySectionPattern(ServerPlayer serverPlayer, BlockPos anchorPos, boolean useStonePattern) {
+        applySectionPattern(
+                serverPlayer,
+                anchorPos,
+                useStonePattern ? Blocks.STONE.defaultBlockState() : Blocks.ANDESITE.defaultBlockState()
+        );
+    }
+
+    private static void applySectionPattern(ServerPlayer serverPlayer, BlockPos anchorPos, BlockState blockState) {
+        for (int offsetX = 0; offsetX < SECTION_PROBE_WIDTH; offsetX++) {
+            for (int offsetY = 0; offsetY < SECTION_PROBE_HEIGHT; offsetY++) {
+                for (int offsetZ = 0; offsetZ < SECTION_PROBE_DEPTH; offsetZ++) {
+                    serverPlayer.serverLevel().setBlockAndUpdate(
+                            anchorPos.offset(offsetX, offsetY, offsetZ),
+                            blockState
+                    );
+                }
+            }
+        }
+    }
+
+    private static void applyAndSendSectionPattern(ServerPlayer serverPlayer, BlockPos anchorPos, BlockState blockState) {
+        ShortSet sectionRelativePositions = new ShortOpenHashSet();
+        for (int offsetX = 0; offsetX < SECTION_PROBE_WIDTH; offsetX++) {
+            for (int offsetY = 0; offsetY < SECTION_PROBE_HEIGHT; offsetY++) {
+                for (int offsetZ = 0; offsetZ < SECTION_PROBE_DEPTH; offsetZ++) {
+                    BlockPos currentPos = anchorPos.offset(offsetX, offsetY, offsetZ);
+                    serverPlayer.serverLevel().setBlockAndUpdate(currentPos, blockState);
+                    sectionRelativePositions.add(SectionPos.sectionRelativePos(currentPos));
+                }
+            }
+        }
+
+        LevelChunk levelChunk = (LevelChunk) serverPlayer.serverLevel().getChunk(anchorPos);
+        LevelChunkSection levelChunkSection = levelChunk.getSection(levelChunk.getSectionIndex(anchorPos.getY()));
+        serverPlayer.connection.send(
+                new ClientboundSectionBlocksUpdatePacket(SectionPos.of(anchorPos), sectionRelativePositions, levelChunkSection)
+        );
+    }
+
+    private static BlockState selectFirstBeforeAckSectionProbeState(BlockState currentBlockState) {
+        if (currentBlockState.is(Blocks.STONE)) {
+            return Blocks.ANDESITE.defaultBlockState();
+        }
+        if (currentBlockState.is(Blocks.ANDESITE)) {
+            return Blocks.DIORITE.defaultBlockState();
+        }
+        return Blocks.STONE.defaultBlockState();
+    }
+
+    private static BlockState selectSecondBeforeAckSectionProbeState(BlockState firstPatternState) {
+        if (firstPatternState.is(Blocks.STONE)) {
+            return Blocks.ANDESITE.defaultBlockState();
+        }
+        if (firstPatternState.is(Blocks.ANDESITE)) {
+            return Blocks.DIORITE.defaultBlockState();
+        }
+        return Blocks.STONE.defaultBlockState();
+    }
+
+
+    private static BlockPos resolveSectionProbeAnchor(double baseX, double baseY, double baseZ) {
+        int baseXBlock = floorToBlock(baseX);
+        int baseYBlock = floorToBlock(baseY) + SECTION_PROBE_Y_OFFSET;
+        int baseZBlock = floorToBlock(baseZ);
+        int sectionMinX = (baseXBlock >> 4) << 4;
+        int sectionMinY = (baseYBlock >> 4) << 4;
+        int sectionMinZ = (baseZBlock >> 4) << 4;
         return new BlockPos(sectionMinX + 4, sectionMinY + 4, sectionMinZ + 4);
     }
 
 
-    private static BlockPos resolveBlockEntityProbePos(PathState state) {
+    private static BlockPos resolveBlockEntityProbePos(double baseX, double baseY, double baseZ) {
         return BlockPos.containing(
-                state.originX() + BLOCK_ENTITY_PROBE_X_OFFSET,
-                state.originY() + BLOCK_ENTITY_PROBE_Y_OFFSET,
-                state.originZ() + BLOCK_ENTITY_PROBE_Z_OFFSET
+                baseX + BLOCK_ENTITY_PROBE_X_OFFSET,
+                baseY + BLOCK_ENTITY_PROBE_Y_OFFSET,
+                baseZ + BLOCK_ENTITY_PROBE_Z_OFFSET
         );
     }
 
@@ -339,8 +508,8 @@ public final class ExperientChunkHotspotPathController {
         return null;
     }
 
-    private static void applyBlockEntityProbeText(SignBlockEntity signBlockEntity, int variantIndex) {
-        String variantSuffix = BLOCK_ENTITY_VARIANT_SEQUENCE[Math.max(0, Math.min(variantIndex, BLOCK_ENTITY_VARIANT_SEQUENCE.length - 1))];
+
+    private static void applyBlockEntityProbeText(SignBlockEntity signBlockEntity, String variantSuffix) {
         SignText frontText = signBlockEntity.getFrontText()
                 .setMessage(0, Component.literal(BLOCK_ENTITY_FRONT_LINE_ONE_PREFIX + variantSuffix))
                 .setMessage(1, Component.literal(BLOCK_ENTITY_FRONT_LINE_TWO))
@@ -423,11 +592,16 @@ public final class ExperientChunkHotspotPathController {
                     this.nextSectionPulseIndex,
                     this.nextBlockEntityPulseIndex,
                     this.nextWaypointIndex,
-                Math.max(delayTicksRemaining, 0)
+                    Math.max(delayTicksRemaining, 0)
             );
         }
     }
 
-    private record TeleportWaypoint(double offsetX, double offsetZ, int settleTicks) {
+    private record TeleportWaypoint(
+            double offsetX,
+            double offsetZ,
+            int settleTicks,
+            boolean triggerBeforeAckProbeBurst
+    ) {
     }
 }
