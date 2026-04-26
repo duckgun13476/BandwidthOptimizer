@@ -10,8 +10,10 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundLightUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.SignBlockEntity;
@@ -41,10 +43,13 @@ public final class ExperientChunkHotspotPathController {
     private static final int BLOCK_ENTITY_PULSE_DELAY_TICKS = 20;
     private static final int POST_BLOCK_ENTITY_PULSE_DELAY_TICKS = 60;
     private static final int FINAL_RETURN_SETTLE_TICKS = 200;
-    private static final int TWO_POINT_REUSE_SETTLE_TICKS = 6;
+    private static final int TWO_POINT_REUSE_MIN_SETTLE_TICKS = 10;
     private static final int TWO_POINT_REUSE_FINAL_SETTLE_TICKS = 100;
-    private static final int TWO_POINT_REUSE_TOTAL_TELEPORTS = 24;
-    private static final double TWO_POINT_REUSE_OFFSET_BLOCKS = 320.0D;
+    private static final int TWO_POINT_REUSE_TOTAL_TELEPORTS = 8;
+    private static final long TWO_POINT_REUSE_QUIET_WINDOW_MILLIS = 500L;
+    private static final double TWO_POINT_REUSE_OFFSET_BLOCKS = 352.0D;
+    private static final double TWO_POINT_REUSE_SAFE_Y = 200.0D;
+    private static final double TWO_POINT_REUSE_SAFE_Y_MARGIN = 32.0D;
     private static final int LIGHT_PROBE_Y_OFFSET = 4;
     private static final int BEFORE_ACK_LIGHT_PROBE_Y_OFFSET = -18;
     private static final int BEFORE_ACK_PROBE_EMIT_REMAINING_TICKS = 4;
@@ -104,11 +109,17 @@ public final class ExperientChunkHotspotPathController {
             return;
         }
 
+        if (ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()) {
+            prepareTwoPointReusePlayer(serverPlayer);
+        }
+
+        double originY = resolvePathOriginY(serverPlayer);
+
         PLAYER_PATH_STATES.put(
                 serverPlayer.getUUID(),
                 new PathState(
                         serverPlayer.getX(),
-                        serverPlayer.getY(),
+                        originY,
                         serverPlayer.getZ(),
                         0,
                         0,
@@ -121,7 +132,7 @@ public final class ExperientChunkHotspotPathController {
                 "[ExperientChunkPath] Registered scripted path for player={}, start=({}, {}, {})",
                 serverPlayer.getGameProfile().getName(),
                 formatDouble(serverPlayer.getX()),
-                formatDouble(serverPlayer.getY()),
+                formatDouble(originY),
                 formatDouble(serverPlayer.getZ())
         );
     }
@@ -237,6 +248,13 @@ public final class ExperientChunkHotspotPathController {
 
     // chunk tp
     private static PathState advanceTwoPointReusePath(ServerPlayer serverPlayer, PathState state) {
+        if (!ExperientChunkHotspotFullChunkTracker.hasPlayerBeenQuietFor(
+                serverPlayer,
+                TWO_POINT_REUSE_QUIET_WINDOW_MILLIS
+        )) {
+            return state.withDelayTicksRemaining(1);
+        }
+
         if (state.nextWaypointIndex() >= TWO_POINT_REUSE_SEQUENCE.length) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ExperientChunkPath] Completed two-point reuse path for player={}",
@@ -250,7 +268,9 @@ public final class ExperientChunkHotspotPathController {
         double targetX = state.originX() + waypoint.offsetX();
         double targetY = state.originY();
         double targetZ = state.originZ() + waypoint.offsetZ();
+        stabilizeTwoPointReusePlayerMotion(serverPlayer);
         boolean commandAccepted = teleportPlayer(serverPlayer, targetX, targetY, targetZ);
+        stabilizeTwoPointReusePlayerMotion(serverPlayer);
         Bandwidthoptimizer.LOGGER.info(
                 "[ExperientChunkPath] two-point-reuse player={}, step={}/{}, target=({}, {}, {}), settleTicks={}, accepted={}",
                 serverPlayer.getGameProfile().getName(),
@@ -591,6 +611,63 @@ public final class ExperientChunkHotspotPathController {
         return (int) Math.floor(value);
     }
 
+
+    private static void prepareTwoPointReusePlayer(ServerPlayer serverPlayer) {
+        if (serverPlayer == null) {
+            return;
+        }
+
+        serverPlayer.setGameMode(GameType.SPECTATOR);
+        stabilizeTwoPointReusePlayerMotion(serverPlayer);
+        double safeY = resolveTwoPointReuseSafeY(serverPlayer.serverLevel());
+        if (Math.abs(serverPlayer.getY() - safeY) < 0.01D) {
+            return;
+        }
+
+        boolean commandAccepted = teleportPlayer(serverPlayer, serverPlayer.getX(), safeY, serverPlayer.getZ());
+        stabilizeTwoPointReusePlayerMotion(serverPlayer);
+        Bandwidthoptimizer.LOGGER.info(
+                "[ExperientChunkPath] Prepared two-point reuse player={}, safeY={}, accepted={}",
+                serverPlayer.getGameProfile().getName(),
+                formatDouble(safeY),
+                commandAccepted
+        );
+    }
+
+
+    private static double resolvePathOriginY(ServerPlayer serverPlayer) {
+        if (serverPlayer == null) {
+            return 0.0D;
+        }
+
+        if (!ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()) {
+            return serverPlayer.getY();
+        }
+        return resolveTwoPointReuseSafeY(serverPlayer.serverLevel());
+    }
+
+
+    private static double resolveTwoPointReuseSafeY(ServerLevel serverLevel) {
+        if (serverLevel == null) {
+            return TWO_POINT_REUSE_SAFE_Y;
+        }
+
+        double minSafeY = serverLevel.getMinBuildHeight() + TWO_POINT_REUSE_SAFE_Y_MARGIN;
+        double maxSafeY = serverLevel.getMaxBuildHeight() - TWO_POINT_REUSE_SAFE_Y_MARGIN;
+        if (maxSafeY < minSafeY) {
+            return TWO_POINT_REUSE_SAFE_Y;
+        }
+        return Math.max(minSafeY, Math.min(TWO_POINT_REUSE_SAFE_Y, maxSafeY));
+    }
+
+    private static void stabilizeTwoPointReusePlayerMotion(ServerPlayer serverPlayer) {
+        if (serverPlayer == null) {
+            return;
+        }
+        serverPlayer.setDeltaMovement(0.0D, 0.0D, 0.0D);
+        serverPlayer.resetFallDistance();
+    }
+
     private static boolean teleportPlayer(ServerPlayer serverPlayer, double targetX, double targetY, double targetZ) {
         if (serverPlayer.getServer() == null) {
             return false;
@@ -629,7 +706,7 @@ public final class ExperientChunkHotspotPathController {
             double offsetX = index % 2 == 0 ? TWO_POINT_REUSE_OFFSET_BLOCKS : 0.0D;
             int settleTicks = index + 1 >= sequence.length
                     ? TWO_POINT_REUSE_FINAL_SETTLE_TICKS
-                    : TWO_POINT_REUSE_SETTLE_TICKS;
+                    : TWO_POINT_REUSE_MIN_SETTLE_TICKS;
             sequence[index] = new TeleportWaypoint(offsetX, 0.0D, settleTicks, false);
         }
         return sequence;

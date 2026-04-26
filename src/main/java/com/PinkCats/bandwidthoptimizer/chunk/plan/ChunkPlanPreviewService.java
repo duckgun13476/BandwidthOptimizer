@@ -1,9 +1,11 @@
 package com.PinkCats.bandwidthoptimizer.chunk.plan;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerObservationSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateSnapshot;
+import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkHotspotPathRuntimeConfig;
 
 public final class ChunkPlanPreviewService {
 
@@ -32,10 +34,14 @@ public final class ChunkPlanPreviewService {
     }
 
 
-
     private static boolean shouldLog(ChunkPeerStateSnapshot snapshot, ChunkPlanDecision decision) {
         if (snapshot == null || decision == null) {
             return false;
+        }
+        if (ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()
+                && "full".equals(decision.laneName())
+                && decision.decisionKind() == ChunkPlanDecisionKind.PUBLISH_FULL) {
+            return true;
         }
         if (decision.decisionKind() == ChunkPlanDecisionKind.PUBLISH_REF
                 || decision.decisionKind() == ChunkPlanDecisionKind.PUBLISH_PATCH) {

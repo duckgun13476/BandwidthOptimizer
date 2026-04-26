@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerChunkStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
+import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkHotspotPathRuntimeConfig;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
@@ -67,6 +68,7 @@ public final class ChunkLifecycleCoordinator {
         ChunkPacketCoordinate coordinate = ChunkPacketCoordinate.ofChunk(chunkPos.x, chunkPos.z);
         ChunkPeerChunkStateSnapshot knownChunkSnapshot = ChunkPeerStateManager.snapshotPlayerChunk(player, coordinate);
         if (!shouldInvalidateLifecycleChunk(knownChunkSnapshot)) {
+            logTwoPointLifecycleSkip(player, coordinate, reason, knownChunkSnapshot);
             return;
         }
 
@@ -80,6 +82,27 @@ public final class ChunkLifecycleCoordinator {
                 coordinate.logText(),
                 knownChunkSnapshot.summaryText(),
                 retainedChunkSnapshot == null ? "<missing>" : retainedChunkSnapshot.summaryText()
+        );
+    }
+
+
+    private static void logTwoPointLifecycleSkip(
+            ServerPlayer player,
+            ChunkPacketCoordinate coordinate,
+            String reason,
+            ChunkPeerChunkStateSnapshot knownChunkSnapshot
+    ) {
+        if (!ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode() || player == null || coordinate == null) {
+            return;
+        }
+
+        Bandwidthoptimizer.LOGGER.info(
+                "[ChunkTwoPoint][LifecycleSkip] player={}, uuid={}, reason={}, chunk={}, snapshotBefore={}",
+                player.getGameProfile().getName(),
+                player.getUUID(),
+                reason,
+                coordinate.logText(),
+                knownChunkSnapshot == null ? "<missing>" : knownChunkSnapshot.summaryText()
         );
     }
 
