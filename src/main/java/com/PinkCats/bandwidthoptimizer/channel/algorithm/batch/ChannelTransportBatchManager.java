@@ -8,6 +8,7 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
+import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCaptureManager;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
@@ -34,12 +35,18 @@ public final class ChannelTransportBatchManager {
 
     private ChannelTransportBatchManager() {}
 
-    public static boolean enqueueOutboundPacket(ChannelHandlerContext context, byte[] originalPacketBytes) {
-        if (context == null || originalPacketBytes == null)
+
+    public static boolean enqueueOutboundPacket(
+            ChannelHandlerContext context,
+            byte[] originalPacketBytes,
+            ChannelTransportPacketRankCaptureManager.OutboundPacketCapture outboundPacketCapture
+    ) {
+        if (context == null || originalPacketBytes == null) {
             return false;
+        }
 
         OutboundBatchState batchState = getOrCreateOutboundBatchState(context.channel());
-        batchState.addPacket(context, copyBytesOrEmpty(originalPacketBytes));
+        batchState.addPacket(context, copyBytesOrEmpty(originalPacketBytes), outboundPacketCapture);
         batchState.scheduleFlushIfNeeded(context.channel());
         return true;
     }
@@ -54,11 +61,11 @@ public final class ChannelTransportBatchManager {
 
     // Prevent sensitive overtake problem
     public static boolean shouldBatchOutboundPacket(ChannelHandlerContext context) {
-        if (context == null || !ChannelTransportBatchRuntimeConfig.isBatchEnabled())
+        if (context == null || !ChannelTransportBatchRuntimeConfig.isBatchEnabled()) {
             return false;
+        }
         return getOrCreateBatchApplicabilityState(context.channel()).touchAndIsBatchReady();
     }
-
 
     public static boolean shouldReplayInboundAsBatch(ChannelTransportPacketCodec.UnwrappedTransportFrame unwrappedFrame) {
         return unwrappedFrame != null && unwrappedFrame.frameKind() == ChannelTransportPacketCodec.FrameKind.BATCH;
@@ -66,8 +73,9 @@ public final class ChannelTransportBatchManager {
 
     // simulate like original replay
     public static void replayInboundBatch(ChannelHandlerContext context, List<InboundReplayEntry> replayEntries) {
-        if (context == null || replayEntries == null || replayEntries.isEmpty())
+        if (context == null || replayEntries == null || replayEntries.isEmpty()) {
             return;
+        }
 
         InboundBatchState batchState = getOrCreateInboundBatchState(context.channel());
         List<ScheduledReplayEntry> scheduledReplayEntries = batchState.schedule(replayEntries);
@@ -82,20 +90,23 @@ public final class ChannelTransportBatchManager {
     }
 
     private static void flushOutboundBatch(Channel channel) {
-        if (channel == null || !channel.isActive())
+        if (channel == null || !channel.isActive()) {
             return;
+        }
 
         OutboundBatchState batchState = getOrCreateOutboundBatchState(channel);
         OutboundBatchDrain drainedBatch = batchState.drain();
-        if (drainedBatch == null || drainedBatch.packetBytesList().isEmpty() || drainedBatch.context() == null)
+        if (drainedBatch == null || drainedBatch.packetBytesList().isEmpty() || drainedBatch.context() == null) {
             return;
+        }
 
         try {
             ChannelTransportSession transportSession = ChannelTransportStateManager.getOrCreateSession(channel);
             ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame =
                     ChannelTransportPacketCodec.wrapBatchPackets(transportSession, drainedBatch.packetBytesList());
-            if (wrappedFrame == null)
+            if (wrappedFrame == null) {
                 return;
+            }
 
             drainedBatch.context().writeAndFlush(Unpooled.wrappedBuffer(wrappedFrame.transportFrameBytes())).addListener(future -> {
                 if (!future.isSuccess()) {
@@ -104,6 +115,10 @@ public final class ChannelTransportBatchManager {
                     return;
                 }
                 ChannelTransportTelemetry.recordOutboundWrap(readProtocolName(drainedBatch.context()), wrappedFrame);
+                ChannelTransportPacketRankCaptureManager.completeBatchTransportCapture(
+                        drainedBatch.packetCaptures(),
+                        wrappedFrame
+                );
             });
         } catch (Throwable throwable) {
             ChannelTransportRuntimeGuard.disableTransport("outbound-batch-flush", throwable);
@@ -119,7 +134,8 @@ public final class ChannelTransportBatchManager {
             captureInboundReplay(context, replayEntry.packetBytes(), replayEntry.packet());
             decoderContext.fireChannelRead(replayEntry.packet());
         } catch (Throwable throwable) {
-            ChannelTransportRuntimeGuard.disableTransport("inbound-batch-replay", throwable);}
+            ChannelTransportRuntimeGuard.disableTransport("inbound-batch-replay", throwable);
+        }
     }
 
     private static void captureInboundReplay(ChannelHandlerContext context, byte[] packetBytes, Packet<?> packet) {
@@ -129,7 +145,6 @@ public final class ChannelTransportBatchManager {
             List<Object> decodedPackets = new ArrayList<>(1);
             decodedPackets.add(packet);
             ChannelCapturedFrame pendingInboundFrame = ChannelCaptureHooks.beginInboundPreDecode(context, restoredBuffer);
-
 
             ChunkInboundObservationService.observeInboundDecodedPackets(
                     context,
@@ -170,9 +185,6 @@ public final class ChannelTransportBatchManager {
         return racedState != null ? racedState : newState;
     }
 
-
-
-
     private static InboundBatchState getOrCreateInboundBatchState(Channel channel) {
         InboundBatchState existingState = channel.attr(INBOUND_BATCH_STATE_KEY).get();
         if (existingState != null) {
@@ -199,33 +211,60 @@ public final class ChannelTransportBatchManager {
         return sourceBytes == null ? new byte[0] : Arrays.copyOf(sourceBytes, sourceBytes.length);
     }
 
-
-
-
-
     public record InboundReplayEntry(byte[] packetBytes, Packet<?> packet) {
         public InboundReplayEntry {
             packetBytes = copyBytesOrEmpty(packetBytes);
         }
     }
 
-
-
-
     private record ScheduledReplayEntry(InboundReplayEntry entry, long replayAtNanos) { }
-    private record OutboundBatchDrain(ChannelHandlerContext context, List<byte[]> packetBytesList) { }
 
+    private record PendingOutboundPacket(
+            byte[] packetBytes,
+            ChannelTransportPacketRankCaptureManager.OutboundPacketCapture packetCapture
+    ) {
+        private PendingOutboundPacket {
+            packetBytes = copyBytesOrEmpty(packetBytes);
+        }
+    }
 
+    private record OutboundBatchDrain(
+            ChannelHandlerContext context,
+            List<PendingOutboundPacket> pendingPackets
+    ) {
+        private List<byte[]> packetBytesList() {
+            List<byte[]> packetBytesList = new ArrayList<>(this.pendingPackets.size());
+            for (PendingOutboundPacket pendingPacket : this.pendingPackets) {
+                packetBytesList.add(copyBytesOrEmpty(pendingPacket.packetBytes()));
+            }
+            return List.copyOf(packetBytesList);
+        }
+
+        private List<ChannelTransportPacketRankCaptureManager.OutboundPacketCapture> packetCaptures() {
+            List<ChannelTransportPacketRankCaptureManager.OutboundPacketCapture> packetCaptures =
+                    new ArrayList<>(this.pendingPackets.size());
+            for (PendingOutboundPacket pendingPacket : this.pendingPackets) {
+                if (pendingPacket.packetCapture() != null) {
+                    packetCaptures.add(pendingPacket.packetCapture());
+                }
+            }
+            return List.copyOf(packetCaptures);
+        }
+    }
 
     private static final class OutboundBatchState {
-        private final List<byte[]> pendingPacketBytesList = new ArrayList<>();
+        private final List<PendingOutboundPacket> pendingPackets = new ArrayList<>();
         private final AtomicBoolean flushScheduled = new AtomicBoolean();
         private ChannelHandlerContext lastContext;
 
-        private void addPacket(ChannelHandlerContext context, byte[] packetBytes) {
-            synchronized (this.pendingPacketBytesList) {
+        private void addPacket(
+                ChannelHandlerContext context,
+                byte[] packetBytes,
+                ChannelTransportPacketRankCaptureManager.OutboundPacketCapture outboundPacketCapture
+        ) {
+            synchronized (this.pendingPackets) {
                 this.lastContext = context;
-                this.pendingPacketBytesList.add(packetBytes);
+                this.pendingPackets.add(new PendingOutboundPacket(packetBytes, outboundPacketCapture));
             }
         }
 
@@ -240,8 +279,8 @@ public final class ChannelTransportBatchManager {
                     flushOutboundBatch(channel);
                 } finally {
                     this.flushScheduled.set(false);
-                    synchronized (this.pendingPacketBytesList) {
-                        if (!this.pendingPacketBytesList.isEmpty()) {
+                    synchronized (this.pendingPackets) {
+                        if (!this.pendingPackets.isEmpty()) {
                             scheduleFlushIfNeeded(channel);
                         }
                     }
@@ -250,14 +289,14 @@ public final class ChannelTransportBatchManager {
         }
 
         private OutboundBatchDrain drain() {
-            synchronized (this.pendingPacketBytesList) {
-                if (this.pendingPacketBytesList.isEmpty()) {
+            synchronized (this.pendingPackets) {
+                if (this.pendingPackets.isEmpty()) {
                     return null;
                 }
 
-                List<byte[]> drainedPacketBytesList = List.copyOf(this.pendingPacketBytesList);
-                this.pendingPacketBytesList.clear();
-                return new OutboundBatchDrain(this.lastContext, drainedPacketBytesList);
+                List<PendingOutboundPacket> drainedPendingPackets = List.copyOf(this.pendingPackets);
+                this.pendingPackets.clear();
+                return new OutboundBatchDrain(this.lastContext, drainedPendingPackets);
             }
         }
     }

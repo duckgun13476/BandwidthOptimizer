@@ -8,10 +8,11 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkOutboundObservationService;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkInboundDecodeResult;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportBoundaryController;
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkOutboundObservationService;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher;
+import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCaptureManager;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
@@ -45,15 +46,12 @@ public final class ChannelTransportHooks {
         byte[] originalPacketBytes = ByteBufUtil.getBytes(out, startIndexInclusive, endIndexExclusive - startIndexInclusive, false);
         ChunkTransportBoundaryController.OutboundBoundaryDecision boundaryDecision =
                 ChunkTransportBoundaryController.beginOutboundPacket(context, protocolName, packet);
-        byte[] transportInputPacketBytes = ChunkTransportDispatcher.tryEncodeOutboundPacket(
+        byte[] chunkTransportEncodedBytes = ChunkTransportDispatcher.tryEncodeOutboundPacket(
                 context,
                 protocolName,
                 packet,
                 originalPacketBytes
         );
-        if (transportInputPacketBytes == null) {
-            transportInputPacketBytes = originalPacketBytes;
-        }
         ChunkOutboundObservationService.observeOutboundPacket(
                 context,
                 protocolName,
@@ -66,13 +64,34 @@ public final class ChannelTransportHooks {
 
         if (!ChannelTransportRuntimeGuard.isTransportAvailable()
                 || shouldUseTransportForCurrentProtocol(protocolName)) {
+            ChannelTransportPacketRankCaptureManager.recordDirectPassthrough(
+                    context,
+                    protocolName,
+                    packet,
+                    originalPacketBytes
+            );
             return;
         }
+
+        byte[] transportInputPacketBytes = chunkTransportEncodedBytes == null ? originalPacketBytes : chunkTransportEncodedBytes;
+        ChannelTransportPacketRankCaptureManager.OutboundPacketCapture outboundPacketCapture =
+                ChannelTransportPacketRankCaptureManager.beginOutboundPacketCapture(
+                        context,
+                        protocolName,
+                        packet,
+                        originalPacketBytes,
+                        transportInputPacketBytes,
+                        chunkTransportEncodedBytes != null
+                );
 
         try {
             if (!boundaryDecision.forceDirectTransport() && ChannelTransportBatchManager.shouldBatchOutboundPacket(context)) {
                 out.writerIndex(startIndexInclusive);
-                ChannelTransportBatchManager.enqueueOutboundPacket(context, transportInputPacketBytes);
+                ChannelTransportBatchManager.enqueueOutboundPacket(
+                        context,
+                        transportInputPacketBytes,
+                        outboundPacketCapture
+                );
                 return;
             }
 
@@ -86,6 +105,7 @@ public final class ChannelTransportHooks {
             out.writerIndex(startIndexInclusive);
             out.writeBytes(wrappedFrame.transportFrameBytes());
             ChannelTransportTelemetry.recordOutboundWrap(readProtocolName(context), wrappedFrame);
+            ChannelTransportPacketRankCaptureManager.completeSingleTransportCapture(outboundPacketCapture, wrappedFrame);
         } catch (Throwable throwable) {
             ChannelTransportRuntimeGuard.disableTransport("outbound-wrap", throwable);
         }
@@ -126,7 +146,6 @@ public final class ChannelTransportHooks {
             throw throwable;
         }
     }
-
 
     private static <T extends PacketListener> void decodeInboundPacketsIntoOutput(
             ChannelHandlerContext context,
@@ -205,11 +224,11 @@ public final class ChannelTransportHooks {
         return protocol == null ? "null" : String.valueOf(protocol);
     }
 
-
     private static ConnectionProtocol readConnectionProtocol(ChannelHandlerContext context) {
         ConnectionProtocol protocol = context.channel().attr(Connection.ATTRIBUTE_PROTOCOL).get();
-        if (protocol == null)
+        if (protocol == null) {
             throw new IllegalStateException("Missing ConnectionProtocol on inbound transport decode");
+        }
         return protocol;
     }
 

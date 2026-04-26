@@ -90,6 +90,12 @@ minecraft {
                         property 'bandwidthoptimizer.experient.autoConnectRetryDelayTicks', project.property('boExperientAutoConnectRetryDelayTicks').toString()
                     }
                 }
+                if (project.hasProperty('boExperientServerCommand')) {
+                    property 'bandwidthoptimizer.experient.serverCommand', project.property('boExperientServerCommand').toString()
+                }
+                if (project.hasProperty('boExperientServerCommandDelayTicks')) {
+                    property 'bandwidthoptimizer.experient.serverCommandDelayTicks', project.property('boExperientServerCommandDelayTicks').toString()
+                }
             }
 
             // 这组属性把 runAll 透传下来的 transport 实验开关继续桥接到真实游戏进程。
@@ -144,6 +150,12 @@ minecraft {
             property 'forge.enabledGameTestNamespaces', mod_id
             if ((project.findProperty('boExperientEnabled') ?: 'false').toString().toBoolean()) {
                 property 'bandwidthoptimizer.experient.enabled', 'true'
+            }
+            if (project.hasProperty('boExperientServerCommand')) {
+                property 'bandwidthoptimizer.experient.serverCommand', project.property('boExperientServerCommand').toString()
+            }
+            if (project.hasProperty('boExperientServerCommandDelayTicks')) {
+                property 'bandwidthoptimizer.experient.serverCommandDelayTicks', project.property('boExperientServerCommandDelayTicks').toString()
             }
             if (project.hasProperty('boExperimentalTransport')) {
                 property 'bandwidthoptimizer.experimentalTransport', project.property('boExperimentalTransport').toString()
@@ -385,6 +397,8 @@ def appendOptionalRunAllProperty(List<String> args, Project projectRef, String p
 def buildRunAllSharedGradleArgs(Project projectRef) {
     List<String> args = []
     args.addAll(buildExperientEnabledGradleArgs())
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientServerCommand')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientServerCommandDelayTicks')
     appendOptionalRunAllProperty(args, projectRef, 'boExperimentalTransport')
     appendOptionalRunAllProperty(args, projectRef, 'boExperimentalChunkHotspotTransport')
     appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathEnabled')
