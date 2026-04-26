@@ -11,7 +11,7 @@ public final class ChannelTransportBatchRuntimeConfig {
 
     // Batch algorthm switch
     public static boolean isBatchEnabled() {
-        return Boolean.parseBoolean(System.getProperty(BATCH_ENABLED_PROPERTY, "false"));
+        return Boolean.parseBoolean(System.getProperty(BATCH_ENABLED_PROPERTY, "true"));
     }
 
     // prevent problem window length

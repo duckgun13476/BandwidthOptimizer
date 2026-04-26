@@ -5,6 +5,7 @@ public record ChunkPeerChunkStateSnapshot(
         long epoch,
         boolean knownSnapshotPublished,
         boolean receiverSnapshotAcknowledged,
+        boolean fullReplayRequiredBeforeDelta,
         long totalObservedPacketCount,
         long fullSnapshotVersion,
         long acknowledgedSnapshotVersion,
@@ -35,6 +36,7 @@ public record ChunkPeerChunkStateSnapshot(
         return "chunk=" + this.chunkKey.logText()
                 + ", knownSnapshot=" + this.knownSnapshotPublished
                 + ", receiverAcked=" + this.receiverSnapshotAcknowledged
+                + ", fullReplayRequired=" + this.fullReplayRequiredBeforeDelta
                 + ", fullVersion=" + this.fullSnapshotVersion
                 + ", acknowledgedVersion=" + this.acknowledgedSnapshotVersion
                 + ", mutationVersion=" + this.mutationVersion

@@ -105,6 +105,11 @@ final class ChunkPeerState {
         return chunkState == null ? null : chunkState.recordInvalidate();
     }
 
+    synchronized ChunkPeerChunkStateSnapshot markChunkAwaitingFullReplay(ChunkPacketCoordinate coordinate) {
+        ChunkPeerChunkState chunkState = getChunkStateForControl(coordinate);
+        return chunkState == null ? null : chunkState.recordWatchBoundaryRetainCache();
+    }
+
 
     private ChunkPeerChunkStateSnapshot updateChunkState(
             ChunkPacketDescriptor descriptor,

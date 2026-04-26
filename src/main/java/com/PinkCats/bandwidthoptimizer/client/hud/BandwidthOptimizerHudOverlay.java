@@ -1,10 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.client.hud;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
-import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;
-import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
-import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotReport;
-import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -24,12 +20,12 @@ public final class BandwidthOptimizerHudOverlay {
 
     private static boolean enabled;
 
-    private BandwidthOptimizerHudOverlay() {
-    }
+    private BandwidthOptimizerHudOverlay() {}
 
     @SubscribeEvent
     public static void onLoggingIn(ClientPlayerNetworkEvent.LoggingIn event) {
         enabled = false;
+        BandwidthOptimizerHudStats.reset();
     }
 
     @SubscribeEvent
@@ -39,9 +35,8 @@ public final class BandwidthOptimizerHudOverlay {
             return;
         }
 
-        ChannelTransportTelemetry.Snapshot transportSnapshot = ChannelTransportTelemetry.snapshot();
-        ChunkHotspotReport hotspotReport = ChunkHotspotStats.snapshotReport();
-        List<String> lines = buildLines(transportSnapshot, hotspotReport);
+        BandwidthOptimizerHudStats.Snapshot snapshot = BandwidthOptimizerHudStats.snapshot();
+        List<String> lines = buildLines(snapshot);
         if (lines.isEmpty()) {
             return;
         }
@@ -67,30 +62,62 @@ public final class BandwidthOptimizerHudOverlay {
         }
     }
 
-    private static List<String> buildLines(
-            ChannelTransportTelemetry.Snapshot transportSnapshot,
-            ChunkHotspotReport hotspotReport
-    ) {
+    private static List<String> buildLines(BandwidthOptimizerHudStats.Snapshot snapshot) {
         List<String> lines = new ArrayList<>(8);
         lines.add("Bandwidth Optimizer");
-        addTransportLines(lines, transportSnapshot);
-        addChunkLines(lines, hotspotReport);
-        if (lines.size() == 1) {
-            addIdleHintLines(lines);
+        if (snapshot == null || !snapshot.hasData()) {
+            addIdleHintLines(lines, snapshot);
+            return lines;
         }
+
+        lines.add("Total save " + formatSavedPercent(snapshot.effectiveTotalRawBytes(), snapshot.effectiveTotalSentBytes())
+                + " / 2 min " + formatSavedPercent(snapshot.effectiveRecentRawBytes(), snapshot.effectiveRecentSentBytes())
+                + "  (" + formatFlow(snapshot.effectiveTotalRawBytes(), snapshot.effectiveTotalSentBytes()) + ")");
+        lines.add("Optimize " + formatSavedPercent(snapshot.optimizeTotalRawBytes(), snapshot.optimizeTotalSentBytes())
+                + " / 2 min " + formatSavedPercent(snapshot.optimizeRecentRawBytes(), snapshot.optimizeRecentSentBytes())
+                + "  (" + formatFlow(snapshot.optimizeTotalRawBytes(), snapshot.optimizeTotalSentBytes()) + ")");
+        lines.add(buildChunkCacheLine(snapshot));
+        lines.add("LocalCache " + formatBytes(snapshot.localCacheBytes())
+                + " / pkt " + snapshot.localCachePacketCount()
+                + " / chunk " + snapshot.localCacheChunkCount());
+        lines.add("Map lit " + snapshot.totalMapLiteralEntries()
+                + " / ex " + snapshot.totalMapExactReferences()
+                + " / tpl " + snapshot.totalMapTemplateReferences()
+                + " / add " + (snapshot.totalMapExactAdditions() + snapshot.totalMapTemplateAdditions()));
+        lines.add("Batch " + snapshot.totalBatchCount()
+                + " / Pkt " + snapshot.totalPacketCount()
+                + " / Algo " + safeText(snapshot.algorithmDisplayName())
+                + " / Win " + snapshot.batchWindowMillis() + "ms");
         return lines;
     }
 
-    private static void addIdleHintLines(List<String> lines) {
-        if (!ChannelTransportRuntimeGuard.isTransportAvailable()) {
-            lines.add("Transport unavailable");
-            if (!ChannelTransportRuntimeGuard.isExperimentalTransportEnabled()) {
-                lines.add("  Transport is disabled.");
-                lines.add("  Remove the disable flag.");
-                return;
-            }
+    private static String buildChunkCacheLine(BandwidthOptimizerHudStats.Snapshot snapshot) {
+        if (snapshot == null) {
+            return "ChunkCache save 0B / 2 min 0B / hit 0 / ref 0";
+        }
+        if (!snapshot.chunkTransportEnabled()
+                && snapshot.chunkCacheSavedTotalBytes() <= 0L
+                && snapshot.chunkCacheHitTotalPackets() <= 0L
+                && snapshot.chunkCacheRefreshTotalPackets() <= 0L) {
+            return "ChunkCache off / hotspot transport disabled";
+        }
+        return "ChunkCache save " + formatBytes(snapshot.chunkCacheSavedTotalBytes())
+                + " / 2 min " + formatBytes(snapshot.chunkCacheSavedRecentBytes())
+                + " / hit " + snapshot.chunkCacheHitTotalPackets()
+                + " / ref " + snapshot.chunkCacheRefreshTotalPackets();
+    }
 
-            lines.add("  " + shortenUnavailableReason(ChannelTransportRuntimeGuard.unavailableReason()));
+    private static void addIdleHintLines(List<String> lines, BandwidthOptimizerHudStats.Snapshot snapshot) {
+        if (snapshot != null && !snapshot.transportEnabledByProperty()) {
+            lines.add("Transport unavailable");
+            lines.add("  Transport is disabled.");
+            lines.add("  Remove the disable flag.");
+            return;
+        }
+
+        if (snapshot != null && !snapshot.transportAvailable()) {
+            lines.add("Transport unavailable");
+            lines.add("  " + shortenUnavailableReason(snapshot.transportUnavailableReason()));
             return;
         }
 
@@ -98,80 +125,23 @@ public final class BandwidthOptimizerHudOverlay {
         lines.add("  Trigger some network activity first.");
     }
 
-    private static void addTransportLines(
-            List<String> lines,
-            ChannelTransportTelemetry.Snapshot transportSnapshot
-    ) {
-        ChannelTransportTelemetry.DirectionSnapshot outbound = transportSnapshot.outbound();
-        ChannelTransportTelemetry.DirectionSnapshot inbound = transportSnapshot.inbound();
-        if (outbound.frameCount() <= 0L && inbound.frameCount() <= 0L) {
-            return;
+    private static String formatSavedPercent(long rawBytes, long sentBytes) {
+        if (rawBytes <= 0L) {
+            return "0.0%";
         }
-
-        lines.add("Transport");
-        lines.add("  Out " + formatSavedText(outbound.baselineBytes(), outbound.transportFrameBytes())
-                + " / frame " + outbound.frameCount()
-                + " / pkt " + outbound.packetCount());
-        lines.add("  In  " + formatSavedText(inbound.baselineBytes(), inbound.transportFrameBytes())
-                + " / frame " + inbound.frameCount()
-                + " / pkt " + inbound.packetCount());
-        lines.add("  Algo " + transportSnapshot.algorithmId()
-                + " / map " + onOffText(transportSnapshot.mappingEnabled())
-                + " / zstd " + onOffText(transportSnapshot.zstdEnabled())
-                + " / pid " + onOffText(transportSnapshot.packetIdMappingEnabled()));
+        double sentRatioPercent = (double) sentBytes * 100.0D / (double) rawBytes;
+        return String.format(Locale.ROOT, "%.1f%%", 100.0D - sentRatioPercent);
     }
 
-    private static void addChunkLines(List<String> lines, ChunkHotspotReport hotspotReport) {
-        if (hotspotReport == null) {
-            return;
-        }
 
-        ChunkHotspotReport.DirectionTotals outbound = hotspotReport.outboundTotals();
-        ChunkHotspotReport.DirectionTotals inbound = hotspotReport.inboundTotals();
-        long outboundFrames = outbound == null ? 0L : outbound.totalFrames();
-        long inboundFrames = inbound == null ? 0L : inbound.totalFrames();
-        if (outboundFrames <= 0L && inboundFrames <= 0L) {
-            return;
-        }
-
-        lines.add("Chunk Hotspot");
-        lines.add("  Out " + formatSavedText(
-                outbound == null ? 0L : outbound.totalLogicalPacketBytes(),
-                outbound == null ? 0L : outbound.totalWireFrameBytes()
-        ) + " / frame " + outboundFrames);
-        lines.add("  In  " + formatSavedText(
-                inbound == null ? 0L : inbound.totalLogicalPacketBytes(),
-                inbound == null ? 0L : inbound.totalWireFrameBytes()
-        ) + " / frame " + inboundFrames);
+    private static String formatFlow(long rawBytes, long sentBytes) {
+        return formatBytes(rawBytes) + " -> " + formatBytes(sentBytes);
     }
 
-    private static String formatSavedText(long baselineBytes, long actualBytes) {
-        if (baselineBytes <= 0L) {
-            return formatBytes(actualBytes) + " (n/a)";
-        }
-
-        long savedBytes = baselineBytes - actualBytes;
-        return formatBytes(baselineBytes) + " -> " + formatBytes(actualBytes)
-                + " (" + formatPercent(savedBytes, baselineBytes) + ", " + signedBytes(savedBytes) + ")";
+    private static String safeText(String value) {
+        return value == null || value.isBlank() ? "-" : value;
     }
 
-    private static String formatPercent(long deltaBytes, long baselineBytes) {
-        double percent = baselineBytes <= 0L
-                ? 0.0D
-                : (double) deltaBytes * 100.0D / (double) baselineBytes;
-        return String.format(Locale.ROOT, "%+.1f%%", percent);
-    }
-
-    private static String signedBytes(long bytes) {
-        if (bytes == 0L) {
-            return "0B";
-        }
-        return (bytes > 0L ? "+" : "-") + formatBytes(Math.abs(bytes));
-    }
-
-    private static String onOffText(boolean enabled) {
-        return enabled ? "on" : "off";
-    }
 
     private static String shortenUnavailableReason(String unavailableReason) {
         if (unavailableReason == null || unavailableReason.isBlank()) {

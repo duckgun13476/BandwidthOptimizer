@@ -20,7 +20,7 @@ public final class ChannelTransportLayerRuntimeConfig {
         if (runtimeOverride != null) {
             return runtimeOverride.packetIdMappingEnabled();
         }
-        return readBooleanOverride(PACKET_ID_MAPPING_ENABLED_PROPERTY, false);
+        return readBooleanOverride(PACKET_ID_MAPPING_ENABLED_PROPERTY, true);
     }
 
     public static boolean isMappingEnabled() {

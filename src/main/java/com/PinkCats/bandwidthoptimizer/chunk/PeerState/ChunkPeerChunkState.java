@@ -9,6 +9,7 @@ final class ChunkPeerChunkState {
     private final ChunkPeerChunkKey chunkKey;
     private boolean knownSnapshotPublished;
     private boolean receiverSnapshotAcknowledged;
+    private boolean fullReplayRequiredBeforeDelta;
     private long totalObservedPacketCount;
     private long fullSnapshotVersion;
     private long acknowledgedSnapshotVersion;
@@ -92,6 +93,7 @@ final class ChunkPeerChunkState {
         this.deltaPacketCountSinceFullSnapshot = 0L;
         this.deltaBytesSinceFullSnapshot = 0L;
         this.lastFullSnapshotEncodedBytes = this.lastEncodedBytes;
+        this.fullReplayRequiredBeforeDelta = false;
     }
 
 
@@ -128,8 +130,24 @@ final class ChunkPeerChunkState {
         this.lastInvalidatedAtMillis = System.currentTimeMillis();
         clearReceiverAcknowledgement();
         this.knownSnapshotPublished = false;
+        this.fullReplayRequiredBeforeDelta = false;
         this.knownSnapshotHash = "";
         this.knownSnapshotShortHash = "";
+        this.deltaPacketCountSinceFullSnapshot = 0L;
+        this.deltaBytesSinceFullSnapshot = 0L;
+        this.lightLaneVersion = 0L;
+        this.sectionBlocksLaneVersion = 0L;
+        this.blockLaneVersion = 0L;
+        this.blockEntityLaneVersion = 0L;
+        return snapshot();
+    }
+
+    ChunkPeerChunkStateSnapshot recordWatchBoundaryRetainCache() {
+        this.lastInvalidatedAtMillis = System.currentTimeMillis();
+        if (!this.knownSnapshotPublished) {
+            return snapshot();
+        }
+        this.fullReplayRequiredBeforeDelta = true;
         this.deltaPacketCountSinceFullSnapshot = 0L;
         this.deltaBytesSinceFullSnapshot = 0L;
         this.lightLaneVersion = 0L;
@@ -156,6 +174,7 @@ final class ChunkPeerChunkState {
                 this.epoch,
                 this.knownSnapshotPublished,
                 this.receiverSnapshotAcknowledged,
+                this.fullReplayRequiredBeforeDelta,
                 this.totalObservedPacketCount,
                 this.fullSnapshotVersion,
                 this.acknowledgedSnapshotVersion,

@@ -2,7 +2,6 @@ package com.PinkCats.bandwidthoptimizer.chunk.lifecycle;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
-import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportControlFrameSender;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerChunkStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import net.minecraft.server.level.ServerLevel;
@@ -41,7 +40,7 @@ public final class ChunkLifecycleCoordinator {
 
 
     public static void onPlayerStopWatchingChunk(ServerPlayer player, ChunkPos chunkPos, ServerLevel level) {
-        invalidatePlayerChunkBoundary(player, chunkPos, "watch_remove");
+        retainPlayerChunkBoundary(player, chunkPos, "watch_remove");
     }
 
     public static void onServerChunkUnload(ServerLevel level, ChunkPos chunkPos) {
@@ -55,11 +54,12 @@ public final class ChunkLifecycleCoordinator {
         }
 
         for (ServerPlayer watchingPlayer : watchingPlayers) {
-            invalidatePlayerChunkBoundary(watchingPlayer, chunkPos, "level_chunk_unload");
+            retainPlayerChunkBoundary(watchingPlayer, chunkPos, "level_chunk_unload");
         }
     }
 
-    private static void invalidatePlayerChunkBoundary(ServerPlayer player, ChunkPos chunkPos, String reason) {
+
+    private static void retainPlayerChunkBoundary(ServerPlayer player, ChunkPos chunkPos, String reason) {
         if (player == null || chunkPos == null) {
             return;
         }
@@ -70,21 +70,16 @@ public final class ChunkLifecycleCoordinator {
             return;
         }
 
-        ChunkPeerStateManager.invalidatePlayerChunk(player, coordinate, reason);
-        boolean controlSent = ChunkTransportControlFrameSender.sendLifecycleInvalidate(
-                ChunkPeerStateManager.findPlayerChannel(player),
-                coordinate,
-                knownChunkSnapshot,
-                "lifecycle_" + reason
-        );
+        ChunkPeerChunkStateSnapshot retainedChunkSnapshot =
+                ChunkPeerStateManager.retainPlayerChunkForWatchBoundary(player, coordinate, reason);
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkLifecycle][Invalidate] player={}, uuid={}, reason={}, chunk={}, controlSent={}, snapshot={}",
+                "[ChunkLifecycle][Retain] player={}, uuid={}, reason={}, chunk={}, snapshotBefore={}, snapshotAfter={}",
                 player.getGameProfile().getName(),
                 player.getUUID(),
                 reason,
                 coordinate.logText(),
-                controlSent,
-                knownChunkSnapshot.summaryText()
+                knownChunkSnapshot.summaryText(),
+                retainedChunkSnapshot == null ? "<missing>" : retainedChunkSnapshot.summaryText()
         );
     }
 

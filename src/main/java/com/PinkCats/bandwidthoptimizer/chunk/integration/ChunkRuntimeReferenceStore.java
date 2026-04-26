@@ -81,6 +81,35 @@ public final class ChunkRuntimeReferenceStore {
         CHANNEL_CACHES.remove(channelId);
     }
 
+
+    public static Snapshot snapshot() {
+        long channelCount = 0L;
+        long packetEntryCount = 0L;
+        long packetEntryBytes = 0L;
+        long fullSnapshotCount = 0L;
+        long fullSnapshotBytes = 0L;
+
+        for (ChannelReferenceCache channelReferenceCache : CHANNEL_CACHES.values()) {
+            if (channelReferenceCache == null) {
+                continue;
+            }
+
+            channelCount++;
+            packetEntryCount += channelReferenceCache.packetEntryCount();
+            packetEntryBytes += channelReferenceCache.packetEntryBytes();
+            fullSnapshotCount += channelReferenceCache.fullSnapshotCount();
+            fullSnapshotBytes += channelReferenceCache.fullSnapshotBytes();
+        }
+
+        return new Snapshot(
+                channelCount,
+                packetEntryCount,
+                packetEntryBytes,
+                fullSnapshotCount,
+                fullSnapshotBytes
+        );
+    }
+
     private static final class ChannelReferenceCache {
 
         private final LinkedHashMap<String, byte[]> entries = new LinkedHashMap<>(16, 0.75F, true) {
@@ -130,6 +159,44 @@ public final class ChunkRuntimeReferenceStore {
 
         synchronized void removeFullSnapshot(ChunkPacketCoordinate coordinate) {
             this.fullSnapshots.remove(chunkKeyText(coordinate));
+        }
+
+
+        synchronized long packetEntryCount() {
+            return this.entries.size();
+        }
+
+        synchronized long packetEntryBytes() {
+            long totalBytes = 0L;
+            for (byte[] packetBytes : this.entries.values()) {
+                totalBytes += packetBytes == null ? 0L : packetBytes.length;
+            }
+            return totalBytes;
+        }
+
+
+        synchronized long fullSnapshotCount() {
+            return this.fullSnapshots.size();
+        }
+
+        synchronized long fullSnapshotBytes() {
+            long totalBytes = 0L;
+            for (RuntimeFullSnapshot runtimeFullSnapshot : this.fullSnapshots.values()) {
+                totalBytes += runtimeFullSnapshot == null ? 0L : runtimeFullSnapshot.packetBytes().length;
+            }
+            return totalBytes;
+        }
+    }
+
+    public record Snapshot(
+            long channelCount,
+            long packetEntryCount,
+            long packetEntryBytes,
+            long fullSnapshotCount,
+            long fullSnapshotBytes
+    ) {
+        public long totalBytes() {
+            return this.packetEntryBytes + this.fullSnapshotBytes;
         }
     }
 

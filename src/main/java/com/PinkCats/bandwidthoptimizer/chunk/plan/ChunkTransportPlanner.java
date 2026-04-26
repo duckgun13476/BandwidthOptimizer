@@ -136,6 +136,19 @@ public final class ChunkTransportPlanner {
             );
         }
 
+        if (requiresFullReplayBeforeDelta(chunkSnapshot)) {
+            return buildDecision(
+                    ChunkPlanDecisionKind.BYPASS,
+                    "delta_waiting_full_replay_after_watch_boundary",
+                    descriptor,
+                    snapshotFingerprint,
+                    chunkSnapshot,
+                    storeObservation,
+                    currentFullSnapshotVersion,
+                    costEstimate
+            );
+        }
+
         boolean receiverAcknowledgedCurrentFullSnapshot = hasAcknowledgedCurrentFullSnapshot(chunkSnapshot);
         boolean allowPatchBeforeAck = canAllowPatchBeforeAck(descriptor, chunkSnapshot);
         if (!receiverAcknowledgedCurrentFullSnapshot && !allowPatchBeforeAck) {
@@ -275,6 +288,12 @@ public final class ChunkTransportPlanner {
                 && chunkSnapshot.knownSnapshotHash().equals(chunkSnapshot.acknowledgedSnapshotHash());
     }
 
+    private static boolean requiresFullReplayBeforeDelta(ChunkPeerChunkStateSnapshot chunkSnapshot) {
+        return chunkSnapshot != null
+                && chunkSnapshot.knownSnapshotPublished()
+                && chunkSnapshot.fullReplayRequiredBeforeDelta();
+    }
+
     private static boolean shouldUseReference(
             ChunkPeerChunkStateSnapshot chunkSnapshot,
             ChunkSnapshotFingerprint snapshotFingerprint
@@ -400,6 +419,9 @@ public final class ChunkTransportPlanner {
         }
         if (descriptor != null && descriptor.hotspotKind() == ChunkHotspotKind.LIGHT_UPDATE) {
             return "light";
+        }
+        if (descriptor != null && descriptor.hotspotKind() == ChunkHotspotKind.BLOCK_UPDATE) {
+            return "block";
         }
         if (descriptor != null && descriptor.hotspotKind() == ChunkHotspotKind.BLOCK_ENTITY_UPDATE) {
             return "block_entity";
@@ -566,6 +588,7 @@ public final class ChunkTransportPlanner {
         return descriptor != null
                 && (descriptor.hotspotKind() == ChunkHotspotKind.LIGHT_UPDATE
                 || descriptor.hotspotKind() == ChunkHotspotKind.SECTION_BLOCKS_UPDATE
+                || descriptor.hotspotKind() == ChunkHotspotKind.BLOCK_UPDATE
                 || descriptor.hotspotKind() == ChunkHotspotKind.BLOCK_ENTITY_UPDATE);
     }
 

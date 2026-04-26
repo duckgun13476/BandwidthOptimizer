@@ -222,6 +222,30 @@ public final class ChunkPeerStateManager {
         return chunkSnapshot;
     }
 
+    public static ChunkPeerChunkStateSnapshot retainPlayerChunkForWatchBoundary(
+            ServerPlayer player,
+            ChunkPacketCoordinate coordinate,
+            String reason
+    ) {
+        Channel channel = readPlayerChannel(player);
+        if (channel == null || coordinate == null || !coordinate.present()) {
+            return null;
+        }
+
+        ChunkPeerState state = CHANNEL_STATES.get(channel.id().asLongText());
+        ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.markChunkAwaitingFullReplay(coordinate);
+        Bandwidthoptimizer.LOGGER.info(
+                "[ChunkPeer][LifecycleRetain] player={}, uuid={}, channel={}, reason={}, chunk={}, state={}",
+                player.getGameProfile().getName(),
+                player.getUUID(),
+                channel.id().asLongText(),
+                reason,
+                coordinate.logText(),
+                chunkSnapshot == null ? "<missing>" : chunkSnapshot.summaryText()
+        );
+        return chunkSnapshot;
+    }
+
     public static Channel findPlayerChannel(ServerPlayer player) {
         return readPlayerChannel(player);
     }

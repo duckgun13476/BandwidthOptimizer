@@ -7,6 +7,6 @@ public final class ChunkTransportRuntimeConfig {
     private ChunkTransportRuntimeConfig() {}
 
     public static boolean isEnabled() {
-        return Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "false"));
+        return Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"));
     }
 }

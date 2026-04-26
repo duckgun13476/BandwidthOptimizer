@@ -110,6 +110,39 @@ public final class ChunkShadowSnapshotManager {
         CHANNEL_STATES.clear();
     }
 
+    public static Snapshot snapshot() {
+        long channelCount = 0L;
+        long chunkCount = 0L;
+        long fullSnapshotChunkCount = 0L;
+        long packetCount = 0L;
+        long totalEncodedBytes = 0L;
+
+        for (ChannelShadowState channelState : CHANNEL_STATES.values()) {
+            if (channelState == null) {
+                continue;
+            }
+
+            ChannelSnapshotTotals channelTotals = channelState.snapshotTotals();
+            if (channelTotals.chunkCount() <= 0L && channelTotals.packetCount() <= 0L) {
+                continue;
+            }
+
+            channelCount++;
+            chunkCount += channelTotals.chunkCount();
+            fullSnapshotChunkCount += channelTotals.fullSnapshotChunkCount();
+            packetCount += channelTotals.packetCount();
+            totalEncodedBytes += channelTotals.totalEncodedBytes();
+        }
+
+        return new Snapshot(
+                channelCount,
+                chunkCount,
+                fullSnapshotChunkCount,
+                packetCount,
+                totalEncodedBytes
+        );
+    }
+
     private static ChunkShadowSnapshot observePacket(
             String channelId,
             long epoch,
@@ -168,6 +201,33 @@ public final class ChunkShadowSnapshotManager {
 
         synchronized void invalidateChunk(ChunkPacketCoordinate coordinate) {
             this.chunkSnapshots.remove(chunkKeyText(coordinate));
+        }
+
+        synchronized ChannelSnapshotTotals snapshotTotals() {
+            long chunkCount = this.chunkSnapshots.size();
+            long fullSnapshotChunkCount = 0L;
+            long packetCount = 0L;
+            long totalEncodedBytes = 0L;
+
+            for (MutableChunkShadowSnapshot chunkSnapshot : this.chunkSnapshots.values()) {
+                if (chunkSnapshot == null) {
+                    continue;
+                }
+
+                if (chunkSnapshot.hasFullSnapshot()) {
+                    fullSnapshotChunkCount++;
+                }
+
+                packetCount += chunkSnapshot.packetCount();
+                totalEncodedBytes += chunkSnapshot.totalEncodedBytes();
+            }
+
+            return new ChannelSnapshotTotals(
+                    chunkCount,
+                    fullSnapshotChunkCount,
+                    packetCount,
+                    totalEncodedBytes
+            );
         }
     }
 
@@ -306,6 +366,35 @@ public final class ChunkShadowSnapshotManager {
                     Collections.unmodifiableMap(immutableLaneSnapshots)
             );
         }
+
+        private boolean hasFullSnapshot() {
+            return this.fullSnapshotVersion > 0L
+                    && this.fullSnapshotHash != null
+                    && !this.fullSnapshotHash.isBlank()
+                    && this.laneSnapshots.containsKey(ChunkLaneKind.FULL);
+        }
+
+        private long packetCount() {
+            long totalPacketCount = 0L;
+            for (MutableLaneSnapshot laneSnapshot : this.laneSnapshots.values()) {
+                if (laneSnapshot == null) {
+                    continue;
+                }
+                totalPacketCount += laneSnapshot.packetCount();
+            }
+            return totalPacketCount;
+        }
+
+        private long totalEncodedBytes() {
+            long totalBytes = 0L;
+            for (MutableLaneSnapshot laneSnapshot : this.laneSnapshots.values()) {
+                if (laneSnapshot == null) {
+                    continue;
+                }
+                totalBytes += laneSnapshot.totalEncodedBytes();
+            }
+            return totalBytes;
+        }
     }
 
     private static final class MutableLaneSnapshot {
@@ -339,6 +428,19 @@ public final class ChunkShadowSnapshotManager {
             this.packetSnapshots.put(safeSemanticKey, packetSnapshot);
         }
 
+
+        private long packetCount() {
+            return this.packetSnapshots.size();
+        }
+
+        private long totalEncodedBytes() {
+            long totalBytes = 0L;
+            for (ChunkLanePacketSnapshot packetSnapshot : this.packetSnapshots.values()) {
+                totalBytes += packetSnapshot == null ? 0L : Math.max(packetSnapshot.encodedBytes(), 0);
+            }
+            return totalBytes;
+        }
+
         private ChunkLaneSnapshot toImmutable() {
             return new ChunkLaneSnapshot(
                     this.laneKind,
@@ -353,5 +455,22 @@ public final class ChunkShadowSnapshotManager {
         return coordinate == null || !coordinate.present()
                 ? "<unknown>"
                 : coordinate.chunkX() + "," + coordinate.chunkZ();
+    }
+
+    private record ChannelSnapshotTotals(
+            long chunkCount,
+            long fullSnapshotChunkCount,
+            long packetCount,
+            long totalEncodedBytes
+    ) {
+    }
+
+    public record Snapshot(
+            long channelCount,
+            long chunkCount,
+            long fullSnapshotChunkCount,
+            long packetCount,
+            long totalEncodedBytes
+    ) {
     }
 }
