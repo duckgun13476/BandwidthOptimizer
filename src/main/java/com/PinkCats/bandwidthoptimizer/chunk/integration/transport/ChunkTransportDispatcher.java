@@ -14,6 +14,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkPlanDecision;
 import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkPlanDecisionKind;
 import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkTransportPlanner;
 import com.PinkCats.bandwidthoptimizer.chunk.packet.ClientboundPlayPacketCodec;
+import com.PinkCats.bandwidthoptimizer.chunk.packet.ChunkHeavyProtocolBypassPacketList;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
@@ -61,6 +62,9 @@ public final class ChunkTransportDispatcher {
             byte[] originalPacketBytes
     ) {
         if (!ChunkTransportRuntimeConfig.isEnabled())
+            return null;
+
+        if (shouldBypassHeavyChunkProtocol(packet))
             return null;
 
         ChunkPacketDescriptor descriptor = ChunkPacketClassifier.classifyOutboundPlayPacket(protocolName, packet);
@@ -240,6 +244,10 @@ public final class ChunkTransportDispatcher {
                 buildRuntimeFrame(descriptor, peerSnapshot, decision),
                 resolveTransportPayloadBytes(decision, patchBuildResult, originalPacketBytes)
         );
+    }
+
+    private static boolean shouldBypassHeavyChunkProtocol(Packet<?> packet) {
+        return ChunkHeavyProtocolBypassPacketList.shouldBypassHeavyChunkProtocol(packet);
     }
 
 
