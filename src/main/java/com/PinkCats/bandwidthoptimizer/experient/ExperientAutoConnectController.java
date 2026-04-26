@@ -40,6 +40,7 @@ public final class ExperientAutoConnectController {
     private static int retryDelayTicksRemaining;
     private static int serverReadyRetryTicksRemaining;
     private static AutoConnectPhase phase = AutoConnectPhase.IDLE;
+    private static boolean shutdownAfterDisconnectLogged;
 
     private ExperientAutoConnectController() {
     }
@@ -51,11 +52,19 @@ public final class ExperientAutoConnectController {
         }
 
         String autoConnectAddress = readAutoConnectAddress();
-        if (autoConnectAddress == null || connectedOnce) {
+        if (autoConnectAddress == null) {
             return;
         }
 
         Minecraft minecraft = Minecraft.getInstance();
+        if (maybeStopClientAfterCompletedConnection(minecraft)) {
+            return;
+        }
+
+        if (connectedOnce) {
+            return;
+        }
+
         if (minecraft.level != null || minecraft.player != null) {
             connectedOnce = true;
             phase = AutoConnectPhase.CONNECTED;
@@ -106,6 +115,19 @@ public final class ExperientAutoConnectController {
         }
 
         serverReadyRetryTicksRemaining = SERVER_READY_RETRY_TICKS;
+    }
+
+    private static boolean maybeStopClientAfterCompletedConnection(Minecraft minecraft) {
+        if (!connectedOnce || minecraft == null || !(minecraft.screen instanceof DisconnectedScreen)) {
+            return false;
+        }
+
+        if (!shutdownAfterDisconnectLogged) {
+            shutdownAfterDisconnectLogged = true;
+            Bandwidthoptimizer.LOGGER.info("[ExperientAutoConnect] Completed connection ended, stopping client process.");
+        }
+        minecraft.stop();
+        return true;
     }
 
 

@@ -112,8 +112,12 @@ public final class ChannelTransportBatchManager {
 
     private static void replayInboundPacket(ChannelHandlerContext context, InboundReplayEntry replayEntry) {
         try {
+            ChannelHandlerContext decoderContext = readDecoderContext(context);
+            if (decoderContext == null) {
+                return;
+            }
             captureInboundReplay(context, replayEntry.packetBytes(), replayEntry.packet());
-            readDecoderContext(context).fireChannelRead(replayEntry.packet());
+            decoderContext.fireChannelRead(replayEntry.packet());
         } catch (Throwable throwable) {
             ChannelTransportRuntimeGuard.disableTransport("inbound-batch-replay", throwable);}
     }
@@ -149,11 +153,10 @@ public final class ChannelTransportBatchManager {
     }
 
     private static ChannelHandlerContext readDecoderContext(ChannelHandlerContext context) {
-        ChannelHandlerContext decoderContext = context.channel().pipeline().context("decoder");
-        if (decoderContext == null) {
-            throw new IllegalStateException("Missing decoder context in current channel pipeline");
+        if (context == null || context.channel() == null || !context.channel().isActive()) {
+            return null;
         }
-        return decoderContext;
+        return context.channel().pipeline().context("decoder");
     }
 
     private static OutboundBatchState getOrCreateOutboundBatchState(Channel channel) {

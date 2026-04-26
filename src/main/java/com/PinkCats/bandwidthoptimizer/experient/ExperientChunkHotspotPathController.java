@@ -31,7 +31,7 @@ public final class ExperientChunkHotspotPathController {
     private static final int POST_SECTION_PULSE_DELAY_TICKS = 60;
     private static final int BLOCK_ENTITY_PULSE_DELAY_TICKS = 20;
     private static final int POST_BLOCK_ENTITY_PULSE_DELAY_TICKS = 60;
-    private static final int STEP_DELAY_TICKS = 60;
+    private static final int FINAL_RETURN_SETTLE_TICKS = 200;
     private static final int LIGHT_PROBE_Y_OFFSET = 4;
     private static final int SECTION_PROBE_Y_OFFSET = -8;
     private static final int BLOCK_ENTITY_PROBE_X_OFFSET = 2;
@@ -59,11 +59,16 @@ public final class ExperientChunkHotspotPathController {
     private static final int SECTION_PROBE_WIDTH = 6;
     private static final int SECTION_PROBE_HEIGHT = 4;
     private static final int SECTION_PROBE_DEPTH = 6;
-    private static final double[][] WAYPOINT_OFFSETS = {
-            {320.0D, 0.0D},
-            {320.0D, 320.0D},
-            {0.0D, 320.0D},
-            {0.0D, 0.0D}
+
+    private static final TeleportWaypoint[] TELEPORT_SEQUENCE = {
+            new TeleportWaypoint(320.0D, 0.0D, 8),
+            new TeleportWaypoint(0.0D, 0.0D, 8),
+            new TeleportWaypoint(320.0D, 0.0D, 8),
+            new TeleportWaypoint(0.0D, 0.0D, 12),
+            new TeleportWaypoint(0.0D, 320.0D, 8),
+            new TeleportWaypoint(0.0D, 0.0D, 8),
+            new TeleportWaypoint(0.0D, 320.0D, 8),
+            new TeleportWaypoint(0.0D, 0.0D, FINAL_RETURN_SETTLE_TICKS)
     };
 
     private static final Map<UUID, PathState> PLAYER_PATH_STATES = new ConcurrentHashMap<>();
@@ -169,27 +174,29 @@ public final class ExperientChunkHotspotPathController {
             return null;
         }
 
-        if (state.nextWaypointIndex() >= WAYPOINT_OFFSETS.length) {
+        if (state.nextWaypointIndex() >= TELEPORT_SEQUENCE.length) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[ExperientChunkPath] Completed scripted path for player={}",
-                    serverPlayer.getGameProfile().getName()
+                "[ExperientChunkPath] Completed scripted path for player={}",
+                serverPlayer.getGameProfile().getName()
             );
+            disconnectPlayerAfterPathCompletion(serverPlayer);
             return null;
         }
 
-        double[] waypointOffset = WAYPOINT_OFFSETS[state.nextWaypointIndex()];
-        double targetX = state.originX() + waypointOffset[0];
+        TeleportWaypoint waypoint = TELEPORT_SEQUENCE[state.nextWaypointIndex()];
+        double targetX = state.originX() + waypoint.offsetX();
         double targetY = state.originY();
-        double targetZ = state.originZ() + waypointOffset[1];
+        double targetZ = state.originZ() + waypoint.offsetZ();
         boolean commandAccepted = teleportPlayer(serverPlayer, targetX, targetY, targetZ);
         Bandwidthoptimizer.LOGGER.info(
-                "[ExperientChunkPath] player={}, step={}/{}, target=({}, {}, {}), accepted={}",
+                "[ExperientChunkPath] player={}, step={}/{}, target=({}, {}, {}), settleTicks={}, accepted={}",
                 serverPlayer.getGameProfile().getName(),
                 state.nextWaypointIndex() + 1,
-                WAYPOINT_OFFSETS.length,
+                TELEPORT_SEQUENCE.length,
                 formatDouble(targetX),
                 formatDouble(targetY),
                 formatDouble(targetZ),
+                waypoint.settleTicks(),
                 commandAccepted
         );
         return new PathState(
@@ -200,7 +207,7 @@ public final class ExperientChunkHotspotPathController {
                 state.nextSectionPulseIndex(),
                 state.nextBlockEntityPulseIndex(),
                 state.nextWaypointIndex() + 1,
-                STEP_DELAY_TICKS
+                waypoint.settleTicks()
         );
     }
 
@@ -350,7 +357,6 @@ public final class ExperientChunkHotspotPathController {
         signBlockEntity.setText(backText, false);
     }
 
-    // 这里直接把方块实体更新包送到受控客户端，让 block entity lane 在 runAll 里稳定命中真实网络路径。
     private static void broadcastBlockEntityProbeUpdate(
             ServerPlayer serverPlayer,
             SignBlockEntity signBlockEntity
@@ -385,6 +391,14 @@ public final class ExperientChunkHotspotPathController {
         return serverPlayer.getServer().getCommands().performPrefixedCommand(commandSource, command) > 0;
     }
 
+
+    private static void disconnectPlayerAfterPathCompletion(ServerPlayer serverPlayer) {
+        if (serverPlayer == null || serverPlayer.connection == null) {
+            return;
+        }
+        serverPlayer.connection.disconnect(Component.literal("BandwidthOptimizer experient path completed"));
+    }
+
     private static String formatDouble(double value) {
         return String.format(Locale.ROOT, "%.2f", value);
     }
@@ -409,8 +423,11 @@ public final class ExperientChunkHotspotPathController {
                     this.nextSectionPulseIndex,
                     this.nextBlockEntityPulseIndex,
                     this.nextWaypointIndex,
-                    Math.max(delayTicksRemaining, 0)
+                Math.max(delayTicksRemaining, 0)
             );
         }
+    }
+
+    private record TeleportWaypoint(double offsetX, double offsetZ, int settleTicks) {
     }
 }

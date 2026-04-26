@@ -23,6 +23,10 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
 
+import java.io.IOException;
+import java.nio.channels.ClosedChannelException;
+import java.util.Locale;
+
 public final class ChunkTransportControlFrameSender {
 
 
@@ -116,6 +120,7 @@ public final class ChunkTransportControlFrameSender {
     private static boolean sendControlFrame(Channel channel, ChunkHotspotFrame frame) {
         if (channel == null
                 || frame == null
+                || isChannelClosing(channel)
                 || !ChunkTransportRuntimeConfig.isEnabled()
                 || !ChannelTransportRuntimeGuard.isTransportAvailable()
                 || !"PLAY".equalsIgnoreCase(readProtocolName(channel))) {
@@ -143,6 +148,9 @@ public final class ChunkTransportControlFrameSender {
                     Throwable failure = future.cause() == null
                             ? new IllegalStateException("Unknown chunk control frame send failure")
                             : future.cause();
+                    if (shouldIgnoreControlFrameSendFailure(channel, failure)) {
+                        return;
+                    }
                     ChannelTransportRuntimeGuard.disableTransport("chunk-control-frame-send", failure);
                 }
             });
@@ -161,6 +169,9 @@ public final class ChunkTransportControlFrameSender {
             );
             return true;
         } catch (Throwable throwable) {
+            if (shouldIgnoreControlFrameSendFailure(channel, throwable)) {
+                return false;
+            }
             ChannelTransportRuntimeGuard.disableTransport("chunk-control-frame-send", throwable);
             return false;
         }
@@ -173,6 +184,39 @@ public final class ChunkTransportControlFrameSender {
 
     private static boolean isRuntimeFailureReason(String reason) {
         return reason != null && reason.startsWith("runtime_");
+    }
+
+    private static boolean shouldIgnoreControlFrameSendFailure(Channel channel, Throwable throwable) {
+        return isChannelClosing(channel) || isExpectedShutdownFailure(throwable);
+    }
+
+    private static boolean isChannelClosing(Channel channel) {
+        return channel == null || !channel.isOpen() || !channel.isActive();
+    }
+
+    private static boolean isExpectedShutdownFailure(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof ClosedChannelException) {
+                return true;
+            }
+            if (current instanceof IOException && hasExpectedShutdownMessage(current.getMessage())) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private static boolean hasExpectedShutdownMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return false;
+        }
+        String lowerCaseMessage = message.toLowerCase(Locale.ROOT);
+        return lowerCaseMessage.contains("connection reset")
+                || lowerCaseMessage.contains("broken pipe")
+                || lowerCaseMessage.contains("forcibly closed")
+                || lowerCaseMessage.contains("existing connection was forcibly closed");
     }
 
     private static String shortenHash(String hashHex) {

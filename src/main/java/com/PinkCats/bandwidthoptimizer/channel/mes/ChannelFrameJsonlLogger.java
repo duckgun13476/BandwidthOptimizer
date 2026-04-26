@@ -25,12 +25,14 @@ public final class ChannelFrameJsonlLogger {
     private static BufferedWriter receiveWriter;
     private static boolean initialized;
     private static boolean shutdownHookInstalled;
+    private static boolean shutdownInProgress;
 
     private ChannelFrameJsonlLogger() {
     }
 
     public static void initializeOutputFiles() {
         synchronized (LOCK) {
+            shutdownInProgress = false;
             closeWritersUnsafe();
             deleteLegacyCompareOutputs();
             sendWriter = openFreshWriter(SEND_OUTPUT_PATH);
@@ -54,6 +56,9 @@ public final class ChannelFrameJsonlLogger {
         }
 
         synchronized (LOCK) {
+            if (shutdownInProgress) {
+                return;
+            }
             ensureInitialized();
 
             BufferedWriter writer = outbound ? sendWriter : receiveWriter;
@@ -71,7 +76,7 @@ public final class ChannelFrameJsonlLogger {
     }
 
     private static void ensureInitialized() {
-        if (initialized) {
+        if (initialized || shutdownInProgress) {
             return;
         }
         initializeOutputFiles();
@@ -196,6 +201,7 @@ public final class ChannelFrameJsonlLogger {
 
     private static void closeWritersSafely() {
         synchronized (LOCK) {
+            shutdownInProgress = true;
             closeWritersUnsafe();
         }
     }

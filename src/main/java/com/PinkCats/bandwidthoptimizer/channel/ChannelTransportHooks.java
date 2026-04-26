@@ -117,14 +117,7 @@ public final class ChannelTransportHooks {
         }
 
         try {
-            if (ChannelTransportBatchManager.shouldReplayInboundAsBatch(unwrappedFrame)) {
-                ChannelTransportBatchManager.replayInboundBatch(
-                        context,
-                        decodeInboundReplayEntries(context, unwrappedFrame, packetDecoderFlowAccess)
-                );
-            } else {
-                decodeInboundPacketsIntoOutput(context, unwrappedFrame, out, packetDecoderFlowAccess);
-            }
+            decodeInboundPacketsIntoOutput(context, unwrappedFrame, out, packetDecoderFlowAccess);
             in.readerIndex(in.writerIndex());
             ChannelTransportTelemetry.recordInboundUnwrap(readProtocolName(context), unwrappedFrame);
             return true;
@@ -161,28 +154,6 @@ public final class ChannelTransportHooks {
             );
             ChannelCaptureHooks.finishInboundDecode(pendingInboundFrame, out, outputSizeBeforeDecode);
         }
-    }
-
-    private static <T extends PacketListener> List<ChannelTransportBatchManager.InboundReplayEntry> decodeInboundReplayEntries(
-            ChannelHandlerContext context,
-            ChannelTransportPacketCodec.UnwrappedTransportFrame unwrappedFrame,
-            PacketDecoderFlowAccess packetDecoderFlowAccess
-    ) throws Exception {
-        List<ChannelTransportBatchManager.InboundReplayEntry> replayEntries =
-                new java.util.ArrayList<>(unwrappedFrame.restoredPacketCount());
-        for (byte[] transportRestoredPacketBytes : unwrappedFrame.restoredPacketBytesList()) {
-            ChunkInboundDecodeResult inboundDecodeResult =
-                    ChunkTransportDispatcher.tryDecodeInboundPacket(context, transportRestoredPacketBytes);
-            if (!inboundDecodeResult.shouldDecodeVanillaPacket()) {
-                continue;
-            }
-            byte[] restoredPacketBytes = inboundDecodeResult.restoredPacketBytes();
-            replayEntries.add(new ChannelTransportBatchManager.InboundReplayEntry(
-                    restoredPacketBytes,
-                    decodeRestoredPacket(context, restoredPacketBytes, packetDecoderFlowAccess)
-            ));
-        }
-        return List.copyOf(replayEntries);
     }
 
     private static ChannelCapturedFrame beginInboundCapture(ChannelHandlerContext context, byte[] restoredPacketBytes) {

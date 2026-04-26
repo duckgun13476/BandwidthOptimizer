@@ -1,7 +1,10 @@
 package com.PinkCats.bandwidthoptimizer.chunk.verify;
 
+import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.AccessDeniedException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,6 +16,7 @@ public final class ChunkHotspotVerifyHooks {
     public static final Path REPORT_OUTPUT_PATH = Path.of("chunk-hotspot-stats.properties");
 
     private static final Object LOCK = new Object();
+    private static long lastWriteFailureLogAtMillis;
 
     private ChunkHotspotVerifyHooks() {
     }
@@ -33,7 +37,11 @@ public final class ChunkHotspotVerifyHooks {
 
     public static void flushCurrentReport() {
         synchronized (LOCK) {
-            writeCurrentReportUnsafe();
+            try {
+                writeCurrentReportUnsafe();
+            } catch (IllegalStateException exception) {
+                logWriteFailure(exception);
+            }
         }
     }
 
@@ -69,6 +77,36 @@ public final class ChunkHotspotVerifyHooks {
     }
 
     private static void replaceOutputFile(Path temporaryOutputPath, Path outputPath) throws IOException {
+        IOException lastException = null;
+        for (int attempt = 0; attempt < 4; attempt++) {
+            try {
+                moveOutputFile(temporaryOutputPath, outputPath);
+                return;
+            } catch (AccessDeniedException exception) {
+                lastException = exception;
+                sleepBeforeRetry(attempt);
+            } catch (IOException exception) {
+                lastException = exception;
+                break;
+            }
+        }
+
+        try {
+            Files.copy(
+                    temporaryOutputPath,
+                    outputPath,
+                    StandardCopyOption.REPLACE_EXISTING
+            );
+            Files.deleteIfExists(temporaryOutputPath);
+        } catch (IOException exception) {
+            if (lastException != null) {
+                exception.addSuppressed(lastException);
+            }
+            throw exception;
+        }
+    }
+
+    private static void moveOutputFile(Path temporaryOutputPath, Path outputPath) throws IOException {
         try {
             Files.move(
                     temporaryOutputPath,
@@ -83,5 +121,27 @@ public final class ChunkHotspotVerifyHooks {
                     StandardCopyOption.REPLACE_EXISTING
             );
         }
+    }
+
+    private static void sleepBeforeRetry(int attempt) {
+        long delayMillis = 10L * (attempt + 1L);
+        try {
+            Thread.sleep(delayMillis);
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static void logWriteFailure(IllegalStateException exception) {
+        long now = System.currentTimeMillis();
+        if (now - lastWriteFailureLogAtMillis < 3000L) {
+            return;
+        }
+        lastWriteFailureLogAtMillis = now;
+        Bandwidthoptimizer.LOGGER.warn(
+                "[ChunkHotspotVerify] Failed to flush report, keep transport running. path={}, reason={}",
+                REPORT_OUTPUT_PATH.toAbsolutePath(),
+                exception.getMessage()
+        );
     }
 }

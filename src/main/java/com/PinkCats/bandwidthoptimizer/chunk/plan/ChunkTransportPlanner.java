@@ -101,6 +101,21 @@ public final class ChunkTransportPlanner {
             );
         }
 
+        if (shouldUseInFlightReferenceBeforeAck(chunkSnapshot, snapshotFingerprint)
+                && costEstimate.refTransportBytes() > 0
+                && costEstimate.refTransportBytes() < costEstimate.fullTransportBytes()) {
+            return buildDecision(
+                    ChunkPlanDecisionKind.PUBLISH_REF,
+                    "reuse_inflight_full_snapshot_before_ack",
+                    descriptor,
+                    snapshotFingerprint,
+                    chunkSnapshot,
+                    storeObservation,
+                    Math.max(chunkSnapshot == null ? 0L : chunkSnapshot.fullSnapshotVersion(), 0L),
+                    costEstimate
+            );
+        }
+
         return buildDecision(
                 ChunkPlanDecisionKind.PUBLISH_FULL,
                 buildFullReason(chunkSnapshot, snapshotFingerprint),
@@ -302,6 +317,17 @@ public final class ChunkTransportPlanner {
                 && hasAcknowledgedCurrentFullSnapshot(chunkSnapshot)
                 && snapshotFingerprint != null
                 && snapshotFingerprint.hashHex().equals(chunkSnapshot.knownSnapshotHash());
+    }
+
+    private static boolean shouldUseInFlightReferenceBeforeAck(
+            ChunkPeerChunkStateSnapshot chunkSnapshot,
+            ChunkSnapshotFingerprint snapshotFingerprint
+    ) {
+        return hasKnownPublishedSnapshot(chunkSnapshot)
+                && !hasAcknowledgedCurrentFullSnapshot(chunkSnapshot)
+                && chunkSnapshot != null
+                && chunkSnapshot.fullSnapshotVersion() > 0L
+                && sameSnapshotHash(chunkSnapshot, snapshotFingerprint);
     }
 
     private static boolean shouldUsePatch(
