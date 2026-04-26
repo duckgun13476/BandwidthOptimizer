@@ -34,6 +34,10 @@ public final class ChunkTransportBoundaryController {
     private static final long CHUNK_FAILURE_DISABLE_NANOS = TimeUnit.SECONDS.toNanos(15L);
     private static final long CHANNEL_FAILURE_WINDOW_NANOS = TimeUnit.SECONDS.toNanos(60L);
     private static final long CHANNEL_FAILURE_DISABLE_NANOS = TimeUnit.SECONDS.toNanos(20L);
+    private static final java.util.Set<String> CLIENTBOUND_KEEP_ALIVE_PACKET_CLASS_NAMES = java.util.Set.of(
+            "net.minecraft.network.protocol.common.ClientboundKeepAlivePacket",
+            "net.minecraft.network.protocol.game.ClientboundKeepAlivePacket"
+    );
 
     private ChunkTransportBoundaryController() {}
 
@@ -100,6 +104,9 @@ public final class ChunkTransportBoundaryController {
         }
         if (packet instanceof BundlePacket<?> || packet instanceof BundleDelimiterPacket) {
             return new BoundaryTrigger(true, 0, "bundle_boundary");
+        }
+        if (packet != null && CLIENTBOUND_KEEP_ALIVE_PACKET_CLASS_NAMES.contains(packet.getClass().getName())) {
+            return new BoundaryTrigger(true, 0, "keep_alive_boundary");
         }
         return BoundaryTrigger.NONE;
     }

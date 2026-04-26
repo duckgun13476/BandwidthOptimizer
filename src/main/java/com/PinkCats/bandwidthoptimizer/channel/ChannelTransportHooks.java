@@ -7,6 +7,7 @@ import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.Incomplete;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
+import com.PinkCats.bandwidthoptimizer.channel.packet.ChannelTransportBypassPacketList;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkOutboundObservationService;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkInboundDecodeResult;
@@ -60,6 +61,16 @@ public final class ChannelTransportHooks {
         );
         if (boundaryDecision.forceDirectTransport()) {
             ChannelTransportBatchManager.flushOutboundBatchNow(context);
+        }
+
+        if (shouldBypassTransparentTransport(context, protocolName, packet)) {
+            ChannelTransportPacketRankCaptureManager.recordDirectPassthrough(
+                    context,
+                    protocolName,
+                    packet,
+                    originalPacketBytes
+            );
+            return;
         }
 
         if (!ChannelTransportRuntimeGuard.isTransportAvailable()
@@ -230,6 +241,21 @@ public final class ChannelTransportHooks {
             throw new IllegalStateException("Missing ConnectionProtocol on inbound transport decode");
         }
         return protocol;
+    }
+
+    // prevent queue mistake
+    private static boolean shouldBypassTransparentTransport(
+            ChannelHandlerContext context,
+            String protocolName,
+            Packet<?> packet
+    ) {
+        if (!ChannelTransportRuntimeGuard.isTransportAvailable()
+                || shouldUseTransportForCurrentProtocol(protocolName)
+                || !ChannelTransportBypassPacketList.shouldBypassTransparentTransport(packet)) {
+            return false;
+        }
+        ChannelTransportBatchManager.flushOutboundBatchNow(context);
+        return true;
     }
 
     @Incomplete("Only PLAY packet now")
