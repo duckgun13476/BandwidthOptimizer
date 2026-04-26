@@ -93,11 +93,11 @@ minecraft {
             }
 
             // 这组属性把 runAll 透传下来的 transport 实验开关继续桥接到真实游戏进程。
-            if ((project.findProperty('boExperimentalTransport') ?: 'false').toString().toBoolean()) {
-                property 'bandwidthoptimizer.experimentalTransport', 'true'
+            if (project.hasProperty('boExperimentalTransport')) {
+                property 'bandwidthoptimizer.experimentalTransport', project.property('boExperimentalTransport').toString()
             }
-            if ((project.findProperty('boExperimentalChunkHotspotTransport') ?: 'false').toString().toBoolean()) {
-                property 'bandwidthoptimizer.experimentalChunkHotspotTransport', 'true'
+            if (project.hasProperty('boExperimentalChunkHotspotTransport')) {
+                property 'bandwidthoptimizer.experimentalChunkHotspotTransport', project.property('boExperimentalChunkHotspotTransport').toString()
             }
             if ((project.findProperty('boExperientChunkHotspotPathEnabled') ?: 'false').toString().toBoolean()) {
                 property 'bandwidthoptimizer.experient.chunkHotspotPathEnabled', 'true'
@@ -142,11 +142,11 @@ minecraft {
             if ((project.findProperty('boExperientEnabled') ?: 'false').toString().toBoolean()) {
                 property 'bandwidthoptimizer.experient.enabled', 'true'
             }
-            if ((project.findProperty('boExperimentalTransport') ?: 'false').toString().toBoolean()) {
-                property 'bandwidthoptimizer.experimentalTransport', 'true'
+            if (project.hasProperty('boExperimentalTransport')) {
+                property 'bandwidthoptimizer.experimentalTransport', project.property('boExperimentalTransport').toString()
             }
-            if ((project.findProperty('boExperimentalChunkHotspotTransport') ?: 'false').toString().toBoolean()) {
-                property 'bandwidthoptimizer.experimentalChunkHotspotTransport', 'true'
+            if (project.hasProperty('boExperimentalChunkHotspotTransport')) {
+                property 'bandwidthoptimizer.experimentalChunkHotspotTransport', project.property('boExperimentalChunkHotspotTransport').toString()
             }
             if ((project.findProperty('boExperientChunkHotspotPathEnabled') ?: 'false').toString().toBoolean()) {
                 property 'bandwidthoptimizer.experient.chunkHotspotPathEnabled', 'true'
@@ -386,6 +386,34 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     appendOptionalRunAllProperty(args, projectRef, 'boChunkGlobalStoreBudgetBytes')
     appendOptionalRunAllProperty(args, projectRef, 'boChunkGlobalStoreMaxVersionsPerChunk')
     return args
+}
+
+// 这个函数负责统一判断 runAll 这一轮有没有显式要求打开透明 transport，避免多个任务各自写一套默认值逻辑。
+def isRunAllTransportEnabled(Project projectRef) {
+    return isRunAllTransportEnabledByDefault(projectRef)
+}
+
+// 这个函数负责把 runAll 本轮可能用到的 telemetry dump 文件路径解析出来，便于启动前清理旧残留，避免上一轮统计冒充本轮结果。
+def resolveRunAllTransportTelemetryDumpFile(Project projectRef, File runtimeDir) {
+    return resolveRunAllTransportTelemetryDumpPath(projectRef, runtimeDir)
+}
+
+// 这个函数负责统一判断 runAll 本轮是否显式关闭了透明 transport；默认不传属性时按开启处理，保证开发运行和打包版行为一致。
+def isRunAllTransportEnabledByDefault(Project projectRef) {
+    if (!projectRef.hasProperty('boExperimentalTransport')) {
+        return true
+    }
+    return projectRef.property('boExperimentalTransport').toString().toBoolean()
+}
+
+// 这个函数负责把 runAll 本轮可能用到的 telemetry dump 文件路径解析出来，便于启动前清理旧残留，避免上一轮统计冒充本轮结果。
+def resolveRunAllTransportTelemetryDumpPath(Project projectRef, File runtimeDir) {
+    String dumpFileName = (projectRef.findProperty('boTransportTelemetryDumpFileName') ?: 'transport-telemetry-dump.properties').toString().trim()
+    if (dumpFileName.isEmpty()) {
+        return new File(runtimeDir, 'transport-telemetry-dump.properties')
+    }
+    File dumpFile = new File(dumpFileName)
+    return dumpFile.isAbsolute() ? dumpFile : new File(runtimeDir, dumpFileName)
 }
 
 // 这个函数把 experient 自动连服需要的 Gradle 属性组装成参数列表，供 runAll 系列重复复用。
@@ -854,8 +882,11 @@ tasks.register('runAll') {
         File clientReceiveJsonl = project.file('run/client/receive.jsonl')
         File serverChunkHotspotStats = project.file('run/server/chunk-hotspot-stats.properties')
         File clientChunkHotspotStats = project.file('run/client/chunk-hotspot-stats.properties')
+        File serverTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, serverDir)
+        File clientTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, clientDir)
         File captureResetRequest = project.file('run/bo-runall-capture-reset.request')
         File serverProperties = project.file('run/server/server.properties')
+        boolean transportEnabled = isRunAllTransportEnabledByDefault(project)
 
         stopExistingRunAllProcesses(project, projectDirFile, isWindows)
         sleep(3000)
@@ -871,10 +902,17 @@ tasks.register('runAll') {
                 clientReceiveJsonl,
                 serverChunkHotspotStats,
                 clientChunkHotspotStats,
+                serverTransportTelemetryDump,
+                clientTransportTelemetryDump,
                 captureResetRequest
         ])
 
         configureRunAllServerProperties(serverProperties)
+
+        if (!transportEnabled) {
+            println 'runAll: 当前显式透传 boExperimentalTransport=false；本轮仍会分别启动客户端和服务端，但透明 transport 会保持关闭。'
+            println 'runAll: 如果要恢复默认开启，请移除该参数，或显式传 -PboExperimentalTransport=true'
+        }
 
         println 'runAll: 正在启动本地测试服务端。'
         Process serverProcess = startExistingRunTaskProcess(projectDirFile, isWindows, wrapperPath, 'runServer', buildRunAllSharedGradleArgs(project), null, serverTaskLog, 'runServer')
@@ -981,9 +1019,12 @@ tasks.register('runAllAutoExitCompare') {
         File clientReceiveJsonl = project.file('run/client/receive.jsonl')
         File serverChunkHotspotStats = project.file('run/server/chunk-hotspot-stats.properties')
         File clientChunkHotspotStats = project.file('run/client/chunk-hotspot-stats.properties')
+        File serverTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, project.file('run/server'))
+        File clientTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, project.file('run/client'))
         File captureResetRequest = project.file('run/bo-runall-capture-reset.request')
         File serverLoginMarker = project.file('run/server/bo-runall-player-logged-in.marker')
         File serverProperties = project.file('run/server/server.properties')
+        boolean transportEnabled = isRunAllTransportEnabledByDefault(project)
 
         stopExistingRunAllProcesses(project, projectDirFile, isWindows)
         sleep(3000)
@@ -997,6 +1038,8 @@ tasks.register('runAllAutoExitCompare') {
                 clientReceiveJsonl,
                 serverChunkHotspotStats,
                 clientChunkHotspotStats,
+                serverTransportTelemetryDump,
+                clientTransportTelemetryDump,
                 captureResetRequest,
                 serverLoginMarker
         ])
@@ -1008,6 +1051,10 @@ tasks.register('runAllAutoExitCompare') {
 
         try {
             println "runAllAutoExitCompare: exitTrigger=${exitTrigger}, exitDelaySeconds=${exitDelaySeconds}, settleMillis=${settleMillis}"
+            if (!transportEnabled) {
+                println 'runAllAutoExitCompare: 当前显式透传 boExperimentalTransport=false；这一轮仍会做 jsonl 抓包/compare，但透明 transport 会保持关闭。'
+                println 'runAllAutoExitCompare: 如果要恢复默认开启，请移除该参数，或显式传 -PboExperimentalTransport=true'
+            }
 
             println 'runAllAutoExitCompare: 正在启动本地测试服务端。'
             serverProcess = startExistingRunTaskProcess(projectDirFile, isWindows, wrapperPath, 'runServer', buildRunAllSharedGradleArgs(project), null, serverTaskLog, 'runServer')

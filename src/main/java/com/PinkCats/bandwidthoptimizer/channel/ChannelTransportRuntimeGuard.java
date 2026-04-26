@@ -12,6 +12,7 @@ import static com.PinkCats.bandwidthoptimizer.channel.math.format.ratioText;
 public final class ChannelTransportRuntimeGuard {
 
     private static final String EXPERIMENTAL_TRANSPORT_PROPERTY = "bandwidthoptimizer.experimentalTransport";
+    private static final String ENABLED_BY_DEFAULT_REASON = "disabled by runtime property";
 
     private static volatile boolean initialized;
     private static volatile boolean transportAvailable;
@@ -29,9 +30,9 @@ public final class ChannelTransportRuntimeGuard {
         initialized = true;
         if (!isExperimentalTransportEnabled()) {
             transportAvailable = false;
-            unavailableReason = "disabled by default property";
+            unavailableReason = ENABLED_BY_DEFAULT_REASON;
             Bandwidthoptimizer.LOGGER.info(
-                    "[Transport] Experimental transparent transport is disabled by default. Set -D{}=true to enable it.",
+                    "[Transport] Transparent transport disabled by runtime property. Remove -D{}=false or set it to true to enable it again.",
                     EXPERIMENTAL_TRANSPORT_PROPERTY
             );
             return;
@@ -71,7 +72,8 @@ public final class ChannelTransportRuntimeGuard {
 
 
     public static boolean isExperimentalTransportEnabled() {
-        return Boolean.parseBoolean(System.getProperty(EXPERIMENTAL_TRANSPORT_PROPERTY, "false"));
+        String rawValue = System.getProperty(EXPERIMENTAL_TRANSPORT_PROPERTY);
+        return rawValue == null || rawValue.isBlank() || Boolean.parseBoolean(rawValue);
     }
 
 

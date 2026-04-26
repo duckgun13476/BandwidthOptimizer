@@ -26,6 +26,7 @@ public final class ChannelTransportTelemetry {
     private static final AtomicLong INBOUND_UNWRAP_COUNT = new AtomicLong();
     private static final AtomicLong OUTBOUND_SHRINK_SAMPLE_COUNT = new AtomicLong();
     private static final AtomicLong LAST_TELEMETRY_DUMP_AT_MILLIS = new AtomicLong();
+    private static final AtomicLong LAST_ACTIVITY_AT_MILLIS = new AtomicLong();
 
     private static final LongAdder OUTBOUND_RAW_PACKET_BYTES = new LongAdder();
     private static final LongAdder OUTBOUND_MAPPING_STAGE_BYTES = new LongAdder();
@@ -63,6 +64,7 @@ public final class ChannelTransportTelemetry {
             return;
         }
 
+        LAST_ACTIVITY_AT_MILLIS.set(System.currentTimeMillis());
         ChannelTransportOperationTelemetry telemetry =
                 safeTelemetry(wrappedFrame.telemetry(), wrappedFrame.originalPacketBytes());
         long wrapCount = OUTBOUND_WRAP_COUNT.incrementAndGet();
@@ -160,11 +162,12 @@ public final class ChannelTransportTelemetry {
         maybeWriteTelemetryDumpFile();
     }
 
-    public static void recordInboundUnwrap(String protocolName, ChannelTransportPacketCodec.UnwrappedTransportFrame unwrappedFrame) {
+    public static void recordInboundUnwrap(String protocolName, ChannelTransportPacketCodec.UnwrappedTransportFrame unwrappedFrame) { // 这个函数负责记录一帧入站 transport 解包统计，并刷新 HUD 会读取的累计计数。
         if (unwrappedFrame == null) {
             return;
         }
 
+        LAST_ACTIVITY_AT_MILLIS.set(System.currentTimeMillis());
         ChannelTransportOperationTelemetry telemetry =
                 safeTelemetry(unwrappedFrame.telemetry(), unwrappedFrame.zstdBodyBytes());
         long unwrapCount = INBOUND_UNWRAP_COUNT.incrementAndGet();
@@ -233,6 +236,50 @@ public final class ChannelTransportTelemetry {
         }
 
         maybeWriteTelemetryDumpFile();
+    }
+
+    public static Snapshot snapshot() { // 这个函数负责把当前 transport 累计统计整理成一个不可变快照，供客户端 HUD 直接读取。
+        return new Snapshot(
+                LAST_ACTIVITY_AT_MILLIS.get(),
+                ChannelTransportLayerRuntimeConfig.algorithmId().toString(),
+                ChannelTransportLayerRuntimeConfig.isMappingEnabled(),
+                ChannelTransportLayerRuntimeConfig.isZstdEnabled(),
+                ChannelTransportLayerRuntimeConfig.isPacketIdMappingEnabled(),
+                new DirectionSnapshot(
+                        OUTBOUND_WRAP_COUNT.get(),
+                        OUTBOUND_ORIGINAL_PACKET_COUNT.sum(),
+                        OUTBOUND_RAW_PACKET_BYTES.sum(),
+                        OUTBOUND_MAPPING_STAGE_BYTES.sum(),
+                        OUTBOUND_TRANSPORT_BODY_BYTES.sum(),
+                        OUTBOUND_TRANSPORT_FRAME_BYTES.sum(),
+                        OUTBOUND_SHRUNK_FRAME_COUNT.sum(),
+                        OUTBOUND_EXPANDED_FRAME_COUNT.sum(),
+                        OUTBOUND_LITERAL_ENTRY_COUNT.sum(),
+                        OUTBOUND_EXACT_REFERENCE_COUNT.sum(),
+                        OUTBOUND_TEMPLATE_REFERENCE_COUNT.sum(),
+                        OUTBOUND_EXACT_ADDITION_COUNT.sum(),
+                        OUTBOUND_TEMPLATE_ADDITION_COUNT.sum(),
+                        OUTBOUND_EXACT_REMOVAL_COUNT.sum(),
+                        OUTBOUND_TEMPLATE_REMOVAL_COUNT.sum()
+                ),
+                new DirectionSnapshot(
+                        INBOUND_UNWRAP_COUNT.get(),
+                        INBOUND_RESTORED_PACKET_COUNT.sum(),
+                        INBOUND_RESTORED_PACKET_BYTES.sum(),
+                        INBOUND_MAPPING_STAGE_BYTES.sum(),
+                        INBOUND_TRANSPORT_BODY_BYTES.sum(),
+                        INBOUND_TRANSPORT_FRAME_BYTES.sum(),
+                        0L,
+                        0L,
+                        INBOUND_LITERAL_ENTRY_COUNT.sum(),
+                        INBOUND_EXACT_REFERENCE_COUNT.sum(),
+                        INBOUND_TEMPLATE_REFERENCE_COUNT.sum(),
+                        INBOUND_EXACT_ADDITION_COUNT.sum(),
+                        INBOUND_TEMPLATE_ADDITION_COUNT.sum(),
+                        INBOUND_EXACT_REMOVAL_COUNT.sum(),
+                        INBOUND_TEMPLATE_REMOVAL_COUNT.sum()
+                )
+        );
     }
 
     private static ChannelTransportOperationTelemetry safeTelemetry(
@@ -337,7 +384,6 @@ public final class ChannelTransportTelemetry {
         }
     }
 
-
     private static void writeTelemetryDumpFile(Path dumpFilePath) throws IOException {
         Path parentPath = dumpFilePath.getParent();
         if (parentPath != null) {
@@ -373,5 +419,35 @@ public final class ChannelTransportTelemetry {
 
     private static void appendDumpLine(StringBuilder builder, String key, String value) {
         builder.append(key).append('=').append(value).append('\n');
+    }
+
+    public record Snapshot(
+            long lastActivityAtMillis,
+            String algorithmId,
+            boolean mappingEnabled,
+            boolean zstdEnabled,
+            boolean packetIdMappingEnabled,
+            DirectionSnapshot outbound,
+            DirectionSnapshot inbound
+    ) {
+    }
+
+    public record DirectionSnapshot(
+            long frameCount,
+            long packetCount,
+            long baselineBytes,
+            long mappingStageBytes,
+            long transportBodyBytes,
+            long transportFrameBytes,
+            long shrunkFrameCount,
+            long expandedFrameCount,
+            long literalEntryCount,
+            long exactReferenceCount,
+            long templateReferenceCount,
+            long exactAdditionCount,
+            long templateAdditionCount,
+            long exactRemovalCount,
+            long templateRemovalCount
+    ) {
     }
 }
