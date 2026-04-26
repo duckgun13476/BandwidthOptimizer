@@ -41,6 +41,10 @@ public final class ExperientChunkHotspotPathController {
     private static final int BLOCK_ENTITY_PULSE_DELAY_TICKS = 20;
     private static final int POST_BLOCK_ENTITY_PULSE_DELAY_TICKS = 60;
     private static final int FINAL_RETURN_SETTLE_TICKS = 200;
+    private static final int TWO_POINT_REUSE_SETTLE_TICKS = 6;
+    private static final int TWO_POINT_REUSE_FINAL_SETTLE_TICKS = 100;
+    private static final int TWO_POINT_REUSE_TOTAL_TELEPORTS = 24;
+    private static final double TWO_POINT_REUSE_OFFSET_BLOCKS = 320.0D;
     private static final int LIGHT_PROBE_Y_OFFSET = 4;
     private static final int BEFORE_ACK_LIGHT_PROBE_Y_OFFSET = -18;
     private static final int BEFORE_ACK_PROBE_EMIT_REMAINING_TICKS = 4;
@@ -84,6 +88,7 @@ public final class ExperientChunkHotspotPathController {
             new TeleportWaypoint(0.0D, 320.0D, 8, false),
             new TeleportWaypoint(0.0D, 0.0D, FINAL_RETURN_SETTLE_TICKS, false)
     };
+    private static final TeleportWaypoint[] TWO_POINT_REUSE_SEQUENCE = createTwoPointReuseSequence();
 
     private static final Map<UUID, PathState> PLAYER_PATH_STATES = new ConcurrentHashMap<>();
 
@@ -161,6 +166,10 @@ public final class ExperientChunkHotspotPathController {
             return state.withDelayTicksRemaining(state.delayTicksRemaining() - 1);
         }
 
+        if (ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()) {
+            return advanceTwoPointReusePath(serverPlayer, state);
+        }
+
         if (state.nextLightPulseIndex() < LIGHT_PULSE_SEQUENCE.length) {
             return applyLightPulse(serverPlayer, state);
         }
@@ -226,8 +235,50 @@ public final class ExperientChunkHotspotPathController {
         );
     }
 
+    // chunk tp
+    private static PathState advanceTwoPointReusePath(ServerPlayer serverPlayer, PathState state) {
+        if (state.nextWaypointIndex() >= TWO_POINT_REUSE_SEQUENCE.length) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ExperientChunkPath] Completed two-point reuse path for player={}",
+                    serverPlayer.getGameProfile().getName()
+            );
+            disconnectPlayerAfterPathCompletion(serverPlayer);
+            return null;
+        }
+
+        TeleportWaypoint waypoint = TWO_POINT_REUSE_SEQUENCE[state.nextWaypointIndex()];
+        double targetX = state.originX() + waypoint.offsetX();
+        double targetY = state.originY();
+        double targetZ = state.originZ() + waypoint.offsetZ();
+        boolean commandAccepted = teleportPlayer(serverPlayer, targetX, targetY, targetZ);
+        Bandwidthoptimizer.LOGGER.info(
+                "[ExperientChunkPath] two-point-reuse player={}, step={}/{}, target=({}, {}, {}), settleTicks={}, accepted={}",
+                serverPlayer.getGameProfile().getName(),
+                state.nextWaypointIndex() + 1,
+                TWO_POINT_REUSE_SEQUENCE.length,
+                formatDouble(targetX),
+                formatDouble(targetY),
+                formatDouble(targetZ),
+                waypoint.settleTicks(),
+                commandAccepted
+        );
+        return new PathState(
+                state.originX(),
+                state.originY(),
+                state.originZ(),
+                state.nextLightPulseIndex(),
+                state.nextSectionPulseIndex(),
+                state.nextBlockEntityPulseIndex(),
+                state.nextWaypointIndex() + 1,
+                waypoint.settleTicks()
+        );
+    }
+
 
     private static void maybeEmitDelayedBeforeAckProbeBurst(ServerPlayer serverPlayer, PathState state) {
+        if (ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()) {
+            return;
+        }
         if (state.nextWaypointIndex() <= 0) {
             return;
         }
@@ -570,6 +621,18 @@ public final class ExperientChunkHotspotPathController {
 
     private static String formatDouble(double value) {
         return String.format(Locale.ROOT, "%.2f", value);
+    }
+
+    private static TeleportWaypoint[] createTwoPointReuseSequence() {
+        TeleportWaypoint[] sequence = new TeleportWaypoint[TWO_POINT_REUSE_TOTAL_TELEPORTS];
+        for (int index = 0; index < sequence.length; index++) {
+            double offsetX = index % 2 == 0 ? TWO_POINT_REUSE_OFFSET_BLOCKS : 0.0D;
+            int settleTicks = index + 1 >= sequence.length
+                    ? TWO_POINT_REUSE_FINAL_SETTLE_TICKS
+                    : TWO_POINT_REUSE_SETTLE_TICKS;
+            sequence[index] = new TeleportWaypoint(offsetX, 0.0D, settleTicks, false);
+        }
+        return sequence;
     }
 
     private record PathState(

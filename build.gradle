@@ -114,6 +114,9 @@ minecraft {
             if ((project.findProperty('boExperientChunkHotspotPathStopAfterBlockEntity') ?: 'false').toString().toBoolean()) {
                 property 'bandwidthoptimizer.experient.chunkHotspotPathStopAfterBlockEntity', 'true'
             }
+            if ((project.findProperty('boExperientChunkHotspotPathTwoPointReuseMode') ?: 'false').toString().toBoolean()) {
+                property 'bandwidthoptimizer.experient.chunkHotspotPathTwoPointReuseMode', 'true'
+            }
             if (project.hasProperty('boExperientChunkHotspotAckDelayTicks')) {
                 property 'bandwidthoptimizer.experient.chunkHotspotAckDelayTicks', project.property('boExperientChunkHotspotAckDelayTicks').toString()
             }
@@ -171,6 +174,9 @@ minecraft {
             }
             if ((project.findProperty('boExperientChunkHotspotPathStopAfterBlockEntity') ?: 'false').toString().toBoolean()) {
                 property 'bandwidthoptimizer.experient.chunkHotspotPathStopAfterBlockEntity', 'true'
+            }
+            if ((project.findProperty('boExperientChunkHotspotPathTwoPointReuseMode') ?: 'false').toString().toBoolean()) {
+                property 'bandwidthoptimizer.experient.chunkHotspotPathTwoPointReuseMode', 'true'
             }
             if (project.hasProperty('boExperientChunkHotspotAckDelayTicks')) {
                 property 'bandwidthoptimizer.experient.chunkHotspotAckDelayTicks', project.property('boExperientChunkHotspotAckDelayTicks').toString()
@@ -404,6 +410,7 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathEnabled')
     appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathStopAfterSection')
     appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathStopAfterBlockEntity')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathTwoPointReuseMode')
     if (projectRef.hasProperty('boExperientChunkHotspotAckDelayTicks')) {
         appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotAckDelayTicks')
     } else if ((projectRef.findProperty('boExperientChunkHotspotPathEnabled') ?: 'false').toString().toBoolean()) {
@@ -467,6 +474,9 @@ def buildExperientAutoConnectGradleArgs(Project projectRef, String address, Stri
 def isRunAllChunkBranchCoverageVerificationEnabled(Project projectRef) {
     if (projectRef.hasProperty('boRunAllVerifyChunkBranches')) {
         return projectRef.property('boRunAllVerifyChunkBranches').toString().toBoolean()
+    }
+    if ((projectRef.findProperty('boExperientChunkHotspotPathTwoPointReuseMode') ?: 'false').toString().toBoolean()) {
+        return false
     }
     return (projectRef.findProperty('boExperientChunkHotspotPathEnabled') ?: 'false').toString().toBoolean()
 }
