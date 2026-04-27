@@ -7,6 +7,7 @@ public final class ExperientChunkHotspotPathRuntimeConfig {
     public static final String STOP_AFTER_BLOCK_ENTITY_PROPERTY = "bandwidthoptimizer.experient.chunkHotspotPathStopAfterBlockEntity";
     public static final String TWO_POINT_REUSE_MODE_PROPERTY = "bandwidthoptimizer.experient.chunkHotspotPathTwoPointReuseMode";
     public static final String BOUNDARY_HOP_MODE_PROPERTY = "bandwidthoptimizer.experient.chunkHotspotPathBoundaryHopMode";
+    public static final String DIMENSION_HOP_MODE_PROPERTY = "bandwidthoptimizer.experient.chunkHotspotPathDimensionHopMode";
 
     private ExperientChunkHotspotPathRuntimeConfig() {}
 
@@ -31,5 +32,10 @@ public final class ExperientChunkHotspotPathRuntimeConfig {
     // hop in chunk border
     public static boolean isBoundaryHopMode() {
         return Boolean.parseBoolean(System.getProperty(BOUNDARY_HOP_MODE_PROPERTY, "false"));
+    }
+
+    // hop dimension
+    public static boolean isDimensionHopMode() {
+        return Boolean.parseBoolean(System.getProperty(DIMENSION_HOP_MODE_PROPERTY, "false"));
     }
 }

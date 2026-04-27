@@ -10,17 +10,24 @@ import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalStoreObservation;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.Level;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 public final class ChunkPeerStateManager {
 
+    private static final long OVERWORLD_SCOPE_ID = 1L;
+    private static final long NETHER_SCOPE_ID = 2L;
+    private static final long END_SCOPE_ID = 3L;
+    private static final long FIRST_DYNAMIC_SCOPE_ID = 4L;
     private static final ConcurrentHashMap<String, ChunkPeerState> CHANNEL_STATES = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<UUID, Long> PLAYER_EPOCHS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<UUID, PlayerScopeState> PLAYER_SCOPE_STATES = new ConcurrentHashMap<>();
 
     private ChunkPeerStateManager() {}
 
@@ -72,50 +79,37 @@ public final class ChunkPeerStateManager {
         return observation;
     }
 
-    public static long bumpPlayerEpoch(ServerPlayer player, String reason) {
-        if (player == null) {
+    public static long bindPlayerDimensionScope(ServerPlayer player, String reason) {
+        if (player == null || player.serverLevel() == null) {
             return 0L;
         }
 
-        long epoch = PLAYER_EPOCHS.merge(player.getUUID(), 1L, Long::sum);
-        Bandwidthoptimizer.LOGGER.info(
-                "[ChunkPeer][Lifecycle] player={}, uuid={}, reason={}, epoch={}",
-                player.getGameProfile().getName(),
-                player.getUUID(),
-                reason,
-                epoch
-        );
-        return epoch;
-    }
-
-    public static void attachPlayerEpochToChannel(ServerPlayer player, String reason) {
-        if (player == null) {
-            return;
-        }
-
-        long epoch = PLAYER_EPOCHS.getOrDefault(player.getUUID(), 0L);
+        ResourceKey<Level> dimensionKey = player.serverLevel().dimension();
+        long epoch = resolvePlayerScopeId(player.getUUID(), dimensionKey);
         String channelId = readPlayerChannelId(player);
         if (epoch <= 0L || channelId == null || channelId.isBlank()) {
-            return;
+            return epoch;
         }
 
         ChunkPeerState state = CHANNEL_STATES.computeIfAbsent(channelId, ChunkPeerState::new);
         ChunkPeerStateSnapshot snapshot = state.setEpoch(epoch);
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkPeer][Bind] player={}, uuid={}, reason={}, channel={}, epoch={}",
+                "[ChunkPeer][Bind] player={}, uuid={}, reason={}, dimension={}, channel={}, epoch={}",
                 player.getGameProfile().getName(),
                 player.getUUID(),
                 reason,
+                dimensionKey.location(),
                 snapshot.channelId(),
                 snapshot.epoch()
         );
+        return snapshot.epoch();
     }
 
     public static void clearPlayerState(ServerPlayer player, String reason) {
         if (player == null)
             return;
 
-        Long removedEpoch = PLAYER_EPOCHS.remove(player.getUUID());
+        PlayerScopeState removedScopeState = PLAYER_SCOPE_STATES.remove(player.getUUID());
         String channelId = readPlayerChannelId(player);
         if (channelId != null && !channelId.isBlank()) {
             CHANNEL_STATES.remove(channelId);
@@ -127,7 +121,7 @@ public final class ChunkPeerStateManager {
                 player.getGameProfile().getName(),
                 player.getUUID(),
                 reason,
-                removedEpoch == null ? "<none>" : removedEpoch,
+                removedScopeState == null ? "<none>" : removedScopeState.summaryText(),
                 channelId == null || channelId.isBlank() ? "<none>" : channelId
         );
     }
@@ -149,6 +143,19 @@ public final class ChunkPeerStateManager {
         return state == null ? null : state.snapshotChunk(coordinate);
     }
 
+    public static ChunkPeerChunkStateSnapshot snapshotOutboundChunk(
+            ChannelHandlerContext context,
+            long scopeId,
+            ChunkPacketCoordinate coordinate
+    ) {
+        if (context == null || coordinate == null || !coordinate.present()) {
+            return null;
+        }
+
+        ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
+        return state == null ? null : state.snapshotChunk(scopeId, coordinate);
+    }
+
     public static ChunkPeerChunkStateSnapshot snapshotPlayerChunk(ServerPlayer player, ChunkPacketCoordinate coordinate) {
         Channel channel = readPlayerChannel(player);
         if (channel == null || coordinate == null || !coordinate.present()) {
@@ -168,7 +175,7 @@ public final class ChunkPeerStateManager {
         ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
         ChunkPeerChunkStateSnapshot chunkSnapshot = state == null
                 ? null
-                : state.acknowledgeChunk(frame.coordinate(), frame.fullSnapshotVersion(), frame.payloadHash());
+                : state.acknowledgeChunk(frame.epoch(), frame.coordinate(), frame.fullSnapshotVersion(), frame.payloadHash());
         logControlUpdate("Ack", context, frame, chunkSnapshot);
         return chunkSnapshot;
     }
@@ -179,7 +186,7 @@ public final class ChunkPeerStateManager {
         }
 
         ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
-        ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.negativeAcknowledgeChunk(frame.coordinate());
+        ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.negativeAcknowledgeChunk(frame.epoch(), frame.coordinate());
         logControlUpdate("Nack", context, frame, chunkSnapshot);
         return chunkSnapshot;
     }
@@ -190,8 +197,8 @@ public final class ChunkPeerStateManager {
         }
 
         ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
-        ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.invalidateChunk(frame.coordinate());
-        ChunkShadowSnapshotManager.invalidateChunk(context.channel().id().asLongText(), frame.coordinate());
+        ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.invalidateChunk(frame.epoch(), frame.coordinate());
+        ChunkShadowSnapshotManager.invalidateChunk(context.channel().id().asLongText(), frame.epoch(), frame.coordinate());
         logControlUpdate("Invalidate", context, frame, chunkSnapshot);
         return chunkSnapshot;
     }
@@ -208,8 +215,9 @@ public final class ChunkPeerStateManager {
         }
 
         ChunkPeerState state = CHANNEL_STATES.get(channel.id().asLongText());
-        ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.invalidateChunk(coordinate);
-        ChunkShadowSnapshotManager.invalidateChunk(channel.id().asLongText(), coordinate);
+        long scopeId = state == null ? 0L : state.snapshot().epoch();
+        ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.invalidateChunk(scopeId, coordinate);
+        ChunkShadowSnapshotManager.invalidateChunk(channel.id().asLongText(), scopeId, coordinate);
         Bandwidthoptimizer.LOGGER.info(
                 "[ChunkPeer][LifecycleInvalidate] player={}, uuid={}, channel={}, reason={}, chunk={}, state={}",
                 player.getGameProfile().getName(),
@@ -233,7 +241,8 @@ public final class ChunkPeerStateManager {
         }
 
         ChunkPeerState state = CHANNEL_STATES.get(channel.id().asLongText());
-        ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.markChunkAwaitingFullReplay(coordinate);
+        long scopeId = state == null ? 0L : state.snapshot().epoch();
+        ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.markChunkAwaitingFullReplay(scopeId, coordinate);
         Bandwidthoptimizer.LOGGER.info(
                 "[ChunkPeer][LifecycleRetain] player={}, uuid={}, channel={}, reason={}, chunk={}, state={}",
                 player.getGameProfile().getName(),
@@ -248,6 +257,24 @@ public final class ChunkPeerStateManager {
 
     public static Channel findPlayerChannel(ServerPlayer player) {
         return readPlayerChannel(player);
+    }
+
+    private static long resolvePlayerScopeId(UUID playerId, ResourceKey<Level> dimensionKey) {
+        if (playerId == null || dimensionKey == null) {
+            return 0L;
+        }
+        if (Level.OVERWORLD.equals(dimensionKey)) {
+            return OVERWORLD_SCOPE_ID;
+        }
+        if (Level.NETHER.equals(dimensionKey)) {
+            return NETHER_SCOPE_ID;
+        }
+        if (Level.END.equals(dimensionKey)) {
+            return END_SCOPE_ID;
+        }
+
+        PlayerScopeState scopeState = PLAYER_SCOPE_STATES.computeIfAbsent(playerId, ignored -> new PlayerScopeState());
+        return scopeState.scopeIdForDimension(dimensionKey);
     }
 
     private static String readPlayerChannelId(ServerPlayer player) {
@@ -377,5 +404,27 @@ public final class ChunkPeerStateManager {
             return "<none>";
         }
         return hashHex.length() <= 12 ? hashHex : hashHex.substring(0, 12);
+    }
+
+    private static final class PlayerScopeState {
+
+        private final ConcurrentHashMap<ResourceKey<Level>, Long> dimensionScopeIds = new ConcurrentHashMap<>();
+        private final AtomicLong nextDynamicScopeId = new AtomicLong(FIRST_DYNAMIC_SCOPE_ID);
+
+        private synchronized long scopeIdForDimension(ResourceKey<Level> dimensionKey) {
+            Long existingScopeId = this.dimensionScopeIds.get(dimensionKey);
+            if (existingScopeId != null) {
+                return existingScopeId;
+            }
+
+            long assignedScopeId = this.nextDynamicScopeId.getAndIncrement();
+            this.dimensionScopeIds.put(dimensionKey, assignedScopeId);
+            return assignedScopeId;
+        }
+
+        private String summaryText() {
+            return "dimensionScopes=" + this.dimensionScopeIds.size()
+                    + ", nextDynamicScopeId=" + this.nextDynamicScopeId.get();
+        }
     }
 }

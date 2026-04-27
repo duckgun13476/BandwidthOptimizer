@@ -42,10 +42,12 @@ public final class ChunkOutboundObservationService {
 
         ChunkSnapshotFingerprint snapshotFingerprint =
                 ChunkSnapshotFingerprintService.fingerprintOutboundPacket(encodedPacketBytes);
+        ChunkPeerStateSnapshot channelSnapshotBeforeObserve = ChunkPeerStateManager.snapshotOutboundChannel(context);
+        long currentScopeId = channelSnapshotBeforeObserve == null ? 0L : channelSnapshotBeforeObserve.epoch();
         ChunkPeerChunkStateSnapshot chunkSnapshotBeforeObserve =
-                ChunkPeerStateManager.snapshotOutboundChunk(context, descriptor.coordinate());
+                ChunkPeerStateManager.snapshotOutboundChunk(context, currentScopeId, descriptor.coordinate());
         ChunkShadowSnapshot localChunkSnapshotBeforeObserve =
-                ChunkShadowSnapshotManager.snapshotChunk(context.channel().id().asLongText(), descriptor.coordinate());
+                ChunkShadowSnapshotManager.snapshotChunk(context.channel().id().asLongText(), currentScopeId, descriptor.coordinate());
         recordTwoPointFullChunkProgress(context, descriptor);
         logTwoPointFullChunkBeforePlan(
                 context,

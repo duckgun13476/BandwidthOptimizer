@@ -78,11 +78,12 @@ public final class ChunkTransportDispatcher {
         }
 
         ChunkSnapshotFingerprint fingerprint = ChunkSnapshotFingerprintService.fingerprintOutboundPacket(originalPacketBytes);
-        ChunkPeerChunkStateSnapshot knownChunkSnapshot =
-                ChunkPeerStateManager.snapshotOutboundChunk(context, descriptor.coordinate());
         ChunkPeerStateSnapshot peerSnapshot = ChunkPeerStateManager.snapshotOutboundChannel(context);
+        long scopeId = peerSnapshot == null ? 0L : peerSnapshot.epoch();
+        ChunkPeerChunkStateSnapshot knownChunkSnapshot =
+                ChunkPeerStateManager.snapshotOutboundChunk(context, scopeId, descriptor.coordinate());
         ChunkShadowSnapshot localChunkSnapshot =
-                ChunkShadowSnapshotManager.snapshotChunk(readChannelId(context), descriptor.coordinate());
+                ChunkShadowSnapshotManager.snapshotChunk(readChannelId(context), scopeId, descriptor.coordinate());
         ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult = ChunkPatchBuilder.buildPatchFromSnapshot(
                 localChunkSnapshot,
                 descriptor,
@@ -159,11 +160,12 @@ public final class ChunkTransportDispatcher {
             return OutboundChunkEncodeResult.bypass(true, "missing_snapshot_fingerprint");
         }
 
-        ChunkPeerChunkStateSnapshot knownChunkSnapshot =
-                ChunkPeerStateManager.snapshotOutboundChunk(context, descriptor.coordinate());
         ChunkPeerStateSnapshot peerSnapshot = ChunkPeerStateManager.snapshotOutboundChannel(context);
+        long scopeId = peerSnapshot == null ? 0L : peerSnapshot.epoch();
+        ChunkPeerChunkStateSnapshot knownChunkSnapshot =
+                ChunkPeerStateManager.snapshotOutboundChunk(context, scopeId, descriptor.coordinate());
         ChunkShadowSnapshot localChunkSnapshot =
-                ChunkShadowSnapshotManager.snapshotChunk(readChannelId(context), descriptor.coordinate());
+                ChunkShadowSnapshotManager.snapshotChunk(readChannelId(context), scopeId, descriptor.coordinate());
         ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult = ChunkPatchBuilder.buildPatchFromSnapshot(
                 localChunkSnapshot,
                 descriptor,
@@ -242,6 +244,7 @@ public final class ChunkTransportDispatcher {
             String channelId = readChannelId(context);
             byte[] restoredPacketBytes = ChunkShadowSnapshotManager.materializeFullChunkPacket(
                     channelId,
+                    envelope.frame().epoch(),
                     envelope.frame().coordinate(),
                     envelope.frame().fullSnapshotVersion(),
                     envelope.frame().baseSnapshotHash()
@@ -251,6 +254,7 @@ public final class ChunkTransportDispatcher {
             if (!restoredFromSnapshot) {
                 runtimeFullSnapshot = ChunkRuntimeReferenceStore.findFullSnapshot(
                         channelId,
+                        envelope.frame().epoch(),
                         envelope.frame().coordinate()
                 );
                 restoredPacketBytes = ChunkRuntimeReferenceStore.findPacketBytes(
@@ -299,8 +303,8 @@ public final class ChunkTransportDispatcher {
 
         if (envelope.frame().operation() == ChunkHotspotFrameOp.INVALIDATE) {
             ChunkPeerStateManager.invalidateOutboundChunk(context, envelope.frame());
-            ChunkRuntimeReferenceStore.invalidateFullSnapshot(readChannelId(context), envelope.frame().coordinate());
-            ChunkShadowSnapshotManager.invalidateChunk(readChannelId(context), envelope.frame().coordinate());
+            ChunkRuntimeReferenceStore.invalidateFullSnapshot(readChannelId(context), envelope.frame().epoch(), envelope.frame().coordinate());
+            ChunkShadowSnapshotManager.invalidateChunk(readChannelId(context), envelope.frame().epoch(), envelope.frame().coordinate());
             logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_INVALIDATE_FRAME_COUNT);
             return ChunkInboundDecodeResult.consumeControlFrame();
         }
@@ -445,7 +449,7 @@ public final class ChunkTransportDispatcher {
             return null;
         }
 
-        ChunkShadowSnapshot chunkSnapshot = ChunkShadowSnapshotManager.snapshotChunk(channelId, envelope.frame().coordinate());
+        ChunkShadowSnapshot chunkSnapshot = ChunkShadowSnapshotManager.snapshotChunk(channelId, envelope.frame().epoch(), envelope.frame().coordinate());
         if (!hasMatchingSnapshotFullBase(chunkSnapshot, envelope.frame())) {
             ChunkTransportControlFrameSender.sendNack(context, envelope.frame(), "runtime_patch_missing_full_base");
             return null;

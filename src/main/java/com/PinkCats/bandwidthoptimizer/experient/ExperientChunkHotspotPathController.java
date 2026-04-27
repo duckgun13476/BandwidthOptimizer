@@ -14,6 +14,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.SignBlockEntity;
@@ -53,6 +54,11 @@ public final class ExperientChunkHotspotPathController {
     private static final int BOUNDARY_HOP_MIN_SETTLE_TICKS = 1;
     private static final int BOUNDARY_HOP_FINAL_SETTLE_TICKS = 100;
     private static final int BOUNDARY_HOP_TOTAL_TELEPORTS = 24;
+    private static final int DIMENSION_HOP_TOTAL_ROUND_TRIPS = 10;
+    private static final int DIMENSION_HOP_TOTAL_SWITCHES = DIMENSION_HOP_TOTAL_ROUND_TRIPS * 2;
+    private static final int DIMENSION_HOP_MIN_SETTLE_TICKS = 40;
+    private static final int DIMENSION_HOP_FINAL_SETTLE_TICKS = 120;
+    private static final long DIMENSION_HOP_QUIET_WINDOW_MILLIS = 750L;
     private static final double TWO_POINT_REUSE_SAFE_Y = 200.0D;
     private static final double TWO_POINT_REUSE_SAFE_Y_MARGIN = 32.0D;
     private static final int LIGHT_PROBE_Y_OFFSET = 4;
@@ -114,7 +120,9 @@ public final class ExperientChunkHotspotPathController {
             return;
         }
 
-        if (ExperientChunkHotspotPathRuntimeConfig.isBoundaryHopMode()) {
+        if (ExperientChunkHotspotPathRuntimeConfig.isDimensionHopMode()) {
+            prepareDimensionHopPlayer(serverPlayer);
+        } else if (ExperientChunkHotspotPathRuntimeConfig.isBoundaryHopMode()) {
             prepareBoundaryHopPlayer(serverPlayer);
         } else if (ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()) {
             prepareTwoPointReusePlayer(serverPlayer);
@@ -183,6 +191,10 @@ public final class ExperientChunkHotspotPathController {
         if (state.delayTicksRemaining() > 0) {
             maybeEmitDelayedBeforeAckProbeBurst(serverPlayer, state);
             return state.withDelayTicksRemaining(state.delayTicksRemaining() - 1);
+        }
+
+        if (ExperientChunkHotspotPathRuntimeConfig.isDimensionHopMode()) {
+            return advanceDimensionHopPath(serverPlayer, state);
         }
 
         if (ExperientChunkHotspotPathRuntimeConfig.isBoundaryHopMode()) {
@@ -365,10 +377,76 @@ public final class ExperientChunkHotspotPathController {
         );
     }
 
+    private static PathState advanceDimensionHopPath(ServerPlayer serverPlayer, PathState state) {
+        if (!ExperientChunkHotspotFullChunkTracker.hasPlayerBeenQuietFor(
+                serverPlayer,
+                DIMENSION_HOP_QUIET_WINDOW_MILLIS
+        )) {
+            return state.withDelayTicksRemaining(1);
+        }
+
+        if (state.nextWaypointIndex() >= DIMENSION_HOP_TOTAL_SWITCHES) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ExperientChunkPath] Completed dimension-hop reuse path for player={}, roundTrips={}",
+                    serverPlayer.getGameProfile().getName(),
+                    DIMENSION_HOP_TOTAL_ROUND_TRIPS
+            );
+            disconnectPlayerAfterPathCompletion(serverPlayer);
+            return null;
+        }
+
+        ServerLevel currentLevel = serverPlayer.serverLevel();
+        ServerLevel targetLevel = resolveDimensionHopAlternateLevel(serverPlayer);
+        if (targetLevel == null) {
+            Bandwidthoptimizer.LOGGER.warn(
+                    "[ExperientChunkPath] Dimension-hop target level is missing for player={}, currentDimension={}",
+                    serverPlayer.getGameProfile().getName(),
+                    resolveDimensionName(currentLevel)
+            );
+            disconnectPlayerAfterPathCompletion(serverPlayer);
+            return null;
+        }
+
+        double targetX = state.originX();
+        double targetY = resolveSafePathY(targetLevel);
+        double targetZ = state.originZ();
+        int settleTicks = state.nextWaypointIndex() + 1 >= DIMENSION_HOP_TOTAL_SWITCHES
+                ? DIMENSION_HOP_FINAL_SETTLE_TICKS
+                : DIMENSION_HOP_MIN_SETTLE_TICKS;
+        stabilizeTwoPointReusePlayerMotion(serverPlayer);
+        boolean commandAccepted = teleportPlayerToLevel(serverPlayer, targetLevel, targetX, targetY, targetZ);
+        stabilizeTwoPointReusePlayerMotion(serverPlayer);
+        Bandwidthoptimizer.LOGGER.info(
+                "[ExperientChunkPath] dimension-hop player={}, step={}/{}, roundTrip={}/{}, from={}, to={}, target=({}, {}, {}), settleTicks={}, accepted={}",
+                serverPlayer.getGameProfile().getName(),
+                state.nextWaypointIndex() + 1,
+                DIMENSION_HOP_TOTAL_SWITCHES,
+                (state.nextWaypointIndex() / 2) + 1,
+                DIMENSION_HOP_TOTAL_ROUND_TRIPS,
+                resolveDimensionName(currentLevel),
+                resolveDimensionName(targetLevel),
+                formatDouble(targetX),
+                formatDouble(targetY),
+                formatDouble(targetZ),
+                settleTicks,
+                commandAccepted
+        );
+        return new PathState(
+                state.originX(),
+                state.originY(),
+                state.originZ(),
+                state.nextLightPulseIndex(),
+                state.nextSectionPulseIndex(),
+                state.nextBlockEntityPulseIndex(),
+                state.nextWaypointIndex() + 1,
+                settleTicks
+        );
+    }
 
     private static void maybeEmitDelayedBeforeAckProbeBurst(ServerPlayer serverPlayer, PathState state) {
         if (ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()
-                || ExperientChunkHotspotPathRuntimeConfig.isBoundaryHopMode()) {
+                || ExperientChunkHotspotPathRuntimeConfig.isBoundaryHopMode()
+                || ExperientChunkHotspotPathRuntimeConfig.isDimensionHopMode()) {
             return;
         }
         if (state.nextWaypointIndex() <= 0) {
@@ -709,6 +787,37 @@ public final class ExperientChunkHotspotPathController {
         prepareSafeChunkPathPlayer(serverPlayer, serverPlayer.getX(), safeY, serverPlayer.getZ(), "two-point-reuse");
     }
 
+    private static void prepareDimensionHopPlayer(ServerPlayer serverPlayer) {
+        if (serverPlayer == null || serverPlayer.getServer() == null) {
+            return;
+        }
+
+        ServerLevel currentLevel = serverPlayer.serverLevel();
+        if (!isDimensionHopReusableLevel(currentLevel)) {
+            ServerLevel overworld = serverPlayer.getServer().getLevel(Level.OVERWORLD);
+            if (overworld != null) {
+                teleportPlayerToLevel(
+                        serverPlayer,
+                        overworld,
+                        serverPlayer.getX(),
+                        resolveSafePathY(overworld),
+                        serverPlayer.getZ()
+                );
+                currentLevel = overworld;
+            }
+        }
+
+        double safeY = resolveSafePathY(currentLevel);
+        prepareSafeChunkPathPlayer(serverPlayer, serverPlayer.getX(), safeY, serverPlayer.getZ(), "dimension-hop");
+        Bandwidthoptimizer.LOGGER.info(
+                "[ExperientChunkPath] Prepared dimension-hop player={}, primaryDimension={}, alternateDimension={}, roundTrips={}",
+                serverPlayer.getGameProfile().getName(),
+                resolveDimensionName(serverPlayer.serverLevel()),
+                resolveDimensionName(resolveDimensionHopAlternateLevel(serverPlayer)),
+                DIMENSION_HOP_TOTAL_ROUND_TRIPS
+        );
+    }
+
     private static void prepareSafeChunkPathPlayer(
             ServerPlayer serverPlayer,
             double targetX,
@@ -754,10 +863,29 @@ public final class ExperientChunkHotspotPathController {
         }
 
         if (!ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()
-                && !ExperientChunkHotspotPathRuntimeConfig.isBoundaryHopMode()) {
+                && !ExperientChunkHotspotPathRuntimeConfig.isBoundaryHopMode()
+                && !ExperientChunkHotspotPathRuntimeConfig.isDimensionHopMode()) {
             return serverPlayer.getY();
         }
         return resolveSafePathY(serverPlayer);
+    }
+
+    private static boolean isDimensionHopReusableLevel(ServerLevel serverLevel) {
+        if (serverLevel == null) {
+            return false;
+        }
+        return Level.OVERWORLD.equals(serverLevel.dimension()) || Level.NETHER.equals(serverLevel.dimension());
+    }
+
+    private static ServerLevel resolveDimensionHopAlternateLevel(ServerPlayer serverPlayer) {
+        if (serverPlayer == null || serverPlayer.getServer() == null) {
+            return null;
+        }
+
+        if (Level.NETHER.equals(serverPlayer.serverLevel().dimension())) {
+            return serverPlayer.getServer().getLevel(Level.OVERWORLD);
+        }
+        return serverPlayer.getServer().getLevel(Level.NETHER);
     }
 
     private static double resolveSafePathY(ServerPlayer serverPlayer) {
@@ -863,6 +991,41 @@ public final class ExperientChunkHotspotPathController {
                 + " "
                 + formatDouble(targetZ);
         return serverPlayer.getServer().getCommands().performPrefixedCommand(commandSource, command) > 0;
+    }
+
+    private static boolean teleportPlayerToLevel(
+            ServerPlayer serverPlayer,
+            ServerLevel targetLevel,
+            double targetX,
+            double targetY,
+            double targetZ
+    ) {
+        if (serverPlayer == null || serverPlayer.getServer() == null || targetLevel == null) {
+            return false;
+        }
+        if (serverPlayer.serverLevel() == targetLevel) {
+            return teleportPlayer(serverPlayer, targetX, targetY, targetZ);
+        }
+
+        CommandSourceStack commandSource = serverPlayer.getServer()
+                .createCommandSourceStack()
+                .withSuppressedOutput()
+                .withPermission(4);
+        String command = "execute in "
+                + targetLevel.dimension().location()
+                + " run tp "
+                + serverPlayer.getGameProfile().getName()
+                + " "
+                + formatDouble(targetX)
+                + " "
+                + formatDouble(targetY)
+                + " "
+                + formatDouble(targetZ);
+        return serverPlayer.getServer().getCommands().performPrefixedCommand(commandSource, command) > 0;
+    }
+
+    private static String resolveDimensionName(ServerLevel serverLevel) {
+        return serverLevel == null ? "<missing>" : serverLevel.dimension().location().toString();
     }
 
 

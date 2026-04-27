@@ -53,16 +53,25 @@ public final class ChunkShadowSnapshotManager {
         return observePacket(channelId, epoch, descriptor, packet, encodedPacketBytes);
     }
 
+    public static ChunkShadowSnapshot snapshotChunk(String channelId, long scopeId, ChunkPacketCoordinate coordinate) {
+        if (channelId == null || channelId.isBlank() || coordinate == null || !coordinate.present())
+            return null;
+
+        ChannelShadowState state = CHANNEL_STATES.get(channelId);
+        return state == null ? null : state.snapshotChunk(scopeId, coordinate);
+    }
+
     public static ChunkShadowSnapshot snapshotChunk(String channelId, ChunkPacketCoordinate coordinate) {
         if (channelId == null || channelId.isBlank() || coordinate == null || !coordinate.present())
             return null;
 
         ChannelShadowState state = CHANNEL_STATES.get(channelId);
-        return state == null ? null : state.snapshotChunk(coordinate);
+        return state == null ? null : state.findLatestChunkAcrossScopes(coordinate);
     }
 
     public static byte[] materializeFullChunkPacket(
             String channelId,
+            long scopeId,
             ChunkPacketCoordinate coordinate,
             long expectedFullSnapshotVersion,
             String expectedPayloadHash
@@ -74,16 +83,37 @@ public final class ChunkShadowSnapshotManager {
         ChannelShadowState state = CHANNEL_STATES.get(channelId);
         byte[] materializedPacketBytes = state == null
                 ? null
-                : state.materializeFullChunkPacket(coordinate, expectedFullSnapshotVersion, expectedPayloadHash);
+                : state.materializeFullChunkPacket(scopeId, coordinate, expectedFullSnapshotVersion, expectedPayloadHash);
         if (materializedPacketBytes != null) {
             return materializedPacketBytes;
         }
         return ChunkGlobalSnapshotStore.findMaterializedFullChunkPacket(
                 channelId,
+                scopeId,
                 coordinate,
                 expectedFullSnapshotVersion,
                 expectedPayloadHash
         );
+    }
+
+    public static byte[] materializeFullChunkPacket(
+            String channelId,
+            ChunkPacketCoordinate coordinate,
+            long expectedFullSnapshotVersion,
+            String expectedPayloadHash
+    ) {
+        return materializeFullChunkPacket(channelId, 0L, coordinate, expectedFullSnapshotVersion, expectedPayloadHash);
+    }
+
+    public static void invalidateChunk(String channelId, long scopeId, ChunkPacketCoordinate coordinate) {
+        if (channelId == null || channelId.isBlank() || coordinate == null || !coordinate.present()) {
+            return;
+        }
+
+        ChannelShadowState state = CHANNEL_STATES.get(channelId);
+        if (state != null)
+            state.invalidateChunk(scopeId, coordinate);
+        ChunkGlobalSnapshotStore.invalidateChunk(channelId, scopeId, coordinate);
     }
 
     public static void invalidateChunk(String channelId, ChunkPacketCoordinate coordinate) {
@@ -93,8 +123,8 @@ public final class ChunkShadowSnapshotManager {
 
         ChannelShadowState state = CHANNEL_STATES.get(channelId);
         if (state != null)
-            state.invalidateChunk(coordinate);
-        ChunkGlobalSnapshotStore.invalidateChunk(channelId, coordinate);
+            state.invalidateChunkAcrossScopes(coordinate);
+        ChunkGlobalSnapshotStore.invalidateChunkAcrossScopes(channelId, coordinate);
     }
 
 
@@ -166,6 +196,7 @@ public final class ChunkShadowSnapshotManager {
     private static final class ChannelShadowState {
 
         private final Map<String, MutableChunkShadowSnapshot> chunkSnapshots = new HashMap<>();
+
         synchronized ChunkShadowSnapshot observePacket(
                 long epoch,
                 ChunkPacketDescriptor descriptor,
@@ -173,34 +204,68 @@ public final class ChunkShadowSnapshotManager {
                 byte[] encodedPacketBytes
         ) {
             MutableChunkShadowSnapshot chunkSnapshot = this.chunkSnapshots.computeIfAbsent(
-                    chunkKeyText(descriptor.coordinate()),
+                    scopedChunkKeyText(epoch, descriptor.coordinate()),
                     ignored -> new MutableChunkShadowSnapshot(descriptor.coordinate())
             );
             return chunkSnapshot.applyObservation(epoch, descriptor, packet, encodedPacketBytes);
         }
 
-        synchronized ChunkShadowSnapshot snapshotChunk(ChunkPacketCoordinate coordinate) {
-            MutableChunkShadowSnapshot snapshot = this.chunkSnapshots.get(chunkKeyText(coordinate));
+        synchronized ChunkShadowSnapshot snapshotChunk(long scopeId, ChunkPacketCoordinate coordinate) {
+            MutableChunkShadowSnapshot snapshot = this.chunkSnapshots.get(scopedChunkKeyText(scopeId, coordinate));
             return snapshot == null ? null : snapshot.toImmutable();
         }
 
+        synchronized ChunkShadowSnapshot findLatestChunkAcrossScopes(ChunkPacketCoordinate coordinate) {
+            MutableChunkShadowSnapshot latestSnapshot = null;
+            for (MutableChunkShadowSnapshot snapshot : this.chunkSnapshots.values()) {
+                if (!matchesCoordinate(snapshot, coordinate)) {
+                    continue;
+                }
+                if (latestSnapshot == null || snapshot.lastUpdatedAtMillis > latestSnapshot.lastUpdatedAtMillis) {
+                    latestSnapshot = snapshot;
+                }
+            }
+            return latestSnapshot == null ? null : latestSnapshot.toImmutable();
+        }
+
         synchronized byte[] materializeFullChunkPacket(
+                long scopeId,
                 ChunkPacketCoordinate coordinate,
                 long expectedFullSnapshotVersion,
                 String expectedPayloadHash
         ) {
-            MutableChunkShadowSnapshot snapshot = this.chunkSnapshots.get(chunkKeyText(coordinate));
-            return snapshot == null
-                    ? null
-                    : ChunkSnapshotMaterializer.materializeFullChunkPacket(
-                            snapshot.toImmutable(),
-                            expectedFullSnapshotVersion,
-                            expectedPayloadHash
-                    );
+            MutableChunkShadowSnapshot scopedSnapshot = this.chunkSnapshots.get(scopedChunkKeyText(scopeId, coordinate));
+            byte[] materializedScopedBytes = materializeMatchingSnapshot(
+                    scopedSnapshot,
+                    expectedFullSnapshotVersion,
+                    expectedPayloadHash
+            );
+            if (materializedScopedBytes != null) {
+                return materializedScopedBytes;
+            }
+
+            for (MutableChunkShadowSnapshot snapshot : this.chunkSnapshots.values()) {
+                if (!matchesCoordinate(snapshot, coordinate)) {
+                    continue;
+                }
+                byte[] materializedFallbackBytes = materializeMatchingSnapshot(
+                        snapshot,
+                        expectedFullSnapshotVersion,
+                        expectedPayloadHash
+                );
+                if (materializedFallbackBytes != null) {
+                    return materializedFallbackBytes;
+                }
+            }
+            return null;
         }
 
-        synchronized void invalidateChunk(ChunkPacketCoordinate coordinate) {
-            this.chunkSnapshots.remove(chunkKeyText(coordinate));
+        synchronized void invalidateChunk(long scopeId, ChunkPacketCoordinate coordinate) {
+            this.chunkSnapshots.remove(scopedChunkKeyText(scopeId, coordinate));
+        }
+
+        synchronized void invalidateChunkAcrossScopes(ChunkPacketCoordinate coordinate) {
+            this.chunkSnapshots.entrySet().removeIf(entry -> matchesCoordinate(entry.getValue(), coordinate));
         }
 
         synchronized ChannelSnapshotTotals snapshotTotals() {
@@ -228,6 +293,30 @@ public final class ChunkShadowSnapshotManager {
                     packetCount,
                     totalEncodedBytes
             );
+        }
+
+        private static boolean matchesCoordinate(MutableChunkShadowSnapshot snapshot, ChunkPacketCoordinate coordinate) {
+            return snapshot != null
+                    && coordinate != null
+                    && coordinate.present()
+                    && snapshot.coordinate != null
+                    && snapshot.coordinate.present()
+                    && snapshot.coordinate.chunkX() == coordinate.chunkX()
+                    && snapshot.coordinate.chunkZ() == coordinate.chunkZ();
+        }
+
+        private static byte[] materializeMatchingSnapshot(
+                MutableChunkShadowSnapshot snapshot,
+                long expectedFullSnapshotVersion,
+                String expectedPayloadHash
+        ) {
+            return snapshot == null
+                    ? null
+                    : ChunkSnapshotMaterializer.materializeFullChunkPacket(
+                            snapshot.toImmutable(),
+                            expectedFullSnapshotVersion,
+                            expectedPayloadHash
+                    );
         }
     }
 
@@ -455,6 +544,10 @@ public final class ChunkShadowSnapshotManager {
         return coordinate == null || !coordinate.present()
                 ? "<unknown>"
                 : coordinate.chunkX() + "," + coordinate.chunkZ();
+    }
+
+    private static String scopedChunkKeyText(long scopeId, ChunkPacketCoordinate coordinate) {
+        return Math.max(scopeId, 0L) + ":" + chunkKeyText(coordinate);
     }
 
     private record ChannelSnapshotTotals(

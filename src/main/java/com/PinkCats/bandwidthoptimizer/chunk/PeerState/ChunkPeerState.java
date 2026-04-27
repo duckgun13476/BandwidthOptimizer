@@ -11,7 +11,7 @@ import java.util.Map;
 final class ChunkPeerState {
 
     private final String channelId;
-    private final Map<ChunkPeerChunkKey, ChunkPeerChunkState> chunkStates = new HashMap<>();
+    private final Map<String, ChunkPeerChunkState> chunkStates = new HashMap<>();
     private long epoch;
     private long observedPacketCount;
     private long lastObservedAtMillis;
@@ -43,13 +43,11 @@ final class ChunkPeerState {
 
     synchronized long bumpEpoch() {
         this.epoch++;
-        this.chunkStates.clear();
         return this.epoch;
     }
 
     synchronized ChunkPeerStateSnapshot setEpoch(long epoch) {
         this.epoch = Math.max(epoch, 0L);
-        this.chunkStates.clear();
         return snapshot();
     }
 
@@ -72,41 +70,47 @@ final class ChunkPeerState {
     }
 
 
+
     synchronized ChunkPeerChunkStateSnapshot snapshotChunk(ChunkPacketCoordinate coordinate) {
+        return snapshotChunk(this.epoch, coordinate);
+    }
+
+    synchronized ChunkPeerChunkStateSnapshot snapshotChunk(long scopeId, ChunkPacketCoordinate coordinate) {
         if (coordinate == null || !coordinate.present()) {
             return null;
         }
 
-        ChunkPeerChunkState chunkState = this.chunkStates.get(ChunkPeerChunkKey.fromCoordinate(coordinate));
+        ChunkPeerChunkState chunkState = this.chunkStates.get(scopedChunkKeyText(scopeId, coordinate));
         return chunkState == null ? null : chunkState.snapshotForQuery();
     }
 
     synchronized ChunkPeerChunkStateSnapshot acknowledgeChunk(
+            long scopeId,
             ChunkPacketCoordinate coordinate,
             long fullSnapshotVersion,
             String acknowledgedSnapshotHash
     ) {
-        ChunkPeerChunkState chunkState = getChunkStateForControl(coordinate);
+        ChunkPeerChunkState chunkState = getChunkStateForControl(scopeId, coordinate);
         return chunkState == null ? null : chunkState.recordAcknowledgement(fullSnapshotVersion, acknowledgedSnapshotHash);
     }
 
-    synchronized ChunkPeerChunkStateSnapshot negativeAcknowledgeChunk(ChunkPacketCoordinate coordinate) {
-        ChunkPeerChunkState chunkState = getChunkStateForControl(coordinate);
+    synchronized ChunkPeerChunkStateSnapshot negativeAcknowledgeChunk(long scopeId, ChunkPacketCoordinate coordinate) {
+        ChunkPeerChunkState chunkState = getChunkStateForControl(scopeId, coordinate);
         return chunkState == null ? null : chunkState.recordNegativeAcknowledgement();
     }
 
 
-    synchronized ChunkPeerChunkStateSnapshot invalidateChunk(ChunkPacketCoordinate coordinate) {
+    synchronized ChunkPeerChunkStateSnapshot invalidateChunk(long scopeId, ChunkPacketCoordinate coordinate) {
         if (coordinate == null || !coordinate.present()) {
             return null;
         }
 
-        ChunkPeerChunkState chunkState = this.chunkStates.remove(ChunkPeerChunkKey.fromCoordinate(coordinate));
+        ChunkPeerChunkState chunkState = this.chunkStates.remove(scopedChunkKeyText(scopeId, coordinate));
         return chunkState == null ? null : chunkState.recordInvalidate();
     }
 
-    synchronized ChunkPeerChunkStateSnapshot markChunkAwaitingFullReplay(ChunkPacketCoordinate coordinate) {
-        ChunkPeerChunkState chunkState = getChunkStateForControl(coordinate);
+    synchronized ChunkPeerChunkStateSnapshot markChunkAwaitingFullReplay(long scopeId, ChunkPacketCoordinate coordinate) {
+        ChunkPeerChunkState chunkState = getChunkStateForControl(scopeId, coordinate);
         return chunkState == null ? null : chunkState.recordWatchBoundaryRetainCache();
     }
 
@@ -119,14 +123,22 @@ final class ChunkPeerState {
             return null;
 
         ChunkPeerChunkKey chunkKey = ChunkPeerChunkKey.fromCoordinate(descriptor.coordinate());
-        ChunkPeerChunkState chunkState = this.chunkStates.computeIfAbsent(chunkKey, ChunkPeerChunkState::new);
+        ChunkPeerChunkState chunkState = this.chunkStates.computeIfAbsent(
+                scopedChunkKeyText(this.epoch, descriptor.coordinate()),
+                ignored -> new ChunkPeerChunkState(chunkKey)
+        );
         return chunkState.recordObservation(descriptor, snapshotFingerprint, this.epoch, this.observedPacketCount);
     }
 
-    private ChunkPeerChunkState getChunkStateForControl(ChunkPacketCoordinate coordinate) {
+    private ChunkPeerChunkState getChunkStateForControl(long scopeId, ChunkPacketCoordinate coordinate) {
         if (coordinate == null || !coordinate.present()) {
             return null;
         }
-        return this.chunkStates.get(ChunkPeerChunkKey.fromCoordinate(coordinate));
+        return this.chunkStates.get(scopedChunkKeyText(scopeId, coordinate));
+    }
+
+    private static String scopedChunkKeyText(long scopeId, ChunkPacketCoordinate coordinate) {
+        ChunkPeerChunkKey chunkKey = ChunkPeerChunkKey.fromCoordinate(coordinate);
+        return Math.max(scopeId, 0L) + ":" + chunkKey.chunkX() + "," + chunkKey.chunkZ();
     }
 }

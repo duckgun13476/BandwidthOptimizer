@@ -99,7 +99,7 @@ public final class ChunkGlobalSnapshotStore {
 
         synchronized (LOCK) {
             ChunkMaterializedSnapshotRecord materializedSnapshotRecord = buildMaterializedSnapshotRecord(channelId, snapshot);
-            String chunkStoreKey = buildChunkVersionStoreKey(channelId, snapshot.coordinate());
+            String chunkStoreKey = buildChunkVersionStoreKey(channelId, snapshot.epoch(), snapshot.coordinate());
             LinkedHashMap<Long, ChunkMaterializedSnapshotRecord> versionRecords = MATERIALIZED_SNAPSHOTS.computeIfAbsent(
                     chunkStoreKey,
                     ignored -> new LinkedHashMap<>(16, 0.75F, true)
@@ -136,6 +136,7 @@ public final class ChunkGlobalSnapshotStore {
 
     public static byte[] findMaterializedFullChunkPacket(
             String channelId,
+            long scopeId,
             ChunkPacketCoordinate coordinate,
             long expectedFullSnapshotVersion,
             String expectedPayloadHash
@@ -149,23 +150,48 @@ public final class ChunkGlobalSnapshotStore {
         }
 
         synchronized (LOCK) {
-            LinkedHashMap<Long, ChunkMaterializedSnapshotRecord> versionRecords =
-                    MATERIALIZED_SNAPSHOTS.get(buildChunkVersionStoreKey(channelId, coordinate));
-            if (versionRecords == null) {
-                return null;
+            ChunkMaterializedSnapshotRecord exactScopeRecord = findMaterializedSnapshotRecord(
+                    buildChunkVersionStoreKey(channelId, scopeId, coordinate),
+                    expectedFullSnapshotVersion,
+                    expectedPayloadHash
+            );
+            if (exactScopeRecord != null) {
+                byte[] exactScopeBytes = readMaterializedBlobBytes(exactScopeRecord);
+                if (exactScopeBytes != null) {
+                    return exactScopeBytes;
+                }
             }
 
-            ChunkMaterializedSnapshotRecord materializedSnapshotRecord = versionRecords.get(expectedFullSnapshotVersion);
-            if (materializedSnapshotRecord == null || !materializedSnapshotRecord.matchesFullSnapshotHash(expectedPayloadHash)) {
-                return null;
+            String channelScopePrefix = channelId + ":";
+            for (Map.Entry<String, LinkedHashMap<Long, ChunkMaterializedSnapshotRecord>> entry : MATERIALIZED_SNAPSHOTS.entrySet()) {
+                if (!entry.getKey().startsWith(channelScopePrefix)) {
+                    continue;
+                }
+                ChunkMaterializedSnapshotRecord fallbackRecord = findMaterializedSnapshotRecord(
+                        entry.getValue(),
+                        coordinate,
+                        expectedFullSnapshotVersion,
+                        expectedPayloadHash
+                );
+                if (fallbackRecord == null) {
+                    continue;
+                }
+                byte[] fallbackBytes = readMaterializedBlobBytes(fallbackRecord);
+                if (fallbackBytes != null) {
+                    return fallbackBytes;
+                }
             }
-
-            ChunkGlobalSnapshotRecord blobRecord = SNAPSHOT_RECORDS.get(materializedSnapshotRecord.fullSnapshotHash());
-            if (blobRecord == null) {
-                return null;
-            }
-            return blobRecord.copyBlobHandle().copyBlobBytes();
+            return null;
         }
+    }
+
+    public static byte[] findMaterializedFullChunkPacket(
+            String channelId,
+            ChunkPacketCoordinate coordinate,
+            long expectedFullSnapshotVersion,
+            String expectedPayloadHash
+    ) {
+        return findMaterializedFullChunkPacket(channelId, 0L, coordinate, expectedFullSnapshotVersion, expectedPayloadHash);
     }
 
     public static ChunkBlobHandle findBlob(String payloadHash) {
@@ -179,14 +205,42 @@ public final class ChunkGlobalSnapshotStore {
         }
     }
 
-    public static void invalidateChunk(String channelId, ChunkPacketCoordinate coordinate) {
+    public static void invalidateChunk(String channelId, long scopeId, ChunkPacketCoordinate coordinate) {
         if (channelId == null || channelId.isBlank() || coordinate == null || !coordinate.present()) {
             return;
         }
 
         synchronized (LOCK) {
-            releaseChunkVersionStore(buildChunkVersionStoreKey(channelId, coordinate), "invalidate_chunk");
+            releaseChunkVersionStore(buildChunkVersionStoreKey(channelId, scopeId, coordinate), "invalidate_chunk");
             evictUnreferencedBlobsToBudget("invalidate_chunk");
+        }
+    }
+
+    public static void invalidateChunk(String channelId, ChunkPacketCoordinate coordinate) {
+        invalidateChunk(channelId, 0L, coordinate);
+    }
+
+    public static void invalidateChunkAcrossScopes(String channelId, ChunkPacketCoordinate coordinate) {
+        if (channelId == null || channelId.isBlank() || coordinate == null || !coordinate.present()) {
+            return;
+        }
+
+        synchronized (LOCK) {
+            String channelPrefix = channelId + ":";
+            Iterator<Map.Entry<String, LinkedHashMap<Long, ChunkMaterializedSnapshotRecord>>> iterator =
+                    MATERIALIZED_SNAPSHOTS.entrySet().iterator();
+            while (iterator.hasNext()) {
+                Map.Entry<String, LinkedHashMap<Long, ChunkMaterializedSnapshotRecord>> entry = iterator.next();
+                if (!entry.getKey().startsWith(channelPrefix)) {
+                    continue;
+                }
+                LinkedHashMap<Long, ChunkMaterializedSnapshotRecord> versionRecords = entry.getValue();
+                if (!containsCoordinate(versionRecords, coordinate)) {
+                    continue;
+                }
+                releaseChunkVersionStore(entry.getKey(), "invalidate_chunk_across_scopes", versionRecords, iterator);
+            }
+            evictUnreferencedBlobsToBudget("invalidate_chunk_across_scopes");
         }
     }
 
@@ -248,6 +302,7 @@ public final class ChunkGlobalSnapshotStore {
 
         return new ChunkMaterializedSnapshotRecord(
                 channelId,
+                snapshot.epoch(),
                 snapshot.coordinate(),
                 snapshot.fullSnapshotVersion(),
                 snapshot.fullSnapshotHash(),
@@ -435,8 +490,8 @@ public final class ChunkGlobalSnapshotStore {
         );
     }
 
-    private static String buildChunkVersionStoreKey(String channelId, ChunkPacketCoordinate coordinate) {
-        return channelId + ":" + chunkKeyText(coordinate);
+    private static String buildChunkVersionStoreKey(String channelId, long scopeId, ChunkPacketCoordinate coordinate) {
+        return channelId + ":" + Math.max(scopeId, 0L) + ":" + chunkKeyText(coordinate);
     }
 
     private static String buildMaterializedPacketKey(ChunkLaneKind laneKind, String semanticKey) {
@@ -475,9 +530,73 @@ public final class ChunkGlobalSnapshotStore {
         return hashHex.length() <= 12 ? hashHex : hashHex.substring(0, 12);
     }
 
+    private static ChunkMaterializedSnapshotRecord findMaterializedSnapshotRecord(
+            String chunkStoreKey,
+            long expectedFullSnapshotVersion,
+            String expectedPayloadHash
+    ) {
+        LinkedHashMap<Long, ChunkMaterializedSnapshotRecord> versionRecords = MATERIALIZED_SNAPSHOTS.get(chunkStoreKey);
+        if (versionRecords == null) {
+            return null;
+        }
+        return findMaterializedSnapshotRecord(versionRecords, null, expectedFullSnapshotVersion, expectedPayloadHash);
+    }
+
+    private static ChunkMaterializedSnapshotRecord findMaterializedSnapshotRecord(
+            LinkedHashMap<Long, ChunkMaterializedSnapshotRecord> versionRecords,
+            ChunkPacketCoordinate expectedCoordinate,
+            long expectedFullSnapshotVersion,
+            String expectedPayloadHash
+    ) {
+        if (versionRecords == null) {
+            return null;
+        }
+        ChunkMaterializedSnapshotRecord materializedSnapshotRecord = versionRecords.get(expectedFullSnapshotVersion);
+        if (materializedSnapshotRecord == null) {
+            return null;
+        }
+        if (expectedCoordinate != null && !sameCoordinate(materializedSnapshotRecord.coordinate(), expectedCoordinate)) {
+            return null;
+        }
+        return materializedSnapshotRecord.matchesFullSnapshotHash(expectedPayloadHash) ? materializedSnapshotRecord : null;
+    }
+
+    private static byte[] readMaterializedBlobBytes(ChunkMaterializedSnapshotRecord materializedSnapshotRecord) {
+        if (materializedSnapshotRecord == null) {
+            return null;
+        }
+        ChunkGlobalSnapshotRecord blobRecord = SNAPSHOT_RECORDS.get(materializedSnapshotRecord.fullSnapshotHash());
+        return blobRecord == null ? null : blobRecord.copyBlobHandle().copyBlobBytes();
+    }
+
+    private static boolean containsCoordinate(
+            LinkedHashMap<Long, ChunkMaterializedSnapshotRecord> versionRecords,
+            ChunkPacketCoordinate coordinate
+    ) {
+        if (versionRecords == null || coordinate == null || !coordinate.present()) {
+            return false;
+        }
+        for (ChunkMaterializedSnapshotRecord record : versionRecords.values()) {
+            if (sameCoordinate(record.coordinate(), coordinate)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean sameCoordinate(ChunkPacketCoordinate left, ChunkPacketCoordinate right) {
+        return left != null
+                && right != null
+                && left.present()
+                && right.present()
+                && left.chunkX() == right.chunkX()
+                && left.chunkZ() == right.chunkZ();
+    }
+
     private static final class ChunkMaterializedSnapshotRecord {
 
         private final String channelId;
+        private final long scopeId;
         private final ChunkPacketCoordinate coordinate;
         private final long fullSnapshotVersion;
         private final String fullSnapshotHash;
@@ -490,6 +609,7 @@ public final class ChunkGlobalSnapshotStore {
 
         private ChunkMaterializedSnapshotRecord(
                 String channelId,
+                long scopeId,
                 ChunkPacketCoordinate coordinate,
                 long fullSnapshotVersion,
                 String fullSnapshotHash,
@@ -501,6 +621,7 @@ public final class ChunkGlobalSnapshotStore {
                 long updatedAtMillis
         ) {
             this.channelId = channelId == null ? "" : channelId;
+            this.scopeId = Math.max(scopeId, 0L);
             this.coordinate = coordinate == null ? ChunkPacketCoordinate.unknown() : coordinate;
             this.fullSnapshotVersion = Math.max(fullSnapshotVersion, 0L);
             this.fullSnapshotHash = fullSnapshotHash == null ? "" : fullSnapshotHash;

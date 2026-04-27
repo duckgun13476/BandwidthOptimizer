@@ -21,9 +21,9 @@ public final class ChunkLifecycleCoordinator {
 
     private ChunkLifecycleCoordinator() {}
 
+
     public static void onPlayerLogin(ServerPlayer player) {
-        ChunkPeerStateManager.bumpPlayerEpoch(player, "login");
-        ChunkPeerStateManager.attachPlayerEpochToChannel(player, "login");
+        ChunkPeerStateManager.bindPlayerDimensionScope(player, "login");
         rememberPlayerDimension(player);
     }
 
@@ -42,16 +42,15 @@ public final class ChunkLifecycleCoordinator {
                     player.getUUID(),
                     currentDimension.location()
             );
+            ChunkPeerStateManager.bindPlayerDimensionScope(player, "respawn_same_dimension_rebind");
         } else {
-            ChunkPeerStateManager.bumpPlayerEpoch(player, "respawn_dimension_reset");
-            ChunkPeerStateManager.attachPlayerEpochToChannel(player, "respawn_dimension_reset");
+            ChunkPeerStateManager.bindPlayerDimensionScope(player, "respawn_dimension_scope");
         }
         rememberPlayerDimension(player);
     }
 
     public static void onPlayerDimensionChange(ServerPlayer player) {
-        ChunkPeerStateManager.bumpPlayerEpoch(player, "dimension_change");
-        ChunkPeerStateManager.attachPlayerEpochToChannel(player, "dimension_change");
+        ChunkPeerStateManager.bindPlayerDimensionScope(player, "dimension_change");
         rememberPlayerDimension(player);
     }
 
@@ -61,9 +60,9 @@ public final class ChunkLifecycleCoordinator {
     }
 
 
+
     public static void prepareForClientRespawnBoundary(ServerPlayer player) {
-        ChunkPeerStateManager.bumpPlayerEpoch(player, "prepare_client_respawn_boundary");
-        ChunkPeerStateManager.attachPlayerEpochToChannel(player, "prepare_client_respawn_boundary");
+        ChunkPeerStateManager.bindPlayerDimensionScope(player, "prepare_client_respawn_boundary");
         rememberPlayerDimension(player);
     }
 
