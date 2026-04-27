@@ -27,8 +27,6 @@ public final class ChunkTransportBoundaryController {
 
     private static final int LOGIN_WARMUP_CHUNK_PACKETS = 24;
     private static final int RESPAWN_WARMUP_CHUNK_PACKETS = 24;
-    private static final int CACHE_CONTROL_WARMUP_CHUNK_PACKETS = 16;
-    private static final int FORGET_CHUNK_WARMUP_CHUNK_PACKETS = 4;
     private static final int MAX_TRACKED_FAILED_CHUNKS = 512;
     private static final int CHANNEL_FAILURE_THRESHOLD = 3;
     private static final long CHUNK_FAILURE_DISABLE_NANOS = TimeUnit.SECONDS.toNanos(15L);
@@ -85,6 +83,7 @@ public final class ChunkTransportBoundaryController {
         getOrCreateBoundaryState(channel).recordRuntimeFailure(coordinate, reason);
     }
 
+    // Chunk border controller
     private static BoundaryTrigger resolveBoundaryTrigger(String protocolName, Packet<?> packet) {
         if (protocolName == null || !"PLAY".equalsIgnoreCase(protocolName)) {
             return new BoundaryTrigger(true, 0, "protocol_boundary_non_play");
@@ -97,10 +96,10 @@ public final class ChunkTransportBoundaryController {
             return new BoundaryTrigger(true, RESPAWN_WARMUP_CHUNK_PACKETS, "respawn_boundary");
         }
         if (packet instanceof ClientboundSetChunkCacheCenterPacket || packet instanceof ClientboundSetChunkCacheRadiusPacket) {
-            return new BoundaryTrigger(true, CACHE_CONTROL_WARMUP_CHUNK_PACKETS, "chunk_cache_control_boundary");
+            return new BoundaryTrigger(true, 0, "chunk_cache_control_boundary");
         }
         if (packet instanceof ClientboundForgetLevelChunkPacket) {
-            return new BoundaryTrigger(true, FORGET_CHUNK_WARMUP_CHUNK_PACKETS, "forget_chunk_boundary");
+            return new BoundaryTrigger(true, 0, "forget_chunk_boundary");
         }
         if (packet instanceof BundlePacket<?> || packet instanceof BundleDelimiterPacket) {
             return new BoundaryTrigger(true, 0, "bundle_boundary");
