@@ -28,6 +28,8 @@ import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -59,6 +61,9 @@ public final class ExperientChunkHotspotPathController {
     private static final int DIMENSION_HOP_MIN_SETTLE_TICKS = 40;
     private static final int DIMENSION_HOP_FINAL_SETTLE_TICKS = 120;
     private static final long DIMENSION_HOP_QUIET_WINDOW_MILLIS = 750L;
+    private static final int RANGE_BOUNCE_MIN_SETTLE_TICKS = 10;
+    private static final int RANGE_BOUNCE_FINAL_SETTLE_TICKS = 100;
+    private static final long RANGE_BOUNCE_QUIET_WINDOW_MILLIS = 500L;
     private static final double TWO_POINT_REUSE_SAFE_Y = 200.0D;
     private static final double TWO_POINT_REUSE_SAFE_Y_MARGIN = 32.0D;
     private static final int LIGHT_PROBE_Y_OFFSET = 4;
@@ -95,16 +100,17 @@ public final class ExperientChunkHotspotPathController {
     private static final int SECTION_PROBE_DEPTH = 6;
 
     private static final TeleportWaypoint[] TELEPORT_SEQUENCE = {
-            new TeleportWaypoint(320.0D, 0.0D, 12, true),
-            new TeleportWaypoint(0.0D, 0.0D, 8, false),
-            new TeleportWaypoint(320.0D, 0.0D, 8, false),
-            new TeleportWaypoint(0.0D, 0.0D, 12, false),
-            new TeleportWaypoint(0.0D, 320.0D, 12, true),
-            new TeleportWaypoint(0.0D, 0.0D, 8, false),
-            new TeleportWaypoint(0.0D, 320.0D, 8, false),
-            new TeleportWaypoint(0.0D, 0.0D, FINAL_RETURN_SETTLE_TICKS, false)
+            new TeleportWaypoint(320.0D, 0.0D, 0.0D, 12, true),
+            new TeleportWaypoint(0.0D, 0.0D, 0.0D, 8, false),
+            new TeleportWaypoint(320.0D, 0.0D, 0.0D, 8, false),
+            new TeleportWaypoint(0.0D, 0.0D, 0.0D, 12, false),
+            new TeleportWaypoint(0.0D, 0.0D, 320.0D, 12, true),
+            new TeleportWaypoint(0.0D, 0.0D, 0.0D, 8, false),
+            new TeleportWaypoint(0.0D, 0.0D, 320.0D, 8, false),
+            new TeleportWaypoint(0.0D, 0.0D, 0.0D, FINAL_RETURN_SETTLE_TICKS, false)
     };
     private static final TeleportWaypoint[] TWO_POINT_REUSE_SEQUENCE = createTwoPointReuseSequence();
+    private static final TeleportWaypoint[] RANGE_BOUNCE_SEQUENCE = createRangeBounceSequence();
 
     private static final Map<UUID, PathState> PLAYER_PATH_STATES = new ConcurrentHashMap<>();
 
@@ -124,6 +130,8 @@ public final class ExperientChunkHotspotPathController {
             prepareDimensionHopPlayer(serverPlayer);
         } else if (ExperientChunkHotspotPathRuntimeConfig.isBoundaryHopMode()) {
             prepareBoundaryHopPlayer(serverPlayer);
+        } else if (ExperientChunkHotspotPathRuntimeConfig.isRangeBounceMode()) {
+            prepareRangeBouncePlayer(serverPlayer);
         } else if (ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()) {
             prepareTwoPointReusePlayer(serverPlayer);
         }
@@ -201,6 +209,10 @@ public final class ExperientChunkHotspotPathController {
             return advanceBoundaryHopPath(serverPlayer, state);
         }
 
+        if (ExperientChunkHotspotPathRuntimeConfig.isRangeBounceMode()) {
+            return advanceRangeBouncePath(serverPlayer, state);
+        }
+
         if (ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()) {
             return advanceTwoPointReusePath(serverPlayer, state);
         }
@@ -244,7 +256,7 @@ public final class ExperientChunkHotspotPathController {
 
         TeleportWaypoint waypoint = TELEPORT_SEQUENCE[state.nextWaypointIndex()];
         double targetX = state.originX() + waypoint.offsetX();
-        double targetY = state.originY();
+        double targetY = state.originY() + waypoint.offsetY();
         double targetZ = state.originZ() + waypoint.offsetZ();
         boolean commandAccepted = teleportPlayer(serverPlayer, targetX, targetY, targetZ);
         Bandwidthoptimizer.LOGGER.info(
@@ -290,7 +302,7 @@ public final class ExperientChunkHotspotPathController {
 
         TeleportWaypoint waypoint = TWO_POINT_REUSE_SEQUENCE[state.nextWaypointIndex()];
         double targetX = state.originX() + waypoint.offsetX();
-        double targetY = state.originY();
+        double targetY = state.originY() + waypoint.offsetY();
         double targetZ = state.originZ() + waypoint.offsetZ();
         stabilizeTwoPointReusePlayerMotion(serverPlayer);
         boolean commandAccepted = teleportPlayer(serverPlayer, targetX, targetY, targetZ);
@@ -303,6 +315,56 @@ public final class ExperientChunkHotspotPathController {
                 formatDouble(targetX),
                 formatDouble(targetY),
                 formatDouble(targetZ),
+                waypoint.settleTicks(),
+                commandAccepted
+        );
+        return new PathState(
+                state.originX(),
+                state.originY(),
+                state.originZ(),
+                state.nextLightPulseIndex(),
+                state.nextSectionPulseIndex(),
+                state.nextBlockEntityPulseIndex(),
+                state.nextWaypointIndex() + 1,
+                waypoint.settleTicks()
+        );
+    }
+
+    private static PathState advanceRangeBouncePath(ServerPlayer serverPlayer, PathState state) {
+        if (!ExperientChunkHotspotFullChunkTracker.hasPlayerBeenQuietFor(
+                serverPlayer,
+                RANGE_BOUNCE_QUIET_WINDOW_MILLIS
+        )) {
+            return state.withDelayTicksRemaining(1);
+        }
+
+        if (state.nextWaypointIndex() >= RANGE_BOUNCE_SEQUENCE.length) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ExperientChunkPath] Completed range-bounce reuse path for player={}, roundTrips={}",
+                    serverPlayer.getGameProfile().getName(),
+                    ExperientChunkHotspotPathRuntimeConfig.rangeRoundTrips()
+            );
+            disconnectPlayerAfterPathCompletion(serverPlayer);
+            return null;
+        }
+
+        TeleportWaypoint waypoint = RANGE_BOUNCE_SEQUENCE[state.nextWaypointIndex()];
+        double targetX = state.originX() + waypoint.offsetX();
+        double targetY = state.originY() + waypoint.offsetY();
+        double targetZ = state.originZ() + waypoint.offsetZ();
+        stabilizeTwoPointReusePlayerMotion(serverPlayer);
+        boolean commandAccepted = teleportPlayer(serverPlayer, targetX, targetY, targetZ);
+        stabilizeTwoPointReusePlayerMotion(serverPlayer);
+        Bandwidthoptimizer.LOGGER.info(
+                "[ExperientChunkPath] range-bounce player={}, step={}/{}, target=({}, {}, {}), targetChunk=({}, {}), settleTicks={}, accepted={}",
+                serverPlayer.getGameProfile().getName(),
+                state.nextWaypointIndex() + 1,
+                RANGE_BOUNCE_SEQUENCE.length,
+                formatDouble(targetX),
+                formatDouble(targetY),
+                formatDouble(targetZ),
+                resolveChunkXForPosition(targetX),
+                floorToBlock(targetZ) >> 4,
                 waypoint.settleTicks(),
                 commandAccepted
         );
@@ -446,7 +508,8 @@ public final class ExperientChunkHotspotPathController {
     private static void maybeEmitDelayedBeforeAckProbeBurst(ServerPlayer serverPlayer, PathState state) {
         if (ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()
                 || ExperientChunkHotspotPathRuntimeConfig.isBoundaryHopMode()
-                || ExperientChunkHotspotPathRuntimeConfig.isDimensionHopMode()) {
+                || ExperientChunkHotspotPathRuntimeConfig.isDimensionHopMode()
+                || ExperientChunkHotspotPathRuntimeConfig.isRangeBounceMode()) {
             return;
         }
         if (state.nextWaypointIndex() <= 0) {
@@ -460,7 +523,7 @@ public final class ExperientChunkHotspotPathController {
         }
 
         double targetX = state.originX() + previousWaypoint.offsetX();
-        double targetY = state.originY();
+        double targetY = state.originY() + previousWaypoint.offsetY();
         double targetZ = state.originZ() + previousWaypoint.offsetZ();
         emitBeforeAckProbeBurst(serverPlayer, targetX, targetY, targetZ);
         Bandwidthoptimizer.LOGGER.info(
@@ -778,6 +841,30 @@ public final class ExperientChunkHotspotPathController {
         );
     }
 
+    private static void prepareRangeBouncePlayer(ServerPlayer serverPlayer) {
+        if (serverPlayer == null) {
+            return;
+        }
+
+        double startX = ExperientChunkHotspotPathRuntimeConfig.rangeStartX();
+        double startY = ExperientChunkHotspotPathRuntimeConfig.rangeStartY();
+        double startZ = ExperientChunkHotspotPathRuntimeConfig.rangeStartZ();
+        prepareSafeChunkPathPlayer(serverPlayer, startX, startY, startZ, "range-bounce");
+        Bandwidthoptimizer.LOGGER.info(
+                "[ExperientChunkPath] Prepared range-bounce player={}, start=({}, {}, {}), end=({}, {}, {}), stepBlocks={}, roundTrips={}, waypointCount={}",
+                serverPlayer.getGameProfile().getName(),
+                formatDouble(startX),
+                formatDouble(startY),
+                formatDouble(startZ),
+                formatDouble(ExperientChunkHotspotPathRuntimeConfig.rangeEndX()),
+                formatDouble(ExperientChunkHotspotPathRuntimeConfig.rangeEndY()),
+                formatDouble(ExperientChunkHotspotPathRuntimeConfig.rangeEndZ()),
+                formatDouble(ExperientChunkHotspotPathRuntimeConfig.rangeStepBlocks()),
+                ExperientChunkHotspotPathRuntimeConfig.rangeRoundTrips(),
+                RANGE_BOUNCE_SEQUENCE.length
+        );
+    }
+
     private static void prepareTwoPointReusePlayer(ServerPlayer serverPlayer) {
         if (serverPlayer == null) {
             return;
@@ -1047,9 +1134,105 @@ public final class ExperientChunkHotspotPathController {
             int settleTicks = index + 1 >= sequence.length
                     ? TWO_POINT_REUSE_FINAL_SETTLE_TICKS
                     : TWO_POINT_REUSE_MIN_SETTLE_TICKS;
-            sequence[index] = new TeleportWaypoint(offsetX, 0.0D, settleTicks, false);
+            sequence[index] = new TeleportWaypoint(offsetX, 0.0D, 0.0D, settleTicks, false);
         }
         return sequence;
+    }
+
+    private static TeleportWaypoint[] createRangeBounceSequence() {
+        double startX = ExperientChunkHotspotPathRuntimeConfig.rangeStartX();
+        double startY = ExperientChunkHotspotPathRuntimeConfig.rangeStartY();
+        double startZ = ExperientChunkHotspotPathRuntimeConfig.rangeStartZ();
+        double endX = ExperientChunkHotspotPathRuntimeConfig.rangeEndX();
+        double endY = ExperientChunkHotspotPathRuntimeConfig.rangeEndY();
+        double endZ = ExperientChunkHotspotPathRuntimeConfig.rangeEndZ();
+        double deltaX = endX - startX;
+        double deltaY = endY - startY;
+        double deltaZ = endZ - startZ;
+        double pathLength = Math.sqrt((deltaX * deltaX) + (deltaY * deltaY) + (deltaZ * deltaZ));
+        if (pathLength <= 0.0001D) {
+            return new TeleportWaypoint[0];
+        }
+
+        double unitX = deltaX / pathLength;
+        double unitY = deltaY / pathLength;
+        double unitZ = deltaZ / pathLength;
+        double stepBlocks = ExperientChunkHotspotPathRuntimeConfig.rangeStepBlocks();
+        int roundTrips = ExperientChunkHotspotPathRuntimeConfig.rangeRoundTrips();
+        int totalLegCount = Math.max(roundTrips, 1) * 2;
+        List<TeleportWaypoint> sequence = new ArrayList<>();
+        boolean forwardLeg = true;
+        for (int legIndex = 0; legIndex < totalLegCount; legIndex++) {
+            appendRangeBounceLeg(sequence, unitX, unitY, unitZ, pathLength, stepBlocks, forwardLeg);
+            forwardLeg = !forwardLeg;
+        }
+        if (sequence.isEmpty()) {
+            return new TeleportWaypoint[0];
+        }
+
+        ArrayList<TeleportWaypoint> finalizedSequence = new ArrayList<>(sequence.size());
+        for (int index = 0; index < sequence.size(); index++) {
+            TeleportWaypoint waypoint = sequence.get(index);
+            int settleTicks = index + 1 >= sequence.size()
+                    ? RANGE_BOUNCE_FINAL_SETTLE_TICKS
+                    : RANGE_BOUNCE_MIN_SETTLE_TICKS;
+            finalizedSequence.add(
+                    new TeleportWaypoint(
+                            waypoint.offsetX(),
+                            waypoint.offsetY(),
+                            waypoint.offsetZ(),
+                            settleTicks,
+                            false
+                    )
+            );
+        }
+        return finalizedSequence.toArray(TeleportWaypoint[]::new);
+    }
+
+    private static void appendRangeBounceLeg(
+            List<TeleportWaypoint> sequence,
+            double unitX,
+            double unitY,
+            double unitZ,
+            double pathLength,
+            double stepBlocks,
+            boolean forwardLeg
+    ) {
+        if (sequence == null || pathLength <= 0.0001D || stepBlocks <= 0.0D) {
+            return;
+        }
+
+        if (forwardLeg) {
+            double travelledBlocks = stepBlocks;
+            while (travelledBlocks < pathLength) {
+                sequence.add(buildRangeBounceWaypoint(unitX, unitY, unitZ, travelledBlocks));
+                travelledBlocks += stepBlocks;
+            }
+            sequence.add(buildRangeBounceWaypoint(unitX, unitY, unitZ, pathLength));
+            return;
+        }
+
+        double travelledBlocks = Math.max(pathLength - stepBlocks, 0.0D);
+        while (travelledBlocks > 0.0D) {
+            sequence.add(buildRangeBounceWaypoint(unitX, unitY, unitZ, travelledBlocks));
+            travelledBlocks -= stepBlocks;
+        }
+        sequence.add(buildRangeBounceWaypoint(unitX, unitY, unitZ, 0.0D));
+    }
+
+    private static TeleportWaypoint buildRangeBounceWaypoint(
+            double unitX,
+            double unitY,
+            double unitZ,
+            double travelledBlocks
+    ) {
+        return new TeleportWaypoint(
+                unitX * travelledBlocks,
+                unitY * travelledBlocks,
+                unitZ * travelledBlocks,
+                RANGE_BOUNCE_MIN_SETTLE_TICKS,
+                false
+        );
     }
 
     private record PathState(
@@ -1079,6 +1262,7 @@ public final class ExperientChunkHotspotPathController {
 
     private record TeleportWaypoint(
             double offsetX,
+            double offsetY,
             double offsetZ,
             int settleTicks,
             boolean triggerBeforeAckProbeBurst

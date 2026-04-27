@@ -34,6 +34,7 @@ public final class ChannelTransportHooks {
 
     private ChannelTransportHooks() {}
 
+    // transport and chunk transport handle
     public static void tryToWrapOutboundPacket(ChannelHandlerContext context, Packet<?> packet, ByteBuf out, int startIndexInclusive) {
         if (context == null || out == null) {
             return;
@@ -55,12 +56,15 @@ public final class ChannelTransportHooks {
                 originalPacketBytes
         );
         byte[] chunkTransportEncodedBytes = chunkEncodeResult.copyEncodedPacketBytes();
-        ChunkOutboundObservationService.observeOutboundPacket(
-                context,
-                protocolName,
-                packet,
-                originalPacketBytes
-        );
+        if (chunkEncodeResult.chunkProtocolApplied()) {
+
+            ChunkOutboundObservationService.observeOutboundPacket(
+                    context,
+                    protocolName,
+                    packet,
+                    originalPacketBytes
+            );
+        }
         if (boundaryDecision.forceDirectTransport()) {
             ChannelTransportBatchManager.flushOutboundBatchNow(context);
         }

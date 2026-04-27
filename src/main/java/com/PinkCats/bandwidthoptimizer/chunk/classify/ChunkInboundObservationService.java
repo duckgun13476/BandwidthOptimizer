@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.classify;
 
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
+import com.PinkCats.bandwidthoptimizer.chunk.budget.ChunkClientCacheBudgetManager;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketClassifier;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.packet.ClientboundPlayPacketCodec;
@@ -30,6 +31,7 @@ public final class ChunkInboundObservationService {
         String protocolName = pendingFrame.protocolName();
         long epoch = readCurrentEpoch(context);
         String channelId = context.channel().id().asLongText();
+        boolean observedChunkPacket = false;
         for (int index = outputSizeBeforeDecode; index < out.size(); index++) {
             Object decodedObject = out.get(index);
             if (!(decodedObject instanceof Packet<?> packet)) {
@@ -49,6 +51,11 @@ public final class ChunkInboundObservationService {
                     packet,
                     encodedPacketBytes
             );
+            observedChunkPacket = true;
+        }
+
+        if (observedChunkPacket) {
+            ChunkClientCacheBudgetManager.enforceInboundBudget(context, "client_chunk_cache_budget");
         }
     }
 

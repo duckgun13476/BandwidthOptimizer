@@ -326,6 +326,7 @@ public final class ChunkTransportPlanner {
         return hasKnownPublishedSnapshot(chunkSnapshot)
                 && !hasAcknowledgedCurrentFullSnapshot(chunkSnapshot)
                 && chunkSnapshot != null
+                && !chunkSnapshot.fullReplayRequiredBeforeDelta()
                 && chunkSnapshot.fullSnapshotVersion() > 0L
                 && sameSnapshotHash(chunkSnapshot, snapshotFingerprint);
     }
@@ -486,6 +487,13 @@ public final class ChunkTransportPlanner {
     ) {
         if (!hasKnownPublishedSnapshot(chunkSnapshot) || chunkSnapshot.fullSnapshotVersion() <= 0L) {
             return "initial_full_snapshot";
+        }
+
+        if (!hasAcknowledgedCurrentFullSnapshot(chunkSnapshot)
+                && chunkSnapshot != null
+                && chunkSnapshot.fullReplayRequiredBeforeDelta()
+                && sameSnapshotHash(chunkSnapshot, snapshotFingerprint)) {
+            return "await_receiver_ack_after_watch_boundary";
         }
 
         if (!hasAcknowledgedCurrentFullSnapshot(chunkSnapshot)

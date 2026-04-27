@@ -88,6 +88,33 @@ public final class ChunkRuntimeReferenceStore {
         CHANNEL_CACHES.remove(channelId);
     }
 
+    public static long trimToTotalBytes(long targetBytes) {
+        long safeTargetBytes = Math.max(targetBytes, 0L);
+        long currentTotalBytes = snapshot().totalBytes();
+        long releasedBytes = 0L;
+        if (currentTotalBytes <= safeTargetBytes) {
+            return 0L;
+        }
+
+        while (currentTotalBytes > safeTargetBytes) {
+            long releasedFullSnapshotBytes = evictOneOldestFullSnapshot();
+            if (releasedFullSnapshotBytes > 0L) {
+                releasedBytes += releasedFullSnapshotBytes;
+                currentTotalBytes = Math.max(currentTotalBytes - releasedFullSnapshotBytes, 0L);
+                continue;
+            }
+
+            long releasedPacketEntryBytes = evictOneOldestPacketEntry();
+            if (releasedPacketEntryBytes <= 0L) {
+                break;
+            }
+            releasedBytes += releasedPacketEntryBytes;
+            currentTotalBytes = Math.max(currentTotalBytes - releasedPacketEntryBytes, 0L);
+        }
+
+        return releasedBytes;
+    }
+
 
     public static Snapshot snapshot() {
         long channelCount = 0L;
@@ -115,6 +142,33 @@ public final class ChunkRuntimeReferenceStore {
                 fullSnapshotCount,
                 fullSnapshotBytes
         );
+    }
+
+
+    private static long evictOneOldestFullSnapshot() {
+        for (ChannelReferenceCache cache : CHANNEL_CACHES.values()) {
+            if (cache == null) {
+                continue;
+            }
+            long releasedBytes = cache.evictOldestFullSnapshot();
+            if (releasedBytes > 0L) {
+                return releasedBytes;
+            }
+        }
+        return 0L;
+    }
+
+    private static long evictOneOldestPacketEntry() {
+        for (ChannelReferenceCache cache : CHANNEL_CACHES.values()) {
+            if (cache == null) {
+                continue;
+            }
+            long releasedBytes = cache.evictOldestPacketEntry();
+            if (releasedBytes > 0L) {
+                return releasedBytes;
+            }
+        }
+        return 0L;
     }
 
     private static final class ChannelReferenceCache {
@@ -178,6 +232,27 @@ public final class ChunkRuntimeReferenceStore {
 
         synchronized void removeFullSnapshot(long scopeId, ChunkPacketCoordinate coordinate) {
             this.fullSnapshots.remove(scopedChunkKeyText(scopeId, coordinate));
+        }
+
+
+        synchronized long evictOldestPacketEntry() {
+            if (this.entries.isEmpty()) {
+                return 0L;
+            }
+
+            Map.Entry<String, byte[]> eldestEntry = this.entries.entrySet().iterator().next();
+            byte[] removedBytes = this.entries.remove(eldestEntry.getKey());
+            return removedBytes == null ? 0L : removedBytes.length;
+        }
+
+        synchronized long evictOldestFullSnapshot() {
+            if (this.fullSnapshots.isEmpty()) {
+                return 0L;
+            }
+
+            Map.Entry<String, RuntimeFullSnapshot> eldestEntry = this.fullSnapshots.entrySet().iterator().next();
+            RuntimeFullSnapshot removedSnapshot = this.fullSnapshots.remove(eldestEntry.getKey());
+            return removedSnapshot == null ? 0L : removedSnapshot.packetBytes().length;
         }
 
 

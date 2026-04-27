@@ -94,7 +94,7 @@ public final class ChunkLifecycleCoordinator {
 
         ChunkPacketCoordinate coordinate = ChunkPacketCoordinate.ofChunk(chunkPos.x, chunkPos.z);
         ChunkPeerChunkStateSnapshot knownChunkSnapshot = ChunkPeerStateManager.snapshotPlayerChunk(player, coordinate);
-        if (!shouldInvalidateLifecycleChunk(knownChunkSnapshot)) {
+        if (!shouldProcessLifecycleChunk(knownChunkSnapshot)) {
             logTwoPointLifecycleSkip(player, coordinate, reason, knownChunkSnapshot);
             return;
         }
@@ -133,7 +133,7 @@ public final class ChunkLifecycleCoordinator {
         );
     }
 
-    private static boolean shouldInvalidateLifecycleChunk(ChunkPeerChunkStateSnapshot knownChunkSnapshot) {
+    private static boolean shouldProcessLifecycleChunk(ChunkPeerChunkStateSnapshot knownChunkSnapshot) {
         return knownChunkSnapshot != null
                 && (knownChunkSnapshot.knownSnapshotPublished() || knownChunkSnapshot.receiverSnapshotAcknowledged());
     }

@@ -1,0 +1,166 @@
+package com.PinkCats.bandwidthoptimizer.chunk.budget;
+
+import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceStore;
+import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportControlFrameSender;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
+import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerContext;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.loading.FMLEnvironment;
+
+import java.util.List;
+
+public final class ChunkClientCacheBudgetManager {
+
+    private ChunkClientCacheBudgetManager() {}
+
+    //Client notice
+    public static void enforceInboundBudget(ChannelHandlerContext context, String reason) {
+        if (!shouldManageClientBudget(context)) {
+            return;
+        }
+
+        ChunkClientCacheUsage usageBeforeTrim = readCurrentUsage();
+        long maxCacheBytes = ClientChunkCacheConfig.chunkCacheMaxMemoryBytes();
+        long recycleTriggerFreeBytes = ClientChunkCacheConfig.chunkCacheRecycleTriggerFreeBytes();
+        long recycleTriggerUsedBytes = Math.max(maxCacheBytes - recycleTriggerFreeBytes, 0L);
+        if (usageBeforeTrim.totalBytes() <= recycleTriggerUsedBytes) {
+            return;
+        }
+
+        long recycleTargetFreeBytes = ClientChunkCacheConfig.chunkCacheRecycleTargetFreeBytes();
+        long recycleTargetUsedBytes = Math.max(maxCacheBytes - recycleTargetFreeBytes, 0L);
+
+        recycleRuntimeReferenceCache(recycleTargetUsedBytes);
+        ChunkShadowSnapshotManager.TrimResult shadowTrimResult = recycleShadowSnapshotCache(recycleTargetUsedBytes);
+        invalidateMatchingRuntimeSnapshots(shadowTrimResult.evictedChunks());
+        recycleRuntimeReferenceCache(recycleTargetUsedBytes);
+
+        ChunkClientCacheUsage usageAfterTrim = readCurrentUsage();
+        notifyRemoteForTrimmedFullSnapshots(context.channel(), shadowTrimResult.evictedChunks(), reason);
+        logTrimResult(reason, usageBeforeTrim, usageAfterTrim, shadowTrimResult);
+    }
+
+
+    private static boolean shouldManageClientBudget(ChannelHandlerContext context) {
+        return context != null
+                && FMLEnvironment.dist == Dist.CLIENT
+                && context.channel() != null
+                && context.channel().isOpen();
+    }
+
+
+    private static ChunkClientCacheUsage readCurrentUsage() {
+        ChunkShadowSnapshotManager.Snapshot shadowSnapshot = ChunkShadowSnapshotManager.snapshot();
+        ChunkRuntimeReferenceStore.Snapshot runtimeSnapshot = ChunkRuntimeReferenceStore.snapshot();
+        return new ChunkClientCacheUsage(
+                shadowSnapshot.totalEncodedBytes(),
+                runtimeSnapshot.totalBytes()
+        );
+    }
+
+    private static void recycleRuntimeReferenceCache(long totalBudgetTargetBytes) {
+        ChunkClientCacheUsage currentUsage = readCurrentUsage();
+        if (currentUsage.totalBytes() <= totalBudgetTargetBytes) {
+            return;
+        }
+
+        long runtimeTargetBytes = Math.max(totalBudgetTargetBytes - currentUsage.shadowBytes(), 0L);
+        ChunkRuntimeReferenceStore.trimToTotalBytes(runtimeTargetBytes);
+    }
+
+
+    private static ChunkShadowSnapshotManager.TrimResult recycleShadowSnapshotCache(long totalBudgetTargetBytes) {
+        ChunkClientCacheUsage currentUsage = readCurrentUsage();
+        if (currentUsage.totalBytes() <= totalBudgetTargetBytes) {
+            return new ChunkShadowSnapshotManager.TrimResult(0L, List.of());
+        }
+
+        long shadowTargetBytes = Math.max(totalBudgetTargetBytes - currentUsage.runtimeReferenceBytes(), 0L);
+        return ChunkShadowSnapshotManager.trimToTotalBytes(shadowTargetBytes);
+    }
+
+
+    private static void invalidateMatchingRuntimeSnapshots(List<ChunkShadowSnapshotManager.EvictedChunkSnapshot> evictedChunks) {
+        if (evictedChunks == null || evictedChunks.isEmpty()) {
+            return;
+        }
+
+        for (ChunkShadowSnapshotManager.EvictedChunkSnapshot evictedChunk : evictedChunks) {
+            if (evictedChunk == null || evictedChunk.channelId().isBlank()) {
+                continue;
+            }
+            ChunkRuntimeReferenceStore.invalidateFullSnapshot(
+                    evictedChunk.channelId(),
+                    evictedChunk.scopeId(),
+                    evictedChunk.coordinate()
+            );
+        }
+    }
+
+    private static void notifyRemoteForTrimmedFullSnapshots(
+            Channel channel,
+            List<ChunkShadowSnapshotManager.EvictedChunkSnapshot> evictedChunks,
+            String reason
+    ) {
+        if (channel == null || evictedChunks == null || evictedChunks.isEmpty()) {
+            return;
+        }
+
+        String currentChannelId = channel.id().asLongText();
+        String safeReason = reason == null || reason.isBlank() ? "client_cache_budget_trim" : reason;
+        for (ChunkShadowSnapshotManager.EvictedChunkSnapshot evictedChunk : evictedChunks) {
+            if (evictedChunk == null
+                    || !evictedChunk.hadFullSnapshot()
+                    || !currentChannelId.equals(evictedChunk.channelId())) {
+                continue;
+            }
+            ChunkTransportControlFrameSender.sendClientCacheBudgetInvalidate(
+                    channel,
+                    evictedChunk.scopeId(),
+                    evictedChunk.coordinate(),
+                    evictedChunk.fullSnapshotVersion(),
+                    evictedChunk.fullSnapshotHash(),
+                    safeReason
+            );
+        }
+    }
+
+
+    private static void logTrimResult(
+            String reason,
+            ChunkClientCacheUsage usageBeforeTrim,
+            ChunkClientCacheUsage usageAfterTrim,
+            ChunkShadowSnapshotManager.TrimResult shadowTrimResult
+    ) {
+        long releasedShadowBytes = shadowTrimResult == null ? 0L : shadowTrimResult.releasedBytes();
+        int evictedChunkCount = shadowTrimResult == null ? 0 : shadowTrimResult.evictedChunks().size();
+        if (usageBeforeTrim.totalBytes() == usageAfterTrim.totalBytes() && releasedShadowBytes <= 0L) {
+            return;
+        }
+
+        Bandwidthoptimizer.LOGGER.info(
+                "[ChunkCache][Trim] reason={}, beforeTotalBytes={}, afterTotalBytes={}, beforeShadowBytes={}, afterShadowBytes={}, beforeRuntimeBytes={}, afterRuntimeBytes={}, releasedShadowBytes={}, evictedChunks={}",
+                reason == null || reason.isBlank() ? "client_cache_budget_trim" : reason,
+                usageBeforeTrim.totalBytes(),
+                usageAfterTrim.totalBytes(),
+                usageBeforeTrim.shadowBytes(),
+                usageAfterTrim.shadowBytes(),
+                usageBeforeTrim.runtimeReferenceBytes(),
+                usageAfterTrim.runtimeReferenceBytes(),
+                releasedShadowBytes,
+                evictedChunkCount
+        );
+    }
+
+    private record ChunkClientCacheUsage(
+            long shadowBytes,
+            long runtimeReferenceBytes
+    ) {
+        private long totalBytes() {
+            return Math.max(this.shadowBytes, 0L) + Math.max(this.runtimeReferenceBytes, 0L);
+        }
+    }
+}

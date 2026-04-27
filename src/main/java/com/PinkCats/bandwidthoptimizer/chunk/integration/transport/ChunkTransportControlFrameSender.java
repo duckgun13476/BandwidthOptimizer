@@ -83,6 +83,39 @@ public final class ChunkTransportControlFrameSender {
         ));
     }
 
+    public static boolean sendClientCacheBudgetInvalidate(
+            Channel channel,
+            long scopeId,
+            ChunkPacketCoordinate coordinate,
+            long fullSnapshotVersion,
+            String fullSnapshotHash,
+            String reason
+    ) {
+        if (channel == null || coordinate == null || !coordinate.present() || fullSnapshotVersion <= 0L) {
+            return false;
+        }
+
+        String safeFullSnapshotHash = fullSnapshotHash == null ? "" : fullSnapshotHash;
+        return sendControlFrame(channel, new ChunkHotspotFrame(
+                ChunkHotspotFrameCodec.PROTOCOL_VERSION,
+                ChunkHotspotFrameOp.INVALIDATE,
+                Math.max(scopeId, 0L),
+                0L,
+                "PLAY",
+                ClientboundForgetLevelChunkPacket.class.getName(),
+                ChunkHotspotKind.FULL_CHUNK,
+                ChunkLaneKind.FULL,
+                coordinate,
+                0,
+                Math.max(fullSnapshotVersion, 0L),
+                0L,
+                safeFullSnapshotHash,
+                safeFullSnapshotHash,
+                0L,
+                reason == null ? "" : reason
+        ));
+    }
+
     private static ChunkHotspotFrame buildControlFrame(
             ChunkHotspotFrameOp operation,
             ChunkHotspotFrame sourceFrame,

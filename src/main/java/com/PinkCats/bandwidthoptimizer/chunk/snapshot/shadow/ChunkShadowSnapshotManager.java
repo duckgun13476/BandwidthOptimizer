@@ -14,10 +14,12 @@ import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalSnapshotSto
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -173,6 +175,50 @@ public final class ChunkShadowSnapshotManager {
         );
     }
 
+    public static TrimResult trimToTotalBytes(long targetBytes) {
+        long safeTargetBytes = Math.max(targetBytes, 0L);
+        long currentTotalBytes = snapshot().totalEncodedBytes();
+        if (currentTotalBytes <= safeTargetBytes) {
+            return new TrimResult(0L, List.of());
+        }
+
+        long releasedBytes = 0L;
+        ArrayList<EvictedChunkSnapshot> evictedChunks = new ArrayList<>();
+        while (currentTotalBytes > safeTargetBytes) {
+            EvictionCandidate evictionCandidate = findOldestChunkCandidate();
+            if (evictionCandidate == null) {
+                break;
+            }
+
+            ChannelShadowState channelState = CHANNEL_STATES.get(evictionCandidate.channelId());
+            if (channelState == null) {
+                continue;
+            }
+
+            EvictedChunkSnapshot evictedChunk = channelState.evictChunk(
+                    evictionCandidate.channelId(),
+                    evictionCandidate.scopedChunkKey()
+            );
+            if (evictedChunk == null) {
+                continue;
+            }
+
+            ChunkGlobalSnapshotStore.invalidateChunk(
+                    evictedChunk.channelId(),
+                    evictedChunk.scopeId(),
+                    evictedChunk.coordinate()
+            );
+            if (channelState.isEmpty()) {
+                CHANNEL_STATES.remove(evictionCandidate.channelId(), channelState);
+            }
+
+            evictedChunks.add(evictedChunk);
+            releasedBytes += evictedChunk.releasedBytes();
+            currentTotalBytes = Math.max(currentTotalBytes - evictedChunk.releasedBytes(), 0L);
+        }
+        return new TrimResult(releasedBytes, List.copyOf(evictedChunks));
+    }
+
     private static ChunkShadowSnapshot observePacket(
             String channelId,
             long epoch,
@@ -191,6 +237,25 @@ public final class ChunkShadowSnapshotManager {
 
         ChannelShadowState state = CHANNEL_STATES.computeIfAbsent(channelId, ignored -> new ChannelShadowState());
         return state.observePacket(epoch, descriptor, packet, encodedPacketBytes);
+    }
+
+
+    private static EvictionCandidate findOldestChunkCandidate() {
+        EvictionCandidate oldestCandidate = null;
+        for (Map.Entry<String, ChannelShadowState> channelEntry : CHANNEL_STATES.entrySet()) {
+            if (channelEntry.getValue() == null) {
+                continue;
+            }
+
+            EvictionCandidate channelCandidate = channelEntry.getValue().findOldestChunkCandidate(channelEntry.getKey());
+            if (channelCandidate == null) {
+                continue;
+            }
+            if (oldestCandidate == null || channelCandidate.lastUpdatedAtMillis() < oldestCandidate.lastUpdatedAtMillis()) {
+                oldestCandidate = channelCandidate;
+            }
+        }
+        return oldestCandidate;
     }
 
     private static final class ChannelShadowState {
@@ -266,6 +331,36 @@ public final class ChunkShadowSnapshotManager {
 
         synchronized void invalidateChunkAcrossScopes(ChunkPacketCoordinate coordinate) {
             this.chunkSnapshots.entrySet().removeIf(entry -> matchesCoordinate(entry.getValue(), coordinate));
+        }
+
+
+        synchronized EvictionCandidate findOldestChunkCandidate(String channelId) {
+            String oldestScopedChunkKey = null;
+            MutableChunkShadowSnapshot oldestSnapshot = null;
+            for (Map.Entry<String, MutableChunkShadowSnapshot> entry : this.chunkSnapshots.entrySet()) {
+                MutableChunkShadowSnapshot snapshot = entry.getValue();
+                if (snapshot == null) {
+                    continue;
+                }
+                if (oldestSnapshot == null || snapshot.lastUpdatedAtMillis < oldestSnapshot.lastUpdatedAtMillis) {
+                    oldestSnapshot = snapshot;
+                    oldestScopedChunkKey = entry.getKey();
+                }
+            }
+            if (oldestSnapshot == null || oldestScopedChunkKey == null) {
+                return null;
+            }
+            return new EvictionCandidate(channelId, oldestScopedChunkKey, oldestSnapshot.lastUpdatedAtMillis);
+        }
+
+
+        synchronized EvictedChunkSnapshot evictChunk(String channelId, String scopedChunkKey) {
+            MutableChunkShadowSnapshot removedSnapshot = this.chunkSnapshots.remove(scopedChunkKey);
+            return removedSnapshot == null ? null : removedSnapshot.toEvictedSnapshot(channelId, scopedChunkKey);
+        }
+
+        synchronized boolean isEmpty() {
+            return this.chunkSnapshots.isEmpty();
         }
 
         synchronized ChannelSnapshotTotals snapshotTotals() {
@@ -484,6 +579,20 @@ public final class ChunkShadowSnapshotManager {
             }
             return totalBytes;
         }
+
+        private EvictedChunkSnapshot toEvictedSnapshot(String channelId, String scopedChunkKey) {
+            return new EvictedChunkSnapshot(
+                    channelId == null ? "" : channelId,
+                    scopedChunkKey == null ? "" : scopedChunkKey,
+                    Math.max(this.epoch, 0L),
+                    this.coordinate,
+                    this.hasFullSnapshot(),
+                    Math.max(this.fullSnapshotVersion, 0L),
+                    this.fullSnapshotHash == null ? "" : this.fullSnapshotHash,
+                    this.fullSnapshotShortHash == null ? "" : this.fullSnapshotShortHash,
+                    this.totalEncodedBytes()
+            );
+        }
     }
 
     private static final class MutableLaneSnapshot {
@@ -548,6 +657,44 @@ public final class ChunkShadowSnapshotManager {
 
     private static String scopedChunkKeyText(long scopeId, ChunkPacketCoordinate coordinate) {
         return Math.max(scopeId, 0L) + ":" + chunkKeyText(coordinate);
+    }
+
+    public record TrimResult(
+            long releasedBytes,
+            List<EvictedChunkSnapshot> evictedChunks
+    ) {
+        public TrimResult {
+            releasedBytes = Math.max(releasedBytes, 0L);
+            evictedChunks = evictedChunks == null ? List.of() : List.copyOf(evictedChunks);
+        }
+    }
+
+    public record EvictedChunkSnapshot(
+            String channelId,
+            String scopedChunkKey,
+            long scopeId,
+            ChunkPacketCoordinate coordinate,
+            boolean hadFullSnapshot,
+            long fullSnapshotVersion,
+            String fullSnapshotHash,
+            String fullSnapshotShortHash,
+            long releasedBytes
+    ) {
+        public EvictedChunkSnapshot {
+            channelId = channelId == null ? "" : channelId;
+            scopedChunkKey = scopedChunkKey == null ? "" : scopedChunkKey;
+            coordinate = coordinate == null ? ChunkPacketCoordinate.unknown() : coordinate;
+            fullSnapshotHash = fullSnapshotHash == null ? "" : fullSnapshotHash;
+            fullSnapshotShortHash = fullSnapshotShortHash == null ? "" : fullSnapshotShortHash;
+            releasedBytes = Math.max(releasedBytes, 0L);
+        }
+    }
+
+    private record EvictionCandidate(
+            String channelId,
+            String scopedChunkKey,
+            long lastUpdatedAtMillis
+    ) {
     }
 
     private record ChannelSnapshotTotals(

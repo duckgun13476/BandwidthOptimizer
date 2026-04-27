@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.ZstdRuntimeSupport;
 import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
+import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
 import com.PinkCats.bandwidthoptimizer.chunk.lifecycle.ChunkLifecycleCoordinator;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.command.BandwidthOptimizerCommand;
@@ -40,6 +41,7 @@ public class Bandwidthoptimizer {
 
         MinecraftForge.EVENT_BUS.register(this);
         modContext.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+        modContext.registerConfig(ModConfig.Type.CLIENT, ClientChunkCacheConfig.SPEC);
     }
 
     @SubscribeEvent
