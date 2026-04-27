@@ -8,6 +8,7 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
+import com.PinkCats.bandwidthoptimizer.report.ChunkBoundaryBandwidthRecorder;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCaptureManager;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -36,17 +37,19 @@ public final class ChannelTransportBatchManager {
     private ChannelTransportBatchManager() {}
 
 
+    // 这里把准备延后 flush 的 outbound 包暂存起来，同时保留 packet-rank 和跨区块窗口日志所需的逐包元数据。
     public static boolean enqueueOutboundPacket(
             ChannelHandlerContext context,
             byte[] originalPacketBytes,
-            ChannelTransportPacketRankCaptureManager.OutboundPacketCapture outboundPacketCapture
+            ChannelTransportPacketRankCaptureManager.OutboundPacketCapture outboundPacketCapture,
+            ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace
     ) {
         if (context == null || originalPacketBytes == null) {
             return false;
         }
 
         OutboundBatchState batchState = getOrCreateOutboundBatchState(context.channel());
-        batchState.addPacket(context, copyBytesOrEmpty(originalPacketBytes), outboundPacketCapture);
+        batchState.addPacket(context, copyBytesOrEmpty(originalPacketBytes), outboundPacketCapture, boundaryPacketTrace);
         batchState.scheduleFlushIfNeeded(context.channel());
         return true;
     }
@@ -89,10 +92,10 @@ public final class ChannelTransportBatchManager {
         }
     }
 
+
     private static void flushOutboundBatch(Channel channel) {
-        if (channel == null || !channel.isActive()) {
+        if (channel == null || !channel.isActive())
             return;
-        }
 
         OutboundBatchState batchState = getOrCreateOutboundBatchState(channel);
         OutboundBatchDrain drainedBatch = batchState.drain();
@@ -119,9 +122,60 @@ public final class ChannelTransportBatchManager {
                         drainedBatch.packetCaptures(),
                         wrappedFrame
                 );
+                completeBatchBoundaryTrace(drainedBatch.pendingPackets(), wrappedFrame);
             });
         } catch (Throwable throwable) {
             ChannelTransportRuntimeGuard.disableTransport("outbound-batch-flush", throwable);
+        }
+    }
+
+    // 这里沿用 packet-rank 的按输入字节权重分摊方式，把 batch frame 的真实字节尽量公平地回填给每个原始子包。
+    private static void completeBatchBoundaryTrace(
+            List<PendingOutboundPacket> pendingPackets,
+            ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame
+    ) {
+        if (pendingPackets == null || pendingPackets.isEmpty() || wrappedFrame == null) {
+            return;
+        }
+
+        if (pendingPackets.size() == 1) {
+            ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
+                    pendingPackets.get(0).boundaryPacketTrace(),
+                    "BATCH_TRANSPORT_SINGLE_ENTRY",
+                    wrappedFrame.frameKind().name(),
+                    wrappedFrame.transportFrameLength(),
+                    false,
+                    1
+            );
+            return;
+        }
+
+        long totalWeight = 0L;
+        for (PendingOutboundPacket pendingPacket : pendingPackets) {
+            totalWeight += Math.max(pendingPacket.packetBytes().length, 1);
+        }
+
+        long remainingFrameBytes = wrappedFrame.transportFrameLength();
+        long remainingWeight = Math.max(totalWeight, pendingPackets.size());
+        for (int index = 0; index < pendingPackets.size(); index++) {
+            PendingOutboundPacket pendingPacket = pendingPackets.get(index);
+            int allocatedFrameBytes;
+            if (index == pendingPackets.size() - 1) {
+                allocatedFrameBytes = (int) Math.max(remainingFrameBytes, 0L);
+            } else {
+                long weight = Math.max(pendingPacket.packetBytes().length, 1);
+                allocatedFrameBytes = (int) Math.max((remainingFrameBytes * weight) / Math.max(remainingWeight, 1L), 0L);
+                remainingFrameBytes -= allocatedFrameBytes;
+                remainingWeight -= weight;
+            }
+            ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
+                    pendingPacket.boundaryPacketTrace(),
+                    "BATCH_TRANSPORT_SHARE",
+                    wrappedFrame.frameKind().name(),
+                    allocatedFrameBytes,
+                    true,
+                    pendingPackets.size()
+            );
         }
     }
 
@@ -221,7 +275,8 @@ public final class ChannelTransportBatchManager {
 
     private record PendingOutboundPacket(
             byte[] packetBytes,
-            ChannelTransportPacketRankCaptureManager.OutboundPacketCapture packetCapture
+            ChannelTransportPacketRankCaptureManager.OutboundPacketCapture packetCapture,
+            ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace
     ) {
         private PendingOutboundPacket {
             packetBytes = copyBytesOrEmpty(packetBytes);
@@ -260,11 +315,12 @@ public final class ChannelTransportBatchManager {
         private void addPacket(
                 ChannelHandlerContext context,
                 byte[] packetBytes,
-                ChannelTransportPacketRankCaptureManager.OutboundPacketCapture outboundPacketCapture
+                ChannelTransportPacketRankCaptureManager.OutboundPacketCapture outboundPacketCapture,
+                ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace
         ) {
             synchronized (this.pendingPackets) {
                 this.lastContext = context;
-                this.pendingPackets.add(new PendingOutboundPacket(packetBytes, outboundPacketCapture));
+                this.pendingPackets.add(new PendingOutboundPacket(packetBytes, outboundPacketCapture, boundaryPacketTrace));
             }
         }
 

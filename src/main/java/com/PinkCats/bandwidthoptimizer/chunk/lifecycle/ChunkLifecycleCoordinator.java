@@ -5,38 +5,66 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordina
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerChunkStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkHotspotPathRuntimeConfig;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
 
 import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class ChunkLifecycleCoordinator {
+
+    private static final ConcurrentHashMap<UUID, ResourceKey<Level>> PLAYER_DIMENSIONS = new ConcurrentHashMap<>();
 
     private ChunkLifecycleCoordinator() {}
 
     public static void onPlayerLogin(ServerPlayer player) {
         ChunkPeerStateManager.bumpPlayerEpoch(player, "login");
         ChunkPeerStateManager.attachPlayerEpochToChannel(player, "login");
+        rememberPlayerDimension(player);
     }
 
     public static void onPlayerRespawn(ServerPlayer player) {
-        ChunkPeerStateManager.bumpPlayerEpoch(player, "respawn");
-        ChunkPeerStateManager.attachPlayerEpochToChannel(player, "respawn");
+        if (player == null) {
+            return;
+        }
+
+        ResourceKey<Level> previousDimension = PLAYER_DIMENSIONS.get(player.getUUID());
+        ResourceKey<Level> currentDimension = player.serverLevel().dimension();
+        boolean sameDimensionRespawn = previousDimension != null && previousDimension.equals(currentDimension);
+        if (sameDimensionRespawn) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ChunkPeer][Lifecycle] player={}, uuid={}, reason=respawn_same_dimension_no_reset, dimension={}",
+                    player.getGameProfile().getName(),
+                    player.getUUID(),
+                    currentDimension.location()
+            );
+        } else {
+            ChunkPeerStateManager.bumpPlayerEpoch(player, "respawn_dimension_reset");
+            ChunkPeerStateManager.attachPlayerEpochToChannel(player, "respawn_dimension_reset");
+        }
+        rememberPlayerDimension(player);
     }
 
     public static void onPlayerDimensionChange(ServerPlayer player) {
         ChunkPeerStateManager.bumpPlayerEpoch(player, "dimension_change");
         ChunkPeerStateManager.attachPlayerEpochToChannel(player, "dimension_change");
+        rememberPlayerDimension(player);
     }
 
     public static void onPlayerLogout(ServerPlayer player) {
         ChunkPeerStateManager.clearPlayerState(player, "logout");
+        forgetPlayerDimension(player);
     }
+
 
     public static void prepareForClientRespawnBoundary(ServerPlayer player) {
         ChunkPeerStateManager.bumpPlayerEpoch(player, "prepare_client_respawn_boundary");
         ChunkPeerStateManager.attachPlayerEpochToChannel(player, "prepare_client_respawn_boundary");
+        rememberPlayerDimension(player);
     }
 
 
@@ -109,5 +137,19 @@ public final class ChunkLifecycleCoordinator {
     private static boolean shouldInvalidateLifecycleChunk(ChunkPeerChunkStateSnapshot knownChunkSnapshot) {
         return knownChunkSnapshot != null
                 && (knownChunkSnapshot.knownSnapshotPublished() || knownChunkSnapshot.receiverSnapshotAcknowledged());
+    }
+
+    private static void rememberPlayerDimension(ServerPlayer player) {
+        if (player == null) {
+            return;
+        }
+        PLAYER_DIMENSIONS.put(player.getUUID(), player.serverLevel().dimension());
+    }
+
+    private static void forgetPlayerDimension(ServerPlayer player) {
+        if (player == null) {
+            return;
+        }
+        PLAYER_DIMENSIONS.remove(player.getUUID());
     }
 }

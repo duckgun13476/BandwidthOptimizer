@@ -48,6 +48,11 @@ public final class ExperientChunkHotspotPathController {
     private static final int TWO_POINT_REUSE_TOTAL_TELEPORTS = 8;
     private static final long TWO_POINT_REUSE_QUIET_WINDOW_MILLIS = 500L;
     private static final double TWO_POINT_REUSE_OFFSET_BLOCKS = 352.0D;
+    private static final int BOUNDARY_HOP_EXTRA_OFFSET_CHUNKS = 1;
+    private static final int BOUNDARY_HOP_MIN_OFFSET_CHUNKS = 3;
+    private static final int BOUNDARY_HOP_MIN_SETTLE_TICKS = 1;
+    private static final int BOUNDARY_HOP_FINAL_SETTLE_TICKS = 100;
+    private static final int BOUNDARY_HOP_TOTAL_TELEPORTS = 24;
     private static final double TWO_POINT_REUSE_SAFE_Y = 200.0D;
     private static final double TWO_POINT_REUSE_SAFE_Y_MARGIN = 32.0D;
     private static final int LIGHT_PROBE_Y_OFFSET = 4;
@@ -109,16 +114,19 @@ public final class ExperientChunkHotspotPathController {
             return;
         }
 
-        if (ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()) {
+        if (ExperientChunkHotspotPathRuntimeConfig.isBoundaryHopMode()) {
+            prepareBoundaryHopPlayer(serverPlayer);
+        } else if (ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()) {
             prepareTwoPointReusePlayer(serverPlayer);
         }
 
+        double originX = resolvePathOriginX(serverPlayer);
         double originY = resolvePathOriginY(serverPlayer);
 
         PLAYER_PATH_STATES.put(
                 serverPlayer.getUUID(),
                 new PathState(
-                        serverPlayer.getX(),
+                        originX,
                         originY,
                         serverPlayer.getZ(),
                         0,
@@ -131,7 +139,7 @@ public final class ExperientChunkHotspotPathController {
         Bandwidthoptimizer.LOGGER.info(
                 "[ExperientChunkPath] Registered scripted path for player={}, start=({}, {}, {})",
                 serverPlayer.getGameProfile().getName(),
-                formatDouble(serverPlayer.getX()),
+                formatDouble(originX),
                 formatDouble(originY),
                 formatDouble(serverPlayer.getZ())
         );
@@ -175,6 +183,10 @@ public final class ExperientChunkHotspotPathController {
         if (state.delayTicksRemaining() > 0) {
             maybeEmitDelayedBeforeAckProbeBurst(serverPlayer, state);
             return state.withDelayTicksRemaining(state.delayTicksRemaining() - 1);
+        }
+
+        if (ExperientChunkHotspotPathRuntimeConfig.isBoundaryHopMode()) {
+            return advanceBoundaryHopPath(serverPlayer, state);
         }
 
         if (ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()) {
@@ -295,8 +307,68 @@ public final class ExperientChunkHotspotPathController {
     }
 
 
+    private static PathState advanceBoundaryHopPath(ServerPlayer serverPlayer, PathState state) {
+        if (!ExperientChunkHotspotFullChunkTracker.hasPlayerBeenQuietFor(
+                serverPlayer,
+                TWO_POINT_REUSE_QUIET_WINDOW_MILLIS
+        )) {
+            return state.withDelayTicksRemaining(1);
+        }
+
+        if (!hasBoundaryHopReachedPreviousChunk(serverPlayer, state)) {
+            return state.withDelayTicksRemaining(1);
+        }
+
+        if (state.nextWaypointIndex() >= BOUNDARY_HOP_TOTAL_TELEPORTS) {
+            Bandwidthoptimizer.LOGGER.info(
+                "[ExperientChunkPath] Completed boundary-hop reuse path for player={}",
+                serverPlayer.getGameProfile().getName()
+            );
+            disconnectPlayerAfterPathCompletion(serverPlayer);
+            return null;
+        }
+
+        double leftX = state.originX();
+        double rightX = resolveBoundaryHopRightX(serverPlayer, leftX);
+        double targetX = state.nextWaypointIndex() % 2 == 0 ? rightX : leftX;
+        double targetY = state.originY();
+        double targetZ = state.originZ();
+        int settleTicks = state.nextWaypointIndex() + 1 >= BOUNDARY_HOP_TOTAL_TELEPORTS
+                ? BOUNDARY_HOP_FINAL_SETTLE_TICKS
+                : BOUNDARY_HOP_MIN_SETTLE_TICKS;
+        stabilizeTwoPointReusePlayerMotion(serverPlayer);
+        boolean commandAccepted = teleportPlayer(serverPlayer, targetX, targetY, targetZ);
+        stabilizeTwoPointReusePlayerMotion(serverPlayer);
+        Bandwidthoptimizer.LOGGER.info(
+                "[ExperientChunkPath] boundary-hop player={}, step={}/{}, viewDistance={}, targetChunkX={}, currentChunkX={}, target=({}, {}, {}), settleTicks={}, accepted={}",
+                serverPlayer.getGameProfile().getName(),
+                state.nextWaypointIndex() + 1,
+                BOUNDARY_HOP_TOTAL_TELEPORTS,
+                resolveBoundaryHopViewDistance(serverPlayer),
+                resolveChunkXForPosition(targetX),
+                serverPlayer.chunkPosition().x,
+                formatDouble(targetX),
+                formatDouble(targetY),
+                formatDouble(targetZ),
+                settleTicks,
+                commandAccepted
+        );
+        return new PathState(
+                state.originX(),
+                state.originY(),
+                state.originZ(),
+                state.nextLightPulseIndex(),
+                state.nextSectionPulseIndex(),
+                state.nextBlockEntityPulseIndex(),
+                state.nextWaypointIndex() + 1,
+                settleTicks
+        );
+    }
+
+
     private static void maybeEmitDelayedBeforeAckProbeBurst(ServerPlayer serverPlayer, PathState state) {
-        if (ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()) {
+        if (ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()
+                || ExperientChunkHotspotPathRuntimeConfig.isBoundaryHopMode()) {
             return;
         }
         if (state.nextWaypointIndex() <= 0) {
@@ -612,42 +684,87 @@ public final class ExperientChunkHotspotPathController {
     }
 
 
+    private static void prepareBoundaryHopPlayer(ServerPlayer serverPlayer) {
+        if (serverPlayer == null)
+            return;
+
+        double safeY = resolveSafePathY(serverPlayer);
+        double leftX = resolveBoundaryHopLeftX(serverPlayer.getX());
+        prepareSafeChunkPathPlayer(serverPlayer, leftX, safeY, serverPlayer.getZ(), "boundary-hop");
+        Bandwidthoptimizer.LOGGER.info(
+                "[ExperientChunkPath] Prepared boundary-hop anchor player={}, leftChunkX={}, rightChunkX={}, viewDistance={}",
+                serverPlayer.getGameProfile().getName(),
+                resolveChunkXForPosition(leftX),
+                resolveChunkXForPosition(resolveBoundaryHopRightX(serverPlayer, leftX)),
+                resolveBoundaryHopViewDistance(serverPlayer)
+        );
+    }
+
     private static void prepareTwoPointReusePlayer(ServerPlayer serverPlayer) {
+        if (serverPlayer == null) {
+            return;
+        }
+
+        double safeY = resolveSafePathY(serverPlayer);
+        prepareSafeChunkPathPlayer(serverPlayer, serverPlayer.getX(), safeY, serverPlayer.getZ(), "two-point-reuse");
+    }
+
+    private static void prepareSafeChunkPathPlayer(
+            ServerPlayer serverPlayer,
+            double targetX,
+            double targetY,
+            double targetZ,
+            String pathLabel
+    ) {
         if (serverPlayer == null) {
             return;
         }
 
         serverPlayer.setGameMode(GameType.SPECTATOR);
         stabilizeTwoPointReusePlayerMotion(serverPlayer);
-        double safeY = resolveTwoPointReuseSafeY(serverPlayer.serverLevel());
-        if (Math.abs(serverPlayer.getY() - safeY) < 0.01D) {
+        if (isSameTargetPosition(serverPlayer, targetX, targetY, targetZ)) {
             return;
         }
 
-        boolean commandAccepted = teleportPlayer(serverPlayer, serverPlayer.getX(), safeY, serverPlayer.getZ());
+        boolean commandAccepted = teleportPlayer(serverPlayer, targetX, targetY, targetZ);
         stabilizeTwoPointReusePlayerMotion(serverPlayer);
         Bandwidthoptimizer.LOGGER.info(
-                "[ExperientChunkPath] Prepared two-point reuse player={}, safeY={}, accepted={}",
+                "[ExperientChunkPath] Prepared {} player={}, target=({}, {}, {}), accepted={}",
+                pathLabel,
                 serverPlayer.getGameProfile().getName(),
-                formatDouble(safeY),
+                formatDouble(targetX),
+                formatDouble(targetY),
+                formatDouble(targetZ),
                 commandAccepted
         );
     }
 
+
+    private static double resolvePathOriginX(ServerPlayer serverPlayer) {
+        if (serverPlayer == null)
+            return 0.0D;
+        if (ExperientChunkHotspotPathRuntimeConfig.isBoundaryHopMode())
+            return resolveBoundaryHopLeftX(serverPlayer.getX());
+        return serverPlayer.getX();
+    }
 
     private static double resolvePathOriginY(ServerPlayer serverPlayer) {
         if (serverPlayer == null) {
             return 0.0D;
         }
 
-        if (!ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()) {
+        if (!ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()
+                && !ExperientChunkHotspotPathRuntimeConfig.isBoundaryHopMode()) {
             return serverPlayer.getY();
         }
-        return resolveTwoPointReuseSafeY(serverPlayer.serverLevel());
+        return resolveSafePathY(serverPlayer);
     }
 
+    private static double resolveSafePathY(ServerPlayer serverPlayer) {
+        return resolveSafePathY(serverPlayer == null ? null : serverPlayer.serverLevel());
+    }
 
-    private static double resolveTwoPointReuseSafeY(ServerLevel serverLevel) {
+    private static double resolveSafePathY(ServerLevel serverLevel) {
         if (serverLevel == null) {
             return TWO_POINT_REUSE_SAFE_Y;
         }
@@ -658,6 +775,66 @@ public final class ExperientChunkHotspotPathController {
             return TWO_POINT_REUSE_SAFE_Y;
         }
         return Math.max(minSafeY, Math.min(TWO_POINT_REUSE_SAFE_Y, maxSafeY));
+    }
+
+
+    private static double resolveBoundaryHopLeftX(double currentX) {
+        int baseBlockX = floorToBlock(currentX);
+        int currentChunkMinX = (baseBlockX >> 4) << 4;
+        return currentChunkMinX + 8.5D;
+    }
+
+    private static double resolveBoundaryHopRightX(ServerPlayer serverPlayer, double leftX) {
+        return leftX + (resolveBoundaryHopOffsetChunks(serverPlayer) * 16.0D);
+    }
+
+    private static int resolveBoundaryHopOffsetChunks(ServerPlayer serverPlayer) {
+        if (serverPlayer == null) {
+            return BOUNDARY_HOP_MIN_OFFSET_CHUNKS;
+        }
+
+        int requestedViewDistance = Math.max(resolveBoundaryHopViewDistance(serverPlayer), 0);
+        return Math.max(requestedViewDistance + BOUNDARY_HOP_EXTRA_OFFSET_CHUNKS, BOUNDARY_HOP_MIN_OFFSET_CHUNKS);
+    }
+
+    private static int resolveBoundaryHopViewDistance(ServerPlayer serverPlayer) {
+        if (serverPlayer == null || serverPlayer.getServer() == null) {
+            return 0;
+        }
+
+        return Math.max(serverPlayer.getServer().getPlayerList().getViewDistance(), 0);
+    }
+
+    private static boolean hasBoundaryHopReachedPreviousChunk(ServerPlayer serverPlayer, PathState state) {
+        if (serverPlayer == null || state == null || state.nextWaypointIndex() <= 0) {
+            return true;
+        }
+
+        double previousTargetX = resolveBoundaryHopPreviousTargetX(serverPlayer, state);
+        return serverPlayer.chunkPosition().x == resolveChunkXForPosition(previousTargetX);
+    }
+
+    private static double resolveBoundaryHopPreviousTargetX(ServerPlayer serverPlayer, PathState state) {
+        double leftX = state.originX();
+        double rightX = resolveBoundaryHopRightX(serverPlayer, leftX);
+        int previousStepIndex = Math.max(state.nextWaypointIndex() - 1, 0);
+        return previousStepIndex % 2 == 0 ? rightX : leftX;
+    }
+
+    private static int resolveChunkXForPosition(double x) {
+        return floorToBlock(x) >> 4;
+    }
+
+    private static boolean isSameTargetPosition(
+            ServerPlayer serverPlayer,
+            double targetX,
+            double targetY,
+            double targetZ
+    ) {
+        return serverPlayer != null
+                && Math.abs(serverPlayer.getX() - targetX) < 0.01D
+                && Math.abs(serverPlayer.getY() - targetY) < 0.01D
+                && Math.abs(serverPlayer.getZ() - targetZ) < 0.01D;
     }
 
     private static void stabilizeTwoPointReusePlayerMotion(ServerPlayer serverPlayer) {

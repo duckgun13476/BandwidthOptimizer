@@ -13,6 +13,8 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkOutboundObservationSe
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkInboundDecodeResult;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportBoundaryController;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher;
+import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher.OutboundChunkEncodeResult;
+import com.PinkCats.bandwidthoptimizer.report.ChunkBoundaryBandwidthRecorder;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCaptureManager;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
@@ -33,7 +35,6 @@ public final class ChannelTransportHooks {
     private ChannelTransportHooks() {}
 
     public static void tryToWrapOutboundPacket(ChannelHandlerContext context, Packet<?> packet, ByteBuf out, int startIndexInclusive) {
-        // Fulfillment
         if (context == null || out == null) {
             return;
         }
@@ -47,12 +48,13 @@ public final class ChannelTransportHooks {
         byte[] originalPacketBytes = ByteBufUtil.getBytes(out, startIndexInclusive, endIndexExclusive - startIndexInclusive, false);
         ChunkTransportBoundaryController.OutboundBoundaryDecision boundaryDecision =
                 ChunkTransportBoundaryController.beginOutboundPacket(context, protocolName, packet);
-        byte[] chunkTransportEncodedBytes = ChunkTransportDispatcher.tryEncodeOutboundPacket(
+        OutboundChunkEncodeResult chunkEncodeResult = ChunkTransportDispatcher.tryEncodeOutboundPacketWithTrace(
                 context,
                 protocolName,
                 packet,
                 originalPacketBytes
         );
+        byte[] chunkTransportEncodedBytes = chunkEncodeResult.copyEncodedPacketBytes();
         ChunkOutboundObservationService.observeOutboundPacket(
                 context,
                 protocolName,
@@ -63,12 +65,31 @@ public final class ChannelTransportHooks {
             ChannelTransportBatchManager.flushOutboundBatchNow(context);
         }
 
+        byte[] transportInputPacketBytes = chunkTransportEncodedBytes == null ? originalPacketBytes : chunkTransportEncodedBytes;
+        ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace =
+                ChunkBoundaryBandwidthRecorder.beginOutboundTrace(
+                        context,
+                        protocolName,
+                        packet,
+                        originalPacketBytes,
+                        transportInputPacketBytes,
+                        chunkEncodeResult
+                );
+
         if (shouldBypassTransparentTransport(context, protocolName, packet)) {
             ChannelTransportPacketRankCaptureManager.recordDirectPassthrough(
                     context,
                     protocolName,
                     packet,
                     originalPacketBytes
+            );
+            ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
+                    boundaryPacketTrace,
+                    "DIRECT_PASSTHROUGH",
+                    "DIRECT",
+                    originalPacketBytes.length,
+                    false,
+                    1
             );
             return;
         }
@@ -81,10 +102,17 @@ public final class ChannelTransportHooks {
                     packet,
                     originalPacketBytes
             );
+            ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
+                    boundaryPacketTrace,
+                    "DIRECT_PASSTHROUGH",
+                    "DIRECT",
+                    originalPacketBytes.length,
+                    false,
+                    1
+            );
             return;
         }
 
-        byte[] transportInputPacketBytes = chunkTransportEncodedBytes == null ? originalPacketBytes : chunkTransportEncodedBytes;
         ChannelTransportPacketRankCaptureManager.OutboundPacketCapture outboundPacketCapture =
                 ChannelTransportPacketRankCaptureManager.beginOutboundPacketCapture(
                         context,
@@ -101,7 +129,8 @@ public final class ChannelTransportHooks {
                 ChannelTransportBatchManager.enqueueOutboundPacket(
                         context,
                         transportInputPacketBytes,
-                        outboundPacketCapture
+                        outboundPacketCapture,
+                        boundaryPacketTrace
                 );
                 return;
             }
@@ -117,6 +146,14 @@ public final class ChannelTransportHooks {
             out.writeBytes(wrappedFrame.transportFrameBytes());
             ChannelTransportTelemetry.recordOutboundWrap(readProtocolName(context), wrappedFrame);
             ChannelTransportPacketRankCaptureManager.completeSingleTransportCapture(outboundPacketCapture, wrappedFrame);
+            ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
+                    boundaryPacketTrace,
+                    "SINGLE_TRANSPORT",
+                    wrappedFrame.frameKind().name(),
+                    wrappedFrame.transportFrameLength(),
+                    false,
+                    Math.max(wrappedFrame.originalPacketCount(), 1)
+            );
         } catch (Throwable throwable) {
             ChannelTransportRuntimeGuard.disableTransport("outbound-wrap", throwable);
         }

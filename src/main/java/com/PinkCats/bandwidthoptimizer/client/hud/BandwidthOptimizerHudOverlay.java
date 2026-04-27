@@ -93,18 +93,23 @@ public final class BandwidthOptimizerHudOverlay {
 
     private static String buildChunkCacheLine(BandwidthOptimizerHudStats.Snapshot snapshot) {
         if (snapshot == null) {
-            return "ChunkCache save 0B / 2 min 0B / hit 0 / ref 0";
+            return "ChunkCache save 0B / 2 min 0B / reuse 0 / full 0 / reuseWire 0B / avg 0B";
         }
         if (!snapshot.chunkTransportEnabled()
                 && snapshot.chunkCacheSavedTotalBytes() <= 0L
-                && snapshot.chunkCacheHitTotalPackets() <= 0L
-                && snapshot.chunkCacheRefreshTotalPackets() <= 0L) {
+                && snapshot.chunkCacheReuseTotalPackets() <= 0L
+                && snapshot.chunkCacheFullTotalPackets() <= 0L) {
             return "ChunkCache off / hotspot transport disabled";
         }
+        long averageReuseWireBytes = snapshot.chunkCacheReuseTotalPackets() <= 0L
+                ? 0L
+                : snapshot.chunkCacheReuseWireTotalBytes() / snapshot.chunkCacheReuseTotalPackets();
         return "ChunkCache save " + formatBytes(snapshot.chunkCacheSavedTotalBytes())
                 + " / 2 min " + formatBytes(snapshot.chunkCacheSavedRecentBytes())
-                + " / hit " + snapshot.chunkCacheHitTotalPackets()
-                + " / ref " + snapshot.chunkCacheRefreshTotalPackets();
+                + " / reuse " + snapshot.chunkCacheReuseTotalPackets()
+                + " / full " + snapshot.chunkCacheFullTotalPackets()
+                + " / reuseWire " + formatBytes(snapshot.chunkCacheReuseWireTotalBytes())
+                + " / avg " + formatBytes(averageReuseWireBytes);
     }
 
     private static void addIdleHintLines(List<String> lines, BandwidthOptimizerHudStats.Snapshot snapshot) {

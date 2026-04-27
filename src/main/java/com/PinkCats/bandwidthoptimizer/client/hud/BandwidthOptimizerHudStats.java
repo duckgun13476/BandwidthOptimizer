@@ -55,8 +55,10 @@ public final class BandwidthOptimizerHudStats {
                 recentTotals.optimizeSentBytes(),
                 totals.chunkCacheSavedBytes(),
                 recentTotals.chunkCacheSavedBytes(),
-                totals.chunkCacheHitPackets(),
-                totals.chunkCacheRefreshPackets(),
+                totals.chunkCacheReusePackets(),
+                totals.chunkCacheFullPackets(),
+                totals.chunkCacheReuseWireBytes(),
+                totals.chunkCacheFullWireBytes(),
                 totals.localCacheBytes(),
                 totals.localCachePacketCount(),
                 totals.localCacheChunkCount(),
@@ -135,7 +137,9 @@ public final class BandwidthOptimizerHudStats {
                 optimizeSentBytes,
                 chunkCacheSavedBytes,
                 Math.max(refTotals.frameCount() + patchTotals.frameCount(), 0L),
-                Math.max(fullTotals.frameCount() + patchTotals.frameCount(), 0L),
+                Math.max(fullTotals.frameCount(), 0L),
+                Math.max(refTotals.wireFrameBytes() + patchTotals.wireFrameBytes(), 0L),
+                Math.max(fullTotals.wireFrameBytes(), 0L),
                 localCacheBytes,
                 localCachePacketCount,
                 localCacheChunkCount,
@@ -178,6 +182,8 @@ public final class BandwidthOptimizerHudStats {
                     positiveDelta(totals.optimizeRawBytes(), firstSample.optimizeRawBytes()),
                     positiveDelta(totals.optimizeSentBytes(), firstSample.optimizeSentBytes()),
                     positiveDelta(totals.chunkCacheSavedBytes(), firstSample.chunkCacheSavedBytes()),
+                    0L,
+                    0L,
                     0L,
                     0L,
                     totals.localCacheBytes(),
@@ -263,8 +269,10 @@ public final class BandwidthOptimizerHudStats {
             long optimizeRawBytes,
             long optimizeSentBytes,
             long chunkCacheSavedBytes,
-            long chunkCacheHitPackets,
-            long chunkCacheRefreshPackets,
+            long chunkCacheReusePackets,
+            long chunkCacheFullPackets,
+            long chunkCacheReuseWireBytes,
+            long chunkCacheFullWireBytes,
             long localCacheBytes,
             long localCachePacketCount,
             long localCacheChunkCount,
@@ -277,7 +285,7 @@ public final class BandwidthOptimizerHudStats {
             long totalMapTemplateAdditions
     ) {
         private static Totals empty() {
-            return new Totals(0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+            return new Totals(0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
         }
     }
 
@@ -292,8 +300,10 @@ public final class BandwidthOptimizerHudStats {
             long optimizeRecentSentBytes,
             long chunkCacheSavedTotalBytes,
             long chunkCacheSavedRecentBytes,
-            long chunkCacheHitTotalPackets,
-            long chunkCacheRefreshTotalPackets,
+            long chunkCacheReuseTotalPackets,
+            long chunkCacheFullTotalPackets,
+            long chunkCacheReuseWireTotalBytes,
+            long chunkCacheFullWireTotalBytes,
             long localCacheBytes,
             long localCachePacketCount,
             long localCacheChunkCount,

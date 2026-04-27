@@ -131,6 +131,91 @@ public final class ChunkTransportDispatcher {
         return encodedEnvelopeBytes;
     }
 
+    public static OutboundChunkEncodeResult tryEncodeOutboundPacketWithTrace(
+            ChannelHandlerContext context,
+            String protocolName,
+            Packet<?> packet,
+            byte[] originalPacketBytes
+    ) {
+        if (!ChunkTransportRuntimeConfig.isEnabled())
+            return OutboundChunkEncodeResult.bypass(false, "runtime_chunk_transport_disabled");
+
+        if (shouldBypassHeavyChunkProtocol(packet))
+            return OutboundChunkEncodeResult.bypass(false, "heavy_chunk_protocol_bypass");
+
+        ChunkPacketDescriptor descriptor = ChunkPacketClassifier.classifyOutboundPlayPacket(protocolName, packet);
+        boolean chunkPacketCandidate = shouldUseRuntimeChunkTransport(descriptor);
+        if (!chunkPacketCandidate)
+            return OutboundChunkEncodeResult.bypass(false, "descriptor_not_chunk_candidate");
+
+        ChunkTransportBoundaryController.ChunkTransportPermit transportPermit =
+                ChunkTransportBoundaryController.permitChunkTransport(context, descriptor);
+        if (!transportPermit.allowed()) {
+            return OutboundChunkEncodeResult.bypass(true, transportPermit.reason());
+        }
+
+        ChunkSnapshotFingerprint fingerprint = ChunkSnapshotFingerprintService.fingerprintOutboundPacket(originalPacketBytes);
+        if (fingerprint == null) {
+            return OutboundChunkEncodeResult.bypass(true, "missing_snapshot_fingerprint");
+        }
+
+        ChunkPeerChunkStateSnapshot knownChunkSnapshot =
+                ChunkPeerStateManager.snapshotOutboundChunk(context, descriptor.coordinate());
+        ChunkPeerStateSnapshot peerSnapshot = ChunkPeerStateManager.snapshotOutboundChannel(context);
+        ChunkShadowSnapshot localChunkSnapshot =
+                ChunkShadowSnapshotManager.snapshotChunk(readChannelId(context), descriptor.coordinate());
+        ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult = ChunkPatchBuilder.buildPatchFromSnapshot(
+                localChunkSnapshot,
+                descriptor,
+                packet,
+                originalPacketBytes,
+                fingerprint
+        );
+        RuntimeChunkPlanningResult planningResult =
+                planRuntimeTransportWithTrace(
+                        descriptor,
+                        fingerprint,
+                        peerSnapshot,
+                        knownChunkSnapshot,
+                        patchBuildResult,
+                        originalPacketBytes
+                );
+        RuntimeChunkTransportDecision runtimeDecision = planningResult.transportDecision();
+        if (runtimeDecision == null) {
+            return OutboundChunkEncodeResult.bypass(true, planningResult.bypassReason());
+        }
+
+        byte[] encodedEnvelopeBytes = ChunkTransportEnvelopeCodec.encodeEnvelope(
+                new ChunkTransportEnvelope(runtimeDecision.frame(), runtimeDecision.copyTransportPayloadBytes())
+        );
+        ChunkHotspotStats.recordOutboundFrame(
+                runtimeDecision.frame(),
+                originalPacketBytes == null ? 0 : originalPacketBytes.length,
+                encodedEnvelopeBytes.length
+        );
+        ChunkHotspotVerifyHooks.flushCurrentReport();
+        long frameCount = incrementOutboundFrameCount(runtimeDecision.operation());
+        if (shouldLogSample(frameCount)) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ChunkTransport][Wrap] channel={}, op={}, count={}, epoch={}, observedPackets={}, chunk={}, payloadBytes={}, envelopeBytes={}, payloadHash={}",
+                    readChannelId(context),
+                    runtimeDecision.operation().logName(),
+                    frameCount,
+                    runtimeDecision.frame().epoch(),
+                    runtimeDecision.frame().observedPacketCount(),
+                    descriptor.coordinate().logText(),
+                    runtimeDecision.copyTransportPayloadBytes().length,
+                    encodedEnvelopeBytes.length,
+                    fingerprint.shortHash()
+            );
+        }
+        return OutboundChunkEncodeResult.applied(
+                runtimeDecision.operation(),
+                runtimeDecision.frame().reason(),
+                encodedEnvelopeBytes
+        );
+    }
+
     public static ChunkInboundDecodeResult tryDecodeInboundPacket(ChannelHandlerContext context, byte[] packetBytes) {
         if (!ChunkTransportEnvelopeCodec.looksLikeEnvelope(packetBytes)) {
             return ChunkInboundDecodeResult.passthrough(packetBytes);
@@ -178,6 +263,13 @@ public final class ChunkTransportDispatcher {
                 logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_NACK_FRAME_COUNT);
                 return ChunkInboundDecodeResult.consumeControlFrame();
             }
+            observeInboundSnapshot(context, envelope.frame(), restoredPacketBytes);
+            ChunkRuntimeReferenceStore.storePacketBytes(
+                    channelId,
+                    envelope.frame().payloadHash(),
+                    restoredPacketBytes
+            );
+            ChunkRuntimeReferenceStore.storeFullSnapshot(channelId, envelope.frame(), restoredPacketBytes);
             logInboundFrame(context, packetBytes, envelope, restoredPacketBytes, INBOUND_REF_FRAME_COUNT);
             return ChunkInboundDecodeResult.passthrough(restoredPacketBytes);
         }
@@ -243,6 +335,40 @@ public final class ChunkTransportDispatcher {
                 mapOperation(decision.decisionKind()),
                 buildRuntimeFrame(descriptor, peerSnapshot, decision),
                 resolveTransportPayloadBytes(decision, patchBuildResult, originalPacketBytes)
+        );
+    }
+
+    private static RuntimeChunkPlanningResult planRuntimeTransportWithTrace(
+            ChunkPacketDescriptor descriptor,
+            ChunkSnapshotFingerprint fingerprint,
+            ChunkPeerStateSnapshot peerSnapshot,
+            ChunkPeerChunkStateSnapshot knownChunkSnapshot,
+            ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult,
+            byte[] originalPacketBytes
+    ) {
+        if (!shouldUseRuntimeChunkTransport(descriptor) || fingerprint == null) {
+            return new RuntimeChunkPlanningResult(null, "runtime_chunk_not_applicable");
+        }
+
+        ChunkPlanDecision decision = ChunkTransportPlanner.planOutboundTransport(
+                descriptor,
+                fingerprint,
+                knownChunkSnapshot,
+                null,
+                patchBuildResult
+        );
+        if (decision == null || decision.decisionKind() == ChunkPlanDecisionKind.BYPASS) {
+            String bypassReason = decision == null ? "planner_returned_null" : decision.reason();
+            return new RuntimeChunkPlanningResult(null, bypassReason);
+        }
+
+        return new RuntimeChunkPlanningResult(
+                new RuntimeChunkTransportDecision(
+                        mapOperation(decision.decisionKind()),
+                        buildRuntimeFrame(descriptor, peerSnapshot, decision),
+                        resolveTransportPayloadBytes(decision, patchBuildResult, originalPacketBytes)
+                ),
+                ""
         );
     }
 
@@ -557,6 +683,44 @@ public final class ChunkTransportDispatcher {
 
         private byte[] copyTransportPayloadBytes() {
             return this.transportPayloadBytes.clone();
+        }
+    }
+
+    private record RuntimeChunkPlanningResult(
+            RuntimeChunkTransportDecision transportDecision,
+            String bypassReason
+    ) {
+        private RuntimeChunkPlanningResult {
+            bypassReason = bypassReason == null ? "" : bypassReason;
+        }
+    }
+
+    public record OutboundChunkEncodeResult(
+            boolean chunkPacketCandidate,
+            boolean chunkProtocolApplied,
+            ChunkHotspotFrameOp operation,
+            String traceReason,
+            byte[] encodedPacketBytes
+    ) {
+        public OutboundChunkEncodeResult {
+            traceReason = traceReason == null ? "" : traceReason;
+            encodedPacketBytes = encodedPacketBytes == null ? null : encodedPacketBytes.clone();
+        }
+
+        private static OutboundChunkEncodeResult bypass(boolean chunkPacketCandidate, String traceReason) {
+            return new OutboundChunkEncodeResult(chunkPacketCandidate, false, null, traceReason, null);
+        }
+
+        private static OutboundChunkEncodeResult applied(
+                ChunkHotspotFrameOp operation,
+                String traceReason,
+                byte[] encodedPacketBytes
+        ) {
+            return new OutboundChunkEncodeResult(true, true, operation, traceReason, encodedPacketBytes);
+        }
+
+        public byte[] copyEncodedPacketBytes() {
+            return this.encodedPacketBytes == null ? null : this.encodedPacketBytes.clone();
         }
     }
 }
