@@ -300,29 +300,11 @@ public final class ChunkShadowSnapshotManager {
                 String expectedPayloadHash
         ) {
             MutableChunkShadowSnapshot scopedSnapshot = this.chunkSnapshots.get(scopedChunkKeyText(scopeId, coordinate));
-            byte[] materializedScopedBytes = materializeMatchingSnapshot(
+            return materializeMatchingSnapshot(
                     scopedSnapshot,
                     expectedFullSnapshotVersion,
                     expectedPayloadHash
             );
-            if (materializedScopedBytes != null) {
-                return materializedScopedBytes;
-            }
-
-            for (MutableChunkShadowSnapshot snapshot : this.chunkSnapshots.values()) {
-                if (!matchesCoordinate(snapshot, coordinate)) {
-                    continue;
-                }
-                byte[] materializedFallbackBytes = materializeMatchingSnapshot(
-                        snapshot,
-                        expectedFullSnapshotVersion,
-                        expectedPayloadHash
-                );
-                if (materializedFallbackBytes != null) {
-                    return materializedFallbackBytes;
-                }
-            }
-            return null;
         }
 
         synchronized void invalidateChunk(long scopeId, ChunkPacketCoordinate coordinate) {

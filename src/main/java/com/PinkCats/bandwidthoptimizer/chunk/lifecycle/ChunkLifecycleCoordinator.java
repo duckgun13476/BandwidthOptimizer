@@ -37,7 +37,7 @@ public final class ChunkLifecycleCoordinator {
         boolean sameDimensionRespawn = previousDimension != null && previousDimension.equals(currentDimension);
         if (sameDimensionRespawn) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkPeer][Lifecycle] player={}, uuid={}, reason=respawn_same_dimension_no_reset, dimension={}",
+                    "[ChunkPeer][Lifecycle] player={}, uuid={}, reason=respawn_same_dimension_new_scope, dimension={}",
                     player.getGameProfile().getName(),
                     player.getUUID(),
                     currentDimension.location()

@@ -29,6 +29,8 @@ import java.util.Locale;
 
 public final class ChunkTransportControlFrameSender {
 
+    private static final String BOUNDARY_BARRIER_PACKET_CLASS_NAME =
+            "bandwidthoptimizer.chunk.transport.BoundaryBarrier";
 
     // Chunk use or not control
     private ChunkTransportControlFrameSender() {}
@@ -51,6 +53,38 @@ public final class ChunkTransportControlFrameSender {
             ChunkTransportBoundaryController.recordRuntimeFailure(context.channel(), sourceFrame.coordinate(), reason);
         }
         return sendControlFrame(context, buildControlFrame(ChunkHotspotFrameOp.INVALIDATE, sourceFrame, reason));
+    }
+
+    public static boolean sendBoundaryBarrier(Channel channel, long barrierId, String reason) {
+        if (barrierId <= 0L) {
+            return false;
+        }
+
+        String safeReason = reason == null || reason.isBlank() ? "post_boundary_barrier" : reason;
+        String barrierToken = Long.toUnsignedString(barrierId, 16);
+        return sendControlFrame(channel, new ChunkHotspotFrame(
+                ChunkHotspotFrameCodec.PROTOCOL_VERSION,
+                ChunkHotspotFrameOp.BARRIER,
+                0L,
+                barrierId,
+                "PLAY",
+                BOUNDARY_BARRIER_PACKET_CLASS_NAME,
+                ChunkHotspotKind.FULL_CHUNK,
+                ChunkLaneKind.FULL,
+                ChunkPacketCoordinate.unknown(),
+                0,
+                0L,
+                0L,
+                "",
+                barrierToken,
+                0L,
+                safeReason
+        ));
+    }
+
+
+    public static boolean sendBarrierAck(ChannelHandlerContext context, ChunkHotspotFrame sourceFrame, String reason) {
+        return sendControlFrame(context, buildControlFrame(ChunkHotspotFrameOp.BARRIER_ACK, sourceFrame, reason));
     }
 
     public static boolean sendLifecycleInvalidate(
@@ -191,10 +225,11 @@ public final class ChunkTransportControlFrameSender {
             ChunkHotspotStats.recordOutboundFrame(frame, 0, encodedEnvelopeBytes.length);
             ChunkHotspotVerifyHooks.flushCurrentReport();
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkTransport][Control][Send] channel={}, op={}, epoch={}, chunk={}, fullVersion={}, payloadHash={}, reason={}",
+                    "[ChunkTransport][Control][Send] channel={}, op={}, epoch={}, observedPackets={}, chunk={}, fullVersion={}, payloadHash={}, reason={}",
                     channel.id().asLongText(),
                     frame.operation().logName(),
                     frame.epoch(),
+                    frame.observedPacketCount(),
                     frame.coordinate().logText(),
                     frame.fullSnapshotVersion(),
                     shortenHash(frame.payloadHash()),

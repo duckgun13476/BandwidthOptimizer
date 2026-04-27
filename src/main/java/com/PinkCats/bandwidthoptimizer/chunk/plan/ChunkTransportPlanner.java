@@ -86,6 +86,19 @@ public final class ChunkTransportPlanner {
             ChunkPlanCostEstimate costEstimate,
             long nextFullSnapshotVersion
     ) {
+        if (requiresFullReplayBeforeDelta(chunkSnapshot)) {
+            return buildDecision(
+                    ChunkPlanDecisionKind.PUBLISH_FULL,
+                    buildFullReason(chunkSnapshot, snapshotFingerprint),
+                    descriptor,
+                    snapshotFingerprint,
+                    chunkSnapshot,
+                    storeObservation,
+                    nextFullSnapshotVersion,
+                    costEstimate
+            );
+        }
+
         if (shouldUseReference(chunkSnapshot, snapshotFingerprint)
                 && costEstimate.refTransportBytes() > 0
                 && costEstimate.refTransportBytes() < costEstimate.fullTransportBytes()) {
@@ -480,7 +493,7 @@ public final class ChunkTransportPlanner {
         }
         return "delta_byte_budget_exceeded_wait_full_chunk_refresh";
     }
-
+   
     private static String buildFullReason(
             ChunkPeerChunkStateSnapshot chunkSnapshot,
             ChunkSnapshotFingerprint snapshotFingerprint
@@ -489,11 +502,11 @@ public final class ChunkTransportPlanner {
             return "initial_full_snapshot";
         }
 
-        if (!hasAcknowledgedCurrentFullSnapshot(chunkSnapshot)
-                && chunkSnapshot != null
-                && chunkSnapshot.fullReplayRequiredBeforeDelta()
-                && sameSnapshotHash(chunkSnapshot, snapshotFingerprint)) {
-            return "await_receiver_ack_after_watch_boundary";
+        if (chunkSnapshot != null && chunkSnapshot.fullReplayRequiredBeforeDelta()) {
+            if (sameSnapshotHash(chunkSnapshot, snapshotFingerprint)) {
+                return "await_receiver_ack_after_watch_boundary";
+            }
+            return "refresh_full_snapshot_after_watch_boundary";
         }
 
         if (!hasAcknowledgedCurrentFullSnapshot(chunkSnapshot)

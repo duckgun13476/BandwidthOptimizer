@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.budget.ChunkClientCacheBudgetManager;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketClassifier;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
+import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportBoundaryController;
 import com.PinkCats.bandwidthoptimizer.chunk.packet.ClientboundPlayPacketCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
@@ -29,7 +30,6 @@ public final class ChunkInboundObservationService {
         }
 
         String protocolName = pendingFrame.protocolName();
-        long epoch = readCurrentEpoch(context);
         String channelId = context.channel().id().asLongText();
         boolean observedChunkPacket = false;
         for (int index = outputSizeBeforeDecode; index < out.size(); index++) {
@@ -38,6 +38,8 @@ public final class ChunkInboundObservationService {
                 continue;
             }
 
+            ChunkTransportBoundaryController.observeInboundPacket(context, protocolName, packet);
+            long epoch = readCurrentEpoch(context);
             ChunkPacketDescriptor descriptor = ChunkPacketClassifier.classifyOutboundPlayPacket(protocolName, packet);
             if (descriptor == null) {
                 continue;
@@ -60,6 +62,10 @@ public final class ChunkInboundObservationService {
     }
 
     private static long readCurrentEpoch(ChannelHandlerContext context) {
+        long mirroredInboundEpoch = ChunkTransportBoundaryController.readInboundChunkEpoch(context);
+        if (mirroredInboundEpoch > 0L) {
+            return mirroredInboundEpoch;
+        }
         ChunkPeerStateSnapshot channelSnapshot = ChunkPeerStateManager.snapshotOutboundChannel(context);
         return channelSnapshot == null ? 0L : channelSnapshot.epoch();
     }

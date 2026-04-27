@@ -155,33 +155,7 @@ public final class ChunkGlobalSnapshotStore {
                     expectedFullSnapshotVersion,
                     expectedPayloadHash
             );
-            if (exactScopeRecord != null) {
-                byte[] exactScopeBytes = readMaterializedBlobBytes(exactScopeRecord);
-                if (exactScopeBytes != null) {
-                    return exactScopeBytes;
-                }
-            }
-
-            String channelScopePrefix = channelId + ":";
-            for (Map.Entry<String, LinkedHashMap<Long, ChunkMaterializedSnapshotRecord>> entry : MATERIALIZED_SNAPSHOTS.entrySet()) {
-                if (!entry.getKey().startsWith(channelScopePrefix)) {
-                    continue;
-                }
-                ChunkMaterializedSnapshotRecord fallbackRecord = findMaterializedSnapshotRecord(
-                        entry.getValue(),
-                        coordinate,
-                        expectedFullSnapshotVersion,
-                        expectedPayloadHash
-                );
-                if (fallbackRecord == null) {
-                    continue;
-                }
-                byte[] fallbackBytes = readMaterializedBlobBytes(fallbackRecord);
-                if (fallbackBytes != null) {
-                    return fallbackBytes;
-                }
-            }
-            return null;
+            return readMaterializedBlobBytes(exactScopeRecord);
         }
     }
 

@@ -67,6 +67,7 @@ public final class ChannelTransportHooks {
         }
         if (boundaryDecision.forceDirectTransport()) {
             ChannelTransportBatchManager.flushOutboundBatchNow(context);
+            ChunkTransportBoundaryController.scheduleOutboundBarrier(context, boundaryDecision);
         }
 
         byte[] transportInputPacketBytes = chunkTransportEncodedBytes == null ? originalPacketBytes : chunkTransportEncodedBytes;

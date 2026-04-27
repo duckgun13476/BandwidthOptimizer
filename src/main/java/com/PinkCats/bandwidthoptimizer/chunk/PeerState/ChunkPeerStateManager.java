@@ -22,10 +22,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public final class ChunkPeerStateManager {
 
-    private static final long OVERWORLD_SCOPE_ID = 1L;
-    private static final long NETHER_SCOPE_ID = 2L;
-    private static final long END_SCOPE_ID = 3L;
-    private static final long FIRST_DYNAMIC_SCOPE_ID = 4L;
+    private static final long FIRST_SCOPE_ID = 1L;
     private static final ConcurrentHashMap<String, ChunkPeerState> CHANNEL_STATES = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<UUID, PlayerScopeState> PLAYER_SCOPE_STATES = new ConcurrentHashMap<>();
 
@@ -42,7 +39,16 @@ public final class ChunkPeerStateManager {
         }
 
         String channelId = context.channel().id().asLongText();
-        ChunkPeerState state = CHANNEL_STATES.computeIfAbsent(channelId, ChunkPeerState::new);
+        ChunkPeerState state = CHANNEL_STATES.get(channelId);
+        if (state == null) {
+            return null;
+        }
+
+        ChunkPeerStateSnapshot stateSnapshot = state.snapshot();
+        if (stateSnapshot.epoch() <= 0L) {
+            return null;
+        }
+
         ChunkPeerObservationSnapshot observation = state.recordObservation(descriptor, snapshotFingerprint, storeObservation);
         ChunkPeerStateSnapshot channelSnapshot = observation.channelState();
         if (state.shouldLogObservation()) {
@@ -85,7 +91,7 @@ public final class ChunkPeerStateManager {
         }
 
         ResourceKey<Level> dimensionKey = player.serverLevel().dimension();
-        long epoch = resolvePlayerScopeId(player.getUUID(), dimensionKey);
+        long epoch = resolvePlayerScopeId(player.getUUID(), dimensionKey, reason);
         String channelId = readPlayerChannelId(player);
         if (epoch <= 0L || channelId == null || channelId.isBlank()) {
             return epoch;
@@ -259,22 +265,13 @@ public final class ChunkPeerStateManager {
         return readPlayerChannel(player);
     }
 
-    private static long resolvePlayerScopeId(UUID playerId, ResourceKey<Level> dimensionKey) {
+    private static long resolvePlayerScopeId(UUID playerId, ResourceKey<Level> dimensionKey, String reason) {
         if (playerId == null || dimensionKey == null) {
             return 0L;
         }
-        if (Level.OVERWORLD.equals(dimensionKey)) {
-            return OVERWORLD_SCOPE_ID;
-        }
-        if (Level.NETHER.equals(dimensionKey)) {
-            return NETHER_SCOPE_ID;
-        }
-        if (Level.END.equals(dimensionKey)) {
-            return END_SCOPE_ID;
-        }
 
         PlayerScopeState scopeState = PLAYER_SCOPE_STATES.computeIfAbsent(playerId, ignored -> new PlayerScopeState());
-        return scopeState.scopeIdForDimension(dimensionKey);
+        return scopeState.bindScope(dimensionKey, reason);
     }
 
     private static String readPlayerChannelId(ServerPlayer player) {
@@ -408,23 +405,54 @@ public final class ChunkPeerStateManager {
 
     private static final class PlayerScopeState {
 
-        private final ConcurrentHashMap<ResourceKey<Level>, Long> dimensionScopeIds = new ConcurrentHashMap<>();
-        private final AtomicLong nextDynamicScopeId = new AtomicLong(FIRST_DYNAMIC_SCOPE_ID);
+        private final AtomicLong nextScopeId = new AtomicLong(FIRST_SCOPE_ID);
+        private ResourceKey<Level> preparedRespawnDimension;
+        private long preparedRespawnScopeId;
 
-        private synchronized long scopeIdForDimension(ResourceKey<Level> dimensionKey) {
-            Long existingScopeId = this.dimensionScopeIds.get(dimensionKey);
-            if (existingScopeId != null) {
-                return existingScopeId;
+
+        private synchronized long bindScope(ResourceKey<Level> dimensionKey, String reason) {
+            if (dimensionKey == null) {
+                return 0L;
             }
 
-            long assignedScopeId = this.nextDynamicScopeId.getAndIncrement();
-            this.dimensionScopeIds.put(dimensionKey, assignedScopeId);
+            if (isPreparedRespawnFollowup(reason)
+                    && this.preparedRespawnScopeId > 0L
+                    && dimensionKey.equals(this.preparedRespawnDimension)) {
+                long reusedPreparedScopeId = this.preparedRespawnScopeId;
+                clearPreparedRespawnScope();
+                return reusedPreparedScopeId;
+            }
+
+            long assignedScopeId = this.nextScopeId.getAndIncrement();
+            if (isPrepareRespawnBoundary(reason)) {
+                this.preparedRespawnDimension = dimensionKey;
+                this.preparedRespawnScopeId = assignedScopeId;
+            } else {
+                clearPreparedRespawnScope();
+            }
             return assignedScopeId;
         }
 
+        private void clearPreparedRespawnScope() {
+            this.preparedRespawnDimension = null;
+            this.preparedRespawnScopeId = 0L;
+        }
+
+        private static boolean isPrepareRespawnBoundary(String reason) {
+            return "prepare_client_respawn_boundary".equals(reason);
+        }
+
+        private static boolean isPreparedRespawnFollowup(String reason) {
+            return "respawn_same_dimension_rebind".equals(reason)
+                    || "respawn_dimension_scope".equals(reason)
+                    || "dimension_change".equals(reason);
+        }
+
         private String summaryText() {
-            return "dimensionScopes=" + this.dimensionScopeIds.size()
-                    + ", nextDynamicScopeId=" + this.nextDynamicScopeId.get();
+            return "nextScopeId=" + this.nextScopeId.get()
+                    + ", preparedRespawnScopeId=" + this.preparedRespawnScopeId
+                    + ", preparedRespawnDimension="
+                    + (this.preparedRespawnDimension == null ? "<none>" : this.preparedRespawnDimension.location());
         }
     }
 }

@@ -147,6 +147,7 @@ final class ChunkPeerChunkState {
         if (!this.knownSnapshotPublished) {
             return snapshot();
         }
+        clearReceiverAcknowledgement();
         this.fullReplayRequiredBeforeDelta = true;
         this.deltaPacketCountSinceFullSnapshot = 0L;
         this.deltaBytesSinceFullSnapshot = 0L;

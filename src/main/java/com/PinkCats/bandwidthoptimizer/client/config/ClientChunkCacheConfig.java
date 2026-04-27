@@ -11,6 +11,10 @@ import net.minecraftforge.fml.event.config.ModConfigEvent;
 public final class ClientChunkCacheConfig {
 
     private static final long BYTES_PER_MB = 1024L * 1024L;
+    private static final String MAX_MEMORY_OVERRIDE_PROPERTY =
+            "bandwidthoptimizer.clientChunkCacheMaxMemoryMb";
+    private static final String RECYCLE_TRIGGER_OVERRIDE_PROPERTY =
+            "bandwidthoptimizer.clientChunkCacheRecycleTriggerFreeMb";
     private static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
 
     public static final ForgeConfigSpec.IntValue CHUNK_CACHE_MAX_MEMORY_MB;
@@ -53,22 +57,33 @@ public final class ClientChunkCacheConfig {
 
     public static RuntimeConfig currentRuntimeConfig() {
         return new RuntimeConfig(
-                CHUNK_CACHE_MAX_MEMORY_MB.get(),
-                CHUNK_CACHE_RECYCLE_TRIGGER_FREE_MB.get()
+                readIntOverride(MAX_MEMORY_OVERRIDE_PROPERTY, CHUNK_CACHE_MAX_MEMORY_MB.get()),
+                readIntOverride(RECYCLE_TRIGGER_OVERRIDE_PROPERTY, CHUNK_CACHE_RECYCLE_TRIGGER_FREE_MB.get())
         );
     }
 
 
     // clear when cache over limit
     public static void applyRuntimeConfig(RuntimeConfig runtimeConfig) {
+        boolean hasMaxMemoryOverride = hasIntOverride(MAX_MEMORY_OVERRIDE_PROPERTY);
+        boolean hasRecycleTriggerOverride = hasIntOverride(RECYCLE_TRIGGER_OVERRIDE_PROPERTY);
+
         int safeMaxMemoryMb = runtimeConfig == null ? 110 : runtimeConfig.chunkCacheMaxMemoryMb();
-        safeMaxMemoryMb = Math.max(50, Math.min(500, safeMaxMemoryMb));
+        safeMaxMemoryMb = Math.max(hasMaxMemoryOverride ? 2 : 50, Math.min(500, safeMaxMemoryMb));
 
         int safeRecycleTriggerFreeMb = runtimeConfig == null ? 10 : runtimeConfig.chunkCacheRecycleTriggerFreeMb();
         safeRecycleTriggerFreeMb = Math.max(1, Math.min(safeMaxMemoryMb - 1, safeRecycleTriggerFreeMb));
 
         chunkCacheMaxMemoryMb = safeMaxMemoryMb;
         chunkCacheRecycleTriggerFreeMb = safeRecycleTriggerFreeMb;
+
+        Bandwidthoptimizer.LOGGER.info(
+                "[ChunkCache][Config] maxMemoryMb={}, recycleTriggerFreeMb={}, maxOverride={}, recycleOverride={}",
+                chunkCacheMaxMemoryMb,
+                chunkCacheRecycleTriggerFreeMb,
+                hasMaxMemoryOverride,
+                hasRecycleTriggerOverride
+        );
     }
 
 
@@ -93,5 +108,40 @@ public final class ClientChunkCacheConfig {
             int chunkCacheMaxMemoryMb,
             int chunkCacheRecycleTriggerFreeMb
     ) {
+    }
+
+    private static int readIntOverride(String propertyName, int fallbackValue) {
+        if (propertyName == null || propertyName.isBlank()) {
+            return fallbackValue;
+        }
+
+        String rawValue = System.getProperty(propertyName);
+        if (rawValue == null || rawValue.isBlank()) {
+            return fallbackValue;
+        }
+
+        try {
+            return Integer.parseInt(rawValue.trim());
+        } catch (NumberFormatException ignored) {
+            return fallbackValue;
+        }
+    }
+
+    private static boolean hasIntOverride(String propertyName) {
+        if (propertyName == null || propertyName.isBlank()) {
+            return false;
+        }
+
+        String rawValue = System.getProperty(propertyName);
+        if (rawValue == null || rawValue.isBlank()) {
+            return false;
+        }
+
+        try {
+            Integer.parseInt(rawValue.trim());
+            return true;
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
     }
 }

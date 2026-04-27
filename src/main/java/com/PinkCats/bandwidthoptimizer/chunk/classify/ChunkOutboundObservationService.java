@@ -43,7 +43,11 @@ public final class ChunkOutboundObservationService {
         ChunkSnapshotFingerprint snapshotFingerprint =
                 ChunkSnapshotFingerprintService.fingerprintOutboundPacket(encodedPacketBytes);
         ChunkPeerStateSnapshot channelSnapshotBeforeObserve = ChunkPeerStateManager.snapshotOutboundChannel(context);
-        long currentScopeId = channelSnapshotBeforeObserve == null ? 0L : channelSnapshotBeforeObserve.epoch();
+        if (channelSnapshotBeforeObserve == null || channelSnapshotBeforeObserve.epoch() <= 0L) {
+            return;
+        }
+
+        long currentScopeId = channelSnapshotBeforeObserve.epoch();
         ChunkPeerChunkStateSnapshot chunkSnapshotBeforeObserve =
                 ChunkPeerStateManager.snapshotOutboundChunk(context, currentScopeId, descriptor.coordinate());
         ChunkShadowSnapshot localChunkSnapshotBeforeObserve =
@@ -80,9 +84,12 @@ public final class ChunkOutboundObservationService {
                 storeObservation
         );
         ChunkPeerStateSnapshot channelSnapshot = observation == null ? null : observation.channelState();
+        if (channelSnapshot == null || channelSnapshot.epoch() <= 0L) {
+            return;
+        }
         ChunkShadowSnapshotManager.observeOutboundPacket(
                 context,
-                channelSnapshot == null ? 0L : channelSnapshot.epoch(),
+                channelSnapshot.epoch(),
                 descriptor,
                 packet,
                 encodedPacketBytes

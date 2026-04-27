@@ -4,7 +4,9 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordina
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -27,19 +29,18 @@ public final class ChunkRuntimeReferenceStore {
     }
 
 
-    public static void storeFullSnapshot(String channelId, ChunkHotspotFrame frame, byte[] originalPacketBytes) {
+    public static void storeFullSnapshot(String channelId, ChunkHotspotFrame frame) {
         if (channelId == null
                 || channelId.isBlank()
                 || frame == null
                 || frame.coordinate() == null
-                || !frame.coordinate().present()
-                || originalPacketBytes == null) {
+                || !frame.coordinate().present()) {
             return;
         }
 
         CHANNEL_CACHES
                 .computeIfAbsent(channelId, ignored -> new ChannelReferenceCache())
-                .putFullSnapshot(frame.epoch(), frame.coordinate(), frame.fullSnapshotVersion(), frame.payloadHash(), originalPacketBytes);
+                .putFullSnapshot(frame.epoch(), frame.coordinate(), frame.fullSnapshotVersion(), frame.payloadHash());
     }
 
 
@@ -88,31 +89,26 @@ public final class ChunkRuntimeReferenceStore {
         CHANNEL_CACHES.remove(channelId);
     }
 
-    public static long trimToTotalBytes(long targetBytes) {
+    public static TrimResult trimToTotalBytes(long targetBytes) {
         long safeTargetBytes = Math.max(targetBytes, 0L);
         long currentTotalBytes = snapshot().totalBytes();
         long releasedBytes = 0L;
+        ArrayList<EvictedFullSnapshot> evictedFullSnapshots = new ArrayList<>();
         if (currentTotalBytes <= safeTargetBytes) {
-            return 0L;
+            return new TrimResult(0L, List.of());
         }
 
         while (currentTotalBytes > safeTargetBytes) {
-            long releasedFullSnapshotBytes = evictOneOldestFullSnapshot();
-            if (releasedFullSnapshotBytes > 0L) {
-                releasedBytes += releasedFullSnapshotBytes;
-                currentTotalBytes = Math.max(currentTotalBytes - releasedFullSnapshotBytes, 0L);
-                continue;
-            }
-
-            long releasedPacketEntryBytes = evictOneOldestPacketEntry();
-            if (releasedPacketEntryBytes <= 0L) {
+            PacketEntryEvictionSelection packetEntryEviction = evictOneOldestPacketEntry();
+            if (packetEntryEviction.releasedBytes() <= 0L) {
                 break;
             }
-            releasedBytes += releasedPacketEntryBytes;
-            currentTotalBytes = Math.max(currentTotalBytes - releasedPacketEntryBytes, 0L);
+            releasedBytes += packetEntryEviction.releasedBytes();
+            currentTotalBytes = Math.max(currentTotalBytes - packetEntryEviction.releasedBytes(), 0L);
+            evictedFullSnapshots.addAll(packetEntryEviction.evictedFullSnapshots());
         }
 
-        return releasedBytes;
+        return new TrimResult(releasedBytes, List.copyOf(evictedFullSnapshots));
     }
 
 
@@ -145,30 +141,28 @@ public final class ChunkRuntimeReferenceStore {
     }
 
 
-    private static long evictOneOldestFullSnapshot() {
-        for (ChannelReferenceCache cache : CHANNEL_CACHES.values()) {
+    private static PacketEntryEvictionSelection evictOneOldestPacketEntry() {
+        for (Map.Entry<String, ChannelReferenceCache> channelEntry : CHANNEL_CACHES.entrySet()) {
+            ChannelReferenceCache cache = channelEntry.getValue();
             if (cache == null) {
                 continue;
             }
-            long releasedBytes = cache.evictOldestFullSnapshot();
-            if (releasedBytes > 0L) {
-                return releasedBytes;
+            ChannelReferenceCache.PacketEntryEvictionResult evictionResult = cache.evictOldestPacketEntry();
+            if (evictionResult.releasedBytes() > 0L) {
+                ArrayList<EvictedFullSnapshot> evictedFullSnapshots = new ArrayList<>();
+                for (RuntimeFullSnapshot runtimeFullSnapshot : evictionResult.evictedFullSnapshots()) {
+                    evictedFullSnapshots.add(new EvictedFullSnapshot(
+                            channelEntry.getKey(),
+                            runtimeFullSnapshot.scopeId(),
+                            runtimeFullSnapshot.coordinate(),
+                            runtimeFullSnapshot.fullSnapshotVersion(),
+                            runtimeFullSnapshot.payloadHash()
+                    ));
+                }
+                return new PacketEntryEvictionSelection(evictionResult.releasedBytes(), List.copyOf(evictedFullSnapshots));
             }
         }
-        return 0L;
-    }
-
-    private static long evictOneOldestPacketEntry() {
-        for (ChannelReferenceCache cache : CHANNEL_CACHES.values()) {
-            if (cache == null) {
-                continue;
-            }
-            long releasedBytes = cache.evictOldestPacketEntry();
-            if (releasedBytes > 0L) {
-                return releasedBytes;
-            }
-        }
-        return 0L;
+        return PacketEntryEvictionSelection.empty();
     }
 
     private static final class ChannelReferenceCache {
@@ -200,59 +194,47 @@ public final class ChunkRuntimeReferenceStore {
                 long scopeId,
                 ChunkPacketCoordinate coordinate,
                 long fullSnapshotVersion,
-                String payloadHash,
-                byte[] originalPacketBytes
+                String payloadHash
         ) {
-            this.fullSnapshots.put(
+            RuntimeFullSnapshot replacedSnapshot = this.fullSnapshots.put(
                     scopedChunkKeyText(scopeId, coordinate),
                     new RuntimeFullSnapshot(
                             Math.max(scopeId, 0L),
                             coordinate,
                             Math.max(fullSnapshotVersion, 0L),
-                            payloadHash == null ? "" : payloadHash,
-                            originalPacketBytes
+                            payloadHash == null ? "" : payloadHash
                     )
             );
+            if (replacedSnapshot != null) {
+                releaseOrphanedPacketEntry(replacedSnapshot.payloadHash());
+            }
         }
 
         synchronized RuntimeFullSnapshot getFullSnapshot(long scopeId, ChunkPacketCoordinate coordinate) {
             RuntimeFullSnapshot scopedSnapshot = this.fullSnapshots.get(scopedChunkKeyText(scopeId, coordinate));
-            if (scopedSnapshot != null) {
-                return scopedSnapshot.copy();
-            }
-
-            for (RuntimeFullSnapshot runtimeFullSnapshot : this.fullSnapshots.values()) {
-                if (!matchesCoordinate(runtimeFullSnapshot, coordinate)) {
-                    continue;
-                }
-                return runtimeFullSnapshot.copy();
-            }
-            return null;
+            return scopedSnapshot == null ? null : scopedSnapshot.copy();
         }
 
         synchronized void removeFullSnapshot(long scopeId, ChunkPacketCoordinate coordinate) {
-            this.fullSnapshots.remove(scopedChunkKeyText(scopeId, coordinate));
+            RuntimeFullSnapshot removedSnapshot = this.fullSnapshots.remove(scopedChunkKeyText(scopeId, coordinate));
+            if (removedSnapshot != null) {
+                releaseOrphanedPacketEntry(removedSnapshot.payloadHash());
+            }
         }
 
 
-        synchronized long evictOldestPacketEntry() {
+        synchronized PacketEntryEvictionResult evictOldestPacketEntry() {
             if (this.entries.isEmpty()) {
-                return 0L;
+                return PacketEntryEvictionResult.empty();
             }
 
             Map.Entry<String, byte[]> eldestEntry = this.entries.entrySet().iterator().next();
             byte[] removedBytes = this.entries.remove(eldestEntry.getKey());
-            return removedBytes == null ? 0L : removedBytes.length;
-        }
-
-        synchronized long evictOldestFullSnapshot() {
-            if (this.fullSnapshots.isEmpty()) {
-                return 0L;
-            }
-
-            Map.Entry<String, RuntimeFullSnapshot> eldestEntry = this.fullSnapshots.entrySet().iterator().next();
-            RuntimeFullSnapshot removedSnapshot = this.fullSnapshots.remove(eldestEntry.getKey());
-            return removedSnapshot == null ? 0L : removedSnapshot.packetBytes().length;
+            List<RuntimeFullSnapshot> evictedFullSnapshots = removeFullSnapshotsByPayloadHash(eldestEntry.getKey());
+            return new PacketEntryEvictionResult(
+                    removedBytes == null ? 0L : removedBytes.length,
+                    evictedFullSnapshots
+            );
         }
 
 
@@ -274,22 +256,60 @@ public final class ChunkRuntimeReferenceStore {
         }
 
         synchronized long fullSnapshotBytes() {
-            long totalBytes = 0L;
-            for (RuntimeFullSnapshot runtimeFullSnapshot : this.fullSnapshots.values()) {
-                totalBytes += runtimeFullSnapshot == null ? 0L : runtimeFullSnapshot.packetBytes().length;
-            }
-            return totalBytes;
+            return 0L;
         }
 
-        private static boolean matchesCoordinate(RuntimeFullSnapshot runtimeFullSnapshot, ChunkPacketCoordinate coordinate) {
-            return runtimeFullSnapshot != null
-                    && coordinate != null
-                    && coordinate.present()
-                    && runtimeFullSnapshot.coordinate() != null
-                    && runtimeFullSnapshot.coordinate().present()
-                    && runtimeFullSnapshot.coordinate().chunkX() == coordinate.chunkX()
-                    && runtimeFullSnapshot.coordinate().chunkZ() == coordinate.chunkZ();
+        private List<RuntimeFullSnapshot> removeFullSnapshotsByPayloadHash(String payloadHash) {
+            ArrayList<RuntimeFullSnapshot> removedSnapshots = new ArrayList<>();
+            if (payloadHash == null || payloadHash.isBlank()) {
+                return List.of();
+            }
+
+            this.fullSnapshots.entrySet().removeIf(entry -> {
+                RuntimeFullSnapshot snapshot = entry.getValue();
+                if (snapshot == null || !payloadHash.equals(snapshot.payloadHash())) {
+                    return false;
+                }
+                removedSnapshots.add(snapshot);
+                return true;
+            });
+            return List.copyOf(removedSnapshots);
         }
+
+
+        private void releaseOrphanedPacketEntry(String payloadHash) {
+            if (payloadHash == null || payloadHash.isBlank() || isPayloadHashReferencedByFullSnapshot(payloadHash)) {
+                return;
+            }
+            this.entries.remove(payloadHash);
+        }
+
+        private boolean isPayloadHashReferencedByFullSnapshot(String payloadHash) {
+            if (payloadHash == null || payloadHash.isBlank()) {
+                return false;
+            }
+            for (RuntimeFullSnapshot runtimeFullSnapshot : this.fullSnapshots.values()) {
+                if (runtimeFullSnapshot != null && payloadHash.equals(runtimeFullSnapshot.payloadHash())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private record PacketEntryEvictionResult(
+                long releasedBytes,
+                List<RuntimeFullSnapshot> evictedFullSnapshots
+        ) {
+            private PacketEntryEvictionResult {
+                releasedBytes = Math.max(releasedBytes, 0L);
+                evictedFullSnapshots = evictedFullSnapshots == null ? List.of() : List.copyOf(evictedFullSnapshots);
+            }
+
+            private static PacketEntryEvictionResult empty() {
+                return new PacketEntryEvictionResult(0L, List.of());
+            }
+        }
+
     }
 
     public record Snapshot(
@@ -304,19 +324,57 @@ public final class ChunkRuntimeReferenceStore {
         }
     }
 
+    public record TrimResult(
+            long releasedBytes,
+            List<EvictedFullSnapshot> evictedFullSnapshots
+    ) {
+        public TrimResult {
+            releasedBytes = Math.max(releasedBytes, 0L);
+            evictedFullSnapshots = evictedFullSnapshots == null ? List.of() : List.copyOf(evictedFullSnapshots);
+        }
+    }
+
+    public record EvictedFullSnapshot(
+            String channelId,
+            long scopeId,
+            ChunkPacketCoordinate coordinate,
+            long fullSnapshotVersion,
+            String payloadHash
+    ) {
+        public EvictedFullSnapshot {
+            channelId = channelId == null ? "" : channelId;
+            coordinate = coordinate == null ? ChunkPacketCoordinate.unknown() : coordinate;
+            payloadHash = payloadHash == null ? "" : payloadHash;
+        }
+    }
+
     public record RuntimeFullSnapshot(
             long scopeId,
             ChunkPacketCoordinate coordinate,
             long fullSnapshotVersion,
-            String payloadHash,
-            byte[] packetBytes
+            String payloadHash
     ) {
         public RuntimeFullSnapshot {
-            packetBytes = packetBytes == null ? new byte[0] : Arrays.copyOf(packetBytes, packetBytes.length);
+            coordinate = coordinate == null ? ChunkPacketCoordinate.unknown() : coordinate;
+            payloadHash = payloadHash == null ? "" : payloadHash;
         }
 
         public RuntimeFullSnapshot copy() {
-            return new RuntimeFullSnapshot(this.scopeId, this.coordinate, this.fullSnapshotVersion, this.payloadHash, this.packetBytes);
+            return new RuntimeFullSnapshot(this.scopeId, this.coordinate, this.fullSnapshotVersion, this.payloadHash);
+        }
+    }
+
+    private record PacketEntryEvictionSelection(
+            long releasedBytes,
+            List<EvictedFullSnapshot> evictedFullSnapshots
+    ) {
+        private PacketEntryEvictionSelection {
+            releasedBytes = Math.max(releasedBytes, 0L);
+            evictedFullSnapshots = evictedFullSnapshots == null ? List.of() : List.copyOf(evictedFullSnapshots);
+        }
+
+        private static PacketEntryEvictionSelection empty() {
+            return new PacketEntryEvictionSelection(0L, List.of());
         }
     }
 

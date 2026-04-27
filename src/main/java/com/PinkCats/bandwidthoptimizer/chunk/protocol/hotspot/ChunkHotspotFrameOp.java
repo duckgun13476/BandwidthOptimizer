@@ -7,7 +7,9 @@ public enum ChunkHotspotFrameOp {
     PUBLISH_PATCH("publish_patch"),
     ACK("ack"),
     NACK("nack"),
-    INVALIDATE("invalidate");
+    INVALIDATE("invalidate"),
+    BARRIER("barrier"),
+    BARRIER_ACK("barrier_ack");
 
     private final String logName;
 
