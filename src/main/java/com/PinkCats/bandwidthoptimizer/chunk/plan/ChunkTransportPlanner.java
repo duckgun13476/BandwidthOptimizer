@@ -17,6 +17,8 @@ public final class ChunkTransportPlanner {
     private static final long DELTA_BYTES_REFRESH_MULTIPLIER = 2L;
     private static final int ENVELOPE_MAGIC_BYTES = 8;
     private static final int UNAVAILABLE_ESTIMATED_BYTES = -1;
+    public static final String WATCH_BOUNDARY_REUSE_PROBE_REASON =
+            "reuse_cached_full_snapshot_after_watch_boundary";
 
     private ChunkTransportPlanner() {}
 
@@ -86,6 +88,20 @@ public final class ChunkTransportPlanner {
             ChunkPlanCostEstimate costEstimate,
             long nextFullSnapshotVersion
     ) {
+
+        if (shouldUseWatchBoundaryReuseProbe(chunkSnapshot, snapshotFingerprint, costEstimate)) {
+            return buildDecision(
+                    ChunkPlanDecisionKind.PUBLISH_REF,
+                    WATCH_BOUNDARY_REUSE_PROBE_REASON,
+                    descriptor,
+                    snapshotFingerprint,
+                    chunkSnapshot,
+                    storeObservation,
+                    Math.max(chunkSnapshot == null ? 0L : chunkSnapshot.fullSnapshotVersion(), 0L),
+                    costEstimate
+            );
+        }
+
         if (requiresFullReplayBeforeDelta(chunkSnapshot)) {
             return buildDecision(
                     ChunkPlanDecisionKind.PUBLISH_FULL,
@@ -330,6 +346,19 @@ public final class ChunkTransportPlanner {
                 && hasAcknowledgedCurrentFullSnapshot(chunkSnapshot)
                 && snapshotFingerprint != null
                 && snapshotFingerprint.hashHex().equals(chunkSnapshot.knownSnapshotHash());
+    }
+
+    private static boolean shouldUseWatchBoundaryReuseProbe(
+            ChunkPeerChunkStateSnapshot chunkSnapshot,
+            ChunkSnapshotFingerprint snapshotFingerprint,
+            ChunkPlanCostEstimate costEstimate
+    ) {
+        return requiresFullReplayBeforeDelta(chunkSnapshot)
+                && sameSnapshotHash(chunkSnapshot, snapshotFingerprint)
+                && costEstimate != null
+                && costEstimate.refTransportBytes() > 0
+                && (costEstimate.fullTransportBytes() <= 0
+                || costEstimate.refTransportBytes() < costEstimate.fullTransportBytes());
     }
 
     private static boolean shouldUseInFlightReferenceBeforeAck(

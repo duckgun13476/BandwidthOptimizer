@@ -42,6 +42,14 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public final class ChunkTransportDispatcher {
 
+    private static final String WATCH_BOUNDARY_REUSE_PROBE_MISS_REASON =
+            "runtime_ref_missing_base_after_watch_boundary_reuse_probe";
+    private static final String WATCH_BOUNDARY_REUSE_PROBE_ACK_REASON =
+            "runtime_ref_reused_after_watch_boundary";
+    private static final String WATCH_BOUNDARY_REUSE_PROBE_FALLBACK_FULL_REASON =
+            "fallback_full_after_watch_boundary_reuse_probe_miss";
+    private static final String WATCH_BOUNDARY_REUSE_PROBE_FALLBACK_INVALIDATE_REASON =
+            "runtime_watch_boundary_reuse_probe_fallback_unavailable";
     private static final AtomicLong OUTBOUND_FULL_FRAME_COUNT = new AtomicLong();
     private static final AtomicLong OUTBOUND_REF_FRAME_COUNT = new AtomicLong();
     private static final AtomicLong OUTBOUND_PATCH_FRAME_COUNT = new AtomicLong();
@@ -149,6 +157,7 @@ public final class ChunkTransportDispatcher {
                 runtimeDecision.frame(),
                 envelopePayloadBytes
         );
+        rememberWatchBoundaryReuseProbe(context, runtimeDecision, originalPacketBytes);
         return encodedEnvelopeBytes;
     }
 
@@ -245,6 +254,7 @@ public final class ChunkTransportDispatcher {
                 runtimeDecision.frame(),
                 runtimeDecision.copyTransportPayloadBytes()
         );
+        rememberWatchBoundaryReuseProbe(context, runtimeDecision, originalPacketBytes);
         return OutboundChunkEncodeResult.applied(
                 runtimeDecision.operation(),
                 runtimeDecision.frame().reason(),
@@ -312,7 +322,11 @@ public final class ChunkTransportDispatcher {
                     logTrimmedBudgetSuppressedRuntimeFrame(context, envelope.frame(), trimmedBudgetIgnoreReason);
                     return ChunkInboundDecodeResult.consumeControlFrame();
                 }
-                ChunkTransportControlFrameSender.sendNack(context, envelope.frame(), "runtime_ref_missing_base");
+                ChunkTransportControlFrameSender.sendNack(
+                        context,
+                        envelope.frame(),
+                        resolveRefMissingBaseReason(envelope.frame())
+                );
                 logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_NACK_FRAME_COUNT);
                 return ChunkInboundDecodeResult.consumeControlFrame();
             }
@@ -323,6 +337,9 @@ public final class ChunkTransportDispatcher {
                     restoredPacketBytes
             );
             ChunkRuntimeReferenceStore.storeFullSnapshot(channelId, envelope.frame());
+            if (isWatchBoundaryReuseProbeFrame(envelope.frame())) {
+                ChunkTransportControlFrameSender.sendAck(context, envelope.frame(), WATCH_BOUNDARY_REUSE_PROBE_ACK_REASON);
+            }
             logInboundFrame(context, packetBytes, envelope, restoredPacketBytes, INBOUND_REF_FRAME_COUNT);
             return ChunkInboundDecodeResult.passthrough(restoredPacketBytes);
         }
@@ -352,6 +369,7 @@ public final class ChunkTransportDispatcher {
         if (envelope.frame().operation() == ChunkHotspotFrameOp.ACK) {
             ExperientChunkHotspotOldEpochDataFrameDiagnostic.maybeReplayAfterNewerClientEpoch(context, envelope.frame());
             ChunkPeerStateManager.acknowledgeOutboundChunk(context, envelope.frame());
+            ChunkWatchBoundaryReusePendingStore.clearPendingFull(readChannelId(context), envelope.frame());
             logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_ACK_FRAME_COUNT);
             return ChunkInboundDecodeResult.consumeControlFrame();
         }
@@ -362,6 +380,28 @@ public final class ChunkTransportDispatcher {
                     ChunkPeerStateManager.snapshotOutboundChunk(context, envelope.frame().epoch(), envelope.frame().coordinate());
             if (!matchesCurrentReceiverBaseControlFrame(currentChunkSnapshot, envelope.frame())) {
                 logIgnoredReceiverControlFrame("Nack", context, envelope.frame(), currentChunkSnapshot);
+                logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_NACK_FRAME_COUNT);
+                return ChunkInboundDecodeResult.consumeControlFrame();
+            }
+            if (isWatchBoundaryReuseProbeMiss(envelope.frame())) {
+                ChunkPeerStateManager.negativeAcknowledgeOutboundChunk(context, envelope.frame());
+                ChunkWatchBoundaryReusePendingStore.PendingFullReplay pendingReplay =
+                        ChunkWatchBoundaryReusePendingStore.takePendingFull(readChannelId(context), envelope.frame());
+                if (pendingReplay != null
+                        && ChunkTransportControlFrameSender.sendReplayFullFrame(
+                        context.channel(),
+                        pendingReplay.probeFrame(),
+                        pendingReplay.copyOriginalPacketBytes(),
+                        WATCH_BOUNDARY_REUSE_PROBE_FALLBACK_FULL_REASON
+                )) {
+                    logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_NACK_FRAME_COUNT);
+                    return ChunkInboundDecodeResult.consumeControlFrame();
+                }
+                ChunkTransportControlFrameSender.sendInvalidate(
+                        context,
+                        envelope.frame(),
+                        WATCH_BOUNDARY_REUSE_PROBE_FALLBACK_INVALIDATE_REASON
+                );
                 logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_NACK_FRAME_COUNT);
                 return ChunkInboundDecodeResult.consumeControlFrame();
             }
@@ -380,6 +420,7 @@ public final class ChunkTransportDispatcher {
                 logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_INVALIDATE_FRAME_COUNT);
                 return ChunkInboundDecodeResult.consumeControlFrame();
             }
+            ChunkWatchBoundaryReusePendingStore.clearPendingFull(readChannelId(context), envelope.frame());
             logOldEpochInvalidateDiagnosticBefore(context, envelope.frame(), currentChunkSnapshot);
             ExperientChunkHotspotClientBudgetTrimDiagnostic.maybeReplayAfterClientBudgetInvalidate(context, envelope.frame());
             ChunkPeerStateManager.invalidateOutboundChunk(context, envelope.frame());
@@ -669,6 +710,42 @@ public final class ChunkTransportDispatcher {
                 && runtimeFullSnapshot.fullSnapshotVersion() == frame.fullSnapshotVersion()
                 && runtimeFullSnapshot.payloadHash() != null
                 && runtimeFullSnapshot.payloadHash().equals(frame.baseSnapshotHash());
+    }
+
+    private static void rememberWatchBoundaryReuseProbe(
+            ChannelHandlerContext context,
+            RuntimeChunkTransportDecision runtimeDecision,
+            byte[] originalPacketBytes
+    ) {
+        if (context == null
+                || runtimeDecision == null
+                || runtimeDecision.frame() == null
+                || !isWatchBoundaryReuseProbeFrame(runtimeDecision.frame())) {
+            return;
+        }
+        ChunkWatchBoundaryReusePendingStore.rememberProbe(
+                readChannelId(context),
+                runtimeDecision.frame(),
+                originalPacketBytes
+        );
+    }
+
+    private static boolean isWatchBoundaryReuseProbeFrame(ChunkHotspotFrame frame) {
+        return frame != null
+                && frame.operation() == ChunkHotspotFrameOp.PUBLISH_REF
+                && ChunkTransportPlanner.WATCH_BOUNDARY_REUSE_PROBE_REASON.equals(frame.reason());
+    }
+
+    private static boolean isWatchBoundaryReuseProbeMiss(ChunkHotspotFrame frame) {
+        return frame != null
+                && frame.operation() == ChunkHotspotFrameOp.NACK
+                && WATCH_BOUNDARY_REUSE_PROBE_MISS_REASON.equals(frame.reason());
+    }
+
+    private static String resolveRefMissingBaseReason(ChunkHotspotFrame frame) {
+        return isWatchBoundaryReuseProbeFrame(frame)
+                ? WATCH_BOUNDARY_REUSE_PROBE_MISS_REASON
+                : "runtime_ref_missing_base";
     }
 
 

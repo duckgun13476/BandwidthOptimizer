@@ -150,6 +150,37 @@ public final class ChunkTransportControlFrameSender {
         ));
     }
 
+    public static boolean sendReplayFullFrame(
+            Channel channel,
+            ChunkHotspotFrame sourceFrame,
+            byte[] originalPacketBytes,
+            String reason
+    ) {
+        if (sourceFrame == null || originalPacketBytes == null || originalPacketBytes.length == 0) {
+            return false;
+        }
+
+        ChunkHotspotFrame replayFullFrame = new ChunkHotspotFrame(
+                ChunkHotspotFrameCodec.PROTOCOL_VERSION,
+                ChunkHotspotFrameOp.PUBLISH_FULL,
+                sourceFrame.epoch(),
+                sourceFrame.observedPacketCount(),
+                sourceFrame.protocolName(),
+                sourceFrame.packetClassName(),
+                sourceFrame.hotspotKind(),
+                sourceFrame.laneKind(),
+                sourceFrame.coordinate(),
+                originalPacketBytes.length,
+                sourceFrame.fullSnapshotVersion(),
+                sourceFrame.laneVersion(),
+                sourceFrame.payloadHash(),
+                sourceFrame.payloadHash(),
+                0L,
+                reason == null ? "" : reason
+        );
+        return sendEnvelopeFrame(channel, replayFullFrame, originalPacketBytes, originalPacketBytes.length);
+    }
+
     private static ChunkHotspotFrame buildControlFrame(
             ChunkHotspotFrameOp operation,
             ChunkHotspotFrame sourceFrame,
@@ -185,6 +216,15 @@ public final class ChunkTransportControlFrameSender {
 
 
     private static boolean sendControlFrame(Channel channel, ChunkHotspotFrame frame) {
+        return sendEnvelopeFrame(channel, frame, new byte[0], 0);
+    }
+
+    private static boolean sendEnvelopeFrame(
+            Channel channel,
+            ChunkHotspotFrame frame,
+            byte[] payloadBytes,
+            int logicalPacketBytes
+    ) {
         if (channel == null
                 || frame == null
                 || isChannelClosing(channel)
@@ -201,7 +241,7 @@ public final class ChunkTransportControlFrameSender {
 
         try {
             byte[] encodedEnvelopeBytes = ChunkTransportEnvelopeCodec.encodeEnvelope(
-                    new ChunkTransportEnvelope(frame, new byte[0])
+                    new ChunkTransportEnvelope(frame, payloadBytes)
             );
             ChannelTransportSession transportSession = ChannelTransportStateManager.getOrCreateSession(channel);
             ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame =
@@ -222,10 +262,10 @@ public final class ChunkTransportControlFrameSender {
                 }
             });
             ChannelTransportTelemetry.recordOutboundWrap(readProtocolName(channel), wrappedFrame);
-            ChunkHotspotStats.recordOutboundFrame(frame, 0, encodedEnvelopeBytes.length);
+            ChunkHotspotStats.recordOutboundFrame(frame, Math.max(logicalPacketBytes, 0), encodedEnvelopeBytes.length);
             ChunkHotspotVerifyHooks.flushCurrentReport();
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkTransport][Control][Send] channel={}, op={}, epoch={}, observedPackets={}, chunk={}, fullVersion={}, payloadHash={}, reason={}",
+                    "[ChunkTransport][Control][Send] channel={}, op={}, epoch={}, observedPackets={}, chunk={}, fullVersion={}, payloadHash={}, payloadBytes={}, reason={}",
                     channel.id().asLongText(),
                     frame.operation().logName(),
                     frame.epoch(),
@@ -233,6 +273,7 @@ public final class ChunkTransportControlFrameSender {
                     frame.coordinate().logText(),
                     frame.fullSnapshotVersion(),
                     shortenHash(frame.payloadHash()),
+                    payloadBytes == null ? 0 : payloadBytes.length,
                     frame.reason()
             );
             return true;
