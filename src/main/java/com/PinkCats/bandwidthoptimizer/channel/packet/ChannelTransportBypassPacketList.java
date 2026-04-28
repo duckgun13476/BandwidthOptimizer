@@ -39,6 +39,7 @@ public final class ChannelTransportBypassPacketList {
             ClientboundEntityEventPacket.class,
             ClientboundForgetLevelChunkPacket.class,
             ClientboundHurtAnimationPacket.class,
+            ClientboundMoveEntityPacket.Pos.class,
             ClientboundMoveEntityPacket.PosRot.class,
             ClientboundMoveEntityPacket.Rot.class,
             ClientboundPlayerCombatEnterPacket.class,
