@@ -31,10 +31,6 @@ import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
-import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkHotspotAckDelayController;
-import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkHotspotClientBudgetTrimDiagnostic;
-import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkHotspotOldEpochDataFrameDiagnostic;
-import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkHotspotOldEpochInvalidateDiagnostic;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
@@ -154,16 +150,6 @@ public final class ChunkTransportDispatcher {
                     fingerprint.shortHash()
             );
         }
-        ExperientChunkHotspotOldEpochDataFrameDiagnostic.maybeScheduleOldEpochFullReplay(
-                context,
-                runtimeDecision.frame(),
-                envelopePayloadBytes
-        );
-        ExperientChunkHotspotClientBudgetTrimDiagnostic.maybeRememberReplayCandidate(
-                context,
-                runtimeDecision.frame(),
-                envelopePayloadBytes
-        );
         rememberWatchBoundaryFallbackFrame(context, runtimeDecision, originalPacketBytes);
         return encodedEnvelopeBytes;
     }
@@ -251,16 +237,6 @@ public final class ChunkTransportDispatcher {
                     fingerprint.shortHash()
             );
         }
-        ExperientChunkHotspotOldEpochDataFrameDiagnostic.maybeScheduleOldEpochFullReplay(
-                context,
-                runtimeDecision.frame(),
-                runtimeDecision.copyTransportPayloadBytes()
-        );
-        ExperientChunkHotspotClientBudgetTrimDiagnostic.maybeRememberReplayCandidate(
-                context,
-                runtimeDecision.frame(),
-                runtimeDecision.copyTransportPayloadBytes()
-        );
         rememberWatchBoundaryFallbackFrame(context, runtimeDecision, originalPacketBytes);
         return OutboundChunkEncodeResult.applied(
                 runtimeDecision.operation(),
@@ -278,7 +254,6 @@ public final class ChunkTransportDispatcher {
         if (isRuntimeChunkDataFrame(envelope.frame())) {
             ChunkTransportBoundaryController.InboundRuntimeFrameDecision inboundFrameDecision =
                     ChunkTransportBoundaryController.beginInboundRuntimeFrame(context, envelope.frame().epoch());
-            logDiagnosticInboundRuntimeFrame(context, envelope.frame(), inboundFrameDecision);
             if (!inboundFrameDecision.allowed()) {
                 logIgnoredInboundRuntimeFrame(context, envelope.frame(), inboundFrameDecision.reason());
                 return ChunkInboundDecodeResult.consumeControlFrame();
@@ -293,10 +268,7 @@ public final class ChunkTransportDispatcher {
                     restoredPacketBytes
             );
             ChunkRuntimeReferenceStore.storeFullSnapshot(readChannelId(context), envelope.frame());
-            if (!ExperientChunkHotspotAckDelayController.maybeDelayAck(context, envelope.frame(), "runtime_full_received")) {
-                ChunkTransportControlFrameSender.sendAck(context, envelope.frame(), "runtime_full_received");
-            }
-            ExperientChunkHotspotOldEpochInvalidateDiagnostic.maybeScheduleOldEpochInvalidate(context, envelope.frame());
+            ChunkTransportControlFrameSender.sendAck(context, envelope.frame(), "runtime_full_received");
             logInboundFrame(context, packetBytes, envelope, restoredPacketBytes, INBOUND_FULL_FRAME_COUNT);
             return ChunkInboundDecodeResult.passthrough(restoredPacketBytes);
         }
@@ -377,7 +349,6 @@ public final class ChunkTransportDispatcher {
         }
 
         if (envelope.frame().operation() == ChunkHotspotFrameOp.ACK) {
-            ExperientChunkHotspotOldEpochDataFrameDiagnostic.maybeReplayAfterNewerClientEpoch(context, envelope.frame());
             ChunkPeerStateManager.acknowledgeOutboundChunk(context, envelope.frame());
             ChunkWatchBoundaryReusePendingStore.clearPendingFull(readChannelId(context), envelope.frame());
             logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_ACK_FRAME_COUNT);
@@ -385,7 +356,6 @@ public final class ChunkTransportDispatcher {
         }
 
         if (envelope.frame().operation() == ChunkHotspotFrameOp.NACK) {
-            ExperientChunkHotspotOldEpochDataFrameDiagnostic.maybeReplayAfterNewerClientEpoch(context, envelope.frame());
             ChunkPeerChunkStateSnapshot currentChunkSnapshot =
                     ChunkPeerStateManager.snapshotOutboundChunk(context, envelope.frame().epoch(), envelope.frame().coordinate());
             if (!matchesCurrentReceiverBaseControlFrame(currentChunkSnapshot, envelope.frame())) {
@@ -404,7 +374,6 @@ public final class ChunkTransportDispatcher {
         }
 
         if (envelope.frame().operation() == ChunkHotspotFrameOp.INVALIDATE) {
-            ExperientChunkHotspotOldEpochDataFrameDiagnostic.maybeReplayAfterNewerClientEpoch(context, envelope.frame());
             ChunkPeerChunkStateSnapshot currentChunkSnapshot =
                     ChunkPeerStateManager.snapshotOutboundChunk(context, envelope.frame().epoch(), envelope.frame().coordinate());
             if (!matchesCurrentReceiverBaseControlFrame(currentChunkSnapshot, envelope.frame())) {
@@ -413,12 +382,9 @@ public final class ChunkTransportDispatcher {
                 return ChunkInboundDecodeResult.consumeControlFrame();
             }
             ChunkWatchBoundaryReusePendingStore.clearPendingFull(readChannelId(context), envelope.frame());
-            logOldEpochInvalidateDiagnosticBefore(context, envelope.frame(), currentChunkSnapshot);
-            ExperientChunkHotspotClientBudgetTrimDiagnostic.maybeReplayAfterClientBudgetInvalidate(context, envelope.frame());
             ChunkPeerStateManager.invalidateOutboundChunk(context, envelope.frame());
             ChunkRuntimeReferenceStore.invalidateFullSnapshot(readChannelId(context), envelope.frame().epoch(), envelope.frame().coordinate());
             ChunkShadowSnapshotManager.invalidateChunk(readChannelId(context), envelope.frame().epoch(), envelope.frame().coordinate());
-            logOldEpochInvalidateDiagnosticAfter(context, envelope.frame());
             logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_INVALIDATE_FRAME_COUNT);
             return ChunkInboundDecodeResult.consumeControlFrame();
         }
@@ -785,9 +751,7 @@ public final class ChunkTransportDispatcher {
         String channelId = readChannelId(context);
         ChunkRuntimeReferenceStore.storePacketBytes(channelId, frame.payloadHash(), restoredPacketBytes);
         ChunkRuntimeReferenceStore.storeFullSnapshot(channelId, frame);
-        if (!ExperientChunkHotspotAckDelayController.maybeDelayAck(context, frame, WATCH_BOUNDARY_REFRESH_PATCH_ACK_REASON)) {
-            ChunkTransportControlFrameSender.sendAck(context, frame, WATCH_BOUNDARY_REFRESH_PATCH_ACK_REASON);
-        }
+        ChunkTransportControlFrameSender.sendAck(context, frame, WATCH_BOUNDARY_REFRESH_PATCH_ACK_REASON);
     }
 
     private static Packet<ClientGamePacketListener> decodeClientboundPlayPacket(byte[] restoredPacketBytes) {
@@ -1075,69 +1039,6 @@ public final class ChunkTransportDispatcher {
     }
 
 
-    private static void logOldEpochInvalidateDiagnosticBefore(
-            ChannelHandlerContext context,
-            ChunkHotspotFrame frame,
-            ChunkPeerChunkStateSnapshot targetEpochSnapshot
-    ) {
-        if (!isOldEpochInvalidateDiagnostic(frame)) {
-            return;
-        }
-
-        ChunkPeerStateSnapshot channelSnapshot = ChunkPeerStateManager.snapshotOutboundChannel(context);
-        long currentEpoch = channelSnapshot == null ? 0L : channelSnapshot.epoch();
-        ChunkPeerChunkStateSnapshot currentEpochSnapshot = ChunkPeerStateManager.snapshotOutboundChunk(
-                context,
-                currentEpoch,
-                frame.coordinate()
-        );
-        Bandwidthoptimizer.LOGGER.info(
-                "[ChunkTransport][Diag][OldEpochInvalidate][Before] channel={}, currentEpoch={}, frameEpoch={}, chunk={}, currentScopeState={}, targetScopeState={}",
-                readChannelId(context),
-                currentEpoch,
-                frame == null ? 0L : frame.epoch(),
-                frame == null || frame.coordinate() == null ? "<unknown>" : frame.coordinate().logText(),
-                currentEpochSnapshot == null ? "<missing>" : currentEpochSnapshot.summaryText(),
-                targetEpochSnapshot == null ? "<missing>" : targetEpochSnapshot.summaryText()
-        );
-    }
-
-
-    private static void logOldEpochInvalidateDiagnosticAfter(
-            ChannelHandlerContext context,
-            ChunkHotspotFrame frame
-    ) {
-        if (!isOldEpochInvalidateDiagnostic(frame)) {
-            return;
-        }
-
-        ChunkPeerStateSnapshot channelSnapshot = ChunkPeerStateManager.snapshotOutboundChannel(context);
-        long currentEpoch = channelSnapshot == null ? 0L : channelSnapshot.epoch();
-        ChunkPeerChunkStateSnapshot currentEpochSnapshot = ChunkPeerStateManager.snapshotOutboundChunk(
-                context,
-                currentEpoch,
-                frame.coordinate()
-        );
-        ChunkPeerChunkStateSnapshot targetEpochSnapshot = ChunkPeerStateManager.snapshotOutboundChunk(
-                context,
-                frame.epoch(),
-                frame.coordinate()
-        );
-        Bandwidthoptimizer.LOGGER.info(
-                "[ChunkTransport][Diag][OldEpochInvalidate][After] channel={}, currentEpoch={}, frameEpoch={}, chunk={}, currentScopeState={}, targetScopeState={}",
-                readChannelId(context),
-                currentEpoch,
-                frame == null ? 0L : frame.epoch(),
-                frame == null || frame.coordinate() == null ? "<unknown>" : frame.coordinate().logText(),
-                currentEpochSnapshot == null ? "<missing>" : currentEpochSnapshot.summaryText(),
-                targetEpochSnapshot == null ? "<missing>" : targetEpochSnapshot.summaryText()
-        );
-    }
-
-    private static boolean isOldEpochInvalidateDiagnostic(ChunkHotspotFrame frame) {
-        return frame != null && "experient_diagnostic_old_epoch_invalidate".equals(frame.reason());
-    }
-
     private static long incrementOutboundFrameCount(ChunkHotspotFrameOp operation) {
         if (operation == ChunkHotspotFrameOp.PUBLISH_REF) {
             return OUTBOUND_REF_FRAME_COUNT.incrementAndGet();
@@ -1253,28 +1154,6 @@ public final class ChunkTransportDispatcher {
         );
     }
 
-    private static void logDiagnosticInboundRuntimeFrame(
-            ChannelHandlerContext context,
-            ChunkHotspotFrame frame,
-            ChunkTransportBoundaryController.InboundRuntimeFrameDecision decision
-    ) {
-        if (!isOldEpochFullReplayDiagnostic(frame) || decision == null) {
-            return;
-        }
-        Bandwidthoptimizer.LOGGER.info(
-                "[ChunkTransport][Data][Diag] channel={}, op={}, epoch={}, chunk={}, fullVersion={}, payloadHash={}, allowed={}, currentEpoch={}, reason={}",
-                readChannelId(context),
-                frame.operation() == null ? "<unknown>" : frame.operation().logName(),
-                frame.epoch(),
-                frame.coordinate() == null ? "<unknown>" : frame.coordinate().logText(),
-                frame.fullSnapshotVersion(),
-                shortenHash(frame.payloadHash()),
-                decision.allowed(),
-                decision.currentEpoch(),
-                decision.reason()
-        );
-    }
-
     private static boolean isRuntimeChunkDataFrame(ChunkHotspotFrame frame) {
         if (frame == null || frame.operation() == null) {
             return false;
@@ -1282,10 +1161,6 @@ public final class ChunkTransportDispatcher {
         return frame.operation() == ChunkHotspotFrameOp.PUBLISH_FULL
                 || frame.operation() == ChunkHotspotFrameOp.PUBLISH_REF
                 || frame.operation() == ChunkHotspotFrameOp.PUBLISH_PATCH;
-    }
-
-    private static boolean isOldEpochFullReplayDiagnostic(ChunkHotspotFrame frame) {
-        return frame != null && "experient_diagnostic_old_epoch_full_replay".equals(frame.reason());
     }
 
     private static boolean shouldLogSample(long frameCount) {

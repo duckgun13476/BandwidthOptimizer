@@ -18,9 +18,6 @@ public final class ChannelFrameJsonlLogger {
     private static final Path SEND_OUTPUT_PATH = Path.of("send.jsonl");
     private static final Path RECEIVE_OUTPUT_PATH = Path.of("receive.jsonl");
 
-    private static final Path LEGACY_SEND_COMPARE_OUTPUT_PATH = Path.of("send.compare.jsonl");
-    private static final Path LEGACY_RECEIVE_COMPARE_OUTPUT_PATH = Path.of("receive.compare.jsonl");
-
     private static BufferedWriter sendWriter;
     private static BufferedWriter receiveWriter;
     private static boolean initialized;
@@ -34,7 +31,6 @@ public final class ChannelFrameJsonlLogger {
         synchronized (LOCK) {
             shutdownInProgress = false;
             closeWritersUnsafe();
-            deleteLegacyCompareOutputs();
             sendWriter = openFreshWriter(SEND_OUTPUT_PATH);
             receiveWriter = openFreshWriter(RECEIVE_OUTPUT_PATH);
             initialized = true;
@@ -97,18 +93,6 @@ public final class ChannelFrameJsonlLogger {
             );
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to open channel jsonl output: " + outputPath, exception);
-        }
-    }
-
-    private static void deleteLegacyCompareOutputs() {
-        deleteIfExists(LEGACY_SEND_COMPARE_OUTPUT_PATH);
-        deleteIfExists(LEGACY_RECEIVE_COMPARE_OUTPUT_PATH);
-    }
-
-    private static void deleteIfExists(Path outputPath) {
-        try {
-            Files.deleteIfExists(outputPath);
-        } catch (IOException ignored) {
         }
     }
 
