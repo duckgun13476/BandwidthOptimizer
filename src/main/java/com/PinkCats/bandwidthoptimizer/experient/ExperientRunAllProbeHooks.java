@@ -37,6 +37,7 @@ public final class ExperientRunAllProbeHooks {
         if (ExperientCaptureResetCoordinator.applyPendingResetIfNeeded("server")) {
             try {
                 Files.deleteIfExists(RunAllProbeFiles.SERVER_PLAYER_LOGGED_IN_MARKER);
+                Files.deleteIfExists(RunAllProbeFiles.SERVER_WATCH_BOUNDARY_REFRESH_PATCH_MARKER);
             } catch (IOException ignored) {
             }
         }

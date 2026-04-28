@@ -117,6 +117,7 @@ final class ChunkPeerChunkState {
         this.receiverSnapshotAcknowledged = true;
         this.acknowledgedSnapshotVersion = fullSnapshotVersion;
         this.acknowledgedSnapshotHash = acknowledgedSnapshotHash;
+        this.fullReplayRequiredBeforeDelta = false;
         return snapshot();
     }
 
@@ -149,8 +150,6 @@ final class ChunkPeerChunkState {
         }
         clearReceiverAcknowledgement();
         this.fullReplayRequiredBeforeDelta = true;
-        this.deltaPacketCountSinceFullSnapshot = 0L;
-        this.deltaBytesSinceFullSnapshot = 0L;
         this.lightLaneVersion = 0L;
         this.sectionBlocksLaneVersion = 0L;
         this.blockLaneVersion = 0L;

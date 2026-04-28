@@ -31,10 +31,10 @@ public final class ChunkTransportBoundaryController {
     private static final int RESPAWN_WARMUP_CHUNK_PACKETS = 24;
     private static final long LOGIN_WARMUP_MIN_BYPASS_NANOS = TimeUnit.SECONDS.toNanos(1L);
     private static final long RESPAWN_WARMUP_MIN_BYPASS_NANOS = TimeUnit.SECONDS.toNanos(1L);
-    private static final int CHUNK_CACHE_CONTROL_WARMUP_CHUNK_PACKETS = 2;
-    private static final long CHUNK_CACHE_CONTROL_MIN_BYPASS_NANOS = TimeUnit.MILLISECONDS.toNanos(150L);
-    private static final int FORGET_CHUNK_WARMUP_CHUNK_PACKETS = 2;
-    private static final long FORGET_CHUNK_MIN_BYPASS_NANOS = TimeUnit.MILLISECONDS.toNanos(150L);
+    private static final int CHUNK_CACHE_CONTROL_WARMUP_CHUNK_PACKETS = 0;
+    private static final long CHUNK_CACHE_CONTROL_MIN_BYPASS_NANOS = 0L;
+    private static final int FORGET_CHUNK_WARMUP_CHUNK_PACKETS = 0;
+    private static final long FORGET_CHUNK_MIN_BYPASS_NANOS = 0L;
     private static final int BUNDLE_WARMUP_CHUNK_PACKETS = 1;
     private static final long BUNDLE_MIN_BYPASS_NANOS = TimeUnit.MILLISECONDS.toNanos(75L);
     private static final int KEEP_ALIVE_WARMUP_CHUNK_PACKETS = 1;
@@ -172,7 +172,7 @@ public final class ChunkTransportBoundaryController {
                     true,
                     CHUNK_CACHE_CONTROL_WARMUP_CHUNK_PACKETS,
                     CHUNK_CACHE_CONTROL_MIN_BYPASS_NANOS,
-                    true,
+                    false,
                     false,
                     "chunk_cache_control_boundary"
             );

@@ -7,6 +7,7 @@ import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
 import com.PinkCats.bandwidthoptimizer.chunk.lifecycle.ChunkLifecycleCoordinator;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.command.BandwidthOptimizerCommand;
+import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkWatchEventTracker;
 import com.mojang.logging.LogUtils;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
@@ -51,6 +52,7 @@ public class Bandwidthoptimizer {
 
     @SubscribeEvent public static void syncConfigOnLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            ExperientChunkWatchEventTracker.clearPlayer(serverPlayer);
             ChunkLifecycleCoordinator.onPlayerLogin(serverPlayer);
         }
     }
@@ -70,12 +72,21 @@ public class Bandwidthoptimizer {
     @SubscribeEvent public static void clearStateOnLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
             ChunkLifecycleCoordinator.onPlayerLogout(serverPlayer);
+            ExperientChunkWatchEventTracker.clearPlayer(serverPlayer);
+        }
+    }
+
+    @SubscribeEvent
+    public static void recordStateOnChunkWatch(ChunkWatchEvent.Watch event) {
+        if (event.getPlayer() != null && event.getPos() != null) {
+            ExperientChunkWatchEventTracker.recordWatch(event.getPlayer(), event.getPos());
         }
     }
 
     @SubscribeEvent
     public static void invalidateStateOnChunkUnwatch(ChunkWatchEvent.UnWatch event) {
         if (event.getPlayer() != null && event.getLevel() != null && event.getPos() != null) {
+            ExperientChunkWatchEventTracker.recordUnwatch(event.getPlayer(), event.getPos());
             ChunkLifecycleCoordinator.onPlayerStopWatchingChunk(event.getPlayer(), event.getPos(), event.getLevel());
         }
     }

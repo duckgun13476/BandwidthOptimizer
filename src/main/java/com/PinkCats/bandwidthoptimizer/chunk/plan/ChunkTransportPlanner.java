@@ -19,6 +19,10 @@ public final class ChunkTransportPlanner {
     private static final int UNAVAILABLE_ESTIMATED_BYTES = -1;
     public static final String WATCH_BOUNDARY_REUSE_PROBE_REASON =
             "reuse_cached_full_snapshot_after_watch_boundary";
+    public static final String WATCH_BOUNDARY_REUSE_BUDGET_EXCEEDED_REASON =
+            "watch_boundary_reuse_budget_exceeded_wait_full_refresh";
+    public static final String WATCH_BOUNDARY_REFRESH_PATCH_REASON =
+            "refresh_patch_after_watch_boundary";
 
     private ChunkTransportPlanner() {}
 
@@ -64,6 +68,7 @@ public final class ChunkTransportPlanner {
                     snapshotFingerprint,
                     chunkSnapshot,
                     storeObservation,
+                    patchBuildResult,
                     costEstimate,
                     nextFullSnapshotVersion
             );
@@ -85,6 +90,7 @@ public final class ChunkTransportPlanner {
             ChunkSnapshotFingerprint snapshotFingerprint,
             ChunkPeerChunkStateSnapshot chunkSnapshot,
             ChunkGlobalStoreObservation storeObservation,
+            ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult,
             ChunkPlanCostEstimate costEstimate,
             long nextFullSnapshotVersion
     ) {
@@ -103,9 +109,21 @@ public final class ChunkTransportPlanner {
         }
 
         if (requiresFullReplayBeforeDelta(chunkSnapshot)) {
+            if (shouldUseWatchBoundaryRefreshPatch(chunkSnapshot, snapshotFingerprint, patchBuildResult, costEstimate)) {
+                return buildDecision(
+                        ChunkPlanDecisionKind.PUBLISH_PATCH,
+                        WATCH_BOUNDARY_REFRESH_PATCH_REASON,
+                        descriptor,
+                        snapshotFingerprint,
+                        chunkSnapshot,
+                        storeObservation,
+                        nextFullSnapshotVersion,
+                        costEstimate
+                );
+            }
             return buildDecision(
-                    ChunkPlanDecisionKind.PUBLISH_FULL,
-                    buildFullReason(chunkSnapshot, snapshotFingerprint),
+                ChunkPlanDecisionKind.PUBLISH_FULL,
+                buildFullReason(chunkSnapshot, snapshotFingerprint),
                     descriptor,
                     snapshotFingerprint,
                     chunkSnapshot,
@@ -355,10 +373,69 @@ public final class ChunkTransportPlanner {
     ) {
         return requiresFullReplayBeforeDelta(chunkSnapshot)
                 && sameSnapshotHash(chunkSnapshot, snapshotFingerprint)
+                && isWatchBoundaryReuseProbeWithinBudget(chunkSnapshot)
                 && costEstimate != null
                 && costEstimate.refTransportBytes() > 0
                 && (costEstimate.fullTransportBytes() <= 0
                 || costEstimate.refTransportBytes() < costEstimate.fullTransportBytes());
+    }
+
+    private static boolean shouldUseWatchBoundaryRefreshPatch(
+            ChunkPeerChunkStateSnapshot chunkSnapshot,
+            ChunkSnapshotFingerprint snapshotFingerprint,
+            ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult,
+            ChunkPlanCostEstimate costEstimate
+    ) {
+        return requiresFullReplayBeforeDelta(chunkSnapshot)
+                && !sameSnapshotHash(chunkSnapshot, snapshotFingerprint)
+                && isWatchBoundaryRefreshPatchWithinBudget(chunkSnapshot, patchBuildResult)
+                && costEstimate != null
+                && costEstimate.patchTransportBytes() > 0
+                && (costEstimate.fullTransportBytes() <= 0
+                || costEstimate.patchTransportBytes() < costEstimate.fullTransportBytes());
+    }
+
+    private static boolean isWatchBoundaryReuseProbeWithinBudget(ChunkPeerChunkStateSnapshot chunkSnapshot) {
+        if (chunkSnapshot == null) {
+            return false;
+        }
+
+        long maxDeltaPackets = ChunkWatchBoundaryReuseRuntimeConfig.maxDeltaPackets();
+        if (chunkSnapshot.deltaPacketCountSinceFullSnapshot() > maxDeltaPackets) {
+            return false;
+        }
+
+        int lastFullSnapshotBytes = Math.max(chunkSnapshot.lastFullSnapshotEncodedBytes(), 0);
+        double maxDeltaBytesRatio = ChunkWatchBoundaryReuseRuntimeConfig.maxDeltaBytesRatio();
+        double deltaBytesBudget = lastFullSnapshotBytes * maxDeltaBytesRatio;
+        return chunkSnapshot.deltaBytesSinceFullSnapshot() < deltaBytesBudget;
+    }
+
+    // 这里沿用 watch boundary 的预算口径：累计变化次数不能超标，同时 patch 体积也必须小于 full 的预算比例。
+    private static boolean isWatchBoundaryRefreshPatchWithinBudget(
+            ChunkPeerChunkStateSnapshot chunkSnapshot,
+            ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult
+    ) {
+        if (chunkSnapshot == null
+                || patchBuildResult == null
+                || patchBuildResult.patch() == null
+                || !patchBuildResult.beneficial()) {
+            return false;
+        }
+
+        long maxDeltaPackets = ChunkWatchBoundaryReuseRuntimeConfig.maxDeltaPackets();
+        if (chunkSnapshot.deltaPacketCountSinceFullSnapshot() > maxDeltaPackets) {
+            return false;
+        }
+
+        int lastFullSnapshotBytes = Math.max(chunkSnapshot.lastFullSnapshotEncodedBytes(), 0);
+        if (lastFullSnapshotBytes <= 0) {
+            return false;
+        }
+
+        double maxDeltaBytesRatio = ChunkWatchBoundaryReuseRuntimeConfig.maxDeltaBytesRatio();
+        double deltaBytesBudget = lastFullSnapshotBytes * maxDeltaBytesRatio;
+        return patchBuildResult.encodedPatchBytesLength() < deltaBytesBudget;
     }
 
     private static boolean shouldUseInFlightReferenceBeforeAck(
@@ -533,6 +610,9 @@ public final class ChunkTransportPlanner {
 
         if (chunkSnapshot != null && chunkSnapshot.fullReplayRequiredBeforeDelta()) {
             if (sameSnapshotHash(chunkSnapshot, snapshotFingerprint)) {
+                if (!isWatchBoundaryReuseProbeWithinBudget(chunkSnapshot)) {
+                    return WATCH_BOUNDARY_REUSE_BUDGET_EXCEEDED_REASON;
+                }
                 return "await_receiver_ack_after_watch_boundary";
             }
             return "refresh_full_snapshot_after_watch_boundary";
@@ -607,6 +687,7 @@ public final class ChunkTransportPlanner {
                 && snapshotFingerprint.hashHex().equals(chunkSnapshot.knownSnapshotHash());
     }
 
+    // 这里统一估算 full/ref/patch 的传输成本，full-chunk 的 watch boundary patch 也复用这套估算。
     private static ChunkPlanCostEstimate estimatePlanCosts(
             ChunkPacketDescriptor descriptor,
             ChunkSnapshotFingerprint snapshotFingerprint,
@@ -639,7 +720,10 @@ public final class ChunkTransportPlanner {
                 "plan_cost_ref"
         )
                 : UNAVAILABLE_ESTIMATED_BYTES;
-        int patchTransportBytes = isPatchLaneEnabled(descriptor)
+        long patchCandidateSnapshotVersion = descriptor.hotspotKind() == ChunkHotspotKind.FULL_CHUNK
+                ? Math.max(nextFullSnapshotVersion, 0L)
+                : stableFullSnapshotVersion;
+        int patchTransportBytes = supportsPatchTransportEstimate(descriptor)
                 && patchBuildResult != null
                 && patchBuildResult.patch() != null
                 ? estimateTransportBytes(
@@ -647,7 +731,7 @@ public final class ChunkTransportPlanner {
                 snapshotFingerprint,
                 chunkSnapshot,
                 ChunkPlanDecisionKind.PUBLISH_PATCH,
-                stableFullSnapshotVersion,
+                patchCandidateSnapshotVersion,
                 patchBuildResult.encodedPatchBytesLength(),
                 "plan_cost_patch"
         )
@@ -666,6 +750,11 @@ public final class ChunkTransportPlanner {
                 || descriptor.hotspotKind() == ChunkHotspotKind.SECTION_BLOCKS_UPDATE
                 || descriptor.hotspotKind() == ChunkHotspotKind.BLOCK_UPDATE
                 || descriptor.hotspotKind() == ChunkHotspotKind.BLOCK_ENTITY_UPDATE);
+    }
+
+    private static boolean supportsPatchTransportEstimate(ChunkPacketDescriptor descriptor) {
+        return isPatchLaneEnabled(descriptor)
+                || (descriptor != null && descriptor.hotspotKind() == ChunkHotspotKind.FULL_CHUNK);
     }
 
     private static int estimateTransportBytes(

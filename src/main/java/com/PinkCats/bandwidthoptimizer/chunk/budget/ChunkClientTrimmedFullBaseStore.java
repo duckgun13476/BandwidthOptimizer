@@ -14,6 +14,7 @@ public final class ChunkClientTrimmedFullBaseStore {
 
     private static final long TOMBSTONE_TTL_MILLIS = TimeUnit.SECONDS.toMillis(10L);
     private static final int MAX_TOMBSTONES_PER_CHANNEL = 256;
+    private static final String WATCH_BOUNDARY_REFRESH_PATCH_REASON = "refresh_patch_after_watch_boundary";
     private static final ConcurrentHashMap<String, ChannelTrimmedFullBaseState> CHANNEL_STATES = new ConcurrentHashMap<>();
 
     private ChunkClientTrimmedFullBaseStore() {}
@@ -70,7 +71,7 @@ public final class ChunkClientTrimmedFullBaseStore {
         TrimmedFullBaseTombstone tombstone = state.find(
                 Math.max(frame.epoch(), 0L),
                 frame.coordinate(),
-                frame.fullSnapshotVersion(),
+                resolveExpectedBaseFullSnapshotVersion(frame),
                 fullBaseHash
         );
         if (tombstone == null && state.isEmpty()) {
@@ -92,6 +93,22 @@ public final class ChunkClientTrimmedFullBaseStore {
             return frame.payloadHash();
         }
         return "";
+    }
+
+    private static long resolveExpectedBaseFullSnapshotVersion(ChunkHotspotFrame frame) {
+        if (frame != null
+                && frame.operation() == ChunkHotspotFrameOp.PUBLISH_PATCH
+                && WATCH_BOUNDARY_REFRESH_PATCH_REASON.equals(frame.reason())
+                && frame.hotspotKind() == com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind.FULL_CHUNK
+                && frame.baseSnapshotHash() != null
+                && !frame.baseSnapshotHash().isBlank()
+                && frame.payloadHash() != null
+                && !frame.payloadHash().isBlank()
+                && !frame.baseSnapshotHash().equals(frame.payloadHash())
+                && frame.fullSnapshotVersion() > 1L) {
+            return frame.fullSnapshotVersion() - 1L;
+        }
+        return frame == null ? 0L : frame.fullSnapshotVersion();
     }
 
     private static final class ChannelTrimmedFullBaseState {
