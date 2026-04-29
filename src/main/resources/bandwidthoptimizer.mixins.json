@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_17",
   "refmap": "bandwidthoptimizer.refmap.json",
   "mixins": [
+    "minecraft.ClientboundSectionBlocksUpdatePacketAccessor",
     "minecraft.ConnectionSendBoundaryMixin",
     "minecraft.PacketOutPipeMixin",
     "minecraft.PacketInPipeMixin"
