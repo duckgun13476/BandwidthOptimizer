@@ -17,9 +17,12 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
 import net.minecraft.network.protocol.Packet;
 
+import java.io.IOException;
+import java.nio.channels.ClosedChannelException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -114,6 +117,9 @@ public final class ChannelTransportBatchManager {
             drainedBatch.context().writeAndFlush(Unpooled.wrappedBuffer(wrappedFrame.transportFrameBytes())).addListener(future -> {
                 if (!future.isSuccess()) {
                     Throwable failure = future.cause() == null ? new IllegalStateException("Unknown outbound batch flush failure") : future.cause();
+                    if (shouldIgnoreBatchFlushFailure(channel, failure)) {
+                        return;
+                    }
                     ChannelTransportRuntimeGuard.disableTransport("outbound-batch-flush", failure);
                     return;
                 }
@@ -125,11 +131,13 @@ public final class ChannelTransportBatchManager {
                 completeBatchBoundaryTrace(drainedBatch.pendingPackets(), wrappedFrame);
             });
         } catch (Throwable throwable) {
+            if (shouldIgnoreBatchFlushFailure(channel, throwable)) {
+                return;
+            }
             ChannelTransportRuntimeGuard.disableTransport("outbound-batch-flush", throwable);
         }
     }
 
-    // 这里沿用 packet-rank 的按输入字节权重分摊方式，把 batch frame 的真实字节尽量公平地回填给每个原始子包。
     private static void completeBatchBoundaryTrace(
             List<PendingOutboundPacket> pendingPackets,
             ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame
@@ -190,6 +198,39 @@ public final class ChannelTransportBatchManager {
         } catch (Throwable throwable) {
             ChannelTransportRuntimeGuard.disableTransport("inbound-batch-replay", throwable);
         }
+    }
+
+    private static boolean shouldIgnoreBatchFlushFailure(Channel channel, Throwable throwable) {
+        return isChannelClosing(channel) || isExpectedShutdownFailure(throwable);
+    }
+
+    private static boolean isChannelClosing(Channel channel) {
+        return channel == null || !channel.isOpen() || !channel.isActive();
+    }
+
+    private static boolean isExpectedShutdownFailure(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof ClosedChannelException) {
+                return true;
+            }
+            if (current instanceof IOException && hasExpectedShutdownMessage(current.getMessage())) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private static boolean hasExpectedShutdownMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return false;
+        }
+        String lowerCaseMessage = message.toLowerCase(Locale.ROOT);
+        return lowerCaseMessage.contains("connection reset")
+                || lowerCaseMessage.contains("broken pipe")
+                || lowerCaseMessage.contains("forcibly closed")
+                || lowerCaseMessage.contains("existing connection was forcibly closed");
     }
 
     private static void captureInboundReplay(ChannelHandlerContext context, byte[] packetBytes, Packet<?> packet) {
