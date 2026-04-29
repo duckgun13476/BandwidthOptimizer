@@ -8,14 +8,16 @@ import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalStoreObservation;
+import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ConnectionAccessor;
+import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ServerGamePacketListenerImplAccessor;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
+import net.minecraft.network.Connection;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.world.level.Level;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -280,102 +282,17 @@ public final class ChunkPeerStateManager {
     }
 
     private static Channel readPlayerChannel(ServerPlayer player) {
-        Object listener = readObjectField(player, "connection");
-        if (listener == null)
-            return null;
-
-        Object connection = readObjectMethod(listener, "getConnection");
-        if (connection == null)
-            connection = readObjectField(listener, "connection");
-
-        if (connection == null)
-            return null;
-
-        return readTypedField(connection, Channel.class, "channel");
-    }
-
-    private static Object readObjectMethod(Object target, String methodName) {
-        Method method = findNoArgMethod(target == null ? null : target.getClass(), methodName);
-        if (method == null)
-            return null;
-
-        try {
-            return method.invoke(target);
-        } catch (ReflectiveOperationException ignored) {
-            return null;
-        }
-    }
-
-    // Class prevent problem
-    private static Object readObjectField(Object target, String fieldName) {
-        Field field = findField(target == null ? null : target.getClass(), fieldName);
-        if (field == null)
-            return null;
-
-        try {
-            return field.get(target);
-        } catch (ReflectiveOperationException ignored) {
-            return null;
-        }
-    }
-
-
-    private static <T> T readTypedField(Object target, Class<T> expectedType, String fieldName) {
-        Field field = findField(target == null ? null : target.getClass(), fieldName);
-        if (field == null || expectedType == null || !expectedType.isAssignableFrom(field.getType())) {
+        if (player == null) {
             return null;
         }
 
-        try {
-            Object value = field.get(target);
-            if (expectedType.isInstance(value)) {
-                return expectedType.cast(value);
-            }
-        } catch (ReflectiveOperationException ignored) {
-        }
-        return null;
-    }
-
-
-    private static Method findNoArgMethod(Class<?> type, String methodName) {
-        if (type == null || methodName == null || methodName.isBlank())
+        ServerGamePacketListenerImpl listener = player.connection;
+        Connection connection = ((ServerGamePacketListenerImplAccessor) listener).bandwidthoptimizer$getConnection();
+        if (connection == null) {
             return null;
-
-        for (Method method : type.getMethods()) {
-            if (method.getParameterCount() == 0 && methodName.equals(method.getName())) {
-                method.setAccessible(true);
-                return method;
-            }
         }
 
-        Class<?> currentType = type;
-        while (currentType != null) {
-            for (Method method : currentType.getDeclaredMethods()) {
-                if (method.getParameterCount() == 0 && methodName.equals(method.getName())) {
-                    method.setAccessible(true);
-                    return method;
-                }
-            }
-            currentType = currentType.getSuperclass();
-        }
-        return null;
-    }
-
-    private static Field findField(Class<?> type, String fieldName) {
-        if (type == null || fieldName == null || fieldName.isBlank())
-            return null;
-
-        Class<?> currentType = type;
-        while (currentType != null) {
-            try {
-                Field field = currentType.getDeclaredField(fieldName);
-                field.setAccessible(true);
-                return field;
-            } catch (NoSuchFieldException ignored) {
-                currentType = currentType.getSuperclass();
-            }
-        }
-        return null;
+        return ((ConnectionAccessor) connection).bandwidthoptimizer$getChannel();
     }
 
     private static void logControlUpdate(

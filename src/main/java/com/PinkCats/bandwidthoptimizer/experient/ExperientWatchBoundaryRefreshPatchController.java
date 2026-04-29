@@ -6,7 +6,6 @@ import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.server.level.ServerLevel;
@@ -21,9 +20,8 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.registries.ForgeRegistries;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -694,92 +692,6 @@ public final class ExperientWatchBoundaryRefreshPatchController {
         return serverPlayer.getServer().getCommands().performPrefixedCommand(commandSource, command) > 0;
     }
 
-    private static Object readObjectField(Object target, String fieldName) {
-        Field field = findField(target == null ? null : target.getClass(), fieldName);
-        if (field == null) {
-            return null;
-        }
-
-        try {
-            return field.get(target);
-        } catch (ReflectiveOperationException ignored) {
-            return null;
-        }
-    }
-
-    private static void invokeVoidMethod(
-            Object target,
-            String methodName,
-            Class<?>[] parameterTypes,
-            Object... arguments
-    ) {
-        Method method = findMethod(target == null ? null : target.getClass(), methodName, parameterTypes);
-        if (method == null) {
-            return;
-        }
-
-        try {
-            method.invoke(target, arguments);
-        } catch (ReflectiveOperationException ignored) {
-        }
-    }
-
-
-    private static Boolean invokeBooleanMethod(
-            Object target,
-            String methodName,
-            Class<?>[] parameterTypes,
-            Object... arguments
-    ) {
-        Method method = findMethod(target == null ? null : target.getClass(), methodName, parameterTypes);
-        if (method == null) {
-            return null;
-        }
-
-        try {
-            Object result = method.invoke(target, arguments);
-            return result instanceof Boolean booleanValue ? booleanValue : null;
-        } catch (ReflectiveOperationException ignored) {
-            return null;
-        }
-    }
-
-    private static Method findMethod(Class<?> type, String methodName, Class<?>[] parameterTypes) {
-        if (type == null || methodName == null || methodName.isBlank()) {
-            return null;
-        }
-
-        Class<?> currentType = type;
-        while (currentType != null) {
-            try {
-                Method method = currentType.getDeclaredMethod(methodName, parameterTypes);
-                method.setAccessible(true);
-                return method;
-            } catch (NoSuchMethodException ignored) {
-                currentType = currentType.getSuperclass();
-            }
-        }
-        return null;
-    }
-
-    private static Field findField(Class<?> type, String fieldName) {
-        if (type == null || fieldName == null || fieldName.isBlank()) {
-            return null;
-        }
-
-        Class<?> currentType = type;
-        while (currentType != null) {
-            try {
-                Field field = currentType.getDeclaredField(fieldName);
-                field.setAccessible(true);
-                return field;
-            } catch (NoSuchFieldException ignored) {
-                currentType = currentType.getSuperclass();
-            }
-        }
-        return null;
-    }
-
     private static void failScenario(ServerPlayer serverPlayer, ScenarioState state, String reason) {
         Bandwidthoptimizer.LOGGER.warn(
                 "[ExperientWatchBoundary] Scenario failed for player={}, chunk={}, reason={}, stage={}, waitTicksRemaining={}",
@@ -805,7 +717,7 @@ public final class ExperientWatchBoundaryRefreshPatchController {
         if (blockState == null) {
             return "<null>";
         }
-        return BuiltInRegistries.BLOCK.getKey(blockState.getBlock()).toString();
+        return String.valueOf(ForgeRegistries.BLOCKS.getKey(blockState.getBlock()));
     }
 
     private static String formatDouble(double value) {

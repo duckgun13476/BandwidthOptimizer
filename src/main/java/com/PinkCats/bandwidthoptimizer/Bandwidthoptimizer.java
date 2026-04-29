@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.ZstdRuntimeSupport;
 import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
+import com.PinkCats.bandwidthoptimizer.compat.minecraft.ForgeModLoadingContextCompat;
 import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
 import com.PinkCats.bandwidthoptimizer.chunk.lifecycle.ChunkLifecycleCoordinator;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
@@ -21,8 +22,6 @@ import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.slf4j.Logger;
 
-import java.lang.reflect.Field;
-
 @Mod(Bandwidthoptimizer.MODID)
 @Mod.EventBusSubscriber(modid = Bandwidthoptimizer.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class Bandwidthoptimizer {
@@ -36,8 +35,7 @@ public class Bandwidthoptimizer {
         ChunkHotspotVerifyHooks.initializeOutputFiles();
         ChannelTransportRuntimeGuard.initialize();
 
-        // Only for 1.20.1 forge
-        ModLoadingContext modLoadingContext = getModLoadingContextViaReflection();
+        ModLoadingContext modLoadingContext = ForgeModLoadingContextCompat.getCurrentModLoadingContext();
         FMLJavaModLoadingContext modContext = modLoadingContext.extension();
 
         MinecraftForge.EVENT_BUS.register(this);
@@ -102,16 +100,5 @@ public class Bandwidthoptimizer {
 
     public static void prepareForClientRespawnBoundary(net.minecraft.server.level.ServerPlayer serverPlayer) {
         ChunkLifecycleCoordinator.prepareForClientRespawnBoundary(serverPlayer);
-    }
-
-     @SuppressWarnings("unchecked") private static ModLoadingContext getModLoadingContextViaReflection() {
-        try {
-            Field contextField = ModLoadingContext.class.getDeclaredField("context");
-            contextField.setAccessible(true);
-            ThreadLocal<ModLoadingContext> contextThreadLocal = (ThreadLocal<ModLoadingContext>) contextField.get(null);
-            return contextThreadLocal.get();
-        } catch (Exception e) {
-            throw new RuntimeException("Bandwidth Optimizer got ERROR in Init:", e);
-        }
     }
 }
