@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.report;
+package com.PinkCats.bandwidthoptimizer.test;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

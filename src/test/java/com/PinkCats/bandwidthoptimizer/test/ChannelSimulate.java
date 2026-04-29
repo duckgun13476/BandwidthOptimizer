@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.experient;
+package com.PinkCats.bandwidthoptimizer.test;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;

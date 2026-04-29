@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.experient;
+package com.PinkCats.bandwidthoptimizer.test;
 
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
 
