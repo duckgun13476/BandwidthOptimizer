@@ -37,17 +37,20 @@ public final class ChannelTransportBatchManager {
     private static final AttributeKey<BatchApplicabilityState> BATCH_APPLICABILITY_STATE_KEY =
             AttributeKey.valueOf("bandwidthoptimizer:channel_transport_batch_applicability_state");
 
+    private static final AttributeKey<Boolean> BATCH_CLOSE_CLEANUP_ATTACHED_KEY =
+            AttributeKey.valueOf("bandwidthoptimizer:channel_transport_batch_close_cleanup_attached");
+
     private ChannelTransportBatchManager() {}
 
 
-    // 这里把准备延后 flush 的 outbound 包暂存起来，同时保留 packet-rank 和跨区块窗口日志所需的逐包元数据。
+
     public static boolean enqueueOutboundPacket(
             ChannelHandlerContext context,
             byte[] originalPacketBytes,
             ChannelTransportPacketRankCaptureManager.OutboundPacketCapture outboundPacketCapture,
             ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace
     ) {
-        if (context == null || originalPacketBytes == null) {
+        if (context == null || originalPacketBytes == null || !isChannelUsable(context.channel())) {
             return false;
         }
 
@@ -97,10 +100,17 @@ public final class ChannelTransportBatchManager {
 
 
     private static void flushOutboundBatch(Channel channel) {
-        if (channel == null || !channel.isActive())
+        if (channel == null)
             return;
 
-        OutboundBatchState batchState = getOrCreateOutboundBatchState(channel);
+        OutboundBatchState batchState = channel.attr(OUTBOUND_BATCH_STATE_KEY).get();
+        if (batchState == null) {
+            return;
+        }
+        if (!isChannelUsable(channel)) {
+            batchState.clearPending();
+            return;
+        }
         OutboundBatchDrain drainedBatch = batchState.drain();
         if (drainedBatch == null || drainedBatch.packetBytesList().isEmpty() || drainedBatch.context() == null) {
             return;
@@ -270,6 +280,7 @@ public final class ChannelTransportBatchManager {
     }
 
     private static OutboundBatchState getOrCreateOutboundBatchState(Channel channel) {
+        ensureBatchCloseCleanup(channel);
         OutboundBatchState existingState = channel.attr(OUTBOUND_BATCH_STATE_KEY).get();
         if (existingState != null) {
             return existingState;
@@ -281,6 +292,7 @@ public final class ChannelTransportBatchManager {
     }
 
     private static InboundBatchState getOrCreateInboundBatchState(Channel channel) {
+        ensureBatchCloseCleanup(channel);
         InboundBatchState existingState = channel.attr(INBOUND_BATCH_STATE_KEY).get();
         if (existingState != null) {
             return existingState;
@@ -292,6 +304,7 @@ public final class ChannelTransportBatchManager {
     }
 
     private static BatchApplicabilityState getOrCreateBatchApplicabilityState(Channel channel) {
+        ensureBatchCloseCleanup(channel);
         BatchApplicabilityState existingState = channel.attr(BATCH_APPLICABILITY_STATE_KEY).get();
         if (existingState != null) {
             return existingState;
@@ -300,6 +313,44 @@ public final class ChannelTransportBatchManager {
         BatchApplicabilityState newState = new BatchApplicabilityState();
         BatchApplicabilityState racedState = channel.attr(BATCH_APPLICABILITY_STATE_KEY).setIfAbsent(newState);
         return racedState != null ? racedState : newState;
+    }
+
+
+    private static void ensureBatchCloseCleanup(Channel channel) {
+        if (channel == null) {
+            return;
+        }
+        Boolean alreadyAttached = channel.attr(BATCH_CLOSE_CLEANUP_ATTACHED_KEY).get();
+        if (Boolean.TRUE.equals(alreadyAttached)) {
+            return;
+        }
+
+        Boolean raced = channel.attr(BATCH_CLOSE_CLEANUP_ATTACHED_KEY).setIfAbsent(Boolean.TRUE);
+        if (Boolean.TRUE.equals(raced)) {
+            return;
+        }
+
+        channel.closeFuture().addListener(future -> clearBatchState(channel));
+    }
+
+    private static void clearBatchState(Channel channel) {
+        if (channel == null) {
+            return;
+        }
+
+        OutboundBatchState outboundBatchState = channel.attr(OUTBOUND_BATCH_STATE_KEY).get();
+        if (outboundBatchState != null) {
+            outboundBatchState.clearPending();
+        }
+
+        channel.attr(OUTBOUND_BATCH_STATE_KEY).set(null);
+        channel.attr(INBOUND_BATCH_STATE_KEY).set(null);
+        channel.attr(BATCH_APPLICABILITY_STATE_KEY).set(null);
+        channel.attr(BATCH_CLOSE_CLEANUP_ATTACHED_KEY).set(null);
+    }
+
+    private static boolean isChannelUsable(Channel channel) {
+        return channel != null && channel.isOpen() && channel.isActive();
     }
 
     private static byte[] copyBytesOrEmpty(byte[] sourceBytes) {
@@ -377,12 +428,25 @@ public final class ChannelTransportBatchManager {
                 } finally {
                     this.flushScheduled.set(false);
                     synchronized (this.pendingPackets) {
-                        if (!this.pendingPackets.isEmpty()) {
+                        if (!isChannelUsable(channel)) {
+                            this.clearPendingLocked();
+                        } else if (!this.pendingPackets.isEmpty()) {
                             scheduleFlushIfNeeded(channel);
                         }
                     }
                 }
             }, windowMillis, TimeUnit.MILLISECONDS);
+        }
+
+        private void clearPending() {
+            synchronized (this.pendingPackets) {
+                clearPendingLocked();
+            }
+        }
+
+        private void clearPendingLocked() {
+            this.pendingPackets.clear();
+            this.lastContext = null;
         }
 
         private OutboundBatchDrain drain() {
