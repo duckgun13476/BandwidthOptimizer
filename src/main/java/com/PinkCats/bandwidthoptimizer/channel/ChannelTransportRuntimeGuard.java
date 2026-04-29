@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
 
 import java.nio.charset.StandardCharsets;
@@ -11,7 +12,8 @@ import static com.PinkCats.bandwidthoptimizer.channel.math.format.ratioText;
 
 public final class ChannelTransportRuntimeGuard {
 
-    private static final String EXPERIMENTAL_TRANSPORT_PROPERTY = "bandwidthoptimizer.experimentalTransport";
+    private static final String EXPERIMENTAL_TRANSPORT_PROPERTY =
+            Config.RuntimeProperty.Transport.EXPERIMENTAL_ENABLED;
     private static final String ENABLED_BY_DEFAULT_REASON = "disabled by runtime property";
 
     private static volatile boolean initialized;
@@ -72,8 +74,12 @@ public final class ChannelTransportRuntimeGuard {
 
 
     public static boolean isExperimentalTransportEnabled() {
-        String rawValue = System.getProperty(EXPERIMENTAL_TRANSPORT_PROPERTY);
-        return rawValue == null || rawValue.isBlank() || Boolean.parseBoolean(rawValue);
+        return Boolean.parseBoolean(
+                System.getProperty(
+                        EXPERIMENTAL_TRANSPORT_PROPERTY,
+                        Boolean.toString(Config.RuntimeProperty.Transport.DEFAULT_EXPERIMENTAL_ENABLED)
+                )
+        );
     }
 
 

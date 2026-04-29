@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel.capture;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.ChannelTransportOperationTelemetry;
@@ -18,7 +19,8 @@ public final class ChannelTransportTelemetry {
     private static final long SAMPLE_LOG_LIMIT = 8L;
     private static final long SHRINK_SAMPLE_LOG_LIMIT = 8L;
     private static final long SUMMARY_LOG_INTERVAL = 512L;
-    private static final String TELEMETRY_DUMP_FILE_NAME_PROPERTY = "bandwidthoptimizer.transport.telemetryDumpFileName";
+    private static final String TELEMETRY_DUMP_FILE_NAME_PROPERTY =
+            Config.RuntimeProperty.Transport.TELEMETRY_DUMP_FILE_NAME;
     private static final long TELEMETRY_DUMP_INTERVAL_MILLIS = 1000L;
     private static final Object TELEMETRY_DUMP_LOCK = new Object();
 

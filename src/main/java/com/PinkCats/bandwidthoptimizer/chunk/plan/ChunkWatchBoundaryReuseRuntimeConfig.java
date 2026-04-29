@@ -1,13 +1,17 @@
 package com.PinkCats.bandwidthoptimizer.chunk.plan;
 
+import com.PinkCats.bandwidthoptimizer.Config;
+
 public final class ChunkWatchBoundaryReuseRuntimeConfig {
 
     public static final String MAX_DELTA_PACKETS_PROPERTY =
-            "bandwidthoptimizer.chunk.watchBoundaryReuseMaxDeltaPackets";
+            Config.RuntimeProperty.Chunk.WATCH_BOUNDARY_REUSE_MAX_DELTA_PACKETS;
     public static final String MAX_DELTA_BYTES_RATIO_PROPERTY =
-            "bandwidthoptimizer.chunk.watchBoundaryReuseMaxDeltaBytesRatio";
-    private static final long DEFAULT_MAX_DELTA_PACKETS = 64L;
-    private static final double DEFAULT_MAX_DELTA_BYTES_RATIO = 0.5D;
+            Config.RuntimeProperty.Chunk.WATCH_BOUNDARY_REUSE_MAX_DELTA_BYTES_RATIO;
+    private static final long DEFAULT_MAX_DELTA_PACKETS =
+            Config.RuntimeProperty.Chunk.DEFAULT_WATCH_BOUNDARY_REUSE_MAX_DELTA_PACKETS;
+    private static final double DEFAULT_MAX_DELTA_BYTES_RATIO =
+            Config.RuntimeProperty.Chunk.DEFAULT_WATCH_BOUNDARY_REUSE_MAX_DELTA_BYTES_RATIO;
 
     private ChunkWatchBoundaryReuseRuntimeConfig() {}
 

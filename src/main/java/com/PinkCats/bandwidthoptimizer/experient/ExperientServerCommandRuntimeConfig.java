@@ -1,9 +1,12 @@
 package com.PinkCats.bandwidthoptimizer.experient;
 
+import com.PinkCats.bandwidthoptimizer.Config;
+
 public final class ExperientServerCommandRuntimeConfig {
 
-    public static final String COMMAND_PROPERTY = "bandwidthoptimizer.experient.serverCommand";
-    public static final String COMMAND_DELAY_TICKS_PROPERTY = "bandwidthoptimizer.experient.serverCommandDelayTicks";
+    public static final String COMMAND_PROPERTY = Config.RuntimeProperty.Experient.SERVER_COMMAND;
+    public static final String COMMAND_DELAY_TICKS_PROPERTY =
+            Config.RuntimeProperty.Experient.SERVER_COMMAND_DELAY_TICKS;
 
     private ExperientServerCommandRuntimeConfig() {}
 
@@ -12,11 +15,14 @@ public final class ExperientServerCommandRuntimeConfig {
     }
 
     public static String readCommand() {
-        return System.getProperty(COMMAND_PROPERTY, "").trim();
+        return System.getProperty(COMMAND_PROPERTY, Config.RuntimeProperty.Experient.DEFAULT_SERVER_COMMAND).trim();
     }
 
     public static int readDelayTicks() {
-        String rawValue = System.getProperty(COMMAND_DELAY_TICKS_PROPERTY, "0").trim();
+        String rawValue = System.getProperty(
+                COMMAND_DELAY_TICKS_PROPERTY,
+                Integer.toString(Config.RuntimeProperty.Experient.DEFAULT_SERVER_COMMAND_DELAY_TICKS)
+        ).trim();
         if (rawValue.isEmpty()) {
             return 0;
         }

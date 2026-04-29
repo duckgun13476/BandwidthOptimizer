@@ -22,7 +22,7 @@ public final class ChannelCaptureHooks {
     private ChannelCaptureHooks() {}
 
     public static void captureOutboundEncodedPacket(ChannelHandlerContext context, Packet<?> packet, ByteBuf encodedBuffer, int startIndexInclusive) {
-        if (context == null || packet == null || encodedBuffer == null) {
+        if (context == null || packet == null || encodedBuffer == null || !shouldCaptureFramePayload()) {
             return;
         }
 
@@ -52,6 +52,19 @@ public final class ChannelCaptureHooks {
             return null;
         }
 
+        if (!shouldCaptureFramePayload()) {
+            return new ChannelCapturedFrame(
+                    readChannelId(context),
+                    "INBOUND",
+                    readProtocolName(context),
+                    "<pre-decode>",
+                    -1,
+                    encodedBuffer.readableBytes(),
+                    new byte[0],
+                    System.currentTimeMillis()
+            );
+        }
+
         byte[] encodedBytes = copyBytes(encodedBuffer, encodedBuffer.readerIndex(), encodedBuffer.writerIndex());
         return new ChannelCapturedFrame(
                 readChannelId(context),
@@ -66,7 +79,7 @@ public final class ChannelCaptureHooks {
     }
 
     public static void finishInboundDecode(ChannelCapturedFrame pendingFrame, List<Object> out, int outputSizeBeforeDecode) {
-        if (pendingFrame == null) {
+        if (pendingFrame == null || !shouldCaptureFramePayload()) {
             return;
         }
 
@@ -133,5 +146,10 @@ public final class ChannelCaptureHooks {
             position += 7;
         }
         return -1;
+    }
+
+    private static boolean shouldCaptureFramePayload() {
+        return ChannelCaptureRuntimeConfig.isJsonlCaptureEnabled()
+                || ChannelTransportCompressionCaptureManager.isCaptureActive();
     }
 }

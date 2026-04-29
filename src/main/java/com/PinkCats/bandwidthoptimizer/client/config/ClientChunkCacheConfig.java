@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.client.config;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.Config;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.ForgeConfigSpec;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -12,17 +13,18 @@ public final class ClientChunkCacheConfig {
 
     private static final long BYTES_PER_MB = 1024L * 1024L;
     private static final String MAX_MEMORY_OVERRIDE_PROPERTY =
-            "bandwidthoptimizer.clientChunkCacheMaxMemoryMb";
+            Config.RuntimeProperty.Client.CHUNK_CACHE_MAX_MEMORY_MB;
     private static final String RECYCLE_TRIGGER_OVERRIDE_PROPERTY =
-            "bandwidthoptimizer.clientChunkCacheRecycleTriggerFreeMb";
+            Config.RuntimeProperty.Client.CHUNK_CACHE_RECYCLE_TRIGGER_FREE_MB;
     private static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
 
     public static final ForgeConfigSpec.IntValue CHUNK_CACHE_MAX_MEMORY_MB;
     public static final ForgeConfigSpec.IntValue CHUNK_CACHE_RECYCLE_TRIGGER_FREE_MB;
     public static final ForgeConfigSpec SPEC;
 
-    private static volatile int chunkCacheMaxMemoryMb = 110;
-    private static volatile int chunkCacheRecycleTriggerFreeMb = 10;
+    private static volatile int chunkCacheMaxMemoryMb = Config.RuntimeProperty.Client.DEFAULT_CHUNK_CACHE_MAX_MEMORY_MB;
+    private static volatile int chunkCacheRecycleTriggerFreeMb =
+            Config.RuntimeProperty.Client.DEFAULT_CHUNK_CACHE_RECYCLE_TRIGGER_FREE_MB;
 
     static {
         BUILDER.comment("Client Chunk Cache Settings").push("client-chunk-cache");

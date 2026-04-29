@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.store.global;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkLaneKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
@@ -19,19 +20,21 @@ import java.util.Map;
 public final class ChunkGlobalSnapshotStore {
 
     private static final Object LOCK = new Object();
-    private static final long DEFAULT_BLOB_BUDGET_BYTES = 32L * 1024L * 1024L;
-    private static final int DEFAULT_MAX_MATERIALIZED_VERSIONS_PER_CHUNK = 8;
+    private static final long DEFAULT_BLOB_BUDGET_BYTES =
+            Config.RuntimeProperty.Chunk.DEFAULT_GLOBAL_STORE_BUDGET_BYTES;
+    private static final int DEFAULT_MAX_MATERIALIZED_VERSIONS_PER_CHUNK =
+            Config.RuntimeProperty.Chunk.DEFAULT_GLOBAL_STORE_MAX_VERSIONS_PER_CHUNK;
     private static final Map<String, ChunkGlobalSnapshotRecord> SNAPSHOT_RECORDS = new HashMap<>();
     private static final Map<String, LinkedHashSet<String>> HOTSPOT_DISTINCT_HASHES = new HashMap<>();
     private static final Map<String, LinkedHashMap<Long, ChunkMaterializedSnapshotRecord>> MATERIALIZED_SNAPSHOTS =
             new HashMap<>();
     private static final long MAX_BLOB_BUDGET_BYTES = readLongProperty(
-            "bandwidthoptimizer.chunkGlobalStoreBudgetBytes",
+            Config.RuntimeProperty.Chunk.GLOBAL_STORE_BUDGET_BYTES,
             DEFAULT_BLOB_BUDGET_BYTES
     );
     private static final int MAX_MATERIALIZED_VERSIONS_PER_CHUNK = (int) Math.max(
             readLongProperty(
-                    "bandwidthoptimizer.chunkGlobalStoreMaxVersionsPerChunk",
+                    Config.RuntimeProperty.Chunk.GLOBAL_STORE_MAX_VERSIONS_PER_CHUNK,
                     DEFAULT_MAX_MATERIALIZED_VERSIONS_PER_CHUNK
             ),
             1L

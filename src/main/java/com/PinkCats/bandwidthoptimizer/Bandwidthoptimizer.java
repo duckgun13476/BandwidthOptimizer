@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer;
 
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.ZstdRuntimeSupport;
+import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.ForgeModLoadingContextCompat;
 import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
@@ -31,7 +32,9 @@ public class Bandwidthoptimizer {
 
     public Bandwidthoptimizer() {
         ZstdRuntimeSupport.configureNativeTempFolder();
-        ChannelFrameJsonlLogger.initializeOutputFiles();
+        if (ChannelCaptureRuntimeConfig.isJsonlCaptureEnabled()) {
+            ChannelFrameJsonlLogger.initializeOutputFiles();
+        }
         ChunkHotspotVerifyHooks.initializeOutputFiles();
         ChannelTransportRuntimeGuard.initialize();
 

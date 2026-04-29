@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.experient;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.Config;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.ConnectScreen;
 import net.minecraft.client.gui.screens.DisconnectedScreen;
@@ -19,16 +20,6 @@ import java.net.Socket;
 
 @Mod.EventBusSubscriber(modid = Bandwidthoptimizer.MODID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class ExperientAutoConnectController {
-
-    public static final String AUTO_CONNECT_ADDRESS_PROPERTY = "bandwidthoptimizer.experient.autoConnectAddress";
-    public static final String AUTO_CONNECT_NAME_PROPERTY = "bandwidthoptimizer.experient.autoConnectName";
-    public static final String AUTO_CONNECT_DELAY_TICKS_PROPERTY = "bandwidthoptimizer.experient.autoConnectDelayTicks";
-    public static final String AUTO_CONNECT_MAX_ATTEMPTS_PROPERTY = "bandwidthoptimizer.experient.autoConnectMaxAttempts";
-    public static final String AUTO_CONNECT_RETRY_DELAY_TICKS_PROPERTY = "bandwidthoptimizer.experient.autoConnectRetryDelayTicks";
-
-    private static final int DEFAULT_CONNECT_DELAY_TICKS = 20;
-    private static final int DEFAULT_MAX_ATTEMPTS = 4;
-    private static final int DEFAULT_RETRY_DELAY_TICKS = 40;
     private static final int SERVER_READY_RETRY_TICKS = 20;
     private static final int SERVER_READY_CONNECT_TIMEOUT_MILLIS = 500;
 
@@ -220,7 +211,7 @@ public final class ExperientAutoConnectController {
     }
 
     private static String readAutoConnectAddress() {
-        String value = System.getProperty(AUTO_CONNECT_ADDRESS_PROPERTY);
+        String value = System.getProperty(Config.RuntimeProperty.Experient.AUTO_CONNECT_ADDRESS);
         if (value == null) {
             return null;
         }
@@ -230,20 +221,20 @@ public final class ExperientAutoConnectController {
     }
 
     private static String readAutoConnectName() {
-        String value = System.getProperty(AUTO_CONNECT_NAME_PROPERTY);
+        String value = System.getProperty(Config.RuntimeProperty.Experient.AUTO_CONNECT_NAME);
         if (value == null) {
-            return "BandwidthOptimizer Experient";
+            return Config.RuntimeProperty.Experient.DEFAULT_AUTO_CONNECT_NAME;
         }
 
         String trimmedValue = value.trim();
-        return trimmedValue.isEmpty() ? "BandwidthOptimizer Experient" : trimmedValue;
+        return trimmedValue.isEmpty() ? Config.RuntimeProperty.Experient.DEFAULT_AUTO_CONNECT_NAME : trimmedValue;
     }
 
 
     private static int readAutoConnectDelayTicks() {
         return readNonNegativeIntProperty(
-                AUTO_CONNECT_DELAY_TICKS_PROPERTY,
-                DEFAULT_CONNECT_DELAY_TICKS,
+                Config.RuntimeProperty.Experient.AUTO_CONNECT_DELAY_TICKS,
+                Config.RuntimeProperty.Experient.DEFAULT_AUTO_CONNECT_DELAY_TICKS,
                 "connect delay ticks"
         );
     }
@@ -251,8 +242,8 @@ public final class ExperientAutoConnectController {
     private static int readMaxAttempts() {
         return Math.max(
                 readNonNegativeIntProperty(
-                        AUTO_CONNECT_MAX_ATTEMPTS_PROPERTY,
-                        DEFAULT_MAX_ATTEMPTS,
+                        Config.RuntimeProperty.Experient.AUTO_CONNECT_MAX_ATTEMPTS,
+                        Config.RuntimeProperty.Experient.DEFAULT_AUTO_CONNECT_MAX_ATTEMPTS,
                         "max attempts"
                 ),
                 1
@@ -261,8 +252,8 @@ public final class ExperientAutoConnectController {
 
     private static int readRetryDelayTicks() {
         return readNonNegativeIntProperty(
-                AUTO_CONNECT_RETRY_DELAY_TICKS_PROPERTY,
-                DEFAULT_RETRY_DELAY_TICKS,
+                Config.RuntimeProperty.Experient.AUTO_CONNECT_RETRY_DELAY_TICKS,
+                Config.RuntimeProperty.Experient.DEFAULT_AUTO_CONNECT_RETRY_DELAY_TICKS,
                 "retry delay ticks"
         );
     }

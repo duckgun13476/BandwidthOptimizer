@@ -256,6 +256,141 @@ public class Config {
         return enableOptimizerStatsLogs && enableTestMode;
     }
 
+    public static final class RuntimeProperty {
+
+        private RuntimeProperty() {
+        }
+
+        public static final class Transport {
+
+            public static final String EXPERIMENTAL_ENABLED = "bandwidthoptimizer.experimentalTransport";
+            public static final boolean DEFAULT_EXPERIMENTAL_ENABLED = true;
+            public static final String CHUNK_HOTSPOT_TRANSPORT_ENABLED =
+                    "bandwidthoptimizer.experimentalChunkHotspotTransport";
+            public static final boolean DEFAULT_CHUNK_HOTSPOT_TRANSPORT_ENABLED = true;
+            public static final String MAPPING_ENABLED = "bandwidthoptimizer.transport.mappingEnabled";
+            public static final String ZSTD_ENABLED = "bandwidthoptimizer.transport.zstdEnabled";
+            public static final boolean DEFAULT_ZSTD_ENABLED = true;
+            public static final String PACKET_ID_MAPPING_ENABLED =
+                    "bandwidthoptimizer.transport.packetIdMappingEnabled";
+            public static final boolean DEFAULT_PACKET_ID_MAPPING_ENABLED = true;
+            public static final String BATCH_ENABLED = "bandwidthoptimizer.transport.batchEnabled";
+            public static final boolean DEFAULT_BATCH_ENABLED = true;
+            public static final String BATCH_WINDOW_MILLIS = "bandwidthoptimizer.transport.batchWindowMillis";
+            public static final long DEFAULT_BATCH_WINDOW_MILLIS = 10L;
+            public static final long DEFAULT_BATCH_WARMUP_MILLIS = 5_000L;
+            public static final String TELEMETRY_DUMP_FILE_NAME =
+                    "bandwidthoptimizer.transport.telemetryDumpFileName";
+            public static final String CHANNEL_JSONL_CAPTURE_ENABLED =
+                    "bandwidthoptimizer.channelJsonlCaptureEnabled";
+            public static final boolean DEFAULT_CHANNEL_JSONL_CAPTURE_ENABLED = false;
+
+            private Transport() {
+            }
+        }
+
+        public static final class Client {
+
+            public static final String CHUNK_CACHE_MAX_MEMORY_MB =
+                    "bandwidthoptimizer.clientChunkCacheMaxMemoryMb";
+            public static final int DEFAULT_CHUNK_CACHE_MAX_MEMORY_MB = 110;
+            public static final String CHUNK_CACHE_RECYCLE_TRIGGER_FREE_MB =
+                    "bandwidthoptimizer.clientChunkCacheRecycleTriggerFreeMb";
+            public static final int DEFAULT_CHUNK_CACHE_RECYCLE_TRIGGER_FREE_MB = 10;
+
+            private Client() {
+            }
+        }
+
+        public static final class Chunk {
+
+            public static final String WATCH_BOUNDARY_REUSE_MAX_DELTA_PACKETS =
+                    "bandwidthoptimizer.chunk.watchBoundaryReuseMaxDeltaPackets";
+            public static final long DEFAULT_WATCH_BOUNDARY_REUSE_MAX_DELTA_PACKETS = 64L;
+            public static final String WATCH_BOUNDARY_REUSE_MAX_DELTA_BYTES_RATIO =
+                    "bandwidthoptimizer.chunk.watchBoundaryReuseMaxDeltaBytesRatio";
+            public static final double DEFAULT_WATCH_BOUNDARY_REUSE_MAX_DELTA_BYTES_RATIO = 0.5D;
+            public static final String GLOBAL_STORE_BUDGET_BYTES =
+                    "bandwidthoptimizer.chunkGlobalStoreBudgetBytes";
+            public static final long DEFAULT_GLOBAL_STORE_BUDGET_BYTES = 32L * 1024L * 1024L;
+            public static final String GLOBAL_STORE_MAX_VERSIONS_PER_CHUNK =
+                    "bandwidthoptimizer.chunkGlobalStoreMaxVersionsPerChunk";
+            public static final int DEFAULT_GLOBAL_STORE_MAX_VERSIONS_PER_CHUNK = 8;
+
+            private Chunk() {
+            }
+        }
+
+        public static final class Experient {
+
+            public static final String ENABLED = "bandwidthoptimizer.experient.enabled";
+            public static final boolean DEFAULT_ENABLED = false;
+            public static final String AUTO_CONNECT_ADDRESS =
+                    "bandwidthoptimizer.experient.autoConnectAddress";
+            public static final String AUTO_CONNECT_NAME =
+                    "bandwidthoptimizer.experient.autoConnectName";
+            public static final String DEFAULT_AUTO_CONNECT_NAME = "BandwidthOptimizer Experient";
+            public static final String AUTO_CONNECT_DELAY_TICKS =
+                    "bandwidthoptimizer.experient.autoConnectDelayTicks";
+            public static final int DEFAULT_AUTO_CONNECT_DELAY_TICKS = 20;
+            public static final String AUTO_CONNECT_MAX_ATTEMPTS =
+                    "bandwidthoptimizer.experient.autoConnectMaxAttempts";
+            public static final int DEFAULT_AUTO_CONNECT_MAX_ATTEMPTS = 4;
+            public static final String AUTO_CONNECT_RETRY_DELAY_TICKS =
+                    "bandwidthoptimizer.experient.autoConnectRetryDelayTicks";
+            public static final int DEFAULT_AUTO_CONNECT_RETRY_DELAY_TICKS = 40;
+            public static final String SERVER_COMMAND =
+                    "bandwidthoptimizer.experient.serverCommand";
+            public static final String DEFAULT_SERVER_COMMAND = "";
+            public static final String SERVER_COMMAND_DELAY_TICKS =
+                    "bandwidthoptimizer.experient.serverCommandDelayTicks";
+            public static final int DEFAULT_SERVER_COMMAND_DELAY_TICKS = 0;
+            public static final String CHUNK_HOTSPOT_PATH_ENABLED =
+                    "bandwidthoptimizer.experient.chunkHotspotPathEnabled";
+            public static final String CHUNK_HOTSPOT_PATH_STOP_AFTER_SECTION =
+                    "bandwidthoptimizer.experient.chunkHotspotPathStopAfterSection";
+            public static final String CHUNK_HOTSPOT_PATH_STOP_AFTER_BLOCK_ENTITY =
+                    "bandwidthoptimizer.experient.chunkHotspotPathStopAfterBlockEntity";
+            public static final String CHUNK_HOTSPOT_PATH_TWO_POINT_REUSE_MODE =
+                    "bandwidthoptimizer.experient.chunkHotspotPathTwoPointReuseMode";
+            public static final String CHUNK_HOTSPOT_PATH_BOUNDARY_HOP_MODE =
+                    "bandwidthoptimizer.experient.chunkHotspotPathBoundaryHopMode";
+            public static final String CHUNK_HOTSPOT_PATH_DIMENSION_HOP_MODE =
+                    "bandwidthoptimizer.experient.chunkHotspotPathDimensionHopMode";
+            public static final String CHUNK_HOTSPOT_PATH_RANGE_BOUNCE_MODE =
+                    "bandwidthoptimizer.experient.chunkHotspotPathRangeBounceMode";
+            public static final String CHUNK_HOTSPOT_PATH_RANGE_START_X =
+                    "bandwidthoptimizer.experient.chunkHotspotPathRangeStartX";
+            public static final double DEFAULT_CHUNK_HOTSPOT_PATH_RANGE_START_X = 28.0D;
+            public static final String CHUNK_HOTSPOT_PATH_RANGE_START_Y =
+                    "bandwidthoptimizer.experient.chunkHotspotPathRangeStartY";
+            public static final double DEFAULT_CHUNK_HOTSPOT_PATH_RANGE_START_Y = 182.0D;
+            public static final String CHUNK_HOTSPOT_PATH_RANGE_START_Z =
+                    "bandwidthoptimizer.experient.chunkHotspotPathRangeStartZ";
+            public static final double DEFAULT_CHUNK_HOTSPOT_PATH_RANGE_START_Z = -364.0D;
+            public static final String CHUNK_HOTSPOT_PATH_RANGE_END_X =
+                    "bandwidthoptimizer.experient.chunkHotspotPathRangeEndX";
+            public static final double DEFAULT_CHUNK_HOTSPOT_PATH_RANGE_END_X = 26.0D;
+            public static final String CHUNK_HOTSPOT_PATH_RANGE_END_Y =
+                    "bandwidthoptimizer.experient.chunkHotspotPathRangeEndY";
+            public static final double DEFAULT_CHUNK_HOTSPOT_PATH_RANGE_END_Y = 200.0D;
+            public static final String CHUNK_HOTSPOT_PATH_RANGE_END_Z =
+                    "bandwidthoptimizer.experient.chunkHotspotPathRangeEndZ";
+            public static final double DEFAULT_CHUNK_HOTSPOT_PATH_RANGE_END_Z = -281.0D;
+            public static final String CHUNK_HOTSPOT_PATH_RANGE_STEP_BLOCKS =
+                    "bandwidthoptimizer.experient.chunkHotspotPathRangeStepBlocks";
+            public static final double DEFAULT_CHUNK_HOTSPOT_PATH_RANGE_STEP_BLOCKS = 16.0D;
+            public static final String CHUNK_HOTSPOT_PATH_RANGE_ROUND_TRIPS =
+                    "bandwidthoptimizer.experient.chunkHotspotPathRangeRoundTrips";
+            public static final int DEFAULT_CHUNK_HOTSPOT_PATH_RANGE_ROUND_TRIPS = 3;
+            public static final String WATCH_BOUNDARY_REFRESH_PATCH_ENABLED =
+                    "bandwidthoptimizer.experient.watchBoundaryRefreshPatchEnabled";
+
+            private Experient() {
+            }
+        }
+    }
+
     public record RuntimeConfig(
             boolean enableBatchReferenceDedup,
             boolean enableBatchSha256Dictionary,

@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.channel.mes;
 
+import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import net.minecraftforge.fml.loading.FMLEnvironment;
 
@@ -28,6 +29,14 @@ public final class ChannelFrameJsonlLogger {
     }
 
     public static void initializeOutputFiles() {
+        if (!ChannelCaptureRuntimeConfig.isJsonlCaptureEnabled()) {
+            synchronized (LOCK) {
+                shutdownInProgress = true;
+                closeWritersUnsafe();
+            }
+            return;
+        }
+
         synchronized (LOCK) {
             shutdownInProgress = false;
             closeWritersUnsafe();
@@ -47,7 +56,7 @@ public final class ChannelFrameJsonlLogger {
     }
 
     private static void appendFrame(ChannelCapturedFrame frame, boolean outbound) {
-        if (frame == null) {
+        if (frame == null || !ChannelCaptureRuntimeConfig.isJsonlCaptureEnabled()) {
             return;
         }
 

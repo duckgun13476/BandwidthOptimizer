@@ -7,9 +7,10 @@ import java.util.function.Supplier;
 
 public final class ChannelTransportLayerRuntimeConfig {
 
-    private static final String PACKET_ID_MAPPING_ENABLED_PROPERTY = "bandwidthoptimizer.transport.packetIdMappingEnabled";
-    private static final String MAPPING_ENABLED_PROPERTY = "bandwidthoptimizer.transport.mappingEnabled";
-    private static final String ZSTD_ENABLED_PROPERTY = "bandwidthoptimizer.transport.zstdEnabled";
+    private static final String PACKET_ID_MAPPING_ENABLED_PROPERTY =
+            Config.RuntimeProperty.Transport.PACKET_ID_MAPPING_ENABLED;
+    private static final String MAPPING_ENABLED_PROPERTY = Config.RuntimeProperty.Transport.MAPPING_ENABLED;
+    private static final String ZSTD_ENABLED_PROPERTY = Config.RuntimeProperty.Transport.ZSTD_ENABLED;
     private static final ThreadLocal<RuntimeOverride> THREAD_RUNTIME_OVERRIDE = new ThreadLocal<>();
 
     private ChannelTransportLayerRuntimeConfig() {}
@@ -20,7 +21,10 @@ public final class ChannelTransportLayerRuntimeConfig {
         if (runtimeOverride != null) {
             return runtimeOverride.packetIdMappingEnabled();
         }
-        return readBooleanOverride(PACKET_ID_MAPPING_ENABLED_PROPERTY, true);
+        return readBooleanOverride(
+                PACKET_ID_MAPPING_ENABLED_PROPERTY,
+                Config.RuntimeProperty.Transport.DEFAULT_PACKET_ID_MAPPING_ENABLED
+        );
     }
 
     public static boolean isMappingEnabled() {
@@ -37,7 +41,10 @@ public final class ChannelTransportLayerRuntimeConfig {
         if (runtimeOverride != null) {
             return runtimeOverride.zstdEnabled();
         }
-        return readBooleanOverride(ZSTD_ENABLED_PROPERTY, true);
+        return readBooleanOverride(
+                ZSTD_ENABLED_PROPERTY,
+                Config.RuntimeProperty.Transport.DEFAULT_ZSTD_ENABLED
+        );
     }
 
     public static ChannelTransportAlgorithmId algorithmId() {

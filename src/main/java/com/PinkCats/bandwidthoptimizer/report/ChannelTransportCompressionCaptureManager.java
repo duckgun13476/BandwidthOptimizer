@@ -33,6 +33,9 @@ public final class ChannelTransportCompressionCaptureManager {
 
     private ChannelTransportCompressionCaptureManager() {}
 
+    public static boolean isCaptureActive() {
+        return ACTIVE_CAPTURE_SESSION.get() != null;
+    }
 
     public static StartResult startCapture(MinecraftServer server, CommandSourceStack source, int durationTicks) {
         int safeDurationTicks = Math.max(durationTicks, 20);
