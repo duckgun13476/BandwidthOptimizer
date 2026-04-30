@@ -82,6 +82,7 @@ public final class ChannelTransportHooks {
                 );
 
         if (shouldBypassTransparentTransport(context, protocolName, packet)) {
+            ChannelTransportTelemetry.recordOutboundBypass(protocolName, originalPacketBytes.length);
             ChannelTransportPacketRankCaptureManager.recordDirectPassthrough(
                     context,
                     protocolName,
@@ -101,6 +102,7 @@ public final class ChannelTransportHooks {
 
         if (!ChannelTransportRuntimeGuard.isTransportAvailable()
                 || shouldUseTransportForCurrentProtocol(protocolName)) {
+            ChannelTransportTelemetry.recordOutboundBypass(protocolName, originalPacketBytes.length);
             ChannelTransportPacketRankCaptureManager.recordDirectPassthrough(
                     context,
                     protocolName,

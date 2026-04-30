@@ -44,6 +44,8 @@ public final class ChannelTransportTelemetry {
     private static final LongAdder OUTBOUND_TEMPLATE_ADDITION_COUNT = new LongAdder();
     private static final LongAdder OUTBOUND_EXACT_REMOVAL_COUNT = new LongAdder();
     private static final LongAdder OUTBOUND_TEMPLATE_REMOVAL_COUNT = new LongAdder();
+    private static final LongAdder OUTBOUND_BYPASS_PACKET_COUNT = new LongAdder();
+    private static final LongAdder OUTBOUND_BYPASS_PACKET_BYTES = new LongAdder();
 
     private static final LongAdder INBOUND_TRANSPORT_FRAME_BYTES = new LongAdder();
     private static final LongAdder INBOUND_TRANSPORT_BODY_BYTES = new LongAdder();
@@ -57,6 +59,8 @@ public final class ChannelTransportTelemetry {
     private static final LongAdder INBOUND_TEMPLATE_ADDITION_COUNT = new LongAdder();
     private static final LongAdder INBOUND_EXACT_REMOVAL_COUNT = new LongAdder();
     private static final LongAdder INBOUND_TEMPLATE_REMOVAL_COUNT = new LongAdder();
+    private static final LongAdder INBOUND_BYPASS_PACKET_COUNT = new LongAdder();
+    private static final LongAdder INBOUND_BYPASS_PACKET_BYTES = new LongAdder();
 
     private ChannelTransportTelemetry() {}
 
@@ -240,7 +244,23 @@ public final class ChannelTransportTelemetry {
         maybeWriteTelemetryDumpFile();
     }
 
-    public static Snapshot snapshot() { // 这个函数负责把当前 transport 累计统计整理成一个不可变快照，供客户端 HUD 直接读取。
+
+    public static void recordOutboundBypass(String protocolName, int packetBytes) {
+        LAST_ACTIVITY_AT_MILLIS.set(System.currentTimeMillis());
+        OUTBOUND_BYPASS_PACKET_COUNT.increment();
+        OUTBOUND_BYPASS_PACKET_BYTES.add(Math.max(packetBytes, 0));
+        maybeWriteTelemetryDumpFile();
+    }
+
+
+    public static void recordInboundBypass(String protocolName, int packetBytes, int decodedPacketCount) {
+        LAST_ACTIVITY_AT_MILLIS.set(System.currentTimeMillis());
+        INBOUND_BYPASS_PACKET_COUNT.add(Math.max(decodedPacketCount, 1));
+        INBOUND_BYPASS_PACKET_BYTES.add(Math.max(packetBytes, 0));
+        maybeWriteTelemetryDumpFile();
+    }
+
+    public static Snapshot snapshot() {
         return new Snapshot(
                 LAST_ACTIVITY_AT_MILLIS.get(),
                 ChannelTransportLayerRuntimeConfig.algorithmId().toString(),
@@ -262,7 +282,9 @@ public final class ChannelTransportTelemetry {
                         OUTBOUND_EXACT_ADDITION_COUNT.sum(),
                         OUTBOUND_TEMPLATE_ADDITION_COUNT.sum(),
                         OUTBOUND_EXACT_REMOVAL_COUNT.sum(),
-                        OUTBOUND_TEMPLATE_REMOVAL_COUNT.sum()
+                        OUTBOUND_TEMPLATE_REMOVAL_COUNT.sum(),
+                        OUTBOUND_BYPASS_PACKET_COUNT.sum(),
+                        OUTBOUND_BYPASS_PACKET_BYTES.sum()
                 ),
                 new DirectionSnapshot(
                         INBOUND_UNWRAP_COUNT.get(),
@@ -279,7 +301,9 @@ public final class ChannelTransportTelemetry {
                         INBOUND_EXACT_ADDITION_COUNT.sum(),
                         INBOUND_TEMPLATE_ADDITION_COUNT.sum(),
                         INBOUND_EXACT_REMOVAL_COUNT.sum(),
-                        INBOUND_TEMPLATE_REMOVAL_COUNT.sum()
+                        INBOUND_TEMPLATE_REMOVAL_COUNT.sum(),
+                        INBOUND_BYPASS_PACKET_COUNT.sum(),
+                        INBOUND_BYPASS_PACKET_BYTES.sum()
                 )
         );
     }
@@ -409,6 +433,8 @@ public final class ChannelTransportTelemetry {
         appendDumpLine(builder, "outbound.transportFrameBytes", Long.toString(OUTBOUND_TRANSPORT_FRAME_BYTES.sum()));
         appendDumpLine(builder, "outbound.frameRatio", ratioText(OUTBOUND_TRANSPORT_FRAME_BYTES.sum(), OUTBOUND_RAW_PACKET_BYTES.sum()));
         appendDumpLine(builder, "outbound.savedVsRaw", Long.toString(OUTBOUND_RAW_PACKET_BYTES.sum() - OUTBOUND_TRANSPORT_FRAME_BYTES.sum()));
+        appendDumpLine(builder, "outbound.bypassPackets", Long.toString(OUTBOUND_BYPASS_PACKET_COUNT.sum()));
+        appendDumpLine(builder, "outbound.bypassPacketBytes", Long.toString(OUTBOUND_BYPASS_PACKET_BYTES.sum()));
         appendDumpLine(builder, "inbound.frames", Long.toString(INBOUND_UNWRAP_COUNT.get()));
         appendDumpLine(builder, "inbound.restoredPackets", Long.toString(INBOUND_RESTORED_PACKET_COUNT.sum()));
         appendDumpLine(builder, "inbound.inboundFrameBytes", Long.toString(INBOUND_TRANSPORT_FRAME_BYTES.sum()));
@@ -416,6 +442,8 @@ public final class ChannelTransportTelemetry {
         appendDumpLine(builder, "inbound.mappingBytes", Long.toString(INBOUND_MAPPING_STAGE_BYTES.sum()));
         appendDumpLine(builder, "inbound.restoredPacketBytes", Long.toString(INBOUND_RESTORED_PACKET_BYTES.sum()));
         appendDumpLine(builder, "inbound.frameRatio", ratioText(INBOUND_TRANSPORT_FRAME_BYTES.sum(), INBOUND_RESTORED_PACKET_BYTES.sum()));
+        appendDumpLine(builder, "inbound.bypassPackets", Long.toString(INBOUND_BYPASS_PACKET_COUNT.sum()));
+        appendDumpLine(builder, "inbound.bypassPacketBytes", Long.toString(INBOUND_BYPASS_PACKET_BYTES.sum()));
         return builder.toString();
     }
 
@@ -449,7 +477,9 @@ public final class ChannelTransportTelemetry {
             long exactAdditionCount,
             long templateAdditionCount,
             long exactRemovalCount,
-            long templateRemovalCount
+            long templateRemovalCount,
+            long bypassPacketCount,
+            long bypassPacketBytes
     ) {
     }
 }

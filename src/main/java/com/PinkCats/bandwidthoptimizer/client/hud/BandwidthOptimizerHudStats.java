@@ -64,6 +64,12 @@ public final class BandwidthOptimizerHudStats {
                 totals.localCacheChunkCount(),
                 totals.totalBatchCount(),
                 totals.totalPacketCount(),
+                totals.totalBypassPacketCount(),
+                totals.totalBypassPacketBytes(),
+                recentTotals.totalBypassPacketCount(),
+                recentTotals.totalBypassPacketBytes(),
+                totals.outboundBypassPacketCount(),
+                totals.inboundBypassPacketCount(),
                 totals.totalMapLiteralEntries(),
                 totals.totalMapExactReferences(),
                 totals.totalMapTemplateReferences(),
@@ -106,6 +112,13 @@ public final class BandwidthOptimizerHudStats {
         );
         long totalBatchCount = inboundTransport == null ? 0L : inboundTransport.frameCount();
         long totalPacketCount = inboundTransport == null ? 0L : inboundTransport.packetCount();
+        long outboundBypassPacketCount = outboundTransport == null ? 0L : outboundTransport.bypassPacketCount();
+        long inboundBypassPacketCount = inboundTransport == null ? 0L : inboundTransport.bypassPacketCount();
+        long totalBypassPacketCount = sum(outboundBypassPacketCount, inboundBypassPacketCount);
+        long totalBypassPacketBytes = sum(
+                outboundTransport == null ? 0L : outboundTransport.bypassPacketBytes(),
+                inboundTransport == null ? 0L : inboundTransport.bypassPacketBytes()
+        );
         long localCacheBytes = shadowCacheSnapshot == null ? 0L : shadowCacheSnapshot.totalEncodedBytes();
         long localCachePacketCount = shadowCacheSnapshot == null ? 0L : shadowCacheSnapshot.packetCount();
         long localCacheChunkCount = shadowCacheSnapshot == null ? 0L : shadowCacheSnapshot.chunkCount();
@@ -145,6 +158,10 @@ public final class BandwidthOptimizerHudStats {
                 localCacheChunkCount,
                 totalBatchCount,
                 totalPacketCount,
+                totalBypassPacketCount,
+                totalBypassPacketBytes,
+                outboundBypassPacketCount,
+                inboundBypassPacketCount,
                 totalMapLiteralEntries,
                 totalMapExactReferences,
                 totalMapTemplateReferences,
@@ -165,7 +182,9 @@ public final class BandwidthOptimizerHudStats {
                         totals.optimizeSentBytes(),
                         totals.chunkCacheSavedBytes(),
                         totals.totalBatchCount(),
-                        totals.totalPacketCount()
+                        totals.totalPacketCount(),
+                        totals.totalBypassPacketCount(),
+                        totals.totalBypassPacketBytes()
                 ));
                 lastSampleAtMillis = now;
             }
@@ -191,6 +210,10 @@ public final class BandwidthOptimizerHudStats {
                     totals.localCacheChunkCount(),
                     positiveDelta(totals.totalBatchCount(), firstSample.totalBatchCount()),
                     positiveDelta(totals.totalPacketCount(), firstSample.totalPacketCount()),
+                    positiveDelta(totals.totalBypassPacketCount(), firstSample.totalBypassPacketCount()),
+                    positiveDelta(totals.totalBypassPacketBytes(), firstSample.totalBypassPacketBytes()),
+                    totals.outboundBypassPacketCount(),
+                    totals.inboundBypassPacketCount(),
                     totals.totalMapLiteralEntries(),
                     totals.totalMapExactReferences(),
                     totals.totalMapTemplateReferences(),
@@ -259,7 +282,9 @@ public final class BandwidthOptimizerHudStats {
             long optimizeSentBytes,
             long chunkCacheSavedBytes,
             long totalBatchCount,
-            long totalPacketCount
+            long totalPacketCount,
+            long totalBypassPacketCount,
+            long totalBypassPacketBytes
     ) {
     }
 
@@ -278,6 +303,10 @@ public final class BandwidthOptimizerHudStats {
             long localCacheChunkCount,
             long totalBatchCount,
             long totalPacketCount,
+            long totalBypassPacketCount,
+            long totalBypassPacketBytes,
+            long outboundBypassPacketCount,
+            long inboundBypassPacketCount,
             long totalMapLiteralEntries,
             long totalMapExactReferences,
             long totalMapTemplateReferences,
@@ -285,7 +314,7 @@ public final class BandwidthOptimizerHudStats {
             long totalMapTemplateAdditions
     ) {
         private static Totals empty() {
-            return new Totals(0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+            return new Totals(0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
         }
     }
 
@@ -309,6 +338,12 @@ public final class BandwidthOptimizerHudStats {
             long localCacheChunkCount,
             long totalBatchCount,
             long totalPacketCount,
+            long totalBypassPacketCount,
+            long totalBypassPacketBytes,
+            long recentBypassPacketCount,
+            long recentBypassPacketBytes,
+            long outboundBypassPacketCount,
+            long inboundBypassPacketCount,
             long totalMapLiteralEntries,
             long totalMapExactReferences,
             long totalMapTemplateReferences,
@@ -326,6 +361,7 @@ public final class BandwidthOptimizerHudStats {
         public boolean hasData() {
             return this.totalBatchCount > 0L
                     || this.totalPacketCount > 0L
+                    || this.totalBypassPacketCount > 0L
                     || this.chunkCacheSavedTotalBytes > 0L
                     || this.localCacheBytes > 0L;
         }

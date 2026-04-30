@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.channel.access.PacketDecoderFlowAccess;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
+import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
@@ -66,6 +67,24 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
 
         //Log
         ChannelCaptureHooks.finishInboundDecode(this.bandwidthoptimizer$pendingInboundFrame, out, this.bandwidthoptimizer$outputSizeBeforeDecode);
+        bandwidthoptimizer$recordInboundBypass(out);
         this.bandwidthoptimizer$pendingInboundFrame = null;
+    }
+    @Unique
+    private void bandwidthoptimizer$recordInboundBypass(List<Object> out) {
+        if (this.bandwidthoptimizer$pendingInboundFrame == null || out == null) {
+            return;
+        }
+
+        int decodedPacketCount = Math.max(out.size() - this.bandwidthoptimizer$outputSizeBeforeDecode, 0);
+        if (decodedPacketCount <= 0) {
+            return;
+        }
+
+        ChannelTransportTelemetry.recordInboundBypass(
+                this.bandwidthoptimizer$pendingInboundFrame.protocolName(),
+                this.bandwidthoptimizer$pendingInboundFrame.byteLength(),
+                decodedPacketCount
+        );
     }
 }

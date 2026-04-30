@@ -62,9 +62,10 @@ public final class BandwidthOptimizerHudOverlay {
         }
     }
 
+    // Hud central
     private static List<String> buildLines(BandwidthOptimizerHudStats.Snapshot snapshot) {
         List<String> lines = new ArrayList<>(8);
-        lines.add("Bandwidth Optimizer");
+        lines.add("Bandwidth Optimizer (beta)");
         if (snapshot == null || !snapshot.hasData()) {
             addIdleHintLines(lines, snapshot);
             return lines;
@@ -80,6 +81,11 @@ public final class BandwidthOptimizerHudOverlay {
         lines.add("LocalCache " + formatBytes(snapshot.localCacheBytes())
                 + " / pkt " + snapshot.localCachePacketCount()
                 + " / chunk " + snapshot.localCacheChunkCount());
+        lines.add("Bypass pkt " + snapshot.totalBypassPacketCount()
+                + " / 2 min " + snapshot.recentBypassPacketCount()
+                + " / bytes " + formatBytes(snapshot.totalBypassPacketBytes())
+                + " / in " + snapshot.inboundBypassPacketCount()
+                + " / out " + snapshot.outboundBypassPacketCount());
         lines.add("Map lit " + snapshot.totalMapLiteralEntries()
                 + " / ex " + snapshot.totalMapExactReferences()
                 + " / tpl " + snapshot.totalMapTemplateReferences()
