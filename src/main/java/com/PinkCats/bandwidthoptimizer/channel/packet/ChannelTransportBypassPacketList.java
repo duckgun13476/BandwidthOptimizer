@@ -4,6 +4,8 @@ import net.minecraft.network.protocol.BundleDelimiterPacket;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundCommandSuggestionsPacket;
+import net.minecraft.network.protocol.game.ClientboundCommandsPacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.network.protocol.game.ClientboundDamageEventPacket;
 import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
@@ -26,14 +28,24 @@ import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTimePacket;
 import net.minecraft.network.protocol.game.ClientboundSoundPacket;
 import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket;
+import net.minecraft.network.protocol.game.ServerboundAcceptTeleportationPacket;
+import net.minecraft.network.protocol.game.ServerboundCommandSuggestionPacket;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.network.protocol.game.ServerboundSwingPacket;
+import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
+import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
 
 import java.util.Set;
 
 public final class ChannelTransportBypassPacketList {
 
+    // These packet can't use in velocity
     private static final Set<Class<?>> PACKET_CLASSES = Set.of(
             ClientboundAddEntityPacket.class,
             ClientboundBlockUpdatePacket.class,
+            ClientboundCommandsPacket.class,
+            ClientboundCommandSuggestionsPacket.class,
             ClientboundContainerSetSlotPacket.class,
             ClientboundDamageEventPacket.class,
             ClientboundEntityEventPacket.class,
@@ -57,7 +69,17 @@ public final class ChannelTransportBypassPacketList {
             ClientboundSetHealthPacket.class,
             ClientboundSetTimePacket.class,
             ClientboundSoundPacket.class,
-            ClientboundTeleportEntityPacket.class
+            ClientboundTeleportEntityPacket.class,
+            ServerboundAcceptTeleportationPacket.class,
+            ServerboundCommandSuggestionPacket.class,
+            ServerboundMovePlayerPacket.Pos.class,
+            ServerboundMovePlayerPacket.PosRot.class,
+            ServerboundMovePlayerPacket.Rot.class,
+            ServerboundMovePlayerPacket.StatusOnly.class,
+            ServerboundPlayerActionPacket.class,
+            ServerboundSwingPacket.class,
+            ServerboundUseItemOnPacket.class,
+            ServerboundUseItemPacket.class
     );
     private static final Set<String> CLIENTBOUND_KEEP_ALIVE_PACKET_CLASS_NAMES = Set.of(
             "net.minecraft.network.protocol.common.ClientboundKeepAlivePacket",

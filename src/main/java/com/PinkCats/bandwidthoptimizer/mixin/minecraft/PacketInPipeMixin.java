@@ -57,7 +57,17 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
     }
 
     @Inject(method = "decode", at = @At("RETURN"))
-    private void bandwidthoptimizer$finishDecodeFrame(ChannelHandlerContext context, ByteBuf in, List<Object> out, CallbackInfo ci) {
+    private void bandwidthoptimizer$finishDecodeFrame(ChannelHandlerContext context, ByteBuf in, List<Object> out, CallbackInfo ci) throws Exception {
+        if (ChannelTransportHooks.expandDecodedTransportCarrierPackets(
+                context,
+                out,
+                this.bandwidthoptimizer$outputSizeBeforeDecode,
+                this
+        )) {
+            this.bandwidthoptimizer$pendingInboundFrame = null;
+            return;
+        }
+
         ChunkInboundObservationService.observeInboundDecodedPackets(
                 context,
                 this.bandwidthoptimizer$pendingInboundFrame,

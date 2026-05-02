@@ -13,6 +13,7 @@ import net.minecraft.network.protocol.BundlePacket;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
 import net.minecraft.network.protocol.game.ClientboundLoginPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
 import net.minecraft.network.protocol.game.ClientboundRespawnPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
@@ -29,8 +30,10 @@ public final class ChunkTransportBoundaryController {
 
     private static final int LOGIN_WARMUP_CHUNK_PACKETS = 24;
     private static final int RESPAWN_WARMUP_CHUNK_PACKETS = 24;
+    private static final int PLAYER_POSITION_WARMUP_CHUNK_PACKETS = 24;
     private static final long LOGIN_WARMUP_MIN_BYPASS_NANOS = TimeUnit.SECONDS.toNanos(1L);
     private static final long RESPAWN_WARMUP_MIN_BYPASS_NANOS = TimeUnit.SECONDS.toNanos(1L);
+    private static final long PLAYER_POSITION_WARMUP_MIN_BYPASS_NANOS = TimeUnit.SECONDS.toNanos(1L);
     private static final int CHUNK_CACHE_CONTROL_WARMUP_CHUNK_PACKETS = 0;
     private static final long CHUNK_CACHE_CONTROL_MIN_BYPASS_NANOS = 0L;
     private static final int FORGET_CHUNK_WARMUP_CHUNK_PACKETS = 0;
@@ -163,6 +166,16 @@ public final class ChunkTransportBoundaryController {
         }
         if (packet instanceof ClientboundRespawnPacket) {
             return new BoundaryTrigger(true, RESPAWN_WARMUP_CHUNK_PACKETS, RESPAWN_WARMUP_MIN_BYPASS_NANOS, true, true, "respawn_boundary");
+        }
+        if (packet instanceof ClientboundPlayerPositionPacket) {
+            return new BoundaryTrigger(
+                    true,
+                    PLAYER_POSITION_WARMUP_CHUNK_PACKETS,
+                    PLAYER_POSITION_WARMUP_MIN_BYPASS_NANOS,
+                    false,
+                    false,
+                    "player_position_boundary"
+            );
         }
         if (protocolName == null || !"PLAY".equalsIgnoreCase(protocolName)) {
             return new BoundaryTrigger(true, 0, 0L, false, false, "protocol_boundary_non_play");

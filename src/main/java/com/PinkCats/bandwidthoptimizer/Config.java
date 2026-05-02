@@ -284,6 +284,30 @@ public class Config {
             public static final String CHANNEL_JSONL_CAPTURE_ENABLED =
                     "bandwidthoptimizer.channelJsonlCaptureEnabled";
             public static final boolean DEFAULT_CHANNEL_JSONL_CAPTURE_ENABLED = false;
+            public static final String PROXY_SAFE_CONTROL_ENABLED =
+                    "bandwidthoptimizer.transport.proxySafeControlEnabled";
+            public static final boolean DEFAULT_PROXY_SAFE_CONTROL_ENABLED = true;
+            public static final String SERVERBOUND_TRANSPARENT_ENABLED =
+                    "bandwidthoptimizer.transport.serverboundTransparentEnabled";
+            public static final boolean DEFAULT_SERVERBOUND_TRANSPARENT_ENABLED = false;
+            public static final String DEBUG_TRACE_SAMPLE_LIMIT =
+                    "bandwidthoptimizer.transport.debugTraceSampleLimit";
+            public static final int DEFAULT_DEBUG_TRACE_SAMPLE_LIMIT = 256;
+            public static final String DEBUG_TRACE_PREFIX_BYTES =
+                    "bandwidthoptimizer.transport.debugTracePrefixBytes";
+            public static final int DEFAULT_DEBUG_TRACE_PREFIX_BYTES = 32;
+            public static final String DEBUG_TRACE_CLOSE_DUMP_SIZE =
+                    "bandwidthoptimizer.transport.debugTraceCloseDumpSize";
+            public static final int DEFAULT_DEBUG_TRACE_CLOSE_DUMP_SIZE = 96;
+            public static final String BYPASS_RANK_LOG_ENABLED =
+                    "bandwidthoptimizer.transport.bypassRankLogEnabled";
+            public static final boolean DEFAULT_BYPASS_RANK_LOG_ENABLED = true;
+            public static final String BYPASS_RANK_LOG_INTERVAL_MILLIS =
+                    "bandwidthoptimizer.transport.bypassRankLogIntervalMillis";
+            public static final long DEFAULT_BYPASS_RANK_LOG_INTERVAL_MILLIS = 10_000L;
+            public static final String BYPASS_RANK_LOG_TOP_N =
+                    "bandwidthoptimizer.transport.bypassRankLogTopN";
+            public static final int DEFAULT_BYPASS_RANK_LOG_TOP_N = 20;
 
             private Transport() {
             }

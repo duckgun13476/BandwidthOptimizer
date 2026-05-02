@@ -180,6 +180,39 @@ public final class ChannelTransportPacketRankCaptureManager {
         }
     }
 
+    public static void completeSingleDirectFallbackCapture(OutboundPacketCapture capture, int actualFrameBytes) {
+        if (capture == null) {
+            return;
+        }
+
+        completeCapture(
+                capture,
+                "SINGLE_DIRECT_FALLBACK",
+                "DIRECT",
+                actualFrameBytes,
+                false,
+                1
+        );
+    }
+
+
+    public static void completeDirectFallbackCapture(List<OutboundPacketCapture> captures) {
+        if (captures == null || captures.isEmpty()) {
+            return;
+        }
+
+        for (OutboundPacketCapture capture : captures) {
+            completeCapture(
+                    capture,
+                    "BATCH_DIRECT_FALLBACK",
+                    "DIRECT",
+                    capture.transportInputBytes().length,
+                    false,
+                    1
+            );
+        }
+    }
+
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) {

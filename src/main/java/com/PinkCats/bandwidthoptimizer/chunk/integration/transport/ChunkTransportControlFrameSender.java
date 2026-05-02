@@ -1,10 +1,12 @@
 package com.PinkCats.bandwidthoptimizer.chunk.integration.transport;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStateManager;
+import com.PinkCats.bandwidthoptimizer.channel.access.PacketEncoderFlowAccess;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.KineticChannel;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
@@ -18,10 +20,13 @@ import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameO
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerChunkStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
+import net.minecraft.network.protocol.PacketFlow;
 
 import java.io.IOException;
 import java.nio.channels.ClosedChannelException;
@@ -239,6 +244,8 @@ public final class ChunkTransportControlFrameSender {
             return false;
         }
 
+        ByteBuf carrierPacketBytes = null;
+        boolean handedToPipeline = false;
         try {
             byte[] encodedEnvelopeBytes = ChunkTransportEnvelopeCodec.encodeEnvelope(
                     new ChunkTransportEnvelope(frame, payloadBytes)
@@ -250,7 +257,25 @@ public final class ChunkTransportControlFrameSender {
                 return false;
             }
 
-            encoderContext.writeAndFlush(Unpooled.wrappedBuffer(wrappedFrame.transportFrameBytes())).addListener(future -> {
+            PacketFlow outboundPacketFlow = resolveOutboundPacketFlow(encoderContext);
+            if (outboundPacketFlow == null) {
+                return false;
+            }
+
+            carrierPacketBytes = Unpooled.buffer();
+            if (!ChannelTransportHooks.writeTransportCarrierPacket(
+                    encoderContext,
+                    outboundPacketFlow,
+                    carrierPacketBytes,
+                    wrappedFrame.transportFrameBytes()
+            )) {
+                carrierPacketBytes.release();
+                return false;
+            }
+
+            ChannelFuture writeFuture = encoderContext.writeAndFlush(carrierPacketBytes);
+            handedToPipeline = true;
+            writeFuture.addListener(future -> {
                 if (!future.isSuccess()) {
                     Throwable failure = future.cause() == null
                             ? new IllegalStateException("Unknown chunk control frame send failure")
@@ -278,12 +303,31 @@ public final class ChunkTransportControlFrameSender {
             );
             return true;
         } catch (Throwable throwable) {
+            if (!handedToPipeline) {
+                releaseQuietly(carrierPacketBytes);
+            }
             if (shouldIgnoreControlFrameSendFailure(channel, throwable)) {
                 return false;
             }
             ChannelTransportRuntimeGuard.disableTransport("chunk-control-frame-send", throwable);
             return false;
         }
+    }
+
+    private static PacketFlow resolveOutboundPacketFlow(ChannelHandlerContext encoderContext) {
+        if (encoderContext == null || !(encoderContext.handler() instanceof PacketEncoderFlowAccess flowAccess)) {
+            return null;
+        }
+        return flowAccess.bandwidthoptimizer$getPacketFlow();
+    }
+
+    private static void releaseQuietly(ByteBuf byteBuf) {
+        if (byteBuf == null) {
+            return;
+        }
+        try {
+            byteBuf.release();
+        } catch (RuntimeException ignored) {}
     }
 
     private static String readProtocolName(Channel channel) {

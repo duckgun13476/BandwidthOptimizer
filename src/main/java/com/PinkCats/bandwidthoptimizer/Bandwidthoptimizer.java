@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer;
 
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportNetworkChannel;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.ZstdRuntimeSupport;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
@@ -32,6 +33,7 @@ public class Bandwidthoptimizer {
 
     public Bandwidthoptimizer() {
         ZstdRuntimeSupport.configureNativeTempFolder();
+        ChannelTransportNetworkChannel.register();
         if (ChannelCaptureRuntimeConfig.isJsonlCaptureEnabled()) {
             ChannelFrameJsonlLogger.initializeOutputFiles();
         }

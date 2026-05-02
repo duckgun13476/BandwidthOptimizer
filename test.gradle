@@ -1,0 +1,1305 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import java.io.BufferedReader
+import java.io.BufferedWriter
+import java.io.FileOutputStream
+import java.io.IOException
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.util.Locale
+import java.util.Properties
+import java.util.UUID
+import java.util.concurrent.TimeUnit
+
+
+def applyOptionalRunProperty = { Project projectRef, def runConfig, String gradlePropertyName, String runtimePropertyName ->
+    if (projectRef.hasProperty(gradlePropertyName)) {
+        runConfig.property(runtimePropertyName, projectRef.property(gradlePropertyName).toString())
+    }
+}
+
+def applyBooleanRunProperty = { Project projectRef, def runConfig, String gradlePropertyName, String runtimePropertyName ->
+    if ((projectRef.findProperty(gradlePropertyName) ?: 'false').toString().toBoolean()) {
+        runConfig.property(runtimePropertyName, 'true')
+    }
+}
+
+def applyExperientClientRunProperties = { Project projectRef, def runConfig ->
+    if ((projectRef.findProperty('boExperientEnabled') ?: 'false').toString().toBoolean()) {
+        runConfig.property('bandwidthoptimizer.experient.enabled', 'true')
+
+        if (projectRef.hasProperty('boExperientAutoConnectAddress')) {
+            runConfig.property('bandwidthoptimizer.experient.autoConnectAddress', projectRef.property('boExperientAutoConnectAddress').toString())
+            runConfig.property('bandwidthoptimizer.experient.autoConnectName', (projectRef.findProperty('boExperientAutoConnectName') ?: 'BandwidthOptimizer Experient').toString())
+            applyOptionalRunProperty(projectRef, runConfig, 'boExperientAutoConnectDelayTicks', 'bandwidthoptimizer.experient.autoConnectDelayTicks')
+            applyOptionalRunProperty(projectRef, runConfig, 'boExperientAutoConnectMaxAttempts', 'bandwidthoptimizer.experient.autoConnectMaxAttempts')
+            applyOptionalRunProperty(projectRef, runConfig, 'boExperientAutoConnectRetryDelayTicks', 'bandwidthoptimizer.experient.autoConnectRetryDelayTicks')
+        }
+
+        applyOptionalRunProperty(projectRef, runConfig, 'boExperientServerCommand', 'bandwidthoptimizer.experient.serverCommand')
+        applyOptionalRunProperty(projectRef, runConfig, 'boExperientServerCommandDelayTicks', 'bandwidthoptimizer.experient.serverCommandDelayTicks')
+    }
+}
+
+def applyExperientServerRunProperties = { Project projectRef, def runConfig ->
+    if ((projectRef.findProperty('boExperientEnabled') ?: 'false').toString().toBoolean()) {
+        runConfig.property('bandwidthoptimizer.experient.enabled', 'true')
+    }
+    applyOptionalRunProperty(projectRef, runConfig, 'boExperientServerCommand', 'bandwidthoptimizer.experient.serverCommand')
+    applyOptionalRunProperty(projectRef, runConfig, 'boExperientServerCommandDelayTicks', 'bandwidthoptimizer.experient.serverCommandDelayTicks')
+}
+
+def applySharedBandwidthOptimizerRunProperties = { Project projectRef, def runConfig ->
+    [
+            ['boExperimentalTransport', 'bandwidthoptimizer.experimentalTransport'],
+            ['boExperimentalChunkHotspotTransport', 'bandwidthoptimizer.experimentalChunkHotspotTransport'],
+            ['boExperientChunkHotspotPathRangeStartX', 'bandwidthoptimizer.experient.chunkHotspotPathRangeStartX'],
+            ['boExperientChunkHotspotPathRangeStartY', 'bandwidthoptimizer.experient.chunkHotspotPathRangeStartY'],
+            ['boExperientChunkHotspotPathRangeStartZ', 'bandwidthoptimizer.experient.chunkHotspotPathRangeStartZ'],
+            ['boExperientChunkHotspotPathRangeEndX', 'bandwidthoptimizer.experient.chunkHotspotPathRangeEndX'],
+            ['boExperientChunkHotspotPathRangeEndY', 'bandwidthoptimizer.experient.chunkHotspotPathRangeEndY'],
+            ['boExperientChunkHotspotPathRangeEndZ', 'bandwidthoptimizer.experient.chunkHotspotPathRangeEndZ'],
+            ['boExperientChunkHotspotPathRangeStepBlocks', 'bandwidthoptimizer.experient.chunkHotspotPathRangeStepBlocks'],
+            ['boExperientChunkHotspotPathRangeRoundTrips', 'bandwidthoptimizer.experient.chunkHotspotPathRangeRoundTrips'],
+            ['boTransportMappingEnabled', 'bandwidthoptimizer.transport.mappingEnabled'],
+            ['boTransportZstdEnabled', 'bandwidthoptimizer.transport.zstdEnabled'],
+            ['boTransportBatchEnabled', 'bandwidthoptimizer.transport.batchEnabled'],
+            ['boTransportBatchWindowMillis', 'bandwidthoptimizer.transport.batchWindowMillis'],
+            ['boTransportPacketIdMappingEnabled', 'bandwidthoptimizer.transport.packetIdMappingEnabled'],
+            ['boTransportTelemetryDumpFileName', 'bandwidthoptimizer.transport.telemetryDumpFileName'],
+            ['boChannelJsonlCaptureEnabled', 'bandwidthoptimizer.channelJsonlCaptureEnabled'],
+            ['boChunkGlobalStoreBudgetBytes', 'bandwidthoptimizer.chunkGlobalStoreBudgetBytes'],
+            ['boChunkGlobalStoreMaxVersionsPerChunk', 'bandwidthoptimizer.chunkGlobalStoreMaxVersionsPerChunk'],
+            ['boChunkWatchBoundaryReuseMaxDeltaPackets', 'bandwidthoptimizer.chunk.watchBoundaryReuseMaxDeltaPackets'],
+            ['boChunkWatchBoundaryReuseMaxDeltaBytesRatio', 'bandwidthoptimizer.chunk.watchBoundaryReuseMaxDeltaBytesRatio']
+    ].each { List<String> mapping ->
+        applyOptionalRunProperty(projectRef, runConfig, mapping[0], mapping[1])
+    }
+
+    [
+            ['boExperientChunkHotspotPathEnabled', 'bandwidthoptimizer.experient.chunkHotspotPathEnabled'],
+            ['boExperientChunkHotspotPathStopAfterSection', 'bandwidthoptimizer.experient.chunkHotspotPathStopAfterSection'],
+            ['boExperientChunkHotspotPathStopAfterBlockEntity', 'bandwidthoptimizer.experient.chunkHotspotPathStopAfterBlockEntity'],
+            ['boExperientChunkHotspotPathTwoPointReuseMode', 'bandwidthoptimizer.experient.chunkHotspotPathTwoPointReuseMode'],
+            ['boExperientChunkHotspotPathBoundaryHopMode', 'bandwidthoptimizer.experient.chunkHotspotPathBoundaryHopMode'],
+            ['boExperientChunkHotspotPathDimensionHopMode', 'bandwidthoptimizer.experient.chunkHotspotPathDimensionHopMode'],
+            ['boExperientChunkHotspotPathRangeBounceMode', 'bandwidthoptimizer.experient.chunkHotspotPathRangeBounceMode'],
+            ['boExperientWatchBoundaryRefreshPatchEnabled', 'bandwidthoptimizer.experient.watchBoundaryRefreshPatchEnabled']
+    ].each { List<String> mapping ->
+        applyBooleanRunProperty(projectRef, runConfig, mapping[0], mapping[1])
+    }
+}
+
+ext.configureBandwidthOptimizerClientRun = { Project projectRef, def runConfig ->
+
+    runConfig.property('forge.enabledGameTestNamespaces', mod_id)
+    applyExperientClientRunProperties(projectRef, runConfig)
+    applySharedBandwidthOptimizerRunProperties(projectRef, runConfig)
+    applyOptionalRunProperty(projectRef, runConfig, 'boClientChunkCacheMaxMemoryMb', 'bandwidthoptimizer.clientChunkCacheMaxMemoryMb')
+    applyOptionalRunProperty(projectRef, runConfig, 'boClientChunkCacheRecycleTriggerFreeMb', 'bandwidthoptimizer.clientChunkCacheRecycleTriggerFreeMb')
+}
+
+ext.configureBandwidthOptimizerServerRun = { Project projectRef, def runConfig ->
+
+    runConfig.property('forge.enabledGameTestNamespaces', mod_id)
+    applyExperientServerRunProperties(projectRef, runConfig)
+    applySharedBandwidthOptimizerRunProperties(projectRef, runConfig)
+}
+
+def configureTestJavaExecTask = { JavaExec taskRef, String groupName, String taskDescription, String mainClassName ->
+
+    taskRef.group = groupName
+    taskRef.description = taskDescription
+    taskRef.dependsOn(tasks.named('testClasses'))
+    taskRef.classpath = sourceSets.test.runtimeClasspath
+    taskRef.mainClass = mainClassName
+}
+
+tasks.register('runChannelSimulate', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Runs the single-process vanilla packet encode/compress/decode/handle simulator.',
+            'com.PinkCats.bandwidthoptimizer.test.ChannelSimulate'
+    )
+}
+
+tasks.register('runChannelJsonlCompare', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Compares the useful fields inside send.jsonl and receive.jsonl.',
+            'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
+    )
+}
+
+tasks.register('runChunkBranchCoverageVerify', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies that runAll actually hit the targeted chunk transport optimization branches.',
+            'com.PinkCats.bandwidthoptimizer.test.RunAllChunkBranchCoverageMain'
+    )
+}
+
+tasks.register('runWatchBoundaryRefreshPatchVerify', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies the targeted watch-boundary refresh-patch regression artifacts.',
+            'com.PinkCats.bandwidthoptimizer.test.RunWatchBoundaryRefreshPatchRegressionMain'
+    )
+}
+
+tasks.register('runChannelTransportRoundTrip', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies the extracted channel transport algorithm and frame codec without touching the Old framework.',
+            'com.PinkCats.bandwidthoptimizer.test.ChannelTransportRoundTripMain'
+    )
+}
+
+def startExistingRunTaskProcess(File projectDir, boolean isWindows, String wrapperPath, String taskName, List<String> extraGradleArgs, String taskArgs, File outputFile, String consoleLabel) {
+    outputFile.parentFile.mkdirs()
+    if (outputFile.exists()) {
+        outputFile.delete()
+    }
+
+    List<String> command = []
+    if (isWindows) {
+        command.addAll(['cmd', '/c', wrapperPath])
+    } else {
+        command.add(wrapperPath)
+    }
+
+    if (extraGradleArgs != null) {
+        command.addAll(extraGradleArgs.findAll { it != null && !it.isBlank() })
+    }
+
+    command.add(taskName)
+
+    if (taskArgs != null && !taskArgs.isBlank()) {
+        command.add("--args=${taskArgs}")
+    }
+
+    List<String> normalizedCommand = command.collect { entry -> entry.toString() }
+    ProcessBuilder builder = new ProcessBuilder(normalizedCommand)
+    builder.directory(projectDir)
+    builder.redirectErrorStream(true)
+    Process process = builder.start()
+    streamRunTaskOutputToConsole(process, outputFile, consoleLabel)
+    return process
+}
+
+def streamRunTaskOutputToConsole(Process process, File outputFile, String consoleLabel) {
+
+    String safeConsoleLabel = (consoleLabel == null || consoleLabel.isBlank()) ? 'run-task' : consoleLabel
+    Thread.startDaemon("runAll-log-pump-${safeConsoleLabel}") {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(process.inputStream, StandardCharsets.UTF_8))
+        BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(outputFile, true), StandardCharsets.UTF_8))
+
+        try {
+            String line
+            while ((line = reader.readLine()) != null) {
+                synchronized (System.out) {
+                    System.out.println("[${safeConsoleLabel}] ${line}")
+                }
+                writer.write(line)
+                writer.newLine()
+                writer.flush()
+            }
+        } finally {
+            try {
+                reader.close()
+            } catch (IOException ignored) {
+            }
+            try {
+                writer.close()
+            } catch (IOException ignored) {
+            }
+        }
+    }
+}
+
+def buildExperientEnabledGradleArgs() {
+
+    return ['-PboExperientEnabled=true']
+}
+
+def appendOptionalRunAllProperty(List<String> args, Project projectRef, String propertyName) {
+
+    if (projectRef.hasProperty(propertyName)) {
+        args.add("-P${propertyName}=${projectRef.property(propertyName).toString()}")
+    }
+}
+
+def removeRunAllPropertiesByPrefix(List<String> args, String propertyPrefix) {
+
+    if (args == null || propertyPrefix == null || propertyPrefix.isBlank()) {
+        return
+    }
+    args.removeAll { String entry ->
+        entry != null && entry.startsWith("-P${propertyPrefix}")
+    }
+}
+
+def upsertRunAllProperty(List<String> args, String propertyName, String propertyValue) {
+
+    if (args == null || propertyName == null || propertyName.isBlank()) {
+        return
+    }
+    removeRunAllPropertiesByPrefix(args, propertyName)
+    args.add("-P${propertyName}=${propertyValue}")
+}
+
+def buildRunAllSharedGradleArgs(Project projectRef) {
+
+    List<String> args = []
+    args.addAll(buildExperientEnabledGradleArgs())
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientServerCommand')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientServerCommandDelayTicks')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperimentalTransport')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperimentalChunkHotspotTransport')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathEnabled')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathStopAfterSection')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathStopAfterBlockEntity')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathTwoPointReuseMode')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathBoundaryHopMode')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathDimensionHopMode')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeBounceMode')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientWatchBoundaryRefreshPatchEnabled')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeStartX')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeStartY')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeStartZ')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeEndX')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeEndY')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeEndZ')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeStepBlocks')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeRoundTrips')
+    appendOptionalRunAllProperty(args, projectRef, 'boTransportMappingEnabled')
+    appendOptionalRunAllProperty(args, projectRef, 'boTransportZstdEnabled')
+    appendOptionalRunAllProperty(args, projectRef, 'boTransportBatchEnabled')
+    appendOptionalRunAllProperty(args, projectRef, 'boTransportBatchWindowMillis')
+    appendOptionalRunAllProperty(args, projectRef, 'boTransportPacketIdMappingEnabled')
+    appendOptionalRunAllProperty(args, projectRef, 'boTransportTelemetryDumpFileName')
+    appendOptionalRunAllProperty(args, projectRef, 'boChannelJsonlCaptureEnabled')
+    appendOptionalRunAllProperty(args, projectRef, 'boChunkGlobalStoreBudgetBytes')
+    appendOptionalRunAllProperty(args, projectRef, 'boChunkGlobalStoreMaxVersionsPerChunk')
+    appendOptionalRunAllProperty(args, projectRef, 'boChunkWatchBoundaryReuseMaxDeltaPackets')
+    appendOptionalRunAllProperty(args, projectRef, 'boChunkWatchBoundaryReuseMaxDeltaBytesRatio')
+    appendOptionalRunAllProperty(args, projectRef, 'boClientChunkCacheMaxMemoryMb')
+    appendOptionalRunAllProperty(args, projectRef, 'boClientChunkCacheRecycleTriggerFreeMb')
+    if (!projectRef.hasProperty('boChannelJsonlCaptureEnabled')) {
+        args.add('-PboChannelJsonlCaptureEnabled=true')
+    }
+    return args
+}
+
+def buildWatchBoundaryRefreshPatchRegressionGradleArgs(Project projectRef) {
+    List<String> args = buildRunAllSharedGradleArgs(projectRef)
+    removeRunAllPropertiesByPrefix(args, 'boExperientChunkHotspotPath')
+    removeRunAllPropertiesByPrefix(args, 'boExperientWatchBoundaryRefreshPatchEnabled')
+    upsertRunAllProperty(args, 'boExperimentalTransport', 'true')
+    upsertRunAllProperty(args, 'boExperientWatchBoundaryRefreshPatchEnabled', 'true')
+    return args
+}
+
+def isRunAllTransportEnabledByDefault(Project projectRef) {
+
+    if (!projectRef.hasProperty('boExperimentalTransport')) {
+        return true
+    }
+    return projectRef.property('boExperimentalTransport').toString().toBoolean()
+}
+
+def resolveRunAllTransportTelemetryDumpPath(Project projectRef, File runtimeDir) {
+
+    String dumpFileName = (projectRef.findProperty('boTransportTelemetryDumpFileName') ?: 'transport-telemetry-dump.properties').toString().trim()
+    if (dumpFileName.isEmpty()) {
+        return new File(runtimeDir, 'transport-telemetry-dump.properties')
+    }
+    File dumpFile = new File(dumpFileName)
+    return dumpFile.isAbsolute() ? dumpFile : new File(runtimeDir, dumpFileName)
+}
+
+def buildExperientAutoConnectGradleArgs(Project projectRef, String address, String serverName, long delayTicks) {
+
+    List<String> args = []
+    args.addAll(buildRunAllSharedGradleArgs(projectRef))
+    args.addAll([
+            "-PboExperientAutoConnectAddress=${address}",
+            "-PboExperientAutoConnectName=${serverName}",
+            "-PboExperientAutoConnectDelayTicks=${delayTicks}"
+    ])
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientAutoConnectMaxAttempts')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientAutoConnectRetryDelayTicks')
+    return args
+}
+
+def isRunAllChunkBranchCoverageVerificationEnabled(Project projectRef) {
+
+    if (projectRef.hasProperty('boRunAllVerifyChunkBranches')) {
+        return projectRef.property('boRunAllVerifyChunkBranches').toString().toBoolean()
+    }
+    if ((projectRef.findProperty('boExperientChunkHotspotPathTwoPointReuseMode') ?: 'false').toString().toBoolean()) {
+        return false
+    }
+    if ((projectRef.findProperty('boExperientChunkHotspotPathBoundaryHopMode') ?: 'false').toString().toBoolean()) {
+        return false
+    }
+    if ((projectRef.findProperty('boExperientChunkHotspotPathDimensionHopMode') ?: 'false').toString().toBoolean()) {
+        return false
+    }
+    if ((projectRef.findProperty('boExperientChunkHotspotPathRangeBounceMode') ?: 'false').toString().toBoolean()) {
+        return false
+    }
+    return (projectRef.findProperty('boExperientChunkHotspotPathEnabled') ?: 'false').toString().toBoolean()
+}
+
+def runChunkBranchCoverageVerifyNow(Project projectRef) {
+
+    projectRef.javaexec {
+        classpath = sourceSets.test.runtimeClasspath
+        mainClass = 'com.PinkCats.bandwidthoptimizer.test.RunAllChunkBranchCoverageMain'
+    }
+}
+
+def runChannelJsonlCompareNow(Project projectRef) {
+
+    projectRef.javaexec {
+        classpath = sourceSets.test.runtimeClasspath
+        mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
+    }
+}
+
+def runWatchBoundaryRefreshPatchVerifyNow(Project projectRef) {
+
+    projectRef.javaexec {
+        classpath = sourceSets.test.runtimeClasspath
+        mainClass = 'com.PinkCats.bandwidthoptimizer.test.RunWatchBoundaryRefreshPatchRegressionMain'
+    }
+}
+
+def waitForLogMarker(File logFile, List<String> successMarkers, List<String> failureMarkers, long timeoutMillis, String stageLabel) {
+
+    long deadline = System.currentTimeMillis() + timeoutMillis
+
+    while (System.currentTimeMillis() < deadline) {
+        if (logFile.exists()) {
+            String logText = logFile.getText('UTF-8')
+            if (failureMarkers.any { marker -> logText.contains(marker) }) {
+                throw new GradleException("${stageLabel} 失败，命中失败标记。请检查 ${logFile.absolutePath}")
+            }
+            if (successMarkers.any { marker -> logText.contains(marker) }) {
+                return
+            }
+        }
+        sleep(1000)
+    }
+
+    throw new GradleException("${stageLabel} 超时。请检查 ${logFile.absolutePath}")
+}
+
+def configureRunAllServerProperties(File propertiesFile) {
+
+    Properties properties = new Properties()
+    if (propertiesFile.exists()) {
+        propertiesFile.withInputStream { input ->
+            properties.load(input)
+        }
+    } else {
+        propertiesFile.parentFile.mkdirs()
+    }
+
+    properties.setProperty('online-mode', 'false')
+    properties.setProperty('enforce-secure-profile', 'false')
+    properties.setProperty('server-ip', '')
+    properties.setProperty('server-port', '25565')
+    properties.setProperty('level-name', 'bo-runall-world')
+
+    propertiesFile.withOutputStream { output ->
+        properties.store(output, 'BandwidthOptimizer runAll local test server')
+    }
+}
+
+def configureRunAllServerOperators(File opsFile) {
+
+    List<Map<String, Object>> opsEntries = []
+    if (opsFile.exists()) {
+        Object parsed = new JsonSlurper().parse(opsFile, StandardCharsets.UTF_8.name())
+        if (parsed instanceof List) {
+            opsEntries.addAll((List<Map<String, Object>>) parsed)
+        }
+    } else {
+        opsFile.parentFile.mkdirs()
+    }
+
+    Set<String> operatorNames = new LinkedHashSet<>()
+    operatorNames.add('Dev')
+
+    File userCacheFile = new File(opsFile.parentFile, 'usercache.json')
+    if (userCacheFile.exists()) {
+        Object parsedUserCache = new JsonSlurper().parse(userCacheFile, StandardCharsets.UTF_8.name())
+        if (parsedUserCache instanceof List) {
+            parsedUserCache.each { Object entry ->
+                if (entry instanceof Map) {
+                    Object rawCachedName = ((Map<?, ?>) entry).get('name')
+                    if (rawCachedName == null) {
+                        return
+                    }
+                    String cachedName = rawCachedName.toString()
+                    if (cachedName.equalsIgnoreCase('Dev')) {
+                        operatorNames.add(cachedName)
+                    }
+                }
+            }
+        }
+    }
+
+    operatorNames.each { String operatorName ->
+        String offlineUuid = UUID.nameUUIDFromBytes(("OfflinePlayer:" + operatorName).getBytes(StandardCharsets.UTF_8)).toString()
+        Map<String, Object> operatorEntry = [
+                uuid               : offlineUuid,
+                name               : operatorName,
+                level              : 4,
+                bypassesPlayerLimit: false
+        ]
+
+        int existingIndex = -1
+        for (int index = 0; index < opsEntries.size(); index++) {
+            Map<String, Object> existingEntry = opsEntries.get(index)
+            if (operatorName.equalsIgnoreCase(String.valueOf(existingEntry.get('name')))) {
+                existingIndex = index
+                break
+            }
+        }
+
+        if (existingIndex >= 0) {
+            Map<String, Object> mergedEntry = new LinkedHashMap<>(opsEntries.get(existingIndex))
+            mergedEntry.putAll(operatorEntry)
+            opsEntries.set(existingIndex, mergedEntry)
+        } else {
+            opsEntries.add(operatorEntry)
+        }
+    }
+
+    opsFile.setText(
+            JsonOutput.prettyPrint(JsonOutput.toJson(opsEntries)) + System.lineSeparator(),
+            StandardCharsets.UTF_8.name()
+    )
+}
+
+def stopExistingRunAllProcesses(Project projectRef, File projectDirFile, boolean isWindows) {
+
+    if (!isWindows) {
+        return
+    }
+
+    String escapedProjectDir = projectDirFile.absolutePath.replace("'", "''")
+    projectRef.exec {
+        commandLine 'powershell', '-NoProfile', '-Command',
+                "\$targets = Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -and \$_.CommandLine -like '*${escapedProjectDir}*' -and (\$_.CommandLine -like '*forgeclientuserdev*' -or \$_.CommandLine -like '*forgeserveruserdev*' -or \$_.CommandLine -like '*gradlew.bat*runClient*' -or \$_.CommandLine -like '*gradlew.bat*runServer*') }; \$targets | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }"
+        ignoreExitValue = true
+    }
+}
+
+def stopRunAllServerProcesses(Project projectRef, File projectDirFile, boolean isWindows) {
+
+    if (!isWindows) {
+        return
+    }
+
+    String escapedProjectDir = projectDirFile.absolutePath.replace("'", "''")
+    projectRef.exec {
+        commandLine 'powershell', '-NoProfile', '-Command',
+                "\$targets = Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -and \$_.CommandLine -like '*${escapedProjectDir}*' -and (\$_.CommandLine -like '*forgeserveruserdev*' -or \$_.CommandLine -like '*gradlew.bat*runServer*') }; \$targets | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }"
+        ignoreExitValue = true
+    }
+}
+
+def clearRunAllProbeFiles(List<File> files) {
+
+    files.each { file ->
+        if (file.exists()) {
+            file.delete()
+        }
+    }
+}
+
+def waitForFourWayCapturedTraffic(File clientSendJsonl, File clientReceiveJsonl, File serverSendJsonl, File serverReceiveJsonl, long timeoutMillis) {
+
+    long deadline = System.currentTimeMillis() + timeoutMillis
+
+    while (System.currentTimeMillis() < deadline) {
+        long clientSendLength = clientSendJsonl.exists() ? clientSendJsonl.length() : 0L
+        long clientReceiveLength = clientReceiveJsonl.exists() ? clientReceiveJsonl.length() : 0L
+        long serverSendLength = serverSendJsonl.exists() ? serverSendJsonl.length() : 0L
+        long serverReceiveLength = serverReceiveJsonl.exists() ? serverReceiveJsonl.length() : 0L
+
+        if (clientSendLength > 0L && clientReceiveLength > 0L && serverSendLength > 0L && serverReceiveLength > 0L) {
+            return
+        }
+        sleep(1000)
+    }
+
+    throw new GradleException('runAll 超时：四个方向的 jsonl 仍未全部出现内容。')
+}
+
+def readRunAllLongProperty(Project projectRef, String propertyName, long defaultValue) {
+
+    if (!projectRef.hasProperty(propertyName)) {
+        return defaultValue
+    }
+
+    String rawValue = projectRef.property(propertyName).toString().trim()
+    if (rawValue.isEmpty()) {
+        return defaultValue
+    }
+
+    try {
+        long parsedValue = Long.parseLong(rawValue)
+        if (parsedValue < 0L) {
+            throw new GradleException("${propertyName} 不能是负数，当前值 ${rawValue}")
+        }
+        return parsedValue
+    } catch (NumberFormatException exception) {
+        throw new GradleException("${propertyName} 必须是整数，当前值 ${rawValue}", exception)
+    }
+}
+
+def readRunAllAutoExitTrigger(Project projectRef) {
+
+    String rawValue = projectRef.findProperty('boRunAllExitTrigger')?.toString()?.trim()
+    if (rawValue == null || rawValue.isEmpty()) {
+        return 'four-way-jsonl'
+    }
+
+    if (rawValue == 'server-login'
+            || rawValue == 'four-way-jsonl'
+            || rawValue == 'client-disconnected') {
+        return rawValue
+    }
+
+    throw new GradleException("boRunAllExitTrigger 只支持 server-login、four-way-jsonl 或 client-disconnected，当前值 ${rawValue}")
+}
+
+def waitForMarkerFile(File markerFile, long timeoutMillis, String stageLabel) {
+
+    long deadline = System.currentTimeMillis() + timeoutMillis
+
+    while (System.currentTimeMillis() < deadline) {
+        if (markerFile.exists() && markerFile.length() > 0L) {
+            return
+        }
+        sleep(500)
+    }
+
+    throw new GradleException("${stageLabel} 超时。请检查 ${markerFile.absolutePath}")
+}
+
+def waitForRunAllAutoExitTrigger(
+        String exitTrigger,
+        File serverLoginMarker,
+        File clientTaskLog,
+        File clientSendJsonl,
+        File clientReceiveJsonl,
+        File serverSendJsonl,
+        File serverReceiveJsonl,
+        long timeoutMillis
+) {
+
+    if (exitTrigger == 'server-login') {
+        waitForMarkerFile(serverLoginMarker, timeoutMillis, 'runAllAutoExitCompare 等待玩家进服')
+        return
+    }
+
+    if (exitTrigger == 'four-way-jsonl') {
+        waitForFourWayCapturedTraffic(clientSendJsonl, clientReceiveJsonl, serverSendJsonl, serverReceiveJsonl, timeoutMillis)
+        return
+    }
+
+    if (exitTrigger == 'client-disconnected') {
+        waitForLogMarker(
+                clientTaskLog,
+                ['[ExperientAutoConnect] Completed connection ended, stopping client process.'],
+                ['Failed to connect to the server', 'Connection refused', 'Internal Exception', 'Reached max attempts'],
+                timeoutMillis,
+                'runAllAutoExitCompare 等待 experient 路径完成后客户端正常断开'
+        )
+        return
+    }
+
+    throw new GradleException("未知的自动退出触发条件 ${exitTrigger}")
+}
+
+def waitForFilesToSettle(List<File> files, long stableMillis, long timeoutMillis) {
+
+    if (files.isEmpty() || stableMillis <= 0L) {
+        return
+    }
+
+    Map<String, Long> lastSnapshot = files.collectEntries { File file ->
+        [(file.absolutePath): file.exists() ? file.length() : -1L]
+    }
+    long stableSince = System.currentTimeMillis()
+    long deadline = System.currentTimeMillis() + timeoutMillis
+
+    while (System.currentTimeMillis() < deadline) {
+        sleep(500)
+
+        Map<String, Long> currentSnapshot = files.collectEntries { File file ->
+            [(file.absolutePath): file.exists() ? file.length() : -1L]
+        }
+
+        if (currentSnapshot == lastSnapshot) {
+            if (System.currentTimeMillis() - stableSince >= stableMillis) {
+                return
+            }
+        } else {
+            lastSnapshot = currentSnapshot
+            stableSince = System.currentTimeMillis()
+        }
+    }
+
+    throw new GradleException('runAllAutoExitCompare 等待 jsonl 写入稳定超时。')
+}
+
+def forceStopRunAllProcesses(Project projectRef, File projectDirFile, boolean isWindows, List<Process> processes) {
+
+    stopExistingRunAllProcesses(projectRef, projectDirFile, isWindows)
+
+    processes.findAll { it != null }.each { Process process ->
+        if (!process.isAlive()) {
+            return
+        }
+
+        process.destroy()
+        process.waitFor(5L, TimeUnit.SECONDS)
+
+        if (process.isAlive()) {
+            process.destroyForcibly()
+            process.waitFor(5L, TimeUnit.SECONDS)
+        }
+    }
+}
+
+def buildTransportReportScenarioGradleArgs(Project projectRef, Map<String, String> scenarioProperties) {
+
+    List<String> args = ['--console=plain', '-PboExperimentalTransport=true', '-PboTransportZstdEnabled=true']
+    String observeSeconds = projectRef.findProperty('boRunAllObserveSeconds')?.toString()?.trim()
+    args.add("-PboRunAllObserveSeconds=${(observeSeconds == null || observeSeconds.isEmpty()) ? '15' : observeSeconds}")
+    appendOptionalRunAllProperty(args, projectRef, 'boRunAllSettleMillis')
+    appendOptionalRunAllProperty(args, projectRef, 'boRunAllSettleTimeoutMillis')
+    args.add('-PboTransportTelemetryDumpFileName=transport-telemetry-dump.properties')
+
+    String batchWindowMillis = projectRef.findProperty('boTransportBatchWindowMillis')?.toString()?.trim()
+    if (batchWindowMillis == null || batchWindowMillis.isEmpty()) {
+        batchWindowMillis = '10'
+    }
+    args.add("-PboTransportBatchWindowMillis=${batchWindowMillis}")
+
+    scenarioProperties.each { String key, String value ->
+        args.add("-P${key}=${value}")
+    }
+    return args
+}
+
+def waitForScenarioProcess(Process process, long timeoutMillis) {
+
+    if (process.waitFor(timeoutMillis, TimeUnit.MILLISECONDS)) {
+        return [timedOut: false, exitCode: process.exitValue()]
+    }
+
+    process.destroy()
+    process.waitFor(5L, TimeUnit.SECONDS)
+    if (process.isAlive()) {
+        process.destroyForcibly()
+        process.waitFor(5L, TimeUnit.SECONDS)
+    }
+    return [timedOut: true, exitCode: -1]
+}
+
+def copyScenarioArtifactIfExists(File sourceFile, File targetFile) {
+
+    if (!sourceFile.exists()) {
+        return false
+    }
+
+    targetFile.parentFile.mkdirs()
+    Files.copy(sourceFile.toPath(), targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+    return true
+}
+
+def writeDefaultTransportReportScenarioList(Project projectRef, File scenarioListFile) {
+
+    scenarioListFile.parentFile.mkdirs()
+    projectRef.javaexec {
+        classpath = sourceSets.test.runtimeClasspath
+        mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelTransportReportScenarioListMain'
+        args '--output', scenarioListFile.absolutePath
+    }
+}
+
+def readTransportReportScenarios(File scenarioListFile) {
+
+    List<String> lines = Files.readAllLines(scenarioListFile.toPath(), StandardCharsets.UTF_8)
+    List<Map<String, String>> scenarios = []
+    lines.drop(1).each { String line ->
+        if (line == null || line.isBlank()) {
+            return
+        }
+
+        List<String> columns = line.split('\t', -1).toList()
+        if (columns.size() < 6) {
+            throw new GradleException("Transport report scenario line is invalid: ${line}")
+        }
+
+        scenarios.add([
+                id                               : columns[0],
+                displayName                      : columns[1],
+                baseline                         : columns[2],
+                boTransportMappingEnabled        : columns[3],
+                boTransportBatchEnabled          : columns[4],
+                boTransportPacketIdMappingEnabled: columns[5]
+        ])
+    }
+    return scenarios
+}
+
+tasks.register('runChannelTransportReport') {
+    group = 'verification'
+    description = 'Runs multiple transport algorithm scenarios on top of runAll, then dumps a consolidated txt compression report.'
+    dependsOn(tasks.named('testClasses'))
+
+    doLast {
+
+        String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+        boolean isWindows = osName.contains('windows')
+        File projectDirFile = project.projectDir
+        String wrapperPath = new File(projectDirFile, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        long scenarioTimeoutMillis = readRunAllLongProperty(project, 'boTransportReportScenarioTimeoutMillis', 480000L)
+        long scenarioRetryCount = readRunAllLongProperty(project, 'boTransportReportScenarioRetries', 1L)
+        File reportDir = project.file('run/transport-report')
+        File scenarioListFile = new File(reportDir, 'scenario-defaults.tsv')
+        File manifestFile = new File(reportDir, 'scenario-manifest.tsv')
+        File reportFile = new File(reportDir, 'transport-algorithm-report.txt')
+        File scenarioDumpFileServer = project.file('run/server/transport-telemetry-dump.properties')
+        File scenarioDumpFileClient = project.file('run/client/transport-telemetry-dump.properties')
+
+        List<Map<String, String>> scenarios = [
+                [id: 'sza', displayName: 'SZA 仅 Zstd', baseline: 'true', boTransportMappingEnabled: 'false', boTransportBatchEnabled: 'false', boTransportPacketIdMappingEnabled: 'false'],
+                [id: 'tda_sza', displayName: 'TDA_SZA 模板字典 + Zstd', baseline: 'false', boTransportMappingEnabled: 'true', boTransportBatchEnabled: 'false', boTransportPacketIdMappingEnabled: 'false'],
+                [id: 'batch_sza', displayName: 'BATCH_SZA Batch + Zstd', baseline: 'false', boTransportMappingEnabled: 'false', boTransportBatchEnabled: 'true', boTransportPacketIdMappingEnabled: 'false'],
+                [id: 'batch_header_sza', displayName: 'BATCH_HM_SZA Batch + 包头映射 + Zstd', baseline: 'false', boTransportMappingEnabled: 'false', boTransportBatchEnabled: 'true', boTransportPacketIdMappingEnabled: 'true']
+        ]
+
+        delete(reportDir)
+        reportDir.mkdirs()
+        writeDefaultTransportReportScenarioList(project, scenarioListFile)
+        scenarios = readTransportReportScenarios(scenarioListFile)
+
+        manifestFile.withWriter('UTF-8') { writer ->
+            writer.writeLine('id\tdisplayName\tbaseline\tmappingEnabled\tbatchEnabled\tpacketIdMappingEnabled\tlogPath\tserverDumpPath\tclientDumpPath\texitCode\ttimedOut')
+        }
+
+        scenarios.each { Map<String, String> scenario ->
+            File scenarioLogFile = new File(reportDir, "${scenario.id}.console.log")
+            File archivedServerDumpFile = new File(reportDir, "${scenario.id}.server.dump.properties")
+            File archivedClientDumpFile = new File(reportDir, "${scenario.id}.client.dump.properties")
+            Map<String, Object> scenarioResult = [timedOut: true, exitCode: -1]
+            boolean serverDumpCopied = false
+            boolean clientDumpCopied = false
+            long totalAttempts = scenarioRetryCount + 1L
+
+            for (long attemptIndex = 1L; attemptIndex <= totalAttempts; attemptIndex++) {
+                clearRunAllProbeFiles([scenarioLogFile, scenarioDumpFileServer, scenarioDumpFileClient, archivedServerDumpFile, archivedClientDumpFile])
+
+                println "runChannelTransportReport: 正在执行场景 ${scenario.displayName}"
+                List<String> scenarioArgs = buildTransportReportScenarioGradleArgs(project, [
+                        boTransportMappingEnabled        : scenario.boTransportMappingEnabled,
+                        boTransportBatchEnabled          : scenario.boTransportBatchEnabled,
+                        boTransportPacketIdMappingEnabled: scenario.boTransportPacketIdMappingEnabled
+                ])
+                Process scenarioProcess = startExistingRunTaskProcess(
+                        projectDirFile,
+                        isWindows,
+                        wrapperPath,
+                        'runAll',
+                        scenarioArgs,
+                        null,
+                        scenarioLogFile,
+                        "report-${scenario.id}-attempt${attemptIndex}"
+                )
+                scenarioResult = waitForScenarioProcess(scenarioProcess, scenarioTimeoutMillis)
+                stopExistingRunAllProcesses(project, projectDirFile, isWindows)
+                sleep(2000)
+                serverDumpCopied = copyScenarioArtifactIfExists(scenarioDumpFileServer, archivedServerDumpFile)
+                clientDumpCopied = copyScenarioArtifactIfExists(scenarioDumpFileClient, archivedClientDumpFile)
+
+                if ((scenarioResult.exitCode as int) == 0 && !scenarioResult.timedOut && serverDumpCopied && clientDumpCopied) {
+                    break
+                }
+
+                if (attemptIndex < totalAttempts) {
+                    println "runChannelTransportReport: 场景 ${scenario.displayName} 第 ${attemptIndex} 次未拿到完整结果，准备重试。"
+                }
+            }
+
+            manifestFile.append(
+                    [
+                            scenario.id,
+                            scenario.displayName,
+                            scenario.baseline,
+                            scenario.boTransportMappingEnabled,
+                            scenario.boTransportBatchEnabled,
+                            scenario.boTransportPacketIdMappingEnabled,
+                            scenarioLogFile.absolutePath,
+                            serverDumpCopied ? archivedServerDumpFile.absolutePath : '',
+                            clientDumpCopied ? archivedClientDumpFile.absolutePath : '',
+                            scenarioResult.exitCode.toString(),
+                            scenarioResult.timedOut.toString()
+                    ].join('\t') + System.lineSeparator(),
+                    'UTF-8'
+            )
+
+            if (scenarioResult.timedOut) {
+                println "runChannelTransportReport: 场景 ${scenario.displayName} 超时，结果已记入报告。"
+            } else if ((scenarioResult.exitCode as int) != 0) {
+                println "runChannelTransportReport: 场景 ${scenario.displayName} 退出码=${scenarioResult.exitCode}，结果已记入报告。"
+            }
+        }
+
+        project.javaexec {
+            classpath = sourceSets.test.runtimeClasspath
+            mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelTransportCompressionReportMain'
+            args '--manifest', manifestFile.absolutePath, '--output', reportFile.absolutePath
+        }
+
+        println "runChannelTransportReport: 报告已生成 ${reportFile.absolutePath}"
+    }
+}
+
+tasks.register('runAll') {
+    group = 'application'
+    description = 'Starts the Forge server, waits for readiness, then lets the experient client auto-connect once into localhost and verify four-way jsonl traffic.'
+    dependsOn(tasks.named('testClasses'))
+
+    doLast {
+        String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+        boolean isWindows = osName.contains('windows')
+        File projectDirFile = project.projectDir
+        String wrapperPath = new File(projectDirFile, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        long observeSeconds = readRunAllLongProperty(project, 'boRunAllObserveSeconds', 0L)
+        long settleMillis = readRunAllLongProperty(project, 'boRunAllSettleMillis', 3000L)
+        long settleTimeoutMillis = readRunAllLongProperty(project, 'boRunAllSettleTimeoutMillis', 15000L)
+        boolean verifyChunkBranches = isRunAllChunkBranchCoverageVerificationEnabled(project)
+
+        File serverDir = project.file('run/server')
+        File clientDir = project.file('run/client')
+        File serverLatestLog = project.file('run/server/logs/latest.log')
+        File clientLatestLog = project.file('run/client/logs/latest.log')
+        File serverTaskLog = project.file('run/runall-server-task.log')
+        File clientTaskLog = project.file('run/runall-client-task.log')
+        File serverSendJsonl = project.file('run/server/send.jsonl')
+        File serverReceiveJsonl = project.file('run/server/receive.jsonl')
+        File clientSendJsonl = project.file('run/client/send.jsonl')
+        File clientReceiveJsonl = project.file('run/client/receive.jsonl')
+        File serverChunkHotspotStats = project.file('run/server/chunk-hotspot-stats.properties')
+        File clientChunkHotspotStats = project.file('run/client/chunk-hotspot-stats.properties')
+        File serverTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, serverDir)
+        File clientTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, clientDir)
+        File captureResetRequest = project.file('run/bo-runall-capture-reset.request')
+        File serverProperties = project.file('run/server/server.properties')
+        File serverOpsFile = project.file('run/server/ops.json')
+        boolean transportEnabled = isRunAllTransportEnabledByDefault(project)
+
+        stopExistingRunAllProcesses(project, projectDirFile, isWindows)
+        sleep(3000)
+
+        clearRunAllProbeFiles([
+                serverLatestLog,
+                clientLatestLog,
+                serverTaskLog,
+                clientTaskLog,
+                serverSendJsonl,
+                serverReceiveJsonl,
+                clientSendJsonl,
+                clientReceiveJsonl,
+                serverChunkHotspotStats,
+                clientChunkHotspotStats,
+                serverTransportTelemetryDump,
+                clientTransportTelemetryDump,
+                captureResetRequest
+        ])
+
+        configureRunAllServerProperties(serverProperties)
+        configureRunAllServerOperators(serverOpsFile)
+
+        if (!transportEnabled) {
+            println 'runAll: 当前显式传入 boExperimentalTransport=false，本轮仍会分别启动客户端和服务端，但透明 transport 会保持关闭。'
+            println 'runAll: 如果要恢复默认开启，请移除该参数，或显式传 -PboExperimentalTransport=true'
+        }
+
+        println 'runAll: 正在启动本地测试服务端。'
+        Process serverProcess = startExistingRunTaskProcess(projectDirFile, isWindows, wrapperPath, 'runServer', buildRunAllSharedGradleArgs(project), null, serverTaskLog, 'runServer')
+        waitForLogMarker(
+                serverTaskLog,
+                ['Done ('],
+                ['BUILD FAILED', 'Failed to start the minecraft server', 'Perhaps a server is already running on that port', 'Address already in use'],
+                180000L,
+                '服务端启动'
+        )
+
+        List<String> clientGradleArgs = buildExperientAutoConnectGradleArgs(project, '127.0.0.1:25565', 'BO RunAll Local', 20L)
+
+        println 'runAll: 服务端已就绪，正在启动客户端，并用 experient 自动发起单次直连 127.0.0.1:25565。'
+        Process clientProcess = startExistingRunTaskProcess(
+                projectDirFile,
+                isWindows,
+                wrapperPath,
+                'runClient',
+                clientGradleArgs,
+                null,
+                clientTaskLog,
+                'runClient'
+        )
+
+        waitForLogMarker(
+                clientTaskLog,
+                ['Connecting to 127.0.0.1, 25565', 'Connecting to 127.0.0.1:25565'],
+                ['Failed to connect to the server', 'disconnect.genericReason', 'Connection refused', 'Internal Exception'],
+                180000L,
+                '客户端连接'
+        )
+
+        waitForFourWayCapturedTraffic(
+                clientSendJsonl,
+                clientReceiveJsonl,
+                serverSendJsonl,
+                serverReceiveJsonl,
+                180000L
+        )
+
+        println 'runAll: 四个方向的 jsonl 都已经开始写入。'
+        println "服务端目录 ${serverDir.absolutePath}"
+        println "客户端目录 ${clientDir.absolutePath}"
+        println "服务端外层任务日志 ${serverTaskLog.absolutePath}"
+        println "客户端外层任务日志 ${clientTaskLog.absolutePath}"
+
+        if (!serverProcess.isAlive()) {
+            println 'runAll: 服务端外层任务进程已退出，请优先查看 run/runall-server-task.log。'
+        }
+        if (!clientProcess.isAlive()) {
+            println 'runAll: 客户端外层任务进程已退出，请优先查看 run/runall-client-task.log。'
+        }
+
+        println 'runAll: 正在等待客户端退出，退出后会自动关闭服务端。'
+        if (observeSeconds > 0L) {
+            println "runAll: 正在观察 transport ${observeSeconds} 秒，到时后会强制结束客户端和服务端。"
+            sleep(observeSeconds * 1000L)
+            forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
+            waitForFilesToSettle(
+                    [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
+                    settleMillis,
+                    settleTimeoutMillis
+            )
+            println 'runAll: 观察窗口已经结束，客户端和服务端已被强制关闭。'
+            return
+        }
+
+        clientProcess.waitFor()
+        waitForFilesToSettle(
+                [clientSendJsonl, serverReceiveJsonl],
+                settleMillis,
+                settleTimeoutMillis
+        )
+
+        println 'runAll: 检测到客户端已退出，正在关闭服务端。'
+        stopRunAllServerProcesses(project, projectDirFile, isWindows)
+
+        if (serverProcess.isAlive()) {
+            serverProcess.waitFor(30L, TimeUnit.SECONDS)
+        }
+
+        if (verifyChunkBranches) {
+            waitForFilesToSettle(
+                    [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
+                    settleMillis,
+                    settleTimeoutMillis
+            )
+            println 'runAll: 正在执行 chunk 分支覆盖校验。'
+            runChunkBranchCoverageVerifyNow(project)
+        }
+
+        println 'runAll: 服务端已随客户端退出。'
+    }
+}
+
+tasks.register('runAllAutoExitCompare') {
+    group = 'verification'
+    description = 'Starts the local server/client, waits for an auto-exit trigger, force-stops both sides, then compares the final jsonl files.'
+    dependsOn(tasks.named('testClasses'))
+
+    doLast {
+        String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+        boolean isWindows = osName.contains('windows')
+        File projectDirFile = project.projectDir
+        String wrapperPath = new File(projectDirFile, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        String exitTrigger = readRunAllAutoExitTrigger(project)
+        long exitDelaySeconds = readRunAllLongProperty(project, 'boRunAllExitDelaySeconds', 3L)
+        long triggerTimeoutMillis = readRunAllLongProperty(project, 'boRunAllTriggerTimeoutMillis', 180000L)
+        long settleMillis = readRunAllLongProperty(project, 'boRunAllSettleMillis', 3000L)
+        long settleTimeoutMillis = readRunAllLongProperty(project, 'boRunAllSettleTimeoutMillis', 15000L)
+
+        File serverTaskLog = project.file('run/runall-server-task.log')
+        File clientTaskLog = project.file('run/runall-client-task.log')
+        File serverSendJsonl = project.file('run/server/send.jsonl')
+        File serverReceiveJsonl = project.file('run/server/receive.jsonl')
+        File clientSendJsonl = project.file('run/client/send.jsonl')
+        File clientReceiveJsonl = project.file('run/client/receive.jsonl')
+        File serverChunkHotspotStats = project.file('run/server/chunk-hotspot-stats.properties')
+        File clientChunkHotspotStats = project.file('run/client/chunk-hotspot-stats.properties')
+        File serverTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, project.file('run/server'))
+        File clientTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, project.file('run/client'))
+        File captureResetRequest = project.file('run/bo-runall-capture-reset.request')
+        File serverLoginMarker = project.file('run/server/bo-runall-player-logged-in.marker')
+        File serverProperties = project.file('run/server/server.properties')
+        File serverOpsFile = project.file('run/server/ops.json')
+        boolean transportEnabled = isRunAllTransportEnabledByDefault(project)
+
+        stopExistingRunAllProcesses(project, projectDirFile, isWindows)
+        sleep(3000)
+
+        clearRunAllProbeFiles([
+                serverTaskLog,
+                clientTaskLog,
+                serverSendJsonl,
+                serverReceiveJsonl,
+                clientSendJsonl,
+                clientReceiveJsonl,
+                serverChunkHotspotStats,
+                clientChunkHotspotStats,
+                serverTransportTelemetryDump,
+                clientTransportTelemetryDump,
+                captureResetRequest,
+                serverLoginMarker
+        ])
+
+        configureRunAllServerProperties(serverProperties)
+        configureRunAllServerOperators(serverOpsFile)
+
+        Process serverProcess = null
+        Process clientProcess = null
+
+        try {
+            println "runAllAutoExitCompare: exitTrigger=${exitTrigger}, exitDelaySeconds=${exitDelaySeconds}, settleMillis=${settleMillis}"
+            if (!transportEnabled) {
+                println 'runAllAutoExitCompare: 当前显式传入 boExperimentalTransport=false，这一轮仍会做 jsonl 抓包和 compare，但透明 transport 会保持关闭。'
+                println 'runAllAutoExitCompare: 如果要恢复默认开启，请移除该参数，或显式传 -PboExperimentalTransport=true'
+            }
+
+            println 'runAllAutoExitCompare: 正在启动本地测试服务端。'
+            serverProcess = startExistingRunTaskProcess(projectDirFile, isWindows, wrapperPath, 'runServer', buildRunAllSharedGradleArgs(project), null, serverTaskLog, 'runServer')
+            waitForLogMarker(
+                    serverTaskLog,
+                    ['Done ('],
+                    ['BUILD FAILED', 'Failed to start the minecraft server', 'Perhaps a server is already running on that port', 'Address already in use'],
+                    180000L,
+                    '服务端启动'
+            )
+
+            List<String> clientGradleArgs = buildExperientAutoConnectGradleArgs(project, '127.0.0.1:25565', 'BO RunAll AutoExit', 20L)
+
+            println 'runAllAutoExitCompare: 服务端已就绪，正在启动客户端，并用 experient 自动发起单次直连 127.0.0.1:25565。'
+            clientProcess = startExistingRunTaskProcess(
+                    projectDirFile,
+                    isWindows,
+                    wrapperPath,
+                    'runClient',
+                    clientGradleArgs,
+                    null,
+                    clientTaskLog,
+                    'runClient'
+            )
+
+            waitForLogMarker(
+                    clientTaskLog,
+                    ['Connecting to 127.0.0.1, 25565', 'Connecting to 127.0.0.1:25565'],
+                    ['Failed to connect to the server', 'disconnect.genericReason', 'Connection refused', 'Internal Exception'],
+                    180000L,
+                    '客户端连接'
+            )
+
+            println "runAllAutoExitCompare: 正在等待退出触发条件 ${exitTrigger}。"
+            waitForRunAllAutoExitTrigger(
+                    exitTrigger,
+                    serverLoginMarker,
+                    clientTaskLog,
+                    clientSendJsonl,
+                    clientReceiveJsonl,
+                    serverSendJsonl,
+                    serverReceiveJsonl,
+                    triggerTimeoutMillis
+            )
+
+            if (exitDelaySeconds > 0L) {
+                println "runAllAutoExitCompare: 已命中退出条件，${exitDelaySeconds} 秒后强制结束客户端和服务端。"
+                sleep(exitDelaySeconds * 1000L)
+            } else {
+                println 'runAllAutoExitCompare: 已命中退出条件，正在强制结束客户端和服务端。'
+            }
+
+            forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
+            waitForFilesToSettle(
+                    [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
+                    settleMillis,
+                    settleTimeoutMillis
+            )
+
+            println 'runAllAutoExitCompare: jsonl 已稳定，正在执行 compare。'
+            runChannelJsonlCompareNow(project)
+        } finally {
+            forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
+        }
+    }
+}
+
+tasks.register('runWatchBoundaryRefreshPatchRegression') {
+    group = 'verification'
+    description = 'Starts the local server/client, runs the directed watch-boundary refresh-patch scenario, then verifies packet-stream equivalence and branch hits.'
+    dependsOn(tasks.named('testClasses'))
+
+    doLast {
+        String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+        boolean isWindows = osName.contains('windows')
+        File projectDirFile = project.projectDir
+        String wrapperPath = new File(projectDirFile, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        long exitDelaySeconds = readRunAllLongProperty(project, 'boRunAllExitDelaySeconds', 3L)
+        long triggerTimeoutMillis = readRunAllLongProperty(project, 'boRunAllTriggerTimeoutMillis', 240000L)
+        long settleMillis = readRunAllLongProperty(project, 'boRunAllSettleMillis', 3000L)
+        long settleTimeoutMillis = readRunAllLongProperty(project, 'boRunAllSettleTimeoutMillis', 15000L)
+
+        File serverTaskLog = project.file('run/runall-server-task.log')
+        File clientTaskLog = project.file('run/runall-client-task.log')
+        File serverSendJsonl = project.file('run/server/send.jsonl')
+        File serverReceiveJsonl = project.file('run/server/receive.jsonl')
+        File clientSendJsonl = project.file('run/client/send.jsonl')
+        File clientReceiveJsonl = project.file('run/client/receive.jsonl')
+        File serverChunkHotspotStats = project.file('run/server/chunk-hotspot-stats.properties')
+        File clientChunkHotspotStats = project.file('run/client/chunk-hotspot-stats.properties')
+        File serverTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, project.file('run/server'))
+        File clientTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, project.file('run/client'))
+        File captureResetRequest = project.file('run/bo-runall-capture-reset.request')
+        File serverLoginMarker = project.file('run/server/bo-runall-player-logged-in.marker')
+        File watchBoundaryMarker = project.file('run/server/bo-watch-boundary-refresh-patch.marker')
+        File serverProperties = project.file('run/server/server.properties')
+        File serverOpsFile = project.file('run/server/ops.json')
+
+        stopExistingRunAllProcesses(project, projectDirFile, isWindows)
+        sleep(3000)
+
+        clearRunAllProbeFiles([
+                serverTaskLog,
+                clientTaskLog,
+                serverSendJsonl,
+                serverReceiveJsonl,
+                clientSendJsonl,
+                clientReceiveJsonl,
+                serverChunkHotspotStats,
+                clientChunkHotspotStats,
+                serverTransportTelemetryDump,
+                clientTransportTelemetryDump,
+                captureResetRequest,
+                serverLoginMarker,
+                watchBoundaryMarker
+        ])
+
+        configureRunAllServerProperties(serverProperties)
+        configureRunAllServerOperators(serverOpsFile)
+
+        List<String> sharedGradleArgs = buildWatchBoundaryRefreshPatchRegressionGradleArgs(project)
+        List<String> clientGradleArgs = new ArrayList<>(sharedGradleArgs)
+        clientGradleArgs.addAll([
+                '-PboExperientAutoConnectAddress=127.0.0.1:25565',
+                '-PboExperientAutoConnectName=BO WatchBoundary Regression',
+                '-PboExperientAutoConnectDelayTicks=20'
+        ])
+        appendOptionalRunAllProperty(clientGradleArgs, project, 'boExperientAutoConnectMaxAttempts')
+        appendOptionalRunAllProperty(clientGradleArgs, project, 'boExperientAutoConnectRetryDelayTicks')
+
+        Process serverProcess = null
+        Process clientProcess = null
+
+        try {
+            println "runWatchBoundaryRefreshPatchRegression: exitDelaySeconds=${exitDelaySeconds}, settleMillis=${settleMillis}"
+            println 'runWatchBoundaryRefreshPatchRegression: 正在启动本地测试服务端。'
+            serverProcess = startExistingRunTaskProcess(
+                    projectDirFile,
+                    isWindows,
+                    wrapperPath,
+                    'runServer',
+                    sharedGradleArgs,
+                    null,
+                    serverTaskLog,
+                    'runServer'
+            )
+            waitForLogMarker(
+                    serverTaskLog,
+                    ['Done ('],
+                    ['BUILD FAILED', 'Failed to start the minecraft server', 'Perhaps a server is already running on that port', 'Address already in use'],
+                    180000L,
+                    '定向回归服务端启动'
+            )
+
+            println 'runWatchBoundaryRefreshPatchRegression: 服务端已就绪，正在启动客户端自动进服。'
+            clientProcess = startExistingRunTaskProcess(
+                    projectDirFile,
+                    isWindows,
+                    wrapperPath,
+                    'runClient',
+                    clientGradleArgs,
+                    null,
+                    clientTaskLog,
+                    'runClient'
+            )
+            waitForLogMarker(
+                    clientTaskLog,
+                    ['Connecting to 127.0.0.1, 25565', 'Connecting to 127.0.0.1:25565'],
+                    ['Failed to connect to the server', 'disconnect.genericReason', 'Connection refused', 'Internal Exception'],
+                    180000L,
+                    '定向回归客户端连接'
+            )
+
+            println 'runWatchBoundaryRefreshPatchRegression: 正在等待 watch-boundary 场景完成 marker。'
+            waitForMarkerFile(
+                    watchBoundaryMarker,
+                    triggerTimeoutMillis,
+                    'runWatchBoundaryRefreshPatchRegression 等待 watch-boundary marker'
+            )
+
+            if (exitDelaySeconds > 0L) {
+                println "runWatchBoundaryRefreshPatchRegression: marker 已命中，${exitDelaySeconds} 秒后强制结束客户端和服务端。"
+                sleep(exitDelaySeconds * 1000L)
+            } else {
+                println 'runWatchBoundaryRefreshPatchRegression: marker 已命中，正在强制结束客户端和服务端。'
+            }
+
+            forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
+            waitForFilesToSettle(
+                    [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
+                    settleMillis,
+                    settleTimeoutMillis
+            )
+
+            println 'runWatchBoundaryRefreshPatchRegression: jsonl 已稳定，正在执行定向校验。'
+            runWatchBoundaryRefreshPatchVerifyNow(project)
+        } finally {
+            forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
+        }
+    }
+}
+

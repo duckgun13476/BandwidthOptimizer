@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel.algorithm.batch;
 
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportBypassRankLogger;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
@@ -16,6 +18,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
 import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.PacketFlow;
 
 import java.io.IOException;
 import java.nio.channels.ClosedChannelException;
@@ -47,6 +50,7 @@ public final class ChannelTransportBatchManager {
     public static boolean enqueueOutboundPacket(
             ChannelHandlerContext context,
             byte[] originalPacketBytes,
+            PacketFlow packetFlow,
             ChannelTransportPacketRankCaptureManager.OutboundPacketCapture outboundPacketCapture,
             ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace
     ) {
@@ -55,7 +59,7 @@ public final class ChannelTransportBatchManager {
         }
 
         OutboundBatchState batchState = getOrCreateOutboundBatchState(context.channel());
-        batchState.addPacket(context, copyBytesOrEmpty(originalPacketBytes), outboundPacketCapture, boundaryPacketTrace);
+        batchState.addPacket(context, copyBytesOrEmpty(originalPacketBytes), packetFlow, outboundPacketCapture, boundaryPacketTrace);
         batchState.scheduleFlushIfNeeded(context.channel());
         return true;
     }
@@ -117,14 +121,34 @@ public final class ChannelTransportBatchManager {
         }
 
         try {
+            PacketFlow packetFlow = drainedBatch.packetFlow();
+            if (packetFlow == null
+                    || ChannelTransportHooks.shouldBypassServerboundCarrierByInputSize(packetFlow, drainedBatch.totalPacketBytes())) {
+                writePendingPacketsDirectly(drainedBatch, "batch_carrier_precheck_direct");
+                return;
+            }
+
             ChannelTransportSession transportSession = ChannelTransportStateManager.getOrCreateSession(channel);
             ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame =
                     ChannelTransportPacketCodec.wrapBatchPackets(transportSession, drainedBatch.packetBytesList());
             if (wrappedFrame == null) {
+                writePendingPacketsDirectly(drainedBatch, "batch_carrier_unavailable");
                 return;
             }
 
-            drainedBatch.context().writeAndFlush(Unpooled.wrappedBuffer(wrappedFrame.transportFrameBytes())).addListener(future -> {
+            ByteBuf carrierBuffer = drainedBatch.context().alloc().buffer();
+            if (!ChannelTransportHooks.writeTransportCarrierPacket(
+                    drainedBatch.context(),
+                    packetFlow,
+                    carrierBuffer,
+                    wrappedFrame.transportFrameBytes()
+            )) {
+                carrierBuffer.release();
+                writePendingPacketsDirectly(drainedBatch, "batch_carrier_encode_failed");
+                return;
+            }
+
+            drainedBatch.context().writeAndFlush(carrierBuffer).addListener(future -> {
                 if (!future.isSuccess()) {
                     Throwable failure = future.cause() == null ? new IllegalStateException("Unknown outbound batch flush failure") : future.cause();
                     if (shouldIgnoreBatchFlushFailure(channel, failure)) {
@@ -144,8 +168,93 @@ public final class ChannelTransportBatchManager {
             if (shouldIgnoreBatchFlushFailure(channel, throwable)) {
                 return;
             }
+            writePendingPacketsDirectly(drainedBatch, "batch_flush_exception");
             ChannelTransportRuntimeGuard.disableTransport("outbound-batch-flush", throwable);
         }
+    }
+
+    // Direct when velocity
+    private static void writePendingPacketsDirectly(OutboundBatchDrain drainedBatch, String reason) {
+        if (drainedBatch == null || drainedBatch.context() == null || drainedBatch.pendingPackets().isEmpty()) {
+            return;
+        }
+
+        ChannelHandlerContext context = drainedBatch.context();
+        String protocolName = readProtocolName(context);
+        for (PendingOutboundPacket pendingPacket : drainedBatch.pendingPackets()) {
+            context.write(Unpooled.wrappedBuffer(copyBytesOrEmpty(pendingPacket.packetBytes())));
+            ChannelTransportBypassRankLogger.recordEncodedPacket(
+                    context,
+                    reason,
+                    protocolName,
+                    pendingPacket.packetFlow(),
+                    packetClassNameOf(pendingPacket),
+                    null,
+                    packetIdOf(pendingPacket),
+                    pendingPacket.packetBytes().length
+            );
+            ChannelTransportTelemetry.recordOutboundBypass(protocolName, pendingPacket.packetBytes().length);
+        }
+        context.flush();
+        ChannelTransportPacketRankCaptureManager.completeDirectFallbackCapture(drainedBatch.packetCaptures());
+        completeDirectBatchBoundaryTrace(drainedBatch.pendingPackets(), reason);
+    }
+
+
+    private static void completeDirectBatchBoundaryTrace(List<PendingOutboundPacket> pendingPackets, String reason) {
+        if (pendingPackets == null || pendingPackets.isEmpty()) {
+            return;
+        }
+
+        String actualPath = reason == null || reason.isBlank()
+                ? "BATCH_DIRECT_FALLBACK"
+                : "BATCH_DIRECT_FALLBACK:" + reason;
+        for (PendingOutboundPacket pendingPacket : pendingPackets) {
+            ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
+                    pendingPacket.boundaryPacketTrace(),
+                    actualPath,
+                    "DIRECT",
+                    pendingPacket.packetBytes().length,
+                    false,
+                    1
+            );
+        }
+    }
+
+    private static String packetClassNameOf(PendingOutboundPacket pendingPacket) {
+        if (pendingPacket == null || pendingPacket.packetCapture() == null) {
+            return "<encoded-batch-packet>";
+        }
+        return pendingPacket.packetCapture().packetClassName();
+    }
+
+
+    private static int packetIdOf(PendingOutboundPacket pendingPacket) {
+        if (pendingPacket == null) {
+            return -1;
+        }
+        if (pendingPacket.packetCapture() != null) {
+            return pendingPacket.packetCapture().packetId();
+        }
+        return tryReadLeadingVarInt(pendingPacket.packetBytes());
+    }
+
+
+    private static int tryReadLeadingVarInt(byte[] encodedBytes) {
+        if (encodedBytes == null || encodedBytes.length == 0) {
+            return -1;
+        }
+        int value = 0;
+        int position = 0;
+        for (int index = 0; index < encodedBytes.length && index < 5; index++) {
+            int current = encodedBytes[index] & 0xFF;
+            value |= (current & 0x7F) << position;
+            if ((current & 0x80) == 0) {
+                return value;
+            }
+            position += 7;
+        }
+        return -1;
     }
 
     private static void completeBatchBoundaryTrace(
@@ -367,6 +476,7 @@ public final class ChannelTransportBatchManager {
 
     private record PendingOutboundPacket(
             byte[] packetBytes,
+            PacketFlow packetFlow,
             ChannelTransportPacketRankCaptureManager.OutboundPacketCapture packetCapture,
             ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace
     ) {
@@ -385,6 +495,29 @@ public final class ChannelTransportBatchManager {
                 packetBytesList.add(copyBytesOrEmpty(pendingPacket.packetBytes()));
             }
             return List.copyOf(packetBytesList);
+        }
+
+        private int totalPacketBytes() {
+            int totalPacketBytes = 0;
+            for (PendingOutboundPacket pendingPacket : this.pendingPackets) {
+                totalPacketBytes += pendingPacket.packetBytes().length;
+            }
+            return totalPacketBytes;
+        }
+
+        private PacketFlow packetFlow() {
+            PacketFlow packetFlow = null;
+            for (PendingOutboundPacket pendingPacket : this.pendingPackets) {
+                if (pendingPacket.packetFlow() == null) {
+                    return null;
+                }
+                if (packetFlow == null) {
+                    packetFlow = pendingPacket.packetFlow();
+                } else if (packetFlow != pendingPacket.packetFlow()) {
+                    return null;
+                }
+            }
+            return packetFlow;
         }
 
         private List<ChannelTransportPacketRankCaptureManager.OutboundPacketCapture> packetCaptures() {
@@ -407,12 +540,13 @@ public final class ChannelTransportBatchManager {
         private void addPacket(
                 ChannelHandlerContext context,
                 byte[] packetBytes,
+                PacketFlow packetFlow,
                 ChannelTransportPacketRankCaptureManager.OutboundPacketCapture outboundPacketCapture,
                 ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace
         ) {
             synchronized (this.pendingPackets) {
                 this.lastContext = context;
-                this.pendingPackets.add(new PendingOutboundPacket(packetBytes, outboundPacketCapture, boundaryPacketTrace));
+                this.pendingPackets.add(new PendingOutboundPacket(packetBytes, packetFlow, outboundPacketCapture, boundaryPacketTrace));
             }
         }
 
