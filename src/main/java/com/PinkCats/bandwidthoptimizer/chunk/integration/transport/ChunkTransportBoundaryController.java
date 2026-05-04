@@ -56,8 +56,16 @@ public final class ChunkTransportBoundaryController {
     private ChunkTransportBoundaryController() {}
 
 
-    public static void notePacketSendListener(Channel channel, PacketSendListener listener) {
+    public static void notePacketSendListener(Channel channel, Packet<?> packet, PacketSendListener listener) {
         if (channel == null || listener == null) {
+            return;
+        }
+        if (isImmediateTransportListenerPacket(packet)) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ChunkTransport][Boundary][ListenerSkip] packetClass={}, channel={}",
+                    packetClassName(packet),
+                    channel.id().asShortText()
+            );
             return;
         }
         getOrCreateBoundaryState(channel).armDirectSendPermit();
@@ -221,6 +229,14 @@ public final class ChunkTransportBoundaryController {
             );
         }
         return BoundaryTrigger.NONE;
+    }
+
+    private static boolean isImmediateTransportListenerPacket(Packet<?> packet) {
+        return packetClassName(packet).endsWith("ClientboundUpdateRecipesPacket");
+    }
+
+    private static String packetClassName(Packet<?> packet) {
+        return packet == null ? "<null>" : packet.getClass().getName();
     }
 
     private static void dispatchPendingOutboundBarrier(Channel channel, long barrierId) {

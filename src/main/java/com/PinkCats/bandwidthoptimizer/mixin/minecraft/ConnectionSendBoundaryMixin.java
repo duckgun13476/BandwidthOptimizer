@@ -25,7 +25,7 @@ public abstract class ConnectionSendBoundaryMixin {
     @Inject(method = "sendPacket", at = @At("HEAD"))
     private void bandwidthoptimizer$notePacketSendBoundary(Packet<?> packet, PacketSendListener listener, CallbackInfo ci) {
         ChannelTransportControlPlane.observeConnectionSend(this.channel, packet, listener);
-        ChunkTransportBoundaryController.notePacketSendListener(this.channel, listener);
+        ChunkTransportBoundaryController.notePacketSendListener(this.channel, packet, listener);
     }
 
     @Inject(method = "channelInactive", at = @At("HEAD"))

@@ -44,6 +44,7 @@ public final class ChannelTransportHooks {
 
     private static final ResourceLocation TRANSPORT_PAYLOAD_ID =
             ChannelTransportNetworkChannel.TRANSPORT_PAYLOAD_ID;
+    private static final int CLIENTBOUND_CUSTOM_PAYLOAD_MAX_BYTES = 1_048_576;
     private static final int SERVERBOUND_CUSTOM_PAYLOAD_MAX_BYTES = 32767;
     private static final int SERVERBOUND_CUSTOM_PAYLOAD_SAFE_INPUT_BYTES = 24000;
     private static final AtomicLong OUTBOUND_TRANSPORT_TRACE_COUNTER = new AtomicLong();
@@ -92,7 +93,21 @@ public final class ChannelTransportHooks {
                 ChannelTransportControlPlane.beginOutboundPacket(context, protocolName, packet);
         ChunkTransportBoundaryController.OutboundBoundaryDecision boundaryDecision =
                 ChunkTransportBoundaryController.beginOutboundPacket(context, protocolName, packet);
-        boolean forceDirectTransport = controlDecision.forceDirectTransport() || boundaryDecision.forceDirectTransport();
+        boolean forceImmediateTransport = controlDecision.forceImmediateTransport();
+        boolean pendingDirectTransport = controlDecision.forceDirectTransport() || boundaryDecision.forceDirectTransport();
+        if (forceImmediateTransport && pendingDirectTransport) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[Transport][ImmediatePolicy][DirectOverride] immediateReason={}, directReason={}, controlDirect={}, boundaryDirect={}, protocol={}, packetClass={}, channel={}",
+                    controlDecision.reason(),
+                    controlDecision.forceDirectTransport() ? controlDecision.reason() : boundaryDecision.reason(),
+                    controlDecision.forceDirectTransport(),
+                    boundaryDecision.forceDirectTransport(),
+                    protocolName,
+                    packetClassName(packet),
+                    channelIdText(context)
+            );
+        }
+        boolean forceDirectTransport = !forceImmediateTransport && pendingDirectTransport;
         if (forceDirectTransport) {
             ChannelTransportBatchManager.flushOutboundBatchNow(context);
             ChunkTransportBoundaryController.scheduleOutboundBarrier(context, boundaryDecision);
@@ -136,6 +151,18 @@ public final class ChannelTransportHooks {
                     1
             );
             return;
+        }
+        if (forceImmediateTransport) {
+            ChannelTransportBatchManager.flushOutboundBatchNow(context);
+            Bandwidthoptimizer.LOGGER.info(
+                    "[Transport][ImmediatePolicy][Start] reason={}, protocol={}, packetClass={}, rawBytes={}, rawPacketId={}, channel={}",
+                    controlDecision.reason(),
+                    protocolName,
+                    packetClassName(packet),
+                    originalPacketBytes.length,
+                    tryReadLeadingVarInt(originalPacketBytes),
+                    channelIdText(context)
+            );
         }
 
         OutboundChunkEncodeResult chunkEncodeResult = ChunkTransportDispatcher.tryEncodeOutboundPacketWithTrace(
@@ -207,6 +234,14 @@ public final class ChannelTransportHooks {
             if (shouldBypassServerboundCarrierByInputSize(outboundPacketFlow, transportInputPacketBytes.length)) {
                 out.writerIndex(startIndexInclusive);
                 out.writeBytes(transportInputPacketBytes);
+                if (forceImmediateTransport) {
+                    Bandwidthoptimizer.LOGGER.info(
+                            "[Transport][ImmediatePolicy][Fallback] reason=serverbound_carrier_size, packetClass={}, inputBytes={}, channel={}",
+                            packetClassName(packet),
+                            transportInputPacketBytes.length,
+                            channelIdText(context)
+                    );
+                }
                 recordDirectPacketTrace(
                         context,
                         "serverbound_carrier_size",
@@ -231,7 +266,7 @@ public final class ChannelTransportHooks {
                 return;
             }
 
-            if (ChannelTransportBatchManager.shouldBatchOutboundPacket(context)) {
+            if (!forceImmediateTransport && ChannelTransportBatchManager.shouldBatchOutboundPacket(context)) {
                 out.writerIndex(startIndexInclusive);
                 ChannelTransportTraceJournal.record(
                         context,
@@ -260,6 +295,35 @@ public final class ChannelTransportHooks {
             ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame =
                     KineticChannel.processOutboundPacket(transportSession, transportInputPacketBytes);
             if (wrappedFrame == null) {
+                if (forceImmediateTransport) {
+                    Bandwidthoptimizer.LOGGER.info(
+                            "[Transport][ImmediatePolicy][Fallback] reason=wrap_unavailable, packetClass={}, inputBytes={}, channel={}",
+                            packetClassName(packet),
+                            transportInputPacketBytes.length,
+                            channelIdText(context)
+                    );
+                    recordDirectPacketTrace(
+                            context,
+                            "immediate_wrap_unavailable",
+                            protocolName,
+                            packet,
+                            outboundPacketFlow,
+                            transportInputPacketBytes
+                    );
+                    ChannelTransportTelemetry.recordOutboundBypass(protocolName, transportInputPacketBytes.length);
+                    ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
+                            outboundPacketCapture,
+                            transportInputPacketBytes.length
+                    );
+                    ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
+                            boundaryPacketTrace,
+                            "DIRECT_PASSTHROUGH",
+                            "DIRECT",
+                            transportInputPacketBytes.length,
+                            chunkTransportEncodedBytes != null,
+                            1
+                    );
+                }
                 return;
             }
             logOutboundTransportTrace(
@@ -276,6 +340,14 @@ public final class ChannelTransportHooks {
             out.writerIndex(startIndexInclusive);
             if (!writeTransportCarrierPacket(context, outboundPacketFlow, out, wrappedFrame.transportFrameBytes())) {
                 out.writeBytes(transportInputPacketBytes);
+                if (forceImmediateTransport) {
+                    Bandwidthoptimizer.LOGGER.info(
+                            "[Transport][ImmediatePolicy][Fallback] reason=carrier_write_failed, packetClass={}, inputBytes={}, channel={}",
+                            packetClassName(packet),
+                            transportInputPacketBytes.length,
+                            channelIdText(context)
+                    );
+                }
                 recordDirectPacketTrace(
                         context,
                         "carrier_write_failed",
@@ -299,6 +371,19 @@ public final class ChannelTransportHooks {
                 );
                 return;
             }
+            if (forceImmediateTransport) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[Transport][ImmediatePolicy][Result] path=single_transport, reason={}, protocol={}, packetClass={}, rawBytes={}, inputBytes={}, frameKind={}, frameBytes={}, channel={}",
+                        controlDecision.reason(),
+                        protocolName,
+                        packetClassName(packet),
+                        originalPacketBytes.length,
+                        transportInputPacketBytes.length,
+                        wrappedFrame.frameKind(),
+                        wrappedFrame.transportFrameLength(),
+                        channelIdText(context)
+                );
+            }
             ChannelTransportTelemetry.recordOutboundWrap(readProtocolName(context), wrappedFrame);
             ChannelTransportPacketRankCaptureManager.completeSingleTransportCapture(outboundPacketCapture, wrappedFrame);
             ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
@@ -310,6 +395,37 @@ public final class ChannelTransportHooks {
                     Math.max(wrappedFrame.originalPacketCount(), 1)
             );
         } catch (Throwable throwable) {
+            if (forceImmediateTransport) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[Transport][ImmediatePolicy][Fallback] reason=wrap_exception, packetClass={}, inputBytes={}, channel={}, exception={}: {}",
+                        packetClassName(packet),
+                        transportInputPacketBytes.length,
+                        channelIdText(context),
+                        throwable.getClass().getName(),
+                        throwable.getMessage()
+                );
+                recordDirectPacketTrace(
+                        context,
+                        "immediate_wrap_exception",
+                        protocolName,
+                        packet,
+                        outboundPacketFlow,
+                        transportInputPacketBytes
+                );
+                ChannelTransportTelemetry.recordOutboundBypass(protocolName, transportInputPacketBytes.length);
+                ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
+                        outboundPacketCapture,
+                        transportInputPacketBytes.length
+                );
+                ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
+                        boundaryPacketTrace,
+                        "DIRECT_PASSTHROUGH",
+                        "DIRECT",
+                        transportInputPacketBytes.length,
+                        chunkTransportEncodedBytes != null,
+                        1
+                );
+            }
             ChannelTransportRuntimeGuard.disableTransport("outbound-wrap", throwable);
         }
     }
@@ -466,6 +582,9 @@ public final class ChannelTransportHooks {
             byte[] transportFrameBytes
     ) {
         if (context == null || packetFlow == null || out == null || transportFrameBytes == null) {
+            return false;
+        }
+        if (packetFlow == PacketFlow.CLIENTBOUND && transportFrameBytes.length > CLIENTBOUND_CUSTOM_PAYLOAD_MAX_BYTES) {
             return false;
         }
         if (packetFlow == PacketFlow.SERVERBOUND && transportFrameBytes.length > SERVERBOUND_CUSTOM_PAYLOAD_MAX_BYTES) {

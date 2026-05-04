@@ -340,6 +340,9 @@ public class Config {
             public static final String GLOBAL_STORE_MAX_VERSIONS_PER_CHUNK =
                     "bandwidthoptimizer.chunkGlobalStoreMaxVersionsPerChunk";
             public static final int DEFAULT_GLOBAL_STORE_MAX_VERSIONS_PER_CHUNK = 8;
+            public static final String DIAGNOSTIC_OUTPUTS_ENABLED =
+                    "bandwidthoptimizer.chunk.diagnosticOutputsEnabled";
+            public static final boolean DEFAULT_DIAGNOSTIC_OUTPUTS_ENABLED = false;
 
             private Chunk() {
             }

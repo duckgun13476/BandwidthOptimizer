@@ -1,11 +1,16 @@
 package com.PinkCats.bandwidthoptimizer.channel;
 
+import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
 import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
+
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 
 public final class ChannelTransportControlPlane {
 
@@ -14,6 +19,7 @@ public final class ChannelTransportControlPlane {
 
     private static final int LISTENER_DIRECT_PACKETS = 1;
     private static final long LISTENER_DIRECT_NANOS = 0L;
+    private static final int MAX_TRACKED_LISTENER_PACKETS = 256;
 
     private ChannelTransportControlPlane() {}
 
@@ -24,7 +30,14 @@ public final class ChannelTransportControlPlane {
 
         ControlState controlState = getOrCreateControlState(channel);
         if (listener != null) {
-            controlState.armDirectWindow(LISTENER_DIRECT_PACKETS, LISTENER_DIRECT_NANOS, "packet_send_listener", false);
+            ListenerTransportPolicy listenerTransportPolicy = classifyListenerTransportPolicy(packet);
+            controlState.rememberListenerPacket(packet, listenerTransportPolicy);
+            Bandwidthoptimizer.LOGGER.info(
+                    "[Transport][ListenerPolicy][Observe] action={}, packetClass={}, channel={}",
+                    listenerTransportPolicy.logAction(),
+                    packetClassName(packet),
+                    channel.id().asShortText()
+            );
         }
 
     }
@@ -42,9 +55,39 @@ public final class ChannelTransportControlPlane {
             return TransportControlDecision.forceDirect("protocol_boundary_non_play");
         }
 
+        ImmediateTransportProfile immediateTransportProfile = classifyImmediateTransport(packet);
+        if (immediateTransportProfile != ImmediateTransportProfile.NONE) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[Transport][ImmediatePolicy][Consume] reason={}, packetClass={}, channel={}",
+                    immediateTransportProfile.reason(),
+                    packetClassName(packet),
+                    context.channel().id().asShortText()
+            );
+            return TransportControlDecision.forceImmediateTransport(immediateTransportProfile.reason());
+        }
+
         BoundaryProfile boundaryProfile = classifyBoundary(packet);
         if (boundaryProfile != BoundaryProfile.NONE) {
             return TransportControlDecision.forceDirect(boundaryProfile.reason());
+        }
+        ListenerTransportPolicy listenerTransportPolicy = getOrCreateControlState(context.channel()).consumeListenerPolicy(packet);
+        if (listenerTransportPolicy == ListenerTransportPolicy.IMMEDIATE_TRANSPORT) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[Transport][ListenerPolicy][Consume] action={}, packetClass={}, channel={}",
+                    listenerTransportPolicy.logAction(),
+                    packetClassName(packet),
+                    context.channel().id().asShortText()
+            );
+            return TransportControlDecision.forceImmediateTransport("packet_send_listener_immediate_transport");
+        }
+        if (listenerTransportPolicy == ListenerTransportPolicy.DIRECT) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[Transport][ListenerPolicy][Consume] action={}, packetClass={}, channel={}",
+                    listenerTransportPolicy.logAction(),
+                    packetClassName(packet),
+                    context.channel().id().asShortText()
+            );
+            return TransportControlDecision.forceDirect("packet_send_listener");
         }
         return getOrCreateControlState(context.channel()).consumeDirectPermit();
     }
@@ -58,8 +101,28 @@ public final class ChannelTransportControlPlane {
         );
     }
 
+    private static ListenerTransportPolicy classifyListenerTransportPolicy(Packet<?> packet) {
+        String packetClassName = packetClassName(packet);
+        if (packetClassName.endsWith("ClientboundUpdateRecipesPacket")
+                || packetClassName.endsWith("ClientboundRecipePacket")) {
+            return ListenerTransportPolicy.IMMEDIATE_TRANSPORT;
+        }
+        return ListenerTransportPolicy.DIRECT;
+    }
+
+    private static ImmediateTransportProfile classifyImmediateTransport(Packet<?> packet) {
+        String packetClassName = packetClassName(packet);
+        if (packetClassName.endsWith("ClientboundUpdateRecipesPacket")) {
+            return new ImmediateTransportProfile("packet_class_immediate_transport:" + packetClassName);
+        }
+        if (packetClassName.endsWith("ClientboundRecipePacket")) {
+            return new ImmediateTransportProfile("packet_class_immediate_transport:" + packetClassName);
+        }
+        return ImmediateTransportProfile.NONE;
+    }
+
     private static BoundaryProfile classifyBoundary(Packet<?> packet) {
-        String packetClassName = packet == null ? "" : packet.getClass().getName();
+        String packetClassName = packetClassName(packet);
         if (packetClassName.endsWith("ClientboundLoginPacket")
                 || packetClassName.endsWith("ClientboundRespawnPacket")
                 || packetClassName.endsWith("ClientboundPlayerPositionPacket")
@@ -97,18 +160,26 @@ public final class ChannelTransportControlPlane {
         return racedState == null ? newState : racedState;
     }
 
-    public record TransportControlDecision(boolean forceDirectTransport, String reason) {
+    public record TransportControlDecision(boolean forceDirectTransport, boolean forceImmediateTransport, String reason) {
         public TransportControlDecision {
             reason = reason == null ? "" : reason;
         }
 
         private static TransportControlDecision allow() {
-            return new TransportControlDecision(false, "");
+            return new TransportControlDecision(false, false, "");
         }
 
         private static TransportControlDecision forceDirect(String reason) {
-            return new TransportControlDecision(true, reason);
+            return new TransportControlDecision(true, false, reason);
         }
+
+        private static TransportControlDecision forceImmediateTransport(String reason) {
+            return new TransportControlDecision(false, true, reason);
+        }
+    }
+
+    private record ImmediateTransportProfile(String reason) {
+        private static final ImmediateTransportProfile NONE = new ImmediateTransportProfile("");
     }
 
     private record BoundaryProfile(String reason) {
@@ -123,10 +194,54 @@ public final class ChannelTransportControlPlane {
         }
     }
 
+    private enum ListenerTransportPolicy {
+        NONE("none"),
+        DIRECT("direct_bypass"),
+        IMMEDIATE_TRANSPORT("immediate_transport");
+
+        private final String logAction;
+
+        ListenerTransportPolicy(String logAction) {
+            this.logAction = logAction;
+        }
+
+        private String logAction() {
+            return this.logAction;
+        }
+    }
+
+    private record TrackedListenerPacket(Packet<?> packet, ListenerTransportPolicy policy) {}
+
     private static final class ControlState {
         private int directPackets;
         private long directUntilNanos;
         private String directReason = "";
+        private final List<TrackedListenerPacket> listenerPackets = new ArrayList<>();
+
+        private synchronized void rememberListenerPacket(Packet<?> packet, ListenerTransportPolicy policy) {
+            if (packet == null || policy == null || policy == ListenerTransportPolicy.NONE) {
+                return;
+            }
+            while (this.listenerPackets.size() >= MAX_TRACKED_LISTENER_PACKETS) {
+                this.listenerPackets.remove(0);
+            }
+            this.listenerPackets.add(new TrackedListenerPacket(packet, policy));
+        }
+        
+        private synchronized ListenerTransportPolicy consumeListenerPolicy(Packet<?> packet) {
+            if (packet == null || this.listenerPackets.isEmpty()) {
+                return ListenerTransportPolicy.NONE;
+            }
+            Iterator<TrackedListenerPacket> iterator = this.listenerPackets.iterator();
+            while (iterator.hasNext()) {
+                TrackedListenerPacket trackedListenerPacket = iterator.next();
+                if (trackedListenerPacket.packet() == packet) {
+                    iterator.remove();
+                    return trackedListenerPacket.policy();
+                }
+            }
+            return ListenerTransportPolicy.NONE;
+        }
 
         private synchronized void armDirectWindow(int packets, long nanos, String reason, boolean extendByTime) {
             long nowNanos = System.nanoTime();
@@ -149,5 +264,9 @@ public final class ChannelTransportControlPlane {
             }
             return TransportControlDecision.forceDirect(this.directReason);
         }
+    }
+
+    private static String packetClassName(Packet<?> packet) {
+        return packet == null ? "<null>" : packet.getClass().getName();
     }
 }
