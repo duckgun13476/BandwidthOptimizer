@@ -148,21 +148,21 @@ tasks.register('PublishInfo') {
     group = 'Publishing'
     description = 'Prints local publishing configuration and token availability.'
     doLast {
-        println "Reobfuscated JAR file path: "
-        println "version = \"-\""
-        println "displayName = \" v for Forge \""
-        println "curseforge_id = "
-        println "modrinth_id = "
+        println "Reobfuscated JAR file path: ${tasks.named('jar', Jar).get().archiveFile.get().asFile.absolutePath}"
+        println "version = \"${mod_version}\""
+        println "displayName = \"${mod_name} v${mod_version} for Forge ${minecraft_version}\""
+        println "curseforge_id = ${curseforge_id}"
+        println "modrinth_id = ${modrinth_id}"
         String changelogEntry = currentVersionChangelogEntry()
         if (changelogEntry == null || changelogEntry.isBlank()) {
-            println "\u001B[31mMissing changelog entry for  in \u001B[0m"
-            throw new GradleException("Missing changelog entry for ")
+            println "\u001B[31mMissing changelog entry for ${mod_version} in ${changelogFile().absolutePath}\u001B[0m"
+            throw new GradleException("Missing changelog entry for ${mod_version}")
         }
         println 'changelog ='
         println changelogEntry
         Properties apiProperties = loadApiProperties()
-        println "CF_TOKEN present: "
-        println "MODRINTH_TOKEN present: "
+        println "CF_TOKEN present: ${apiProperties.getProperty('CF_TOKEN') != null}"
+        println "MODRINTH_TOKEN present: ${apiProperties.getProperty('MODRINTH_TOKEN') != null}"
     }
 }
 tasks.register('publishAll') {
@@ -184,9 +184,9 @@ tasks.register('publishCurseForge', publishCurseForgeTaskType) {
     def mainFile = upload(curseforge_id, tasks.named('jar', Jar).get().archiveFile.get().asFile)
     mainFile.changelog = fullChangelogText()
     mainFile.addEnvironment('Client', 'Server')
-    mainFile.addGameVersion("")
+    mainFile.addGameVersion(minecraft_version)
     mainFile.addModLoader('Forge')
-    mainFile.displayName = " v for Forge "
+    mainFile.displayName = "${mod_name} v${mod_version} for Forge ${minecraft_version}"
     mainFile.releaseType = publish_version
     disableVersionDetection()
 }
@@ -195,13 +195,13 @@ publishMods {
     file = tasks.named('jar', Jar).get().archiveFile
     changelog = fullChangelogText()
     type = publish_version == 'alpha' ? ALPHA : (publish_version == 'beta' ? BETA : STABLE)
-    version = "-"
-    displayName = " v for Forge "
+    version = mod_version
+    displayName = "${mod_name} v${mod_version} for Forge ${minecraft_version}"
     modLoaders.add('forge')
     if (modrinthToken != null && hasPublishValue(modrinth_id)) {
         modrinth {
             accessToken = modrinthToken
-            projectId = ""
+            projectId = modrinth_id
             minecraftVersions.add(minecraft_version)
         }
     }
@@ -240,7 +240,7 @@ String currentVersionChangelogEntry() {
         return ''
     }
     List<String> lines = file.readLines('UTF-8')
-    String targetHeader = "#### v".trim()
+    String targetHeader = "#### v${mod_version}".trim()
     int startIndex = lines.findIndexOf { String line -> line.trim() == targetHeader }
     if (startIndex < 0) {
         return ''
