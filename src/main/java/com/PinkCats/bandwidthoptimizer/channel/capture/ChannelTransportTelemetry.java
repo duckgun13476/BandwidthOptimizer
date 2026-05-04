@@ -5,6 +5,7 @@ import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.ChannelTransportOperationTelemetry;
+import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -91,7 +92,8 @@ public final class ChannelTransportTelemetry {
                 OUTBOUND_TEMPLATE_REMOVAL_COUNT
         );
 
-        if (wrapCount <= SAMPLE_LOG_LIMIT) {
+        boolean analysisEnabled = DebugRuntimeConfig.isAnalysisEnabled();
+        if (analysisEnabled && wrapCount <= SAMPLE_LOG_LIMIT) {
             Bandwidthoptimizer.LOGGER.info(
                     "[Transport][WrapSample] index={}, protocol={}, frameKind={}, packetCount={}, algorithm={}, rawPacketBytes={}, mappingBytes={}, transportBodyBytes={}, transportFrameBytes={}, mapRatio={}, zstdVsMapRatio={}, frameRatio={}, entryKind={}, exactAdds={}, templateAdds={}, exactRemovals={}, templateRemovals={}, frameEffect={}, savedVsRaw={}",
                     wrapCount,
@@ -118,7 +120,7 @@ public final class ChannelTransportTelemetry {
 
         if (wrappedFrame.transportFrameLength() < wrappedFrame.originalPacketBytes()) {
             long shrinkSampleCount = OUTBOUND_SHRINK_SAMPLE_COUNT.incrementAndGet();
-            if (shrinkSampleCount <= SHRINK_SAMPLE_LOG_LIMIT) {
+            if (analysisEnabled && shrinkSampleCount <= SHRINK_SAMPLE_LOG_LIMIT) {
                 Bandwidthoptimizer.LOGGER.info(
                         "[Transport][WrapShrink] index={}, protocol={}, frameKind={}, packetCount={}, algorithm={}, rawPacketBytes={}, mappingBytes={}, transportBodyBytes={}, transportFrameBytes={}, mapRatio={}, zstdVsMapRatio={}, frameRatio={}, entryKind={}, savedVsRaw={}",
                         wrapCount,
@@ -139,7 +141,7 @@ public final class ChannelTransportTelemetry {
             }
         }
 
-        if (wrapCount % SUMMARY_LOG_INTERVAL == 0L) {
+        if (analysisEnabled && wrapCount % SUMMARY_LOG_INTERVAL == 0L) {
             Bandwidthoptimizer.LOGGER.info(
                     "[Transport][WrapSummary] algorithm={}, frames={}, rawPackets={}, shrunkFrames={}, expandedFrames={}, rawPacketBytes={}, mappingBytes={}, transportBodyBytes={}, transportFrameBytes={}, mapRatio={}, zstdVsMapRatio={}, frameRatio={}, savedVsRaw={}, mapLiterals={}, mapExactRefs={}, mapTemplateRefs={}, mapExactAdds={}, mapTemplateAdds={}, mapExactRemovals={}, mapTemplateRemovals={}",
                     telemetry.algorithmId(),
@@ -193,7 +195,8 @@ public final class ChannelTransportTelemetry {
                 INBOUND_TEMPLATE_REMOVAL_COUNT
         );
 
-        if (unwrapCount <= SAMPLE_LOG_LIMIT) {
+        boolean analysisEnabled = DebugRuntimeConfig.isAnalysisEnabled();
+        if (analysisEnabled && unwrapCount <= SAMPLE_LOG_LIMIT) {
             Bandwidthoptimizer.LOGGER.info(
                     "[Transport][UnwrapSample] index={}, protocol={}, frameKind={}, packetCount={}, algorithm={}, inboundFrameBytes={}, transportBodyBytes={}, mappingBytes={}, restoredPacketBytes={}, frameRatio={}, bodyRatio={}, mapRatio={}, bodyVsMapRatio={}, entryKind={}, exactAdds={}, templateAdds={}, exactRemovals={}, templateRemovals={}",
                     unwrapCount,
@@ -217,7 +220,7 @@ public final class ChannelTransportTelemetry {
             );
         }
 
-        if (unwrapCount % SUMMARY_LOG_INTERVAL == 0L) {
+        if (analysisEnabled && unwrapCount % SUMMARY_LOG_INTERVAL == 0L) {
             Bandwidthoptimizer.LOGGER.info(
                     "[Transport][UnwrapSummary] algorithm={}, frames={}, restoredPackets={}, inboundFrameBytes={}, transportBodyBytes={}, mappingBytes={}, restoredPacketBytes={}, frameRatio={}, bodyRatio={}, mapRatio={}, bodyVsMapRatio={}, mapLiterals={}, mapExactRefs={}, mapTemplateRefs={}, mapExactAdds={}, mapTemplateAdds={}, mapExactRemovals={}, mapTemplateRemovals={}",
                     telemetry.algorithmId(),
@@ -382,7 +385,11 @@ public final class ChannelTransportTelemetry {
         return "equal";
     }
 
+    //  transport telemetry dump
     private static void maybeWriteTelemetryDumpFile() {
+        if (!DebugRuntimeConfig.isAnalysisEnabled()) {
+            return;
+        }
         String dumpFileName = System.getProperty(TELEMETRY_DUMP_FILE_NAME_PROPERTY);
         if (dumpFileName == null || dumpFileName.isBlank()) {
             return;

@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.report;
 
+import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.builder.ArgumentBuilder;
@@ -35,7 +36,14 @@ public final class ChannelTransportCompressionCommand {
         return Command.SINGLE_SUCCESS;
     }
 
+    // transport analysis
     private static int run(CommandSourceStack source, int captureTicks) {
+        if (!DebugRuntimeConfig.isAnalysisEnabled()) {
+            source.sendFailure(Component.literal(
+                    "Transport report capture is disabled. Set bandwidthoptimizer.debug.analysis=true first."
+            ));
+            return 0;
+        }
         ChannelTransportCompressionCaptureManager.StartResult startResult =
                 ChannelTransportCompressionCaptureManager.startCapture(source.getServer(), source, captureTicks);
         ChannelTransportCompressionCaptureManager.StatusSnapshot statusSnapshot = startResult.statusSnapshot();
@@ -59,7 +67,12 @@ public final class ChannelTransportCompressionCommand {
         return Command.SINGLE_SUCCESS;
     }
 
+    //  transport status
     private static int status(CommandSourceStack source) {
+        if (!DebugRuntimeConfig.isAnalysisEnabled()) {
+            source.sendSuccess(() -> Component.literal("Transport report is disabled."), false);
+            return Command.SINGLE_SUCCESS;
+        }
         ChannelTransportCompressionCaptureManager.StatusSnapshot statusSnapshot =
                 ChannelTransportCompressionCaptureManager.snapshotCurrentStatus(source.getServer());
         if (!statusSnapshot.running()) {

@@ -12,6 +12,8 @@ public class Config {
     public static final ForgeConfigSpec.BooleanValue ENABLE_OPTIMIZER_STATS_LOGS;
     public static final ForgeConfigSpec.BooleanValue ENABLE_TEST_MODE;
     public static final ForgeConfigSpec.IntValue STATS_LOG_INTERVAL_MINUTES;
+    public static final ForgeConfigSpec.BooleanValue DEBUG_ANALYSIS;
+    public static final ForgeConfigSpec.BooleanValue DEBUG_DIAGNOSE;
     private static final int TEST_MODE_STATS_LOG_INTERVAL_MINUTES = 3;
 
     public static final ForgeConfigSpec.BooleanValue ENABLE_BATCH_REFERENCE_DEDUP;
@@ -55,6 +57,8 @@ public class Config {
     public static boolean enableOptimizerStatsLogs = true;
     public static boolean enableTestMode = false;
     public static int statsLogIntervalMinutes = 30;
+    public static boolean debugAnalysis = false;
+    public static boolean debugDiagnose = false;
 
     static {
         BUILDER.comment("Logging Settings").push("logging");
@@ -76,6 +80,22 @@ public class Config {
                 .comment("--------------------------------------------------------------------------")
                 .comment("Optimizer stats log interval in minutes while enable_test_mode is false.")
                 .defineInRange("stats_log_interval_minutes", 30, 1, 1440);
+
+        BUILDER.pop();
+
+        BUILDER.comment("Debug Settings").push("debug");
+
+        DEBUG_ANALYSIS = BUILDER
+                .comment("")
+                .comment("--------------------------------------------------------------------------")
+                .comment("Enable lightweight analysis outputs, such as packet rank, transport report, bypass rank, and telemetry dumps.")
+                .define("debug_analysis", false);
+
+        DEBUG_DIAGNOSE = BUILDER
+                .comment("")
+                .comment("--------------------------------------------------------------------------")
+                .comment("Enable heavyweight diagnostic outputs, such as packet jsonl, transport traces, and chunk boundary reports.")
+                .define("debug_diagnose", false);
 
         BUILDER.pop();
 
@@ -221,7 +241,9 @@ public class Config {
                 BATCH_TEMPLATE_DICTIONARY_MAX_CHANGED_BYTES.get(),
                 ENABLE_OPTIMIZER_STATS_LOGS.get(),
                 ENABLE_TEST_MODE.get(),
-                STATS_LOG_INTERVAL_MINUTES.get()
+                STATS_LOG_INTERVAL_MINUTES.get(),
+                DEBUG_ANALYSIS.get(),
+                DEBUG_DIAGNOSE.get()
         );
     }
 
@@ -245,6 +267,8 @@ public class Config {
         enableOptimizerStatsLogs = runtimeConfig.enableOptimizerStatsLogs();
         enableTestMode = runtimeConfig.enableTestMode();
         statsLogIntervalMinutes = runtimeConfig.statsLogIntervalMinutes();
+        debugAnalysis = runtimeConfig.debugAnalysis();
+        debugDiagnose = runtimeConfig.debugDiagnose();
     }
 
     public static long optimizerStatsLogIntervalMillis() {
@@ -259,6 +283,17 @@ public class Config {
     public static final class RuntimeProperty {
 
         private RuntimeProperty() {
+        }
+
+        public static final class Debug {
+
+            public static final String ANALYSIS_ENABLED = "bandwidthoptimizer.debug.analysis";
+            public static final boolean DEFAULT_ANALYSIS_ENABLED = false;
+            public static final String DIAGNOSE_ENABLED = "bandwidthoptimizer.debug.diagnose";
+            public static final boolean DEFAULT_DIAGNOSE_ENABLED = false;
+
+            private Debug() {
+            }
         }
 
         public static final class Transport {
@@ -437,7 +472,9 @@ public class Config {
             int batchTemplateDictionaryMaxChangedBytes,
             boolean enableOptimizerStatsLogs,
             boolean enableTestMode,
-            int statsLogIntervalMinutes
+            int statsLogIntervalMinutes,
+            boolean debugAnalysis,
+            boolean debugDiagnose
     ) {
     }
 }

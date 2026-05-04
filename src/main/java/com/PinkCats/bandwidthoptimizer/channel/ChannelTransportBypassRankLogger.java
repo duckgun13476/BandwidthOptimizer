@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
+import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
@@ -28,6 +29,7 @@ public final class ChannelTransportBypassRankLogger {
     private ChannelTransportBypassRankLogger() {}
 
 
+    // Bypass record
     public static void recordPacket(
             ChannelHandlerContext context,
             String reason,
@@ -36,6 +38,9 @@ public final class ChannelTransportBypassRankLogger {
             PacketFlow packetFlow,
             byte[] packetBytes
     ) {
+        if (!isEnabled()) {
+            return;
+        }
         if (packet == null) {
             recordEncodedPacket(
                     context,
@@ -227,6 +232,9 @@ public final class ChannelTransportBypassRankLogger {
     }
 
     private static boolean isEnabled() {
+        if (!DebugRuntimeConfig.isAnalysisEnabled()) {
+            return false;
+        }
         return readBoolean(
                 Config.RuntimeProperty.Transport.BYPASS_RANK_LOG_ENABLED,
                 Config.RuntimeProperty.Transport.DEFAULT_BYPASS_RANK_LOG_ENABLED

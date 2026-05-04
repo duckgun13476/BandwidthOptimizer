@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.report;
 
+import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.builder.ArgumentBuilder;
@@ -36,7 +37,14 @@ public final class ChannelTransportPacketRankCommand {
         return Command.SINGLE_SUCCESS;
     }
 
+    // packet rank analysis
     private static int run(CommandSourceStack source, int captureTicks) {
+        if (!DebugRuntimeConfig.isAnalysisEnabled()) {
+            source.sendFailure(Component.literal(
+                    "Packet rank capture is disabled. Set bandwidthoptimizer.debug.analysis=true first."
+            ));
+            return 0;
+        }
         ChannelTransportPacketRankCaptureManager.StartResult startResult =
                 ChannelTransportPacketRankCaptureManager.startCapture(source.getServer(), source, captureTicks);
         ChannelTransportPacketRankCaptureManager.StatusSnapshot statusSnapshot = startResult.statusSnapshot();
@@ -60,7 +68,12 @@ public final class ChannelTransportPacketRankCommand {
         return Command.SINGLE_SUCCESS;
     }
 
+    // packet rank status
     private static int status(CommandSourceStack source) {
+        if (!DebugRuntimeConfig.isAnalysisEnabled()) {
+            source.sendSuccess(() -> Component.literal("Packet rank capture is disabled."), false);
+            return Command.SINGLE_SUCCESS;
+        }
         ChannelTransportPacketRankCaptureManager.StatusSnapshot statusSnapshot =
                 ChannelTransportPacketRankCaptureManager.snapshotCurrentStatus(source.getServer());
         if (!statusSnapshot.running()) {
