@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientChunkCache;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -80,6 +81,9 @@ public abstract class ClientPacketListenerChunkHandleMixin {
 
     @Inject(method = "handleMovePlayer", at = @At("RETURN"))
     private void bandwidthoptimizer$logPlayerPositionHandle(ClientboundPlayerPositionPacket packet, CallbackInfo ci) {
+        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+            return;
+        }
         int index = bandwidthoptimizer$POSITION_LOG_COUNT.incrementAndGet();
         if (index > bandwidthoptimizer$MAX_POSITION_LOGS) {
             return;
@@ -123,6 +127,9 @@ public abstract class ClientPacketListenerChunkHandleMixin {
 
     @Unique
     private static void bandwidthoptimizer$logHandle(String kind, int chunkX, int chunkZ, int radius, boolean cached) {
+        if (!DebugRuntimeConfig.isDiagnoseEnabled())
+            return;
+
         int index = bandwidthoptimizer$HANDLE_LOG_COUNT.incrementAndGet();
         if (index > bandwidthoptimizer$MAX_HANDLE_LOGS) {
             return;

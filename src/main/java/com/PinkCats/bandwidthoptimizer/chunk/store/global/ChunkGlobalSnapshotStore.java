@@ -10,6 +10,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.snapshot.lane.ChunkLaneSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.store.blob.ChunkBlobHandle;
+import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 
 import java.util.HashMap;
 import java.util.Iterator;
@@ -120,7 +121,7 @@ public final class ChunkGlobalSnapshotStore {
             evictOldMaterializedVersions(chunkStoreKey, versionRecords);
             evictUnreferencedBlobsToBudget("materialize");
 
-            if (shouldLogSample(materializedUpdateCount)) {
+            if (shouldLogDiagnose() && shouldLogSample(materializedUpdateCount)) {
                 Bandwidthoptimizer.LOGGER.info(
                         "[ChunkStore][Materialize] channel={}, chunk={}, fullVersion={}, fullHash={}, packetCount={}, blobRefs={}, retainedBlobBytes={}/{}, materializedSnapshots={}",
                         channelId,
@@ -361,14 +362,16 @@ public final class ChunkGlobalSnapshotStore {
             materializedSnapshotCount = Math.max(materializedSnapshotCount - 1L, 0L);
             totalMaterializedSnapshotEvictions++;
             releaseMaterializedSnapshotReferences(eldestEntry.getValue());
-            Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkStore][Evict] scope=materialized_snapshot, reason=version_limit, chunk={}, fullVersion={}, fullHash={}, retainedVersions={}, limit={}",
-                    eldestEntry.getValue().coordinate().logText(),
-                    eldestEntry.getValue().fullSnapshotVersion(),
-                    shortenHash(eldestEntry.getValue().fullSnapshotHash()),
-                    versionRecords.size(),
-                    MAX_MATERIALIZED_VERSIONS_PER_CHUNK
-            );
+            if (shouldLogDiagnose()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[ChunkStore][Evict] scope=materialized_snapshot, reason=version_limit, chunk={}, fullVersion={}, fullHash={}, retainedVersions={}, limit={}",
+                        eldestEntry.getValue().coordinate().logText(),
+                        eldestEntry.getValue().fullSnapshotVersion(),
+                        shortenHash(eldestEntry.getValue().fullSnapshotHash()),
+                        versionRecords.size(),
+                        MAX_MATERIALIZED_VERSIONS_PER_CHUNK
+                );
+            }
         }
 
         if (versionRecords.isEmpty()) {
@@ -391,14 +394,16 @@ public final class ChunkGlobalSnapshotStore {
             retainedBlobBytes = Math.max(retainedBlobBytes - removedRecord.encodedBytes(), 0L);
             totalBlobEvictions++;
             removeHotspotDistinctHashes(removedRecord);
-            Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkStore][Evict] scope=blob, reason={}, hash={}, encodedBytes={}, retainedBlobBytes={}/{}",
-                    reason,
-                    removedRecord.snapshotShortHash(),
-                    removedRecord.encodedBytes(),
-                    retainedBlobBytes,
-                    MAX_BLOB_BUDGET_BYTES
-            );
+            if (shouldLogDiagnose()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[ChunkStore][Evict] scope=blob, reason={}, hash={}, encodedBytes={}, retainedBlobBytes={}/{}",
+                        reason,
+                        removedRecord.snapshotShortHash(),
+                        removedRecord.encodedBytes(),
+                        retainedBlobBytes,
+                        MAX_BLOB_BUDGET_BYTES
+                );
+            }
         }
     }
 
@@ -457,14 +462,16 @@ public final class ChunkGlobalSnapshotStore {
         } else {
             MATERIALIZED_SNAPSHOTS.remove(chunkStoreKey);
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[ChunkStore][Release] reason={}, chunkStoreKey={}, releasedVersions={}, retainedBlobBytes={}/{}",
-                reason,
-                chunkStoreKey,
-                versionRecords.size(),
-                retainedBlobBytes,
-                MAX_BLOB_BUDGET_BYTES
-        );
+        if (shouldLogDiagnose()) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ChunkStore][Release] reason={}, chunkStoreKey={}, releasedVersions={}, retainedBlobBytes={}/{}",
+                    reason,
+                    chunkStoreKey,
+                    versionRecords.size(),
+                    retainedBlobBytes,
+                    MAX_BLOB_BUDGET_BYTES
+            );
+        }
     }
 
     private static String buildChunkVersionStoreKey(String channelId, long scopeId, ChunkPacketCoordinate coordinate) {
@@ -498,6 +505,10 @@ public final class ChunkGlobalSnapshotStore {
 
     private static boolean shouldLogSample(long counter) {
         return counter <= 5L || counter % 50L == 0L;
+    }
+
+    private static boolean shouldLogDiagnose() {
+        return DebugRuntimeConfig.isDiagnoseEnabled();
     }
 
     private static String shortenHash(String hashHex) {

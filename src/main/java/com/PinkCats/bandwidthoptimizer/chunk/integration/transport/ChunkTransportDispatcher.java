@@ -31,6 +31,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
+import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
@@ -136,7 +137,7 @@ public final class ChunkTransportDispatcher {
         );
         ChunkHotspotVerifyHooks.flushCurrentReport();
         long frameCount = incrementOutboundFrameCount(runtimeDecision.operation());
-        if (shouldLogSample(frameCount)) {
+        if (shouldLogDiagnose() && shouldLogSample(frameCount)) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkTransport][Wrap] channel={}, op={}, count={}, epoch={}, observedPackets={}, chunk={}, payloadBytes={}, envelopeBytes={}, payloadHash={}",
                     readChannelId(context),
@@ -223,7 +224,7 @@ public final class ChunkTransportDispatcher {
         );
         ChunkHotspotVerifyHooks.flushCurrentReport();
         long frameCount = incrementOutboundFrameCount(runtimeDecision.operation());
-        if (shouldLogSample(frameCount)) {
+        if (shouldLogDiagnose() && shouldLogSample(frameCount)) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkTransport][Wrap] channel={}, op={}, count={}, epoch={}, observedPackets={}, chunk={}, payloadBytes={}, envelopeBytes={}, payloadHash={}",
                     readChannelId(context),
@@ -1024,6 +1025,9 @@ public final class ChunkTransportDispatcher {
             ChunkHotspotFrame frame,
             ChunkPeerChunkStateSnapshot currentChunkSnapshot
     ) {
+        if (!shouldLogDiagnose()) {
+            return;
+        }
         Bandwidthoptimizer.LOGGER.info(
                 "[ChunkTransport][Control][Ignore] action={}, channel={}, op={}, epoch={}, chunk={}, fullVersion={}, baseHash={}, payloadHash={}, state={}",
                 label,
@@ -1072,7 +1076,7 @@ public final class ChunkTransportDispatcher {
         );
         ChunkHotspotVerifyHooks.flushCurrentReport();
         long frameCount = inboundCounter.incrementAndGet();
-        if (!shouldLogSample(frameCount)) {
+        if (!shouldLogDiagnose() || !shouldLogSample(frameCount)) {
             return;
         }
 
@@ -1099,7 +1103,7 @@ public final class ChunkTransportDispatcher {
         ChunkHotspotStats.recordInboundFrame(frame, 0, packetBytes == null ? 0 : packetBytes.length);
         ChunkHotspotVerifyHooks.flushCurrentReport();
         long frameCount = inboundCounter.incrementAndGet();
-        if (!shouldLogSample(frameCount)) {
+        if (!shouldLogDiagnose() || !shouldLogSample(frameCount)) {
             return;
         }
 
@@ -1122,6 +1126,9 @@ public final class ChunkTransportDispatcher {
             ChunkHotspotFrame frame,
             String reason
     ) {
+        if (!shouldLogDiagnose()) {
+            return;
+        }
         Bandwidthoptimizer.LOGGER.info(
                 "[ChunkTransport][Data][Ignore] channel={}, op={}, epoch={}, chunk={}, fullVersion={}, baseHash={}, payloadHash={}, reason={}",
                 readChannelId(context),
@@ -1140,6 +1147,9 @@ public final class ChunkTransportDispatcher {
             ChunkHotspotFrame frame,
             String reason
     ) {
+        if (!shouldLogDiagnose()) {
+            return;
+        }
         logIgnoredInboundRuntimeFrame(context, frame, reason);
         Bandwidthoptimizer.LOGGER.info(
                 "[ChunkTransport][Budget][Ignore] channel={}, op={}, epoch={}, chunk={}, fullVersion={}, baseHash={}, payloadHash={}, reason={}",
@@ -1165,6 +1175,10 @@ public final class ChunkTransportDispatcher {
 
     private static boolean shouldLogSample(long frameCount) {
         return frameCount <= 5L || frameCount % 100L == 0L;
+    }
+
+    private static boolean shouldLogDiagnose() {
+        return DebugRuntimeConfig.isDiagnoseEnabled();
     }
 
     private static String readChannelId(ChannelHandlerContext context) {

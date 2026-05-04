@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
+import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
@@ -32,12 +33,14 @@ public final class ChannelTransportControlPlane {
         if (listener != null) {
             ListenerTransportPolicy listenerTransportPolicy = classifyListenerTransportPolicy(packet);
             controlState.rememberListenerPacket(packet, listenerTransportPolicy);
-            Bandwidthoptimizer.LOGGER.info(
-                    "[Transport][ListenerPolicy][Observe] action={}, packetClass={}, channel={}",
-                    listenerTransportPolicy.logAction(),
-                    packetClassName(packet),
-                    channel.id().asShortText()
-            );
+            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[Transport][ListenerPolicy][Observe] action={}, packetClass={}, channel={}",
+                        listenerTransportPolicy.logAction(),
+                        packetClassName(packet),
+                        channel.id().asShortText()
+                );
+            }
         }
 
     }
@@ -57,12 +60,14 @@ public final class ChannelTransportControlPlane {
 
         ImmediateTransportProfile immediateTransportProfile = classifyImmediateTransport(packet);
         if (immediateTransportProfile != ImmediateTransportProfile.NONE) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[Transport][ImmediatePolicy][Consume] reason={}, packetClass={}, channel={}",
-                    immediateTransportProfile.reason(),
-                    packetClassName(packet),
-                    context.channel().id().asShortText()
-            );
+            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[Transport][ImmediatePolicy][Consume] reason={}, packetClass={}, channel={}",
+                        immediateTransportProfile.reason(),
+                        packetClassName(packet),
+                        context.channel().id().asShortText()
+                );
+            }
             return TransportControlDecision.forceImmediateTransport(immediateTransportProfile.reason());
         }
 
@@ -72,21 +77,25 @@ public final class ChannelTransportControlPlane {
         }
         ListenerTransportPolicy listenerTransportPolicy = getOrCreateControlState(context.channel()).consumeListenerPolicy(packet);
         if (listenerTransportPolicy == ListenerTransportPolicy.IMMEDIATE_TRANSPORT) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[Transport][ListenerPolicy][Consume] action={}, packetClass={}, channel={}",
-                    listenerTransportPolicy.logAction(),
-                    packetClassName(packet),
-                    context.channel().id().asShortText()
-            );
+            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[Transport][ListenerPolicy][Consume] action={}, packetClass={}, channel={}",
+                        listenerTransportPolicy.logAction(),
+                        packetClassName(packet),
+                        context.channel().id().asShortText()
+                );
+            }
             return TransportControlDecision.forceImmediateTransport("packet_send_listener_immediate_transport");
         }
         if (listenerTransportPolicy == ListenerTransportPolicy.DIRECT) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[Transport][ListenerPolicy][Consume] action={}, packetClass={}, channel={}",
-                    listenerTransportPolicy.logAction(),
-                    packetClassName(packet),
-                    context.channel().id().asShortText()
-            );
+            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[Transport][ListenerPolicy][Consume] action={}, packetClass={}, channel={}",
+                        listenerTransportPolicy.logAction(),
+                        packetClassName(packet),
+                        context.channel().id().asShortText()
+                );
+            }
             return TransportControlDecision.forceDirect("packet_send_listener");
         }
         return getOrCreateControlState(context.channel()).consumeDirectPermit();

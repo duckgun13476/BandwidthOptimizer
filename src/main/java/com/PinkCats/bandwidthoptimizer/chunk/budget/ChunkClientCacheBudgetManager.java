@@ -6,6 +6,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceSt
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportControlFrameSender;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraftforge.api.distmarker.Dist;
@@ -291,6 +292,9 @@ public final class ChunkClientCacheBudgetManager {
         if (usageBeforeTrim.totalBytes() == usageAfterTrim.totalBytes()
                 && releasedShadowBytes <= 0L
                 && runtimeEvictedBaseCount <= 0) {
+            return;
+        }
+        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
             return;
         }
 

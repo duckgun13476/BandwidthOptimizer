@@ -5,6 +5,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerObservationSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateSnapshot;
+import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkHotspotPathRuntimeConfig;
 
 public final class ChunkPlanPreviewService {
@@ -22,6 +23,9 @@ public final class ChunkPlanPreviewService {
             return;
         }
 
+        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+            return;
+        }
         if (shouldLog(channelSnapshot, decision)) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkPlan][Preview] channel={}, epoch={}, observedPackets={}, {}",

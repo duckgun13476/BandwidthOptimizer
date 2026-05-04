@@ -9,6 +9,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameC
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerObservationSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateSnapshot;
+import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 
 public final class ChunkProtocolPreviewService {
 
@@ -24,6 +25,7 @@ public final class ChunkProtocolPreviewService {
                 || descriptor == null
                 || decision == null
                 || decision.decisionKind() == ChunkPlanDecisionKind.BYPASS
+                || !DebugRuntimeConfig.isDiagnoseEnabled()
                 || !shouldLogPreview(snapshot)) {
             return;
         }
@@ -95,7 +97,7 @@ public final class ChunkProtocolPreviewService {
         return ChunkHotspotFrameOp.PUBLISH_PATCH;
     }
 
-    // 这个函数限制协议预演日志频率，保持与其它 chunk 观察日志一致，避免登录阶段刷屏。
+    // limited
     private static boolean shouldLogPreview(ChunkPeerStateSnapshot snapshot) {
         long observedPacketCount = snapshot.observedPacketCount();
         return observedPacketCount <= 5L || observedPacketCount % 100L == 0L;

@@ -8,6 +8,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalStoreObservation;
+import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ConnectionAccessor;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ServerGamePacketListenerImplAccessor;
 import io.netty.channel.Channel;
@@ -53,7 +54,7 @@ public final class ChunkPeerStateManager {
 
         ChunkPeerObservationSnapshot observation = state.recordObservation(descriptor, snapshotFingerprint, storeObservation);
         ChunkPeerStateSnapshot channelSnapshot = observation.channelState();
-        if (state.shouldLogObservation()) {
+        if (shouldLogDiagnose() && state.shouldLogObservation()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkHotspot][Observe] channel={}, epoch={}, observedPackets={}, encodedBytes={}, {}",
                     channelSnapshot.channelId(),
@@ -65,7 +66,7 @@ public final class ChunkPeerStateManager {
         }
 
         ChunkPeerChunkStateSnapshot chunkSnapshot = observation.chunkState();
-        if (chunkSnapshot != null && state.shouldLogObservation()) {
+        if (chunkSnapshot != null && shouldLogDiagnose() && state.shouldLogObservation()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkPeer][Chunk] channel={}, epoch={}, observedPackets={}, {}",
                     channelSnapshot.channelId(),
@@ -75,7 +76,7 @@ public final class ChunkPeerStateManager {
             );
         }
 
-        if (storeObservation != null && state.shouldLogObservation()) {
+        if (storeObservation != null && shouldLogDiagnose() && state.shouldLogObservation()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkStore][Observe] channel={}, epoch={}, observedPackets={}, {}",
                     channelSnapshot.channelId(),
@@ -101,15 +102,17 @@ public final class ChunkPeerStateManager {
 
         ChunkPeerState state = CHANNEL_STATES.computeIfAbsent(channelId, ChunkPeerState::new);
         ChunkPeerStateSnapshot snapshot = state.setEpoch(epoch);
-        Bandwidthoptimizer.LOGGER.info(
-                "[ChunkPeer][Bind] player={}, uuid={}, reason={}, dimension={}, channel={}, epoch={}",
-                player.getGameProfile().getName(),
-                player.getUUID(),
-                reason,
-                dimensionKey.location(),
-                snapshot.channelId(),
-                snapshot.epoch()
-        );
+        if (shouldLogDiagnose()) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ChunkPeer][Bind] player={}, uuid={}, reason={}, dimension={}, channel={}, epoch={}",
+                    player.getGameProfile().getName(),
+                    player.getUUID(),
+                    reason,
+                    dimensionKey.location(),
+                    snapshot.channelId(),
+                    snapshot.epoch()
+            );
+        }
         return snapshot.epoch();
     }
 
@@ -124,14 +127,16 @@ public final class ChunkPeerStateManager {
             ChunkRuntimeReferenceStore.clearChannel(channelId);
             ChunkShadowSnapshotManager.clearChannel(channelId);
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[ChunkPeer][Lifecycle] player={}, uuid={}, reason={}, removedEpoch={}, removedChannelState={}",
-                player.getGameProfile().getName(),
-                player.getUUID(),
-                reason,
-                removedScopeState == null ? "<none>" : removedScopeState.summaryText(),
-                channelId == null || channelId.isBlank() ? "<none>" : channelId
-        );
+        if (shouldLogDiagnose()) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ChunkPeer][Lifecycle] player={}, uuid={}, reason={}, removedEpoch={}, removedChannelState={}",
+                    player.getGameProfile().getName(),
+                    player.getUUID(),
+                    reason,
+                    removedScopeState == null ? "<none>" : removedScopeState.summaryText(),
+                    channelId == null || channelId.isBlank() ? "<none>" : channelId
+            );
+        }
     }
 
 
@@ -226,15 +231,17 @@ public final class ChunkPeerStateManager {
         long scopeId = state == null ? 0L : state.snapshot().epoch();
         ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.invalidateChunk(scopeId, coordinate);
         ChunkShadowSnapshotManager.invalidateChunk(channel.id().asLongText(), scopeId, coordinate);
-        Bandwidthoptimizer.LOGGER.info(
-                "[ChunkPeer][LifecycleInvalidate] player={}, uuid={}, channel={}, reason={}, chunk={}, state={}",
-                player.getGameProfile().getName(),
-                player.getUUID(),
-                channel.id().asLongText(),
-                reason,
-                coordinate.logText(),
-                chunkSnapshot == null ? "<missing>" : chunkSnapshot.summaryText()
-        );
+        if (shouldLogDiagnose()) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ChunkPeer][LifecycleInvalidate] player={}, uuid={}, channel={}, reason={}, chunk={}, state={}",
+                    player.getGameProfile().getName(),
+                    player.getUUID(),
+                    channel.id().asLongText(),
+                    reason,
+                    coordinate.logText(),
+                    chunkSnapshot == null ? "<missing>" : chunkSnapshot.summaryText()
+            );
+        }
         return chunkSnapshot;
     }
 
@@ -251,15 +258,17 @@ public final class ChunkPeerStateManager {
         ChunkPeerState state = CHANNEL_STATES.get(channel.id().asLongText());
         long scopeId = state == null ? 0L : state.snapshot().epoch();
         ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.markChunkAwaitingFullReplay(scopeId, coordinate);
-        Bandwidthoptimizer.LOGGER.info(
-                "[ChunkPeer][LifecycleRetain] player={}, uuid={}, channel={}, reason={}, chunk={}, state={}",
-                player.getGameProfile().getName(),
-                player.getUUID(),
-                channel.id().asLongText(),
-                reason,
-                coordinate.logText(),
-                chunkSnapshot == null ? "<missing>" : chunkSnapshot.summaryText()
-        );
+        if (shouldLogDiagnose()) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ChunkPeer][LifecycleRetain] player={}, uuid={}, channel={}, reason={}, chunk={}, state={}",
+                    player.getGameProfile().getName(),
+                    player.getUUID(),
+                    channel.id().asLongText(),
+                    reason,
+                    coordinate.logText(),
+                    chunkSnapshot == null ? "<missing>" : chunkSnapshot.summaryText()
+            );
+        }
         return chunkSnapshot;
     }
 
@@ -301,6 +310,9 @@ public final class ChunkPeerStateManager {
             ChunkHotspotFrame frame,
             ChunkPeerChunkStateSnapshot chunkSnapshot
     ) {
+        if (!shouldLogDiagnose()) {
+            return;
+        }
         Bandwidthoptimizer.LOGGER.info(
                 "[ChunkPeer][{}] channel={}, epoch={}, chunk={}, fullVersion={}, payloadHash={}, state={}",
                 label,
@@ -311,6 +323,10 @@ public final class ChunkPeerStateManager {
                 shortenHash(frame.payloadHash()),
                 chunkSnapshot == null ? "<missing>" : chunkSnapshot.summaryText()
         );
+    }
+
+    private static boolean shouldLogDiagnose() {
+        return DebugRuntimeConfig.isDiagnoseEnabled();
     }
 
     private static String shortenHash(String hashHex) {

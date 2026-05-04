@@ -20,6 +20,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameO
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerChunkStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
+import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
@@ -289,18 +290,20 @@ public final class ChunkTransportControlFrameSender {
             ChannelTransportTelemetry.recordOutboundWrap(readProtocolName(channel), wrappedFrame);
             ChunkHotspotStats.recordOutboundFrame(frame, Math.max(logicalPacketBytes, 0), encodedEnvelopeBytes.length);
             ChunkHotspotVerifyHooks.flushCurrentReport();
-            Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkTransport][Control][Send] channel={}, op={}, epoch={}, observedPackets={}, chunk={}, fullVersion={}, payloadHash={}, payloadBytes={}, reason={}",
-                    channel.id().asLongText(),
-                    frame.operation().logName(),
-                    frame.epoch(),
-                    frame.observedPacketCount(),
-                    frame.coordinate().logText(),
-                    frame.fullSnapshotVersion(),
-                    shortenHash(frame.payloadHash()),
-                    payloadBytes == null ? 0 : payloadBytes.length,
-                    frame.reason()
-            );
+            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[ChunkTransport][Control][Send] channel={}, op={}, epoch={}, observedPackets={}, chunk={}, fullVersion={}, payloadHash={}, payloadBytes={}, reason={}",
+                        channel.id().asLongText(),
+                        frame.operation().logName(),
+                        frame.epoch(),
+                        frame.observedPacketCount(),
+                        frame.coordinate().logText(),
+                        frame.fullSnapshotVersion(),
+                        shortenHash(frame.payloadHash()),
+                        payloadBytes == null ? 0 : payloadBytes.length,
+                        frame.reason()
+                );
+            }
             return true;
         } catch (Throwable throwable) {
             if (!handedToPipeline) {

@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
+import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
@@ -253,12 +254,14 @@ public final class ChunkTransportBoundaryController {
         if (!ChunkTransportControlFrameSender.sendBoundaryBarrier(channel, pendingBarrier.barrierId(), pendingBarrier.reason())
                 && channel.isOpen()
                 && channel.isActive()) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkTransport][Barrier][SendSkipped] channel={}, barrierId={}, reason={}",
-                    channel.id().asLongText(),
-                    pendingBarrier.barrierId(),
-                    pendingBarrier.reason()
-            );
+            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[ChunkTransport][Barrier][SendSkipped] channel={}, barrierId={}, reason={}",
+                        channel.id().asLongText(),
+                        pendingBarrier.barrierId(),
+                        pendingBarrier.reason()
+                );
+            }
         }
     }
 
@@ -409,11 +412,13 @@ public final class ChunkTransportBoundaryController {
             this.pendingOutboundBarrierId = 0L;
             this.pendingOutboundBarrierDeadlineNanos = 0L;
             this.pendingOutboundBarrierReason = "";
-            Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkTransport][Barrier][Ack] barrierId={}, reason={}",
-                    barrierId,
-                    reason == null ? "" : reason
-            );
+            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[ChunkTransport][Barrier][Ack] barrierId={}, reason={}",
+                        barrierId,
+                        reason == null ? "" : reason
+                );
+            }
         }
 
         private synchronized void advanceInboundChunkEpoch() {
@@ -507,11 +512,13 @@ public final class ChunkTransportBoundaryController {
             if (this.pendingOutboundBarrierId <= 0L || nowNanos < this.pendingOutboundBarrierDeadlineNanos) {
                 return;
             }
-            Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkTransport][Barrier][Timeout] barrierId={}, reason={}",
-                    this.pendingOutboundBarrierId,
-                    this.pendingOutboundBarrierReason
-            );
+            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[ChunkTransport][Barrier][Timeout] barrierId={}, reason={}",
+                        this.pendingOutboundBarrierId,
+                        this.pendingOutboundBarrierReason
+                );
+            }
             this.pendingOutboundBarrierId = 0L;
             this.pendingOutboundBarrierDeadlineNanos = 0L;
             this.pendingOutboundBarrierReason = "";

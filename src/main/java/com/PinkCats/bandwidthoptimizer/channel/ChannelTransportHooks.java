@@ -17,6 +17,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkInboundDecodeResul
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportBoundaryController;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher.OutboundChunkEncodeResult;
+import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ClientboundCustomPayloadPacketAccessor;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ServerboundCustomPayloadPacketAccessor;
 import com.PinkCats.bandwidthoptimizer.report.ChunkBoundaryBandwidthRecorder;
@@ -95,7 +96,7 @@ public final class ChannelTransportHooks {
                 ChunkTransportBoundaryController.beginOutboundPacket(context, protocolName, packet);
         boolean forceImmediateTransport = controlDecision.forceImmediateTransport();
         boolean pendingDirectTransport = controlDecision.forceDirectTransport() || boundaryDecision.forceDirectTransport();
-        if (forceImmediateTransport && pendingDirectTransport) {
+        if (forceImmediateTransport && pendingDirectTransport && DebugRuntimeConfig.isDiagnoseEnabled()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[Transport][ImmediatePolicy][DirectOverride] immediateReason={}, directReason={}, controlDirect={}, boundaryDirect={}, protocol={}, packetClass={}, channel={}",
                     controlDecision.reason(),
@@ -154,15 +155,17 @@ public final class ChannelTransportHooks {
         }
         if (forceImmediateTransport) {
             ChannelTransportBatchManager.flushOutboundBatchNow(context);
-            Bandwidthoptimizer.LOGGER.info(
-                    "[Transport][ImmediatePolicy][Start] reason={}, protocol={}, packetClass={}, rawBytes={}, rawPacketId={}, channel={}",
-                    controlDecision.reason(),
-                    protocolName,
-                    packetClassName(packet),
-                    originalPacketBytes.length,
-                    tryReadLeadingVarInt(originalPacketBytes),
-                    channelIdText(context)
-            );
+            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[Transport][ImmediatePolicy][Start] reason={}, protocol={}, packetClass={}, rawBytes={}, rawPacketId={}, channel={}",
+                        controlDecision.reason(),
+                        protocolName,
+                        packetClassName(packet),
+                        originalPacketBytes.length,
+                        tryReadLeadingVarInt(originalPacketBytes),
+                        channelIdText(context)
+                );
+            }
         }
 
         OutboundChunkEncodeResult chunkEncodeResult = ChunkTransportDispatcher.tryEncodeOutboundPacketWithTrace(
@@ -234,7 +237,7 @@ public final class ChannelTransportHooks {
             if (shouldBypassServerboundCarrierByInputSize(outboundPacketFlow, transportInputPacketBytes.length)) {
                 out.writerIndex(startIndexInclusive);
                 out.writeBytes(transportInputPacketBytes);
-                if (forceImmediateTransport) {
+                if (forceImmediateTransport && DebugRuntimeConfig.isDiagnoseEnabled()) {
                     Bandwidthoptimizer.LOGGER.info(
                             "[Transport][ImmediatePolicy][Fallback] reason=serverbound_carrier_size, packetClass={}, inputBytes={}, channel={}",
                             packetClassName(packet),
@@ -268,19 +271,21 @@ public final class ChannelTransportHooks {
 
             if (!forceImmediateTransport && ChannelTransportBatchManager.shouldBatchOutboundPacket(context)) {
                 out.writerIndex(startIndexInclusive);
-                ChannelTransportTraceJournal.record(
-                        context,
-                        "OutboundBatchEnqueue",
-                        "batch:" + packetClassName(packet),
-                        "channel=" + channelIdText(context)
-                                + ", flow=" + outboundPacketFlow
-                                + ", protocol=" + protocolName
-                                + ", packetClass=" + packetClassName(packet)
-                                + ", inputPacketId=" + tryReadLeadingVarInt(transportInputPacketBytes)
-                                + ", inputBytes=" + lengthOf(transportInputPacketBytes)
-                                + ", chunkApplied=" + (chunkTransportEncodedBytes != null)
-                                + ", inputPrefix=" + hexPrefix(transportInputPacketBytes)
-                );
+                if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                    ChannelTransportTraceJournal.record(
+                            context,
+                            "OutboundBatchEnqueue",
+                            "batch:" + packetClassName(packet),
+                            "channel=" + channelIdText(context)
+                                    + ", flow=" + outboundPacketFlow
+                                    + ", protocol=" + protocolName
+                                    + ", packetClass=" + packetClassName(packet)
+                                    + ", inputPacketId=" + tryReadLeadingVarInt(transportInputPacketBytes)
+                                    + ", inputBytes=" + lengthOf(transportInputPacketBytes)
+                                    + ", chunkApplied=" + (chunkTransportEncodedBytes != null)
+                                    + ", inputPrefix=" + hexPrefix(transportInputPacketBytes)
+                    );
+                }
                 ChannelTransportBatchManager.enqueueOutboundPacket(
                         context,
                         transportInputPacketBytes,
@@ -296,12 +301,14 @@ public final class ChannelTransportHooks {
                     KineticChannel.processOutboundPacket(transportSession, transportInputPacketBytes);
             if (wrappedFrame == null) {
                 if (forceImmediateTransport) {
-                    Bandwidthoptimizer.LOGGER.info(
-                            "[Transport][ImmediatePolicy][Fallback] reason=wrap_unavailable, packetClass={}, inputBytes={}, channel={}",
-                            packetClassName(packet),
-                            transportInputPacketBytes.length,
-                            channelIdText(context)
-                    );
+                    if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                        Bandwidthoptimizer.LOGGER.info(
+                                "[Transport][ImmediatePolicy][Fallback] reason=wrap_unavailable, packetClass={}, inputBytes={}, channel={}",
+                                packetClassName(packet),
+                                transportInputPacketBytes.length,
+                                channelIdText(context)
+                        );
+                    }
                     recordDirectPacketTrace(
                             context,
                             "immediate_wrap_unavailable",
@@ -340,7 +347,7 @@ public final class ChannelTransportHooks {
             out.writerIndex(startIndexInclusive);
             if (!writeTransportCarrierPacket(context, outboundPacketFlow, out, wrappedFrame.transportFrameBytes())) {
                 out.writeBytes(transportInputPacketBytes);
-                if (forceImmediateTransport) {
+                if (forceImmediateTransport && DebugRuntimeConfig.isDiagnoseEnabled()) {
                     Bandwidthoptimizer.LOGGER.info(
                             "[Transport][ImmediatePolicy][Fallback] reason=carrier_write_failed, packetClass={}, inputBytes={}, channel={}",
                             packetClassName(packet),
@@ -371,7 +378,7 @@ public final class ChannelTransportHooks {
                 );
                 return;
             }
-            if (forceImmediateTransport) {
+            if (forceImmediateTransport && DebugRuntimeConfig.isDiagnoseEnabled()) {
                 Bandwidthoptimizer.LOGGER.info(
                         "[Transport][ImmediatePolicy][Result] path=single_transport, reason={}, protocol={}, packetClass={}, rawBytes={}, inputBytes={}, frameKind={}, frameBytes={}, channel={}",
                         controlDecision.reason(),
@@ -396,14 +403,16 @@ public final class ChannelTransportHooks {
             );
         } catch (Throwable throwable) {
             if (forceImmediateTransport) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[Transport][ImmediatePolicy][Fallback] reason=wrap_exception, packetClass={}, inputBytes={}, channel={}, exception={}: {}",
-                        packetClassName(packet),
-                        transportInputPacketBytes.length,
-                        channelIdText(context),
-                        throwable.getClass().getName(),
-                        throwable.getMessage()
-                );
+                if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                    Bandwidthoptimizer.LOGGER.info(
+                            "[Transport][ImmediatePolicy][Fallback] reason=wrap_exception, packetClass={}, inputBytes={}, channel={}, exception={}: {}",
+                            packetClassName(packet),
+                            transportInputPacketBytes.length,
+                            channelIdText(context),
+                            throwable.getClass().getName(),
+                            throwable.getMessage()
+                    );
+                }
                 recordDirectPacketTrace(
                         context,
                         "immediate_wrap_exception",
@@ -735,6 +744,9 @@ public final class ChannelTransportHooks {
                 packetFlow,
                 packetBytes
         );
+        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+            return;
+        }
         ChannelTransportTraceJournal.record(
                 context,
                 "DirectPacket",
@@ -760,9 +772,12 @@ public final class ChannelTransportHooks {
             ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame,
             boolean chunkProtocolApplied
     ) {
-        if (wrappedFrame == null) {
+        if (wrappedFrame == null)
             return;
-        }
+
+        if (!DebugRuntimeConfig.isDiagnoseEnabled())
+            return;
+
         ChannelTransportOperationTelemetry telemetry = wrappedFrame.telemetry();
         ChannelTransportTraceJournal.record(
                 context,
@@ -825,6 +840,9 @@ public final class ChannelTransportHooks {
             int carrierPacketId,
             byte[] transportFrameBytes
     ) {
+        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+            return;
+        }
         ChannelTransportTraceJournal.record(
                 context,
                 "OutboundCarrier",
@@ -858,11 +876,18 @@ public final class ChannelTransportHooks {
             byte[] transportFrameBytes,
             ChannelTransportPacketCodec.UnwrappedTransportFrame unwrappedFrame
     ) {
-        if (unwrappedFrame == null) {
+        if (unwrappedFrame == null)
             return;
-        }
+
+        if (!DebugRuntimeConfig.isDiagnoseEnabled())
+            return;
+
         ChannelTransportOperationTelemetry telemetry = unwrappedFrame.telemetry();
         PacketFlow packetFlow = packetDecoderFlowAccess == null ? null : packetDecoderFlowAccess.bandwidthoptimizer$getPacketFlow();
+
+        if (!DebugRuntimeConfig.isDiagnoseEnabled())
+            return;
+
         ChannelTransportTraceJournal.record(
                 context,
                 "InboundCarrier",
@@ -935,6 +960,10 @@ public final class ChannelTransportHooks {
             byte[] restoredPacketBytes,
             Packet<?> restoredPacket
     ) {
+
+        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+            return;
+        }
         PacketFlow packetFlow = packetDecoderFlowAccess == null ? null : packetDecoderFlowAccess.bandwidthoptimizer$getPacketFlow();
         ChannelTransportTraceJournal.record(
                 context,
@@ -998,6 +1027,9 @@ public final class ChannelTransportHooks {
 
 
     private static long nextTransportTraceIndex(AtomicLong counter) {
+        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+            return -1L;
+        }
         int sampleLimit = transportTraceSampleLimit();
         if (sampleLimit <= 0) {
             return -1L;
