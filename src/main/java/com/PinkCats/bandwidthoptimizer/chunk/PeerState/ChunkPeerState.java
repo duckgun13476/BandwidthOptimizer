@@ -84,6 +84,32 @@ final class ChunkPeerState {
         return chunkState == null ? null : chunkState.snapshotForQuery();
     }
 
+    synchronized ChunkPeerChunkStateSnapshot latestKnownSnapshotAcrossScopes(ChunkPacketCoordinate coordinate) {
+        if (coordinate == null || !coordinate.present()) {
+            return null;
+        }
+
+        ChunkPeerChunkStateSnapshot latestSnapshot = null;
+        for (ChunkPeerChunkState chunkState : this.chunkStates.values()) {
+            if (chunkState == null) {
+                continue;
+            }
+            ChunkPeerChunkStateSnapshot candidateSnapshot = chunkState.snapshotForQuery();
+            if (candidateSnapshot == null
+                    || candidateSnapshot.chunkKey() == null
+                    || candidateSnapshot.chunkKey().chunkX() != coordinate.chunkX()
+                    || candidateSnapshot.chunkKey().chunkZ() != coordinate.chunkZ()
+                    || !candidateSnapshot.knownSnapshotPublished()) {
+                continue;
+            }
+            if (latestSnapshot == null
+                    || candidateSnapshot.lastObservedAtMillis() > latestSnapshot.lastObservedAtMillis()) {
+                latestSnapshot = candidateSnapshot;
+            }
+        }
+        return latestSnapshot;
+    }
+
     synchronized ChunkPeerChunkStateSnapshot acknowledgeChunk(
             long scopeId,
             ChunkPacketCoordinate coordinate,

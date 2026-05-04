@@ -169,6 +169,19 @@ public final class ChunkPeerStateManager {
         return state == null ? null : state.snapshotChunk(scopeId, coordinate);
     }
 
+
+    public static ChunkPeerChunkStateSnapshot snapshotLatestKnownOutboundChunkAcrossScopes(
+            ChannelHandlerContext context,
+            ChunkPacketCoordinate coordinate
+    ) {
+        if (context == null || coordinate == null || !coordinate.present()) {
+            return null;
+        }
+
+        ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
+        return state == null ? null : state.latestKnownSnapshotAcrossScopes(coordinate);
+    }
+
     public static ChunkPeerChunkStateSnapshot snapshotPlayerChunk(ServerPlayer player, ChunkPacketCoordinate coordinate) {
         Channel channel = readPlayerChannel(player);
         if (channel == null || coordinate == null || !coordinate.present()) {

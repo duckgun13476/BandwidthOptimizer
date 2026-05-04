@@ -103,7 +103,7 @@ public final class ChunkTransportDispatcher {
         ChunkSnapshotFingerprint fingerprint = ChunkSnapshotFingerprintService.fingerprintOutboundPacket(originalPacketBytes);
         long scopeId = peerSnapshot.epoch();
         ChunkPeerChunkStateSnapshot knownChunkSnapshot =
-                ChunkPeerStateManager.snapshotOutboundChunk(context, scopeId, descriptor.coordinate());
+                resolvePlanningChunkSnapshot(context, scopeId, descriptor, fingerprint);
         ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult = buildOutboundPatchCandidate(
                 context,
                 scopeId,
@@ -190,7 +190,7 @@ public final class ChunkTransportDispatcher {
 
         long scopeId = peerSnapshot.epoch();
         ChunkPeerChunkStateSnapshot knownChunkSnapshot =
-                ChunkPeerStateManager.snapshotOutboundChunk(context, scopeId, descriptor.coordinate());
+                resolvePlanningChunkSnapshot(context, scopeId, descriptor, fingerprint);
         ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult = buildOutboundPatchCandidate(
                 context,
                 scopeId,
@@ -293,12 +293,13 @@ public final class ChunkTransportDispatcher {
                 );
                 restoredPacketBytes = ChunkRuntimeReferenceStore.findPacketBytes(
                         channelId,
-                        envelope.frame().payloadHash()
+                        envelope.frame().baseSnapshotHash()
                 );
             }
             if (restoredPacketBytes == null
                     || (!restoredFromSnapshot
-                    && !hasMatchingRuntimeFullSnapshot(runtimeFullSnapshot, envelope.frame(), restoredPacketBytes))) {
+                    && !hasMatchingRuntimeFullSnapshot(runtimeFullSnapshot, envelope.frame(), restoredPacketBytes)
+                    && !canUseContentAddressedFullPacket(envelope.frame(), restoredPacketBytes))) {
                 String trimmedBudgetIgnoreReason = resolveTrimmedBudgetIgnoreReason(context, envelope.frame(), "runtime_ref_missing_base");
                 if (!trimmedBudgetIgnoreReason.isBlank()) {
                     logTrimmedBudgetSuppressedRuntimeFrame(context, envelope.frame(), trimmedBudgetIgnoreReason);
@@ -421,6 +422,49 @@ public final class ChunkTransportDispatcher {
                         knownChunkSnapshot
                 );
         return preferSmallerBeneficialPatchResult(primaryPatchBuildResult, storedFullFallbackPatchBuildResult);
+    }
+
+
+    private static ChunkPeerChunkStateSnapshot resolvePlanningChunkSnapshot(
+            ChannelHandlerContext context,
+            long scopeId,
+            ChunkPacketDescriptor descriptor,
+            ChunkSnapshotFingerprint fingerprint
+    ) {
+        if (descriptor == null || descriptor.coordinate() == null || !descriptor.coordinate().present()) {
+            return null;
+        }
+
+        ChunkPeerChunkStateSnapshot currentScopeSnapshot =
+                ChunkPeerStateManager.snapshotOutboundChunk(context, scopeId, descriptor.coordinate());
+        if (currentScopeSnapshot != null
+                || !canUseCrossScopeFullChunkReference(descriptor, fingerprint)) {
+            return currentScopeSnapshot;
+        }
+
+        ChunkPeerChunkStateSnapshot latestKnownSnapshot =
+                ChunkPeerStateManager.snapshotLatestKnownOutboundChunkAcrossScopes(context, descriptor.coordinate());
+        if (latestKnownSnapshot == null
+                || latestKnownSnapshot.epoch() == scopeId
+                || latestKnownSnapshot.knownSnapshotHash() == null
+                || !latestKnownSnapshot.knownSnapshotHash().equals(fingerprint.hashHex())) {
+            return null;
+        }
+        return latestKnownSnapshot;
+    }
+
+    // Allow different dimension
+    private static boolean canUseCrossScopeFullChunkReference(
+            ChunkPacketDescriptor descriptor,
+            ChunkSnapshotFingerprint fingerprint
+    ) {
+        return descriptor != null
+                && descriptor.hotspotKind() == ChunkHotspotKind.FULL_CHUNK
+                && descriptor.coordinate() != null
+                && descriptor.coordinate().present()
+                && fingerprint != null
+                && fingerprint.hashHex() != null
+                && !fingerprint.hashHex().isBlank();
     }
 
     private static ChunkPatchBuilder.ChunkPatchBuildResult buildWatchBoundaryRefreshPatchFromStoredFullBase(
@@ -853,6 +897,29 @@ public final class ChunkTransportDispatcher {
                 && runtimeFullSnapshot.payloadHash() != null
                 && runtimeFullSnapshot.payloadHash().equals(frame.baseSnapshotHash())
                 && canUseRuntimeFullPacketAsPatchBase(frame, runtimeFullBasePacketBytes);
+    }
+
+    private static boolean canUseContentAddressedFullPacket(
+            ChunkHotspotFrame frame,
+            byte[] runtimeFullBasePacketBytes
+    ) {
+        if (frame == null
+                || frame.operation() != ChunkHotspotFrameOp.PUBLISH_REF
+                || frame.hotspotKind() != ChunkHotspotKind.FULL_CHUNK
+                || frame.baseSnapshotHash() == null
+                || frame.baseSnapshotHash().isBlank()
+                || frame.payloadHash() == null
+                || !frame.payloadHash().equals(frame.baseSnapshotHash())
+                || runtimeFullBasePacketBytes == null
+                || runtimeFullBasePacketBytes.length <= 0) {
+            return false;
+        }
+
+        ChunkSnapshotFingerprint fingerprint =
+                ChunkSnapshotFingerprintService.fingerprintOutboundPacket(runtimeFullBasePacketBytes);
+        return fingerprint != null
+                && fingerprint.hashHex() != null
+                && fingerprint.hashHex().equals(frame.baseSnapshotHash());
     }
 
     private static boolean canUseRuntimeFullPacketAsPatchBase(
