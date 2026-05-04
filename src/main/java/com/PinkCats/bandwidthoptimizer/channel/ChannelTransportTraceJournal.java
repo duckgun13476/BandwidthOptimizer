@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
+import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
@@ -26,7 +27,7 @@ public final class ChannelTransportTraceJournal {
 
 
     public static void record(ChannelHandlerContext context, String kind, String countKey, String eventText) {
-        if (context == null || context.channel() == null) {
+        if (!DebugRuntimeConfig.isDiagnoseEnabled() || context == null || context.channel() == null) {
             return;
         }
         int capacity = closeDumpSize();
@@ -38,8 +39,13 @@ public final class ChannelTransportTraceJournal {
     }
 
 
+    // transport trace
     public static void dumpAndClear(Channel channel, String reason, Throwable throwable) {
         if (channel == null) {
+            return;
+        }
+        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+            channel.attr(TRACE_JOURNAL_KEY).set(null);
             return;
         }
         TraceJournal journal = channel.attr(TRACE_JOURNAL_KEY).getAndSet(null);

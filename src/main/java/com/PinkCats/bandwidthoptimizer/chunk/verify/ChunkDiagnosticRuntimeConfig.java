@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.verify;
 
 import com.PinkCats.bandwidthoptimizer.Config;
+import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -13,8 +14,9 @@ public final class ChunkDiagnosticRuntimeConfig {
 
     private ChunkDiagnosticRuntimeConfig() {}
 
+    // diagnose file
     public static boolean isEnabled() {
-        return DIAGNOSTIC_OUTPUT_ENABLED.get();
+        return DebugRuntimeConfig.isDiagnoseEnabled() && DIAGNOSTIC_OUTPUT_ENABLED.get();
     }
 
     public static void applyEnabled(boolean enabled) {

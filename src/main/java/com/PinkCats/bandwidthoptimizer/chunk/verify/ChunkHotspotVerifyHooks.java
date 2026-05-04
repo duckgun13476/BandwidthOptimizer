@@ -24,18 +24,25 @@ public final class ChunkHotspotVerifyHooks {
     public static void initializeOutputFiles() {
         synchronized (LOCK) {
             ChunkHotspotStats.reset();
-            writeCurrentReportUnsafe();
+            if (ChunkDiagnosticRuntimeConfig.isEnabled()) {
+                writeCurrentReportUnsafe();
+            }
         }
     }
 
     public static void resetOutputFiles() {
         synchronized (LOCK) {
             ChunkHotspotStats.reset();
-            writeCurrentReportUnsafe();
+            if (ChunkDiagnosticRuntimeConfig.isEnabled()) {
+                writeCurrentReportUnsafe();
+            }
         }
     }
 
     public static void flushCurrentReport() {
+        if (!ChunkDiagnosticRuntimeConfig.isEnabled()) {
+            return;
+        }
         synchronized (LOCK) {
             try {
                 writeCurrentReportUnsafe();

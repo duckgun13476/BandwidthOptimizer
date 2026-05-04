@@ -5,6 +5,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTranspor
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelope;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelopeCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
+import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkDiagnosticRuntimeConfig;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
@@ -51,7 +52,8 @@ public final class ChunkBoundaryBandwidthRecorder {
             byte[] transportInputPacketBytes,
             OutboundChunkEncodeResult encodeResult
     ) {
-        if (context == null
+        if (!ChunkDiagnosticRuntimeConfig.isEnabled()
+                || context == null
                 || packet == null
                 || rawPacketBytes == null
                 || protocolName == null
@@ -96,7 +98,7 @@ public final class ChunkBoundaryBandwidthRecorder {
             boolean actualFrameBytesEstimated,
             int batchPacketCount
     ) {
-        if (trace == null) {
+        if (trace == null || !ChunkDiagnosticRuntimeConfig.isEnabled()) {
             return;
         }
 
@@ -137,6 +139,9 @@ public final class ChunkBoundaryBandwidthRecorder {
     }
 
     private static void ensureInitialized() {
+        if (!ChunkDiagnosticRuntimeConfig.isEnabled()) {
+            return;
+        }
         if (initialized) {
             return;
         }
