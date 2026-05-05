@@ -137,6 +137,10 @@ public final class ChannelTransportBatchManager {
                 writePendingPacketsDirectly(drainedBatch, "batch_carrier_unavailable");
                 return;
             }
+            if (ChannelTransportHooks.shouldBypassUnprofitableCarrier(wrappedFrame)) {
+                writePendingPacketsDirectly(drainedBatch, "batch_carrier_unprofitable", false);
+                return;
+            }
 
             ByteBuf carrierBuffer = drainedBatch.context().alloc().buffer();
             if (!ChannelTransportHooks.writeTransportCarrierPacket(
@@ -177,6 +181,10 @@ public final class ChannelTransportBatchManager {
 
     // Direct when velocity
     private static void writePendingPacketsDirectly(OutboundBatchDrain drainedBatch, String reason) {
+        writePendingPacketsDirectly(drainedBatch, reason, true);
+    }
+
+    private static void writePendingPacketsDirectly(OutboundBatchDrain drainedBatch, String reason, boolean recordRankLog) {
         if (drainedBatch == null || drainedBatch.context() == null || drainedBatch.pendingPackets().isEmpty()) {
             return;
         }
@@ -185,16 +193,18 @@ public final class ChannelTransportBatchManager {
         String protocolName = readProtocolName(context);
         for (PendingOutboundPacket pendingPacket : drainedBatch.pendingPackets()) {
             context.write(Unpooled.wrappedBuffer(copyBytesOrEmpty(pendingPacket.packetBytes())));
-            ChannelTransportBypassRankLogger.recordEncodedPacket(
-                    context,
-                    reason,
-                    protocolName,
-                    pendingPacket.packetFlow(),
-                    packetClassNameOf(pendingPacket),
-                    null,
-                    packetIdOf(pendingPacket),
-                    pendingPacket.packetBytes().length
-            );
+            if (recordRankLog) {
+                ChannelTransportBypassRankLogger.recordEncodedPacket(
+                        context,
+                        reason,
+                        protocolName,
+                        pendingPacket.packetFlow(),
+                        packetClassNameOf(pendingPacket),
+                        null,
+                        packetIdOf(pendingPacket),
+                        pendingPacket.packetBytes().length
+                );
+            }
             recordOutboundBatchBypassStats(context, protocolName, pendingPacket.packetBytes().length);
         }
         context.flush();

@@ -335,6 +335,24 @@ public final class ChannelTransportHooks {
                 }
                 return;
             }
+            if (shouldBypassUnprofitableCarrier(wrappedFrame)) {
+                out.writerIndex(startIndexInclusive);
+                out.writeBytes(transportInputPacketBytes);
+                recordOutboundBypassStats(context, protocolName, transportInputPacketBytes.length, 1);
+                ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
+                        outboundPacketCapture,
+                        transportInputPacketBytes.length
+                );
+                ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
+                        boundaryPacketTrace,
+                        "DIRECT_PASSTHROUGH",
+                        "DIRECT",
+                        transportInputPacketBytes.length,
+                        chunkTransportEncodedBytes != null,
+                        1
+                );
+                return;
+            }
             logOutboundTransportTrace(
                     context,
                     protocolName,
@@ -667,6 +685,21 @@ public final class ChannelTransportHooks {
     public static boolean shouldBypassServerboundCarrierByInputSize(PacketFlow packetFlow, int transportInputBytes) {
         return packetFlow == PacketFlow.SERVERBOUND
                 && transportInputBytes > SERVERBOUND_CUSTOM_PAYLOAD_SAFE_INPUT_BYTES;
+    }
+
+    // Mapping packet can't bypass
+    public static boolean shouldBypassUnprofitableCarrier(ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame) {
+        if (wrappedFrame == null
+                || wrappedFrame.originalPacketBytes() <= 0
+                || wrappedFrame.transportFrameLength() < wrappedFrame.originalPacketBytes()) {
+            return false;
+        }
+        ChannelTransportOperationTelemetry telemetry = wrappedFrame.telemetry();
+        return telemetry != null
+                && telemetry.exactAdditionCount() == 0
+                && telemetry.templateAdditionCount() == 0
+                && telemetry.exactRemovalCount() == 0
+                && telemetry.templateRemovalCount() == 0;
     }
 
 
