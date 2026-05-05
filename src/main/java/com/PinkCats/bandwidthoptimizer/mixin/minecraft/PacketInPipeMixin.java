@@ -6,6 +6,8 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
+import com.PinkCats.bandwidthoptimizer.server.stat.ChannelBandwidthStats;
+import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.PacketDecoder;
@@ -54,6 +56,7 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
         // Save use
         this.bandwidthoptimizer$outputSizeBeforeDecode = out.size();
         this.bandwidthoptimizer$pendingInboundFrame = ChannelCaptureHooks.beginInboundPreDecode(context, in);
+        bandwidthoptimizer$recordInboundRawEncoded(context, in);
     }
 
     @Inject(method = "decode", at = @At("RETURN"))
@@ -77,11 +80,11 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
 
         //Log
         ChannelCaptureHooks.finishInboundDecode(this.bandwidthoptimizer$pendingInboundFrame, out, this.bandwidthoptimizer$outputSizeBeforeDecode);
-        bandwidthoptimizer$recordInboundBypass(out);
+        bandwidthoptimizer$recordInboundBypass(context, out);
         this.bandwidthoptimizer$pendingInboundFrame = null;
     }
     @Unique
-    private void bandwidthoptimizer$recordInboundBypass(List<Object> out) {
+    private void bandwidthoptimizer$recordInboundBypass(ChannelHandlerContext context, List<Object> out) {
         if (this.bandwidthoptimizer$pendingInboundFrame == null || out == null) {
             return;
         }
@@ -96,5 +99,17 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
                 this.bandwidthoptimizer$pendingInboundFrame.byteLength(),
                 decodedPacketCount
         );
+        ChannelBandwidthStats stats = ServerBandwidthStatsRegistry.getOrCreate(context);
+        if (stats != null) {
+            stats.recordInboundBypass(this.bandwidthoptimizer$pendingInboundFrame.byteLength(), decodedPacketCount);
+        }
+    }
+
+    @Unique
+    private void bandwidthoptimizer$recordInboundRawEncoded(ChannelHandlerContext context, ByteBuf in) {
+        ChannelBandwidthStats stats = ServerBandwidthStatsRegistry.getOrCreate(context);
+        if (stats != null && in != null) {
+            stats.recordInboundRawEncoded(in.readableBytes(), 1);
+        }
     }
 }

@@ -11,6 +11,8 @@ import com.PinkCats.bandwidthoptimizer.chunk.lifecycle.ChunkLifecycleCoordinator
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.command.BandwidthOptimizerCommand;
 import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkWatchEventTracker;
+import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsNetworkChannel;
+import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
 import com.mojang.logging.LogUtils;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
@@ -34,6 +36,7 @@ public class Bandwidthoptimizer {
     public Bandwidthoptimizer() {
         ZstdRuntimeSupport.configureNativeTempFolder();
         ChannelTransportNetworkChannel.register();
+        ServerBandwidthStatsNetworkChannel.register();
         if (ChannelCaptureRuntimeConfig.isJsonlCaptureEnabled()) {
             ChannelFrameJsonlLogger.initializeOutputFiles();
         }
@@ -54,7 +57,9 @@ public class Bandwidthoptimizer {
     }
 
     @SubscribeEvent public static void syncConfigOnLogin(PlayerEvent.PlayerLoggedInEvent event) {
+
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            ServerBandwidthStatsRegistry.bindPlayer(serverPlayer);
             ExperientChunkWatchEventTracker.clearPlayer(serverPlayer);
             ChunkLifecycleCoordinator.onPlayerLogin(serverPlayer);
         }
@@ -73,9 +78,11 @@ public class Bandwidthoptimizer {
     }
 
     @SubscribeEvent public static void clearStateOnLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
             ChunkLifecycleCoordinator.onPlayerLogout(serverPlayer);
             ExperientChunkWatchEventTracker.clearPlayer(serverPlayer);
+            ServerBandwidthStatsRegistry.unbindPlayer(serverPlayer);
         }
     }
 

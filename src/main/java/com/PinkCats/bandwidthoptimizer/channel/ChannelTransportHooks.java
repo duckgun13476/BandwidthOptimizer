@@ -22,6 +22,8 @@ import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ClientboundCustomPayloadP
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ServerboundCustomPayloadPacketAccessor;
 import com.PinkCats.bandwidthoptimizer.report.ChunkBoundaryBandwidthRecorder;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCaptureManager;
+import com.PinkCats.bandwidthoptimizer.server.stat.ChannelBandwidthStats;
+import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
@@ -80,7 +82,7 @@ public final class ChannelTransportHooks {
                     null,
                     originalPacketBytes
             );
-            ChannelTransportTelemetry.recordOutboundBypass(protocolName, originalPacketBytes.length);
+            recordOutboundBypassStats(context, protocolName, originalPacketBytes.length, 1);
             ChannelTransportPacketRankCaptureManager.recordDirectPassthrough(
                     context,
                     protocolName,
@@ -136,7 +138,7 @@ public final class ChannelTransportHooks {
                     null,
                     originalPacketBytes
             );
-            ChannelTransportTelemetry.recordOutboundBypass(protocolName, originalPacketBytes.length);
+            recordOutboundBypassStats(context, protocolName, originalPacketBytes.length, 1);
             ChannelTransportPacketRankCaptureManager.recordDirectPassthrough(
                     context,
                     protocolName,
@@ -205,7 +207,7 @@ public final class ChannelTransportHooks {
                     outboundPacketFlow,
                     originalPacketBytes
             );
-            ChannelTransportTelemetry.recordOutboundBypass(protocolName, originalPacketBytes.length);
+            recordOutboundBypassStats(context, protocolName, originalPacketBytes.length, 1);
             ChannelTransportPacketRankCaptureManager.recordDirectPassthrough(
                     context,
                     protocolName,
@@ -253,7 +255,7 @@ public final class ChannelTransportHooks {
                         outboundPacketFlow,
                         transportInputPacketBytes
                 );
-                ChannelTransportTelemetry.recordOutboundBypass(protocolName, transportInputPacketBytes.length);
+                recordOutboundBypassStats(context, protocolName, transportInputPacketBytes.length, 1);
                 ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
                         outboundPacketCapture,
                         transportInputPacketBytes.length
@@ -317,7 +319,7 @@ public final class ChannelTransportHooks {
                             outboundPacketFlow,
                             transportInputPacketBytes
                     );
-                    ChannelTransportTelemetry.recordOutboundBypass(protocolName, transportInputPacketBytes.length);
+                    recordOutboundBypassStats(context, protocolName, transportInputPacketBytes.length, 1);
                     ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
                             outboundPacketCapture,
                             transportInputPacketBytes.length
@@ -363,7 +365,7 @@ public final class ChannelTransportHooks {
                         outboundPacketFlow,
                         transportInputPacketBytes
                 );
-                ChannelTransportTelemetry.recordOutboundBypass(protocolName, transportInputPacketBytes.length);
+                recordOutboundBypassStats(context, protocolName, transportInputPacketBytes.length, 1);
                 ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
                         outboundPacketCapture,
                         transportInputPacketBytes.length
@@ -391,7 +393,7 @@ public final class ChannelTransportHooks {
                         channelIdText(context)
                 );
             }
-            ChannelTransportTelemetry.recordOutboundWrap(readProtocolName(context), wrappedFrame);
+            recordOutboundTransportStats(context, readProtocolName(context), wrappedFrame);
             ChannelTransportPacketRankCaptureManager.completeSingleTransportCapture(outboundPacketCapture, wrappedFrame);
             ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
                     boundaryPacketTrace,
@@ -421,7 +423,7 @@ public final class ChannelTransportHooks {
                         outboundPacketFlow,
                         transportInputPacketBytes
                 );
-                ChannelTransportTelemetry.recordOutboundBypass(protocolName, transportInputPacketBytes.length);
+                recordOutboundBypassStats(context, protocolName, transportInputPacketBytes.length, 1);
                 ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
                         outboundPacketCapture,
                         transportInputPacketBytes.length
@@ -436,6 +438,47 @@ public final class ChannelTransportHooks {
                 );
             }
             ChannelTransportRuntimeGuard.disableTransport("outbound-wrap", throwable);
+        }
+    }
+
+
+    // bypass
+    private static void recordOutboundBypassStats(
+            ChannelHandlerContext context,
+            String protocolName,
+            int byteLength,
+            int packetCount
+    ) {
+        ChannelTransportTelemetry.recordOutboundBypass(protocolName, byteLength);
+        ChannelBandwidthStats stats = ServerBandwidthStatsRegistry.getOrCreate(context);
+        if (stats != null) {
+            stats.recordOutboundBypass(byteLength, packetCount);
+        }
+    }
+
+    private static void recordOutboundTransportStats(
+            ChannelHandlerContext context,
+            String protocolName,
+            ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame
+    ) {
+        ChannelTransportTelemetry.recordOutboundWrap(protocolName, wrappedFrame);
+        ChannelBandwidthStats stats = ServerBandwidthStatsRegistry.getOrCreate(context);
+        if (stats != null && wrappedFrame != null) {
+            stats.recordOutboundTransportFrame(wrappedFrame.transportFrameLength(), 1);
+        }
+    }
+
+
+    // in
+    private static void recordInboundTransportStats(
+            ChannelHandlerContext context,
+            String protocolName,
+            ChannelTransportPacketCodec.UnwrappedTransportFrame unwrappedFrame
+    ) {
+        ChannelTransportTelemetry.recordInboundUnwrap(protocolName, unwrappedFrame);
+        ChannelBandwidthStats stats = ServerBandwidthStatsRegistry.getOrCreate(context);
+        if (stats != null && unwrappedFrame != null) {
+            stats.recordInboundTransportFrame(unwrappedFrame.inboundFrameBytes(), 1);
         }
     }
 
@@ -467,7 +510,7 @@ public final class ChannelTransportHooks {
         try {
             decodeInboundPacketsIntoOutput(context, unwrappedFrame, out, packetDecoderFlowAccess);
             in.readerIndex(in.writerIndex());
-            ChannelTransportTelemetry.recordInboundUnwrap(readProtocolName(context), unwrappedFrame);
+            recordInboundTransportStats(context, readProtocolName(context), unwrappedFrame);
             return true;
         } catch (Throwable throwable) {
             ChannelTransportRuntimeGuard.disableTransport("inbound-unwrap", throwable);
@@ -512,7 +555,7 @@ public final class ChannelTransportHooks {
 
             List<Object> restoredPackets = new ArrayList<>();
             decodeInboundPacketsIntoOutput(context, unwrappedFrame, restoredPackets, packetDecoderFlowAccess);
-            ChannelTransportTelemetry.recordInboundUnwrap(readProtocolName(context), unwrappedFrame);
+            recordInboundTransportStats(context, readProtocolName(context), unwrappedFrame);
             expandedAny = true;
             if (restoredPackets.isEmpty()) {
                 continue;

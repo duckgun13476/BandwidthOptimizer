@@ -64,53 +64,79 @@ public final class BandwidthOptimizerHudOverlay {
 
     // Hud central
     private static List<String> buildLines(BandwidthOptimizerHudStats.Snapshot snapshot) {
-        List<String> lines = new ArrayList<>(8);
+        List<String> lines = new ArrayList<>(12);
         lines.add("Bandwidth Optimizer (beta)");
-        if (snapshot == null || !snapshot.hasData()) {
-            addIdleHintLines(lines, snapshot);
+        if (snapshot == null) {
+            lines.add("Client local");
+            addIdleHintLines(lines, null);
+            lines.add("Server total");
+            lines.add("  waiting for 4Hz sync");
             return lines;
         }
 
-        lines.add("Total save " + formatSavedPercent(snapshot.effectiveTotalRawBytes(), snapshot.effectiveTotalSentBytes())
+        lines.add("Client local");
+        if (!snapshot.hasData()) {
+            addIdleHintLines(lines, snapshot);
+            lines.add("Server total");
+            lines.add(buildServerStatsLine(snapshot));
+            return lines;
+        }
+
+        lines.add("  Total save " + formatSavedPercent(snapshot.effectiveTotalRawBytes(), snapshot.effectiveTotalSentBytes())
                 + " / 2 min " + formatSavedPercent(snapshot.effectiveRecentRawBytes(), snapshot.effectiveRecentSentBytes())
                 + "  (" + formatFlow(snapshot.effectiveTotalRawBytes(), snapshot.effectiveTotalSentBytes()) + ")");
-        lines.add("Optimize " + formatSavedPercent(snapshot.optimizeTotalRawBytes(), snapshot.optimizeTotalSentBytes())
+        lines.add("  Optimize " + formatSavedPercent(snapshot.optimizeTotalRawBytes(), snapshot.optimizeTotalSentBytes())
                 + " / 2 min " + formatSavedPercent(snapshot.optimizeRecentRawBytes(), snapshot.optimizeRecentSentBytes())
                 + "  (" + formatFlow(snapshot.optimizeTotalRawBytes(), snapshot.optimizeTotalSentBytes()) + ")");
         lines.add(buildChunkCacheLine(snapshot));
-        lines.add("LocalCache " + formatBytes(snapshot.localCacheBytes())
+        lines.add("  LocalCache " + formatBytes(snapshot.localCacheBytes())
                 + " / pkt " + snapshot.localCachePacketCount()
                 + " / chunk " + snapshot.localCacheChunkCount());
-        lines.add("Bypass pkt " + snapshot.totalBypassPacketCount()
+        lines.add("  Bypass pkt " + snapshot.totalBypassPacketCount()
                 + " / 2 min " + snapshot.recentBypassPacketCount()
                 + " / bytes " + formatBytes(snapshot.totalBypassPacketBytes())
                 + " / in " + snapshot.inboundBypassPacketCount()
                 + " / out " + snapshot.outboundBypassPacketCount());
-        lines.add("Map lit " + snapshot.totalMapLiteralEntries()
+        lines.add("  Map lit " + snapshot.totalMapLiteralEntries()
                 + " / ex " + snapshot.totalMapExactReferences()
                 + " / tpl " + snapshot.totalMapTemplateReferences()
                 + " / add " + (snapshot.totalMapExactAdditions() + snapshot.totalMapTemplateAdditions()));
-        lines.add("Batch " + snapshot.totalBatchCount()
+        lines.add("  Batch " + snapshot.totalBatchCount()
                 + " / Pkt " + snapshot.totalPacketCount()
                 + " / Algo " + safeText(snapshot.algorithmDisplayName())
                 + " / Win " + snapshot.batchWindowMillis() + "ms");
+        lines.add("Server total");
+        lines.add(buildServerStatsLine(snapshot));
         return lines;
+    }
+
+    // server hud
+    private static String buildServerStatsLine(BandwidthOptimizerHudStats.Snapshot snapshot) {
+        if (snapshot == null || !snapshot.serverStatsFresh()) {
+            return "  waiting for 4Hz sync";
+        }
+        return "  Total raw " + formatBytes(snapshot.serverOutboundRawEncodedBytes())
+                + " / wire " + formatBytes(snapshot.serverOutboundWireBytes())
+                + " / in " + formatBytes(snapshot.serverInboundWireBytes())
+                + " / save " + formatBytes(snapshot.serverOutboundSavedBytes())
+                + " / ratio " + formatRatioPercent(snapshot.serverOutboundWireRatioPercent())
+                + " / players " + snapshot.serverBoundPlayers();
     }
 
     private static String buildChunkCacheLine(BandwidthOptimizerHudStats.Snapshot snapshot) {
         if (snapshot == null) {
-            return "ChunkCache save 0B / 2 min 0B / reuse 0 / full 0 / reuseWire 0B / avg 0B";
+            return "  ChunkCache save 0B / 2 min 0B / reuse 0 / full 0 / reuseWire 0B / avg 0B";
         }
         if (!snapshot.chunkTransportEnabled()
                 && snapshot.chunkCacheSavedTotalBytes() <= 0L
                 && snapshot.chunkCacheReuseTotalPackets() <= 0L
                 && snapshot.chunkCacheFullTotalPackets() <= 0L) {
-            return "ChunkCache off / hotspot transport disabled";
+            return "  ChunkCache off / hotspot transport disabled";
         }
         long averageReuseWireBytes = snapshot.chunkCacheReuseTotalPackets() <= 0L
                 ? 0L
                 : snapshot.chunkCacheReuseWireTotalBytes() / snapshot.chunkCacheReuseTotalPackets();
-        return "ChunkCache save " + formatBytes(snapshot.chunkCacheSavedTotalBytes())
+        return "  ChunkCache save " + formatBytes(snapshot.chunkCacheSavedTotalBytes())
                 + " / 2 min " + formatBytes(snapshot.chunkCacheSavedRecentBytes())
                 + " / reuse " + snapshot.chunkCacheReuseTotalPackets()
                 + " / full " + snapshot.chunkCacheFullTotalPackets()
@@ -120,20 +146,19 @@ public final class BandwidthOptimizerHudOverlay {
 
     private static void addIdleHintLines(List<String> lines, BandwidthOptimizerHudStats.Snapshot snapshot) {
         if (snapshot != null && !snapshot.transportEnabledByProperty()) {
-            lines.add("Transport unavailable");
-            lines.add("  Transport is disabled.");
-            lines.add("  Remove the disable flag.");
+            lines.add("  Transport unavailable");
+            lines.add("  Transport is disabled");
+            lines.add("  Remove the disable flag");
             return;
         }
 
         if (snapshot != null && !snapshot.transportAvailable()) {
-            lines.add("Transport unavailable");
+            lines.add("  Transport unavailable");
             lines.add("  " + shortenUnavailableReason(snapshot.transportUnavailableReason()));
             return;
         }
 
-        lines.add("Waiting for optimizer traffic");
-        lines.add("  Trigger some network activity first.");
+        lines.add("  Waiting for optimizer traffic");
     }
 
     private static String formatSavedPercent(long rawBytes, long sentBytes) {
@@ -147,6 +172,10 @@ public final class BandwidthOptimizerHudOverlay {
 
     private static String formatFlow(long rawBytes, long sentBytes) {
         return formatBytes(rawBytes) + " -> " + formatBytes(sentBytes);
+    }
+
+    private static String formatRatioPercent(double ratioPercent) {
+        return String.format(Locale.ROOT, "%.1f%%", Math.max(ratioPercent, 0.0D));
     }
 
     private static String safeText(String value) {

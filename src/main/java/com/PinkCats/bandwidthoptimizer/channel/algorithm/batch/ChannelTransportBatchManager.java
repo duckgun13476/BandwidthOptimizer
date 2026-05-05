@@ -12,6 +12,8 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
 import com.PinkCats.bandwidthoptimizer.report.ChunkBoundaryBandwidthRecorder;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCaptureManager;
+import com.PinkCats.bandwidthoptimizer.server.stat.ChannelBandwidthStats;
+import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
@@ -157,7 +159,7 @@ public final class ChannelTransportBatchManager {
                     ChannelTransportRuntimeGuard.disableTransport("outbound-batch-flush", failure);
                     return;
                 }
-                ChannelTransportTelemetry.recordOutboundWrap(readProtocolName(drainedBatch.context()), wrappedFrame);
+                recordOutboundBatchTransportStats(drainedBatch.context(), readProtocolName(drainedBatch.context()), wrappedFrame);
                 ChannelTransportPacketRankCaptureManager.completeBatchTransportCapture(
                         drainedBatch.packetCaptures(),
                         wrappedFrame
@@ -193,13 +195,36 @@ public final class ChannelTransportBatchManager {
                     packetIdOf(pendingPacket),
                     pendingPacket.packetBytes().length
             );
-            ChannelTransportTelemetry.recordOutboundBypass(protocolName, pendingPacket.packetBytes().length);
+            recordOutboundBatchBypassStats(context, protocolName, pendingPacket.packetBytes().length);
         }
         context.flush();
         ChannelTransportPacketRankCaptureManager.completeDirectFallbackCapture(drainedBatch.packetCaptures());
         completeDirectBatchBoundaryTrace(drainedBatch.pendingPackets(), reason);
     }
 
+    private static void recordOutboundBatchTransportStats(
+            ChannelHandlerContext context,
+            String protocolName,
+            ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame
+    ) {
+        ChannelTransportTelemetry.recordOutboundWrap(protocolName, wrappedFrame);
+        ChannelBandwidthStats stats = ServerBandwidthStatsRegistry.getOrCreate(context);
+        if (stats != null && wrappedFrame != null) {
+            stats.recordOutboundTransportFrame(wrappedFrame.transportFrameLength(), 1);
+        }
+    }
+
+    private static void recordOutboundBatchBypassStats(
+            ChannelHandlerContext context,
+            String protocolName,
+            int byteLength
+    ) {
+        ChannelTransportTelemetry.recordOutboundBypass(protocolName, byteLength);
+        ChannelBandwidthStats stats = ServerBandwidthStatsRegistry.getOrCreate(context);
+        if (stats != null) {
+            stats.recordOutboundBypass(byteLength, 1);
+        }
+    }
 
     private static void completeDirectBatchBoundaryTrace(List<PendingOutboundPacket> pendingPackets, String reason) {
         if (pendingPackets == null || pendingPackets.isEmpty()) {

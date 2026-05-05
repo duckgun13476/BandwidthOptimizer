@@ -28,6 +28,7 @@ public final class BandwidthOptimizerHudStats {
             RECENT_SAMPLES.clear();
             lastSampleAtMillis = 0L;
         }
+        ClientServerBandwidthHudStats.reset();
     }
 
 
@@ -43,6 +44,7 @@ public final class BandwidthOptimizerHudStats {
                 transportSnapshot.mappingEnabled(),
                 transportSnapshot.zstdEnabled()
         );
+        ClientServerBandwidthHudStats.Snapshot serverSnapshot = ClientServerBandwidthHudStats.snapshot();
 
         return new Snapshot(
                 totals.effectiveRawBytes(),
@@ -81,7 +83,17 @@ public final class BandwidthOptimizerHudStats {
                 ChunkTransportRuntimeConfig.isEnabled(),
                 ChannelTransportRuntimeGuard.isExperimentalTransportEnabled(),
                 ChannelTransportRuntimeGuard.isTransportAvailable(),
-                ChannelTransportRuntimeGuard.unavailableReason()
+                ChannelTransportRuntimeGuard.unavailableReason(),
+                serverSnapshot.fresh(),
+                serverSnapshot.activeChannels(),
+                serverSnapshot.boundPlayers(),
+                serverSnapshot.outboundRawEncodedBytes(),
+                serverSnapshot.outboundTransportFrameBytes(),
+                serverSnapshot.outboundBypassBytes(),
+                serverSnapshot.outboundWireBytes(),
+                serverSnapshot.inboundWireBytes(),
+                serverSnapshot.outboundSavedBytes(),
+                serverSnapshot.outboundWireRatioPercent()
         );
     }
 
@@ -355,7 +367,17 @@ public final class BandwidthOptimizerHudStats {
             boolean chunkTransportEnabled,
             boolean transportEnabledByProperty,
             boolean transportAvailable,
-            String transportUnavailableReason
+            String transportUnavailableReason,
+            boolean serverStatsFresh,
+            int serverActiveChannels,
+            int serverBoundPlayers,
+            long serverOutboundRawEncodedBytes,
+            long serverOutboundTransportFrameBytes,
+            long serverOutboundBypassBytes,
+            long serverOutboundWireBytes,
+            long serverInboundWireBytes,
+            long serverOutboundSavedBytes,
+            double serverOutboundWireRatioPercent
     ) {
 
         public boolean hasData() {

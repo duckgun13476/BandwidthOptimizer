@@ -3,6 +3,8 @@ package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
 import com.PinkCats.bandwidthoptimizer.channel.access.PacketEncoderFlowAccess;
+import com.PinkCats.bandwidthoptimizer.server.stat.ChannelBandwidthStats;
+import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.PacketEncoder;
@@ -44,6 +46,11 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
 
     @Inject(method = "encode*", at = @At("RETURN"))
     private void bandwidthoptimizer$captureAndMaybeWrap(ChannelHandlerContext context, Packet<T> packet, ByteBuf out, CallbackInfo ci) {
+        ChannelBandwidthStats stats = ServerBandwidthStatsRegistry.getOrCreate(context);
+        if (stats != null) {
+            stats.recordOutboundRawEncoded(out.writerIndex() - this.bandwidthoptimizer$writerIndexBefore);
+        }
+
         //Patch
         ChannelCaptureHooks.captureOutboundEncodedPacket(context, packet, out, this.bandwidthoptimizer$writerIndexBefore);
 
