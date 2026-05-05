@@ -28,13 +28,15 @@ public final class RunAllChunkBranchCoverageMain {
     private static final Path DEFAULT_SERVER_LOG = Path.of("run", "runall-server-task.log");
     private static final Path DEFAULT_SERVER_SEND_JSONL = Path.of("run", "server", "send.jsonl");
     private static final List<String> REQUIRED_REASON_MARKERS = List.of(
+            "reuse_cached_full_snapshot_after_watch_boundary"
+    );
+    private static final List<String> OPTIONAL_REASON_MARKERS = List.of(
+            "refresh_patch_after_watch_boundary",
             "reuse_inflight_full_snapshot_before_ack",
             "reuse_acknowledged_full_snapshot",
             "light_patch_after_published_full_before_ack",
             "section_patch_after_published_full_before_ack",
-            "block_entity_patch_after_published_full_before_ack"
-    );
-    private static final List<String> OPTIONAL_REASON_MARKERS = List.of(
+            "block_entity_patch_after_published_full_before_ack",
             "block_patch_after_published_full_before_ack"
     );
 
