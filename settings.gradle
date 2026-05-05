@@ -13,3 +13,7 @@ plugins {
 }
 
 rootProject.name = 'BandwidthOptimizer'
+
+include 'forge-1.20.1'
+
+project(':forge-1.20.1').projectDir = file('project/forge/1.20.1')
