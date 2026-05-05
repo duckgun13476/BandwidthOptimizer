@@ -1,4 +1,11 @@
 
+#### v2.5-beta
+1. Fixed chunk cache reuse after repeated Nether portal travel, reducing repeated full chunk sends.
+2. Added server total bandwidth stats and per-player bandwidth stats with HUD, commands, and world persistence.
+3. Improved HUD refresh, display text, i18n, and optimized-flow percentage display.
+4. Fixed tiny-packet negative compression cases by bypassing clearly unprofitable carrier/batch output.
+5. Hardened public-server safety around unexpected server-bound carriers, oversized frames, and invalid mapping data.
+
 #### v2.4-beta
 BandwidthOptimizer 2.4 beta is the largest update since 1.3. This version rewrites almost the entire codebase and replaces the old packet replay/batch architecture with a new layered transport framework focused on stability, compatibility, and real bandwidth reduction.
 
