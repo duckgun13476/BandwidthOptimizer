@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.channel;
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.channel.access.PacketDecoderFlowAccess;
+import com.PinkCats.bandwidthoptimizer.channel.access.PacketEncoderFlowAccess;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.KineticChannel;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.batch.ChannelTransportBatchManager;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.Incomplete;
@@ -58,7 +59,13 @@ public final class ChannelTransportHooks {
     private ChannelTransportHooks() {}
 
     // transport and chunk transport handle
-    public static void tryToWrapOutboundPacket(ChannelHandlerContext context, Packet<?> packet, ByteBuf out, int startIndexInclusive) {
+    public static void tryToWrapOutboundPacket(
+            ChannelHandlerContext context,
+            Packet<?> packet,
+            ByteBuf out,
+            int startIndexInclusive,
+            PacketEncoderFlowAccess packetEncoderFlowAccess
+    ) {
         if (context == null || out == null) {
             return;
         }
@@ -73,7 +80,7 @@ public final class ChannelTransportHooks {
 
 
         if (!ChannelTransportRuntimeGuard.isTransportAvailable()
-                || shouldUseTransportForCurrentProtocol(protocolName)) {
+                || !shouldUseTransportForCurrentProtocol(protocolName)) {
             recordDirectPacketTrace(
                     context,
                     "transport_unavailable_or_protocol",
@@ -187,7 +194,7 @@ public final class ChannelTransportHooks {
             );
         }
         byte[] transportInputPacketBytes = chunkTransportEncodedBytes == null ? originalPacketBytes : chunkTransportEncodedBytes;
-        PacketFlow outboundPacketFlow = resolvePacketFlow(readConnectionProtocol(context), packet);
+        PacketFlow outboundPacketFlow = resolvePacketFlow(packetEncoderFlowAccess, readConnectionProtocol(context), packet);
         ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace =
                 ChunkBoundaryBandwidthRecorder.beginOutboundTrace(
                         context,
@@ -513,8 +520,7 @@ public final class ChannelTransportHooks {
                 || packetDecoderFlowAccess == null
                 || !in.isReadable()
                 || !ChannelTransportRuntimeGuard.isTransportAvailable()
-                || shouldRejectInboundTransportCarrier(packetDecoderFlowAccess)
-                || shouldUseTransportForCurrentProtocol(readProtocolName(context))) {
+                || !shouldUseTransportForCurrentProtocol(readProtocolName(context))) {
             return false;
         }
 
@@ -543,8 +549,7 @@ public final class ChannelTransportHooks {
                 || packetDecoderFlowAccess == null
                 || out.size() <= outputSizeBeforeDecode
                 || !ChannelTransportRuntimeGuard.isTransportAvailable()
-                || shouldRejectInboundTransportCarrier(packetDecoderFlowAccess)
-                || shouldUseTransportForCurrentProtocol(readProtocolName(context))) {
+                || !shouldUseTransportForCurrentProtocol(readProtocolName(context))) {
             return false;
         }
 
@@ -572,9 +577,6 @@ public final class ChannelTransportHooks {
             decodeInboundPacketsIntoOutput(context, unwrappedFrame, restoredPackets, packetDecoderFlowAccess);
             recordInboundTransportStats(context, readProtocolName(context), unwrappedFrame);
             expandedAny = true;
-            if (restoredPackets.isEmpty()) {
-                continue;
-            }
             index = replaceDecodedCarrierWithRestoredPackets(out, index, restoredPackets);
         }
         return expandedAny;
@@ -700,7 +702,17 @@ public final class ChannelTransportHooks {
     }
 
 
-    private static PacketFlow resolvePacketFlow(ConnectionProtocol protocol, Packet<?> packet) {
+    private static PacketFlow resolvePacketFlow(
+            PacketEncoderFlowAccess packetEncoderFlowAccess,
+            ConnectionProtocol protocol,
+            Packet<?> packet
+    ) {
+        if (packetEncoderFlowAccess != null) {
+            PacketFlow packetFlow = packetEncoderFlowAccess.bandwidthoptimizer$getPacketFlow();
+            if (packetFlow != null) {
+                return packetFlow;
+            }
+        }
         if (protocol == null || packet == null) {
             return null;
         }
@@ -1232,8 +1244,9 @@ public final class ChannelTransportHooks {
             PacketFlow packetFlow
     ) {
         if (!ChannelTransportRuntimeGuard.isTransportAvailable()
-                || shouldUseTransportForCurrentProtocol(protocolName)) {
-            return false;
+                || !shouldUseTransportForCurrentProtocol(protocolName)) {
+            ChannelTransportBatchManager.flushOutboundBatchNow(context);
+            return true;
         }
         if (shouldBypassServerboundTransparentTransport(packetFlow)) {
             ChannelTransportBatchManager.flushOutboundBatchNow(context);
@@ -1255,14 +1268,8 @@ public final class ChannelTransportHooks {
         ));
     }
 
-    //  transport carrier barrier，
-    private static boolean shouldRejectInboundTransportCarrier(PacketDecoderFlowAccess packetDecoderFlowAccess) {
-        return packetDecoderFlowAccess != null
-                && shouldBypassServerboundTransparentTransport(packetDecoderFlowAccess.bandwidthoptimizer$getPacketFlow());
-    }
-
     @Incomplete("Only PLAY packet now")
     private static boolean shouldUseTransportForCurrentProtocol(String protocolName) {
-        return !"PLAY".equalsIgnoreCase(protocolName);
+        return "PLAY".equalsIgnoreCase(protocolName);
     }
 }

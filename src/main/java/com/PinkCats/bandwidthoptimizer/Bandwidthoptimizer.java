@@ -15,10 +15,12 @@ import com.mojang.logging.LogUtils;
 import com.pinkcats.torque.layer.TorqueLayer;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
+import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.slf4j.Logger;
 
@@ -31,8 +33,6 @@ public class Bandwidthoptimizer {
 
     public Bandwidthoptimizer() {
         ZstdRuntimeSupport.configureNativeTempFolder();
-        ChannelTransportNetworkChannel.register();
-        ServerBandwidthStatsNetworkChannel.register();
         if (ChannelCaptureRuntimeConfig.isJsonlCaptureEnabled()) {
             ChannelFrameJsonlLogger.initializeOutputFiles();
         }
@@ -42,10 +42,18 @@ public class Bandwidthoptimizer {
 
         ModLoadingContext modLoadingContext = ForgeModLoadingContextCompat.getCurrentModLoadingContext();
         FMLJavaModLoadingContext modContext = modLoadingContext.extension();
+        IEventBus modEventBus = modContext.getModEventBus();
 
         MinecraftForge.EVENT_BUS.register(this);
+        modEventBus.addListener(this::commonSetup);
         modContext.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
         modContext.registerConfig(ModConfig.Type.CLIENT, ClientChunkCacheConfig.SPEC);
+    }
+
+    private void commonSetup(FMLCommonSetupEvent event) {
+        ChannelTransportNetworkChannel.register();
+        ServerBandwidthStatsNetworkChannel.register();
+        BandwidthOptimizerLifecycle.register(TorqueLayer.platform());
     }
 
     @SubscribeEvent
