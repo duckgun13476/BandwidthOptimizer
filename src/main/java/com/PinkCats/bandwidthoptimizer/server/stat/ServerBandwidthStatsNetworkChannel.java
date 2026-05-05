@@ -1,14 +1,10 @@
 package com.PinkCats.bandwidthoptimizer.server.stat;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.pinkcats.torque.layer.TorqueLayer;
+import com.pinkcats.torque.layer.platform.network.BytePayloadChannel;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.network.NetworkDirection;
-import net.minecraftforge.network.NetworkRegistry;
-import net.minecraftforge.network.PacketDistributor;
-import net.minecraftforge.network.simple.SimpleChannel;
-
-import java.util.Optional;
 
 public final class ServerBandwidthStatsNetworkChannel {
 
@@ -17,7 +13,7 @@ public final class ServerBandwidthStatsNetworkChannel {
     private static final String PROTOCOL_VERSION = "1";
 
     private static boolean registered;
-    private static SimpleChannel channel;
+    private static BytePayloadChannel channel;
 
     private ServerBandwidthStatsNetworkChannel() {}
 
@@ -27,19 +23,13 @@ public final class ServerBandwidthStatsNetworkChannel {
         }
 
         registered = true;
-        channel = NetworkRegistry.newSimpleChannel(
-                CHANNEL_ID,
-                () -> PROTOCOL_VERSION,
-                NetworkRegistry.acceptMissingOr(PROTOCOL_VERSION::equals),
-                NetworkRegistry.acceptMissingOr(PROTOCOL_VERSION::equals)
-        );
-        channel.registerMessage(
-                0,
-                ServerBandwidthStatsPayload.class,
-                ServerBandwidthStatsPayload::encode,
-                ServerBandwidthStatsPayload::decode,
-                ServerBandwidthStatsPayload::handle,
-                Optional.of(NetworkDirection.PLAY_TO_CLIENT)
+        channel = TorqueLayer.platform().network().registerClientboundBytes(
+                com.pinkcats.torque.layer.net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(
+                        CHANNEL_ID.getNamespace(),
+                        CHANNEL_ID.getPath()
+                ),
+                PROTOCOL_VERSION,
+                ServerBandwidthStatsPayload::handleClientBytes
         );
         Bandwidthoptimizer.LOGGER.info(
                 "[ServerBandwidthStats] Registered HUD stats channel {} version={}",
@@ -52,6 +42,9 @@ public final class ServerBandwidthStatsNetworkChannel {
         if (player == null || channel == null) {
             return;
         }
-        channel.send(PacketDistributor.PLAYER.with(() -> player), payload == null ? ServerBandwidthStatsPayload.empty() : payload);
+        channel.sendToPlayer(
+                TorqueLayer.platform().serverPlayer(player),
+                (payload == null ? ServerBandwidthStatsPayload.empty() : payload).toBytes()
+        );
     }
 }

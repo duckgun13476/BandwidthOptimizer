@@ -90,7 +90,10 @@ sourceSets {
 sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 repositories {
-
+    maven {
+        name = "PinkCatsLocal"
+        url = uri("C:/F/Maven")
+    }
 }
 
 configurations {
@@ -103,6 +106,13 @@ dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
 
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+    compileOnly("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}") {
+        changing = true
+    }
+    implementation fg.deobf("com.pinkcats.torque:TorqueAPI-1.20.1-forge:${torque_api_version}") {
+        changing = true
+        transitive = false
+    }
     implementation "com.github.luben:zstd-jni:${zstdJniVersion}"
     minecraftLibrary "com.github.luben:zstd-jni:${zstdJniVersion}"
     bundledLibs "com.github.luben:zstd-jni:${zstdJniVersion}"
@@ -112,6 +122,7 @@ tasks.named('processResources', ProcessResources).configure {
     var replaceProperties = [minecraft_version   : minecraft_version, minecraft_version_range: minecraft_version_range,
                              forge_version       : forge_version, forge_version_range: forge_version_range,
                              loader_version_range: loader_version_range,
+                             torque_api_version  : torque_api_version,
                              mod_id              : mod_id, mod_name: mod_name, mod_license: mod_license, mod_version: mod_version,
                              mod_authors         : mod_authors, mod_description: mod_description,]
 

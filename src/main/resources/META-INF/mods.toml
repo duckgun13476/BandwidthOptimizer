@@ -24,3 +24,10 @@ license = "${mod_license}"
     versionRange = "${minecraft_version_range}"
     ordering = "NONE"
     side = "BOTH"
+
+[[dependencies."${mod_id}"]]
+    modId = "torqueapi"
+    mandatory = true
+    versionRange = "[${torque_api_version},)"
+    ordering = "AFTER"
+    side = "BOTH"

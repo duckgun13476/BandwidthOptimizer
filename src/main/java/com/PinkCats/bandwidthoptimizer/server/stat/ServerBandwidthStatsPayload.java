@@ -1,12 +1,8 @@
 package com.PinkCats.bandwidthoptimizer.server.stat;
 
 import com.PinkCats.bandwidthoptimizer.client.hud.ClientServerBandwidthHudStats;
+import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.DistExecutor;
-import net.minecraftforge.network.NetworkEvent;
-
-import java.util.function.Supplier;
 
 public record ServerBandwidthStatsPayload(
         long capturedAtMillis,
@@ -69,12 +65,31 @@ public record ServerBandwidthStatsPayload(
         );
     }
 
-    public static void handle(ServerBandwidthStatsPayload payload, Supplier<NetworkEvent.Context> contextSupplier) {
-        NetworkEvent.Context context = contextSupplier.get();
-        context.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(
-                Dist.CLIENT,
-                () -> () -> ClientServerBandwidthHudStats.accept(payload)
-        ));
-        context.setPacketHandled(true);
+    public byte[] toBytes() {
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            encode(this, buffer);
+            byte[] bytes = new byte[buffer.readableBytes()];
+            buffer.readBytes(bytes);
+            return bytes;
+        } finally {
+            buffer.release();
+        }
+    }
+
+    public static ServerBandwidthStatsPayload fromBytes(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return empty();
+        }
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(bytes));
+        try {
+            return decode(buffer);
+        } finally {
+            buffer.release();
+        }
+    }
+
+    public static void handleClientBytes(byte[] bytes) {
+        ClientServerBandwidthHudStats.accept(fromBytes(bytes));
     }
 }
