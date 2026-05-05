@@ -245,15 +245,15 @@ public final class BandwidthOptimizerHudStats {
 
     private static String resolveAlgorithmDisplayName(boolean mappingEnabled, boolean zstdEnabled) {
         if (mappingEnabled && zstdEnabled) {
-            return "template_dictionary_streaming_zstd";
+            return "TD_SZ"; //template_dictionary_streaming_zstd
         }
         if (mappingEnabled) {
-            return "template_dictionary";
+            return "TD"; //template_dictionary
         }
         if (zstdEnabled) {
-            return "streaming_zstd";
+            return "SZ"; //streaming_zstd
         }
-        return "passthrough";
+        return "PASS"; //passthrough
     }
 
 

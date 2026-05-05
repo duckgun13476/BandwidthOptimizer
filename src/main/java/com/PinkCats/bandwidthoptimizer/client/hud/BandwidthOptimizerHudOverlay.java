@@ -5,6 +5,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.client.event.RenderGuiOverlayEvent;
@@ -18,13 +19,18 @@ import java.util.Locale;
 @Mod.EventBusSubscriber(modid = Bandwidthoptimizer.MODID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class BandwidthOptimizerHudOverlay {
 
+    private static final long HUD_REFRESH_INTERVAL_MILLIS = 100L;
+
     private static boolean enabled;
+    private static long nextHudRefreshAtMillis;
+    private static CachedHud cachedHud = CachedHud.empty();
 
     private BandwidthOptimizerHudOverlay() {}
 
     @SubscribeEvent
     public static void onLoggingIn(ClientPlayerNetworkEvent.LoggingIn event) {
         enabled = false;
+        resetHudCache();
         BandwidthOptimizerHudStats.reset();
     }
 
@@ -35,77 +41,92 @@ public final class BandwidthOptimizerHudOverlay {
             return;
         }
 
-        BandwidthOptimizerHudStats.Snapshot snapshot = BandwidthOptimizerHudStats.snapshot();
-        List<String> lines = buildLines(snapshot);
-        if (lines.isEmpty()) {
+        CachedHud hud = currentHud(minecraft);
+        if (hud.lines().isEmpty()) {
             return;
         }
 
-        Font font = minecraft.font;
-        int maxWidth = 0;
-        for (String line : lines) {
-            maxWidth = Math.max(maxWidth, font.width(line));
-        }
-
-        int lineHeight = font.lineHeight + 2;
-        int boxWidth = maxWidth + 10;
-        int boxHeight = lines.size() * lineHeight + 8;
         int x = 6;
         int y = 6;
 
         GuiGraphics guiGraphics = event.getGuiGraphics();
         RenderSystem.enableBlend();
-        guiGraphics.fill(x, y, x + boxWidth, y + boxHeight, 0xA0101018);
-        guiGraphics.fill(x, y, x + boxWidth, y + 1, 0xFF66D9EF);
-        for (int index = 0; index < lines.size(); index++) {
-            guiGraphics.drawString(font, lines.get(index), x + 5, y + 4 + index * lineHeight, 0xF2F2F2, false);
+        guiGraphics.fill(x, y, x + hud.boxWidth(), y + hud.boxHeight(), 0xA0101018);
+        guiGraphics.fill(x, y, x + hud.boxWidth(), y + 1, 0xFF66D9EF);
+        for (int index = 0; index < hud.lines().size(); index++) {
+            guiGraphics.drawString(minecraft.font, hud.lines().get(index), x + 5, y + 4 + index * hud.lineHeight(), 0xF2F2F2, false);
         }
+    }
+
+    // Render hud
+    private static CachedHud currentHud(Minecraft minecraft) {
+        long nowMillis = System.currentTimeMillis();
+        if (nowMillis < nextHudRefreshAtMillis && !cachedHud.lines().isEmpty()) {
+            return cachedHud;
+        }
+
+        BandwidthOptimizerHudStats.Snapshot snapshot = BandwidthOptimizerHudStats.snapshot();
+        List<String> lines = buildLines(snapshot);
+        cachedHud = measureHud(minecraft.font, lines);
+        nextHudRefreshAtMillis = nowMillis + HUD_REFRESH_INTERVAL_MILLIS;
+        return cachedHud;
+    }
+
+    private static CachedHud measureHud(Font font, List<String> lines) {
+        List<String> safeLines = lines == null ? List.of() : List.copyOf(lines);
+        int maxWidth = 0;
+        for (String line : safeLines) {
+            maxWidth = Math.max(maxWidth, font.width(line));
+        }
+
+        int lineHeight = font.lineHeight + 2;
+        return new CachedHud(safeLines, lineHeight, maxWidth + 10, safeLines.size() * lineHeight + 8);
     }
 
     // Hud central
     private static List<String> buildLines(BandwidthOptimizerHudStats.Snapshot snapshot) {
         List<String> lines = new ArrayList<>(12);
-        lines.add("Bandwidth Optimizer (beta)");
+        lines.add(text("hud.bandwidthoptimizer.title"));
         if (snapshot == null) {
-            lines.add("Client local");
+            lines.add(text("hud.bandwidthoptimizer.client"));
             addIdleHintLines(lines, null);
-            lines.add("Server total");
-            lines.add("  waiting for 4Hz sync");
+            lines.add(text("hud.bandwidthoptimizer.server"));
+            lines.add("  " + text("hud.bandwidthoptimizer.server.waiting"));
             return lines;
         }
 
-        lines.add("Client local");
+        lines.add(text("hud.bandwidthoptimizer.client"));
         if (!snapshot.hasData()) {
             addIdleHintLines(lines, snapshot);
-            lines.add("Server total");
+            lines.add(text("hud.bandwidthoptimizer.server"));
             lines.add(buildServerStatsLine(snapshot));
             return lines;
         }
 
-        lines.add("  Total save " + formatSavedPercent(snapshot.effectiveTotalRawBytes(), snapshot.effectiveTotalSentBytes())
-                + " / 2 min " + formatSavedPercent(snapshot.effectiveRecentRawBytes(), snapshot.effectiveRecentSentBytes())
+        lines.add("  " + text("hud.bandwidthoptimizer.total_save") + " " + formatTrafficRatioPercent(snapshot.effectiveTotalRawBytes(), snapshot.effectiveTotalSentBytes())
+                + " | 2 min " + formatTrafficRatioPercent(snapshot.effectiveRecentRawBytes(), snapshot.effectiveRecentSentBytes())
                 + "  (" + formatFlow(snapshot.effectiveTotalRawBytes(), snapshot.effectiveTotalSentBytes()) + ")");
-        lines.add("  Optimize " + formatSavedPercent(snapshot.optimizeTotalRawBytes(), snapshot.optimizeTotalSentBytes())
-                + " / 2 min " + formatSavedPercent(snapshot.optimizeRecentRawBytes(), snapshot.optimizeRecentSentBytes())
+        lines.add("  " + text("hud.bandwidthoptimizer.optimize") + " " + formatTrafficRatioPercent(snapshot.optimizeTotalRawBytes(), snapshot.optimizeTotalSentBytes())
+                + " | 2 min " + formatTrafficRatioPercent(snapshot.optimizeRecentRawBytes(), snapshot.optimizeRecentSentBytes())
                 + "  (" + formatFlow(snapshot.optimizeTotalRawBytes(), snapshot.optimizeTotalSentBytes()) + ")");
         lines.add(buildChunkCacheLine(snapshot));
-        lines.add("  LocalCache " + formatBytes(snapshot.localCacheBytes())
-                + " / pkt " + snapshot.localCachePacketCount()
-                + " / chunk " + snapshot.localCacheChunkCount());
-        lines.add("  Bypass pkt " + snapshot.totalBypassPacketCount()
-                + " / 2 min " + snapshot.recentBypassPacketCount()
-                + " / bytes " + formatBytes(snapshot.totalBypassPacketBytes())
-                + " / in " + snapshot.inboundBypassPacketCount()
-                + " / out " + snapshot.outboundBypassPacketCount());
-        lines.add("  Map lit " + snapshot.totalMapLiteralEntries()
-                + " / ex " + snapshot.totalMapExactReferences()
-                + " / tpl " + snapshot.totalMapTemplateReferences()
-                + " / add " + (snapshot.totalMapExactAdditions() + snapshot.totalMapTemplateAdditions()));
-        lines.add("  Batch " + snapshot.totalBatchCount()
-                + " / Pkt " + snapshot.totalPacketCount()
-                + " / Algo " + safeText(snapshot.algorithmDisplayName())
-                + " / Win " + snapshot.batchWindowMillis() + "ms");
-        lines.add("Server total");
+        lines.add("  " + text("hud.bandwidthoptimizer.local_cache") + " " + formatBytes(snapshot.localCacheBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.pkt") + " " + formatCount(snapshot.localCachePacketCount())
+                + " | " + text("hud.bandwidthoptimizer.metric.chunk") + " " + formatCount(snapshot.localCacheChunkCount()));
+        lines.add("  " + text("hud.bandwidthoptimizer.bypass") + " " + text("hud.bandwidthoptimizer.metric.pkt") + " " + formatCount(snapshot.totalBypassPacketCount())
+                + " | 2 min " + formatCount(snapshot.recentBypassPacketCount())
+                + " | " + text("hud.bandwidthoptimizer.metric.bytes") + " " + formatBytes(snapshot.totalBypassPacketBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.in") + " " + formatCount(snapshot.inboundBypassPacketCount())
+                + " | " + text("hud.bandwidthoptimizer.metric.out") + " " + formatCount(snapshot.outboundBypassPacketCount()));
+        lines.add("  " + text("hud.bandwidthoptimizer.map") + " " + text("hud.bandwidthoptimizer.metric.lit") + " " + formatCount(snapshot.totalMapLiteralEntries())
+                + " | " + text("hud.bandwidthoptimizer.metric.ex") + " " + formatCount(snapshot.totalMapExactReferences())
+                + " | " + text("hud.bandwidthoptimizer.metric.tpl") + " " + formatCount(snapshot.totalMapTemplateReferences())
+                + " | " + text("hud.bandwidthoptimizer.metric.add") + " " + formatCount(snapshot.totalMapExactAdditions() + snapshot.totalMapTemplateAdditions()));
+        lines.add("  " + text("hud.bandwidthoptimizer.batch") + " " + formatCount(snapshot.totalBatchCount())
+                + " | " + text("hud.bandwidthoptimizer.metric.pkt") + " " + formatCount(snapshot.totalPacketCount())
+                + " | " + text("hud.bandwidthoptimizer.metric.algo") + " " + safeText(snapshot.algorithmDisplayName())
+                + " | " + text("hud.bandwidthoptimizer.metric.win") + " " + snapshot.batchWindowMillis() + "ms");
+        lines.add(text("hud.bandwidthoptimizer.server"));
         lines.add(buildServerStatsLine(snapshot));
         return lines;
     }
@@ -113,69 +134,109 @@ public final class BandwidthOptimizerHudOverlay {
     // server hud
     private static String buildServerStatsLine(BandwidthOptimizerHudStats.Snapshot snapshot) {
         if (snapshot == null || !snapshot.serverStatsFresh()) {
-            return "  waiting for 4Hz sync";
+            return "  " + text("hud.bandwidthoptimizer.server.waiting");
         }
-        return "  Total raw " + formatBytes(snapshot.serverOutboundRawEncodedBytes())
-                + " / wire " + formatBytes(snapshot.serverOutboundWireBytes())
-                + " / in " + formatBytes(snapshot.serverInboundWireBytes())
-                + " / save " + formatBytes(snapshot.serverOutboundSavedBytes())
-                + " / ratio " + formatRatioPercent(snapshot.serverOutboundWireRatioPercent())
-                + " / players " + snapshot.serverBoundPlayers();
+        return "  " + text("hud.bandwidthoptimizer.metric.total") + " " + text("hud.bandwidthoptimizer.metric.raw") + " " + formatBytes(snapshot.serverOutboundRawEncodedBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.wire") + " " + formatBytes(snapshot.serverOutboundWireBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.in") + " " + formatBytes(snapshot.serverInboundWireBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.save") + " " + formatBytes(snapshot.serverOutboundSavedBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.ratio") + " " + formatRatioPercent(snapshot.serverOutboundWireRatioPercent())
+                + " | " + text("hud.bandwidthoptimizer.metric.players") + " " + formatCount(snapshot.serverBoundPlayers());
     }
 
     private static String buildChunkCacheLine(BandwidthOptimizerHudStats.Snapshot snapshot) {
         if (snapshot == null) {
-            return "  ChunkCache save 0B / 2 min 0B / reuse 0 / full 0 / reuseWire 0B / avg 0B";
+            return "  " + text("hud.bandwidthoptimizer.chunk_cache")
+                    + " " + text("hud.bandwidthoptimizer.metric.save") + " 0B"
+                    + " | 2 min 0B"
+                    + " | " + text("hud.bandwidthoptimizer.metric.reuse") + " 0"
+                    + " | " + text("hud.bandwidthoptimizer.metric.full") + " 0"
+                    + " | " + text("hud.bandwidthoptimizer.metric.reuse_wire") + " 0B"
+                    + " | " + text("hud.bandwidthoptimizer.metric.avg") + " 0B";
         }
         if (!snapshot.chunkTransportEnabled()
                 && snapshot.chunkCacheSavedTotalBytes() <= 0L
                 && snapshot.chunkCacheReuseTotalPackets() <= 0L
                 && snapshot.chunkCacheFullTotalPackets() <= 0L) {
-            return "  ChunkCache off / hotspot transport disabled";
+            return "  " + text("hud.bandwidthoptimizer.chunk_cache.off");
         }
         long averageReuseWireBytes = snapshot.chunkCacheReuseTotalPackets() <= 0L
                 ? 0L
                 : snapshot.chunkCacheReuseWireTotalBytes() / snapshot.chunkCacheReuseTotalPackets();
-        return "  ChunkCache save " + formatBytes(snapshot.chunkCacheSavedTotalBytes())
-                + " / 2 min " + formatBytes(snapshot.chunkCacheSavedRecentBytes())
-                + " / reuse " + snapshot.chunkCacheReuseTotalPackets()
-                + " / full " + snapshot.chunkCacheFullTotalPackets()
-                + " / reuseWire " + formatBytes(snapshot.chunkCacheReuseWireTotalBytes())
-                + " / avg " + formatBytes(averageReuseWireBytes);
+        return "  " + text("hud.bandwidthoptimizer.chunk_cache")
+                + " " + text("hud.bandwidthoptimizer.metric.save") + " " + formatBytes(snapshot.chunkCacheSavedTotalBytes())
+                + " | 2 min " + formatBytes(snapshot.chunkCacheSavedRecentBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.reuse") + " " + formatCount(snapshot.chunkCacheReuseTotalPackets())
+                + " | " + text("hud.bandwidthoptimizer.metric.full") + " " + formatCount(snapshot.chunkCacheFullTotalPackets())
+                + " | " + text("hud.bandwidthoptimizer.metric.reuse_wire") + " " + formatBytes(snapshot.chunkCacheReuseWireTotalBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.avg") + " " + formatBytes(averageReuseWireBytes);
     }
 
     private static void addIdleHintLines(List<String> lines, BandwidthOptimizerHudStats.Snapshot snapshot) {
         if (snapshot != null && !snapshot.transportEnabledByProperty()) {
-            lines.add("  Transport unavailable");
-            lines.add("  Transport is disabled");
-            lines.add("  Remove the disable flag");
+            lines.add("  " + text("hud.bandwidthoptimizer.transport.unavailable"));
+            lines.add("  " + text("hud.bandwidthoptimizer.transport.disabled"));
+            lines.add("  " + text("hud.bandwidthoptimizer.transport.remove_disable_flag"));
             return;
         }
 
         if (snapshot != null && !snapshot.transportAvailable()) {
-            lines.add("  Transport unavailable");
+            lines.add("  " + text("hud.bandwidthoptimizer.transport.unavailable"));
             lines.add("  " + shortenUnavailableReason(snapshot.transportUnavailableReason()));
             return;
         }
 
-        lines.add("  Waiting for optimizer traffic");
+        lines.add("  " + text("hud.bandwidthoptimizer.waiting"));
     }
 
-    private static String formatSavedPercent(long rawBytes, long sentBytes) {
+    // Hud
+    private static String text(String key) {
+        return I18n.get(key);
+    }
+
+    private static String formatTrafficRatioPercent(long rawBytes, long sentBytes) {
         if (rawBytes <= 0L) {
             return "0.0%";
         }
         double sentRatioPercent = (double) sentBytes * 100.0D / (double) rawBytes;
-        return String.format(Locale.ROOT, "%.1f%%", 100.0D - sentRatioPercent);
+        return String.format(Locale.ROOT, "%.1f%%", Math.max(sentRatioPercent, 0.0D));
     }
 
 
     private static String formatFlow(long rawBytes, long sentBytes) {
-        return formatBytes(rawBytes) + " -> " + formatBytes(sentBytes);
+        return formatBytes(rawBytes) + " → " + formatBytes(sentBytes);
     }
 
     private static String formatRatioPercent(double ratioPercent) {
         return String.format(Locale.ROOT, "%.1f%%", Math.max(ratioPercent, 0.0D));
+    }
+
+    private static String formatCount(long count) {
+        long absoluteCount = Math.abs(count);
+        if (absoluteCount < 1000L) {
+            return Long.toString(count);
+        }
+
+        double value = count;
+        String suffix = "k";
+        if (absoluteCount >= 1_000_000L) {
+            value = (double) count / 1_000_000.0D;
+            suffix = "m";
+        } else {
+            value = (double) count / 1_000.0D;
+        }
+        return trimFourDigitNumber(value) + suffix;
+    }
+
+    private static String trimFourDigitNumber(double value) {
+        double absoluteValue = Math.abs(value);
+        if (absoluteValue >= 100.0D) {
+            return String.format(Locale.ROOT, "%.0f", value);
+        }
+        if (absoluteValue >= 10.0D) {
+            return String.format(Locale.ROOT, "%.1f", value);
+        }
+        return String.format(Locale.ROOT, "%.2f", value);
     }
 
     private static String safeText(String value) {
@@ -185,7 +246,7 @@ public final class BandwidthOptimizerHudOverlay {
 
     private static String shortenUnavailableReason(String unavailableReason) {
         if (unavailableReason == null || unavailableReason.isBlank()) {
-            return "unknown reason";
+            return text("hud.bandwidthoptimizer.unknown_reason");
         }
 
         String singleLineReason = unavailableReason.replace('\r', ' ').replace('\n', ' ').trim();
@@ -216,5 +277,17 @@ public final class BandwidthOptimizerHudOverlay {
 
     public static void setEnabled(boolean enabled) {
         BandwidthOptimizerHudOverlay.enabled = enabled;
+        resetHudCache();
+    }
+
+    private static void resetHudCache() {
+        nextHudRefreshAtMillis = 0L;
+        cachedHud = CachedHud.empty();
+    }
+
+    private record CachedHud(List<String> lines, int lineHeight, int boxWidth, int boxHeight) {
+        private static CachedHud empty() {
+            return new CachedHud(List.of(), 0, 0, 0);
+        }
     }
 }

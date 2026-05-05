@@ -61,8 +61,8 @@ public final class ChannelJsonlCompareMain {
     private static List<ComparisonTarget> createTargets(String[] args) {
         if (args.length == 0) {
             return List.of(
-                    new ComparisonTarget("server/send -> client/receive", DEFAULT_SERVER_SEND, DEFAULT_CLIENT_RECEIVE),
-                    new ComparisonTarget("client/send -> server/receive", DEFAULT_CLIENT_SEND, DEFAULT_SERVER_RECEIVE)
+                    new ComparisonTarget("server/send → client/receive", DEFAULT_SERVER_SEND, DEFAULT_CLIENT_RECEIVE),
+                    new ComparisonTarget("client/send → server/receive", DEFAULT_CLIENT_SEND, DEFAULT_SERVER_RECEIVE)
             );
         }
 
@@ -292,8 +292,8 @@ public final class ChannelJsonlCompareMain {
         }
 
         List<String> mismatches = new ArrayList<>();
-        compareChunkDirection("server[outbound] -> client[inbound]", serverStats, "outbound", clientStats, "inbound", mismatches);
-        compareChunkDirection("client[outbound] -> server[inbound]", clientStats, "outbound", serverStats, "inbound", mismatches);
+        compareChunkDirection("server[outbound] → client[inbound]", serverStats, "outbound", clientStats, "inbound", mismatches);
+        compareChunkDirection("client[outbound] → server[inbound]", clientStats, "outbound", serverStats, "inbound", mismatches);
         return new ChunkHotspotVerificationReport(serverStats, clientStats, mismatches);
     }
 
