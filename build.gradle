@@ -81,6 +81,12 @@ mixin {
     config "${mod_id}.mixins.json"
 }
 
+sourceSets {
+    main {
+        java.srcDir 'common/src/main/java'
+        resources.srcDir 'common/src/main/resources'
+    }
+}
 sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 repositories {
