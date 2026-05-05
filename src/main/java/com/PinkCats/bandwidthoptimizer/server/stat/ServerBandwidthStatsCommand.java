@@ -36,7 +36,8 @@ public final class ServerBandwidthStatsCommand {
 
 
     private static int total(CommandSourceStack source) {
-        ServerBandwidthStatsRegistry.TotalsSnapshot totals = ServerBandwidthStatsRegistry.snapshotTotals();
+        ServerBandwidthStatsRegistry.TotalsSnapshot totals =
+                ServerBandwidthStatsPersistence.snapshotTotals(source.getServer());
         source.sendSuccess(() -> Component.literal(
                 "BO stats total: channels=" + totals.activeChannels()
                         + ", players=" + totals.boundPlayers()
@@ -58,9 +59,10 @@ public final class ServerBandwidthStatsCommand {
     }
 
     private static int players(CommandSourceStack source, int limit) {
-        List<ChannelBandwidthStats.Snapshot> snapshots = ServerBandwidthStatsRegistry.snapshotChannels();
+        List<ChannelBandwidthStats.Snapshot> snapshots =
+                ServerBandwidthStatsPersistence.snapshotPlayers(source.getServer(), limit);
         if (snapshots.isEmpty()) {
-            source.sendSuccess(() -> Component.literal("BO stats players: no active channels."), false);
+            source.sendSuccess(() -> Component.literal("BO stats players: no persisted players."), false);
             return Command.SINGLE_SUCCESS;
         }
 
@@ -92,6 +94,7 @@ public final class ServerBandwidthStatsCommand {
 
     private static int reset(CommandSourceStack source) {
         ServerBandwidthStatsRegistry.resetAll();
+        ServerBandwidthStatsPersistence.resetAll(source.getServer());
         source.sendSuccess(() -> Component.literal("BO stats reset complete."), true);
         return Command.SINGLE_SUCCESS;
     }

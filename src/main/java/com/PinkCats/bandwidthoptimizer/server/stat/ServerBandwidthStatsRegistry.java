@@ -59,10 +59,10 @@ public final class ServerBandwidthStatsRegistry {
         }
 
         ChannelBandwidthStats stats = getOrCreate(channel);
-        if (stats == null) {
+        if (stats == null)
             return;
-        }
 
+        ServerBandwidthStatsPersistence.flushBeforeBind(player, stats);
         UUID playerId = player.getUUID();
         String playerName = player.getGameProfile() == null ? "<unknown-player>" : player.getGameProfile().getName();
         stats.bindPlayer(playerId, playerName);
@@ -83,6 +83,7 @@ public final class ServerBandwidthStatsRegistry {
             stats = ACTIVE_CHANNELS.get(channelId);
         }
         if (stats != null) {
+            ServerBandwidthStatsPersistence.flushBeforeUnbind(player, stats);
             stats.unbindPlayer(playerId);
         }
     }
@@ -111,6 +112,10 @@ public final class ServerBandwidthStatsRegistry {
     }
 
     public static TotalsSnapshot snapshotTotals() {
+        return snapshotSessionTotals();
+    }
+
+    public static TotalsSnapshot snapshotSessionTotals() {
         List<ChannelBandwidthStats.Snapshot> channelSnapshots = snapshotChannels();
         long outboundRawPackets = 0L;
         long outboundRawBytes = 0L;
@@ -173,6 +178,10 @@ public final class ServerBandwidthStatsRegistry {
         return ACTIVE_CHANNELS.size();
     }
 
+    public static int boundPlayerCount() {
+        return PLAYER_CHANNELS.size();
+    }
+
     private static void ensureCloseCleanup(Channel channel, String channelId) {
         Boolean alreadyAttached = channel.attr(CHANNEL_CLOSE_CLEANUP_ATTACHED_KEY).get();
         if (Boolean.TRUE.equals(alreadyAttached)) {
@@ -188,6 +197,10 @@ public final class ServerBandwidthStatsRegistry {
     }
 
     private static void removeChannel(Channel channel, String channelId) {
+        ChannelBandwidthStats stats = channel == null ? null : channel.attr(CHANNEL_STATS_KEY).get();
+        if (stats != null)
+            ServerBandwidthStatsPersistence.flushOnChannelClose(stats.snapshot());
+
         if (channelId != null) {
             ACTIVE_CHANNELS.remove(channelId);
             PLAYER_CHANNELS.entrySet().removeIf(entry -> channelId.equals(entry.getValue()));

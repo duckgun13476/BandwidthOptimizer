@@ -19,12 +19,12 @@ public final class ServerBandwidthStatsHudSync {
 
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
-        // 5 tick hud
         if (event.phase != TickEvent.Phase.END || event.getServer() == null) {
             return;
         }
 
         MinecraftServer server = event.getServer();
+        ServerBandwidthStatsPersistence.onServerTick(server);
         if (server.getTickCount() % SYNC_INTERVAL_TICKS != 0) {
             return;
         }
@@ -35,7 +35,7 @@ public final class ServerBandwidthStatsHudSync {
         }
 
         ServerBandwidthStatsPayload payload =
-                ServerBandwidthStatsPayload.fromTotals(ServerBandwidthStatsRegistry.snapshotTotals());
+                ServerBandwidthStatsPayload.fromTotals(ServerBandwidthStatsPersistence.snapshotTotals(server));
         for (ServerPlayer player : players) {
             ServerBandwidthStatsNetworkChannel.sendToPlayer(player, payload);
         }
