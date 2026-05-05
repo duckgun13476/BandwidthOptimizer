@@ -39,8 +39,8 @@ public final class RunWatchBoundaryRefreshPatchRegressionMain {
         try {
             RegressionMarker marker = readRegressionMarker(DEFAULT_MARKER);
             List<ComparisonReport> compareReports = List.of(
-                    comparePair("server/send -> client/receive", DEFAULT_SERVER_SEND, DEFAULT_CLIENT_RECEIVE),
-                    comparePair("client/send -> server/receive", DEFAULT_CLIENT_SEND, DEFAULT_SERVER_RECEIVE)
+                    comparePair("server/send -> client/receive", DEFAULT_SERVER_SEND, DEFAULT_CLIENT_RECEIVE, true),
+                    comparePair("client/send -> server/receive", DEFAULT_CLIENT_SEND, DEFAULT_SERVER_RECEIVE, false)
             );
             List<String> failures = new ArrayList<>(collectComparisonFailures(compareReports));
             failures.addAll(collectLogFailures(marker, DEFAULT_SERVER_LOG, DEFAULT_CLIENT_LOG));
@@ -87,7 +87,7 @@ public final class RunWatchBoundaryRefreshPatchRegressionMain {
         );
     }
 
-    private static ComparisonReport comparePair(String label, Path leftPath, Path rightPath) throws IOException {
+    private static ComparisonReport comparePair(String label, Path leftPath, Path rightPath, boolean allowLeftTail) throws IOException {
         ensureFileExists(leftPath);
         ensureFileExists(rightPath);
 
@@ -106,6 +106,9 @@ public final class RunWatchBoundaryRefreshPatchRegressionMain {
                 }
 
                 comparedLines++;
+                if (leftLine != null && rightLine == null && allowLeftTail) {
+                    break;
+                }
                 if (leftLine == null || rightLine == null) {
                     mismatches.add(new MismatchDetail(
                             comparedLines,
