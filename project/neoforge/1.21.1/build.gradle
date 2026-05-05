@@ -1,0 +1,190 @@
+plugins {
+    id 'java'
+    id 'idea'
+    id 'net.neoforged.moddev' version '2.0.107'
+}
+
+group = mod_group_id
+version = mod_version
+
+base {
+    archivesName = mod_id
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+neoForge {
+    version = '21.1.219'
+
+    runs {
+        client {
+            client()
+            systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
+        }
+
+        server {
+            server()
+            programArgument '--nogui'
+            systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
+        }
+
+        gameTestServer {
+            type = 'gameTestServer'
+            systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
+        }
+
+        data {
+            data()
+            programArguments.addAll '--mod', mod_id, '--all', '--output', rootProject.file('src/generated/resources/').absolutePath, '--existing', rootProject.file('src/main/resources/').absolutePath
+        }
+
+        configureEach {
+            systemProperty 'forge.logging.markers', 'REGISTRIES'
+            logLevel = org.slf4j.event.Level.DEBUG
+        }
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+sourceSets {
+    main {
+        java.srcDir rootProject.file('common/src/main/java')
+        java.srcDir project.file('src/main/java')
+        resources.srcDir rootProject.file('common/src/main/resources')
+        resources.srcDir project.file('src/main/resources')
+        resources.srcDir rootProject.file('src/generated/resources')
+    }
+    test {
+        java.srcDir rootProject.file('src/test/java')
+        resources.srcDir rootProject.file('src/test/resources')
+    }
+}
+
+def neoforgeExcludedRootJava = [
+        'com/PinkCats/bandwidthoptimizer/Bandwidthoptimizer.java',
+        'com/PinkCats/bandwidthoptimizer/Config.java',
+        'com/PinkCats/bandwidthoptimizer/command/ClientHudCommand.java',
+        'com/PinkCats/bandwidthoptimizer/server/stat/ServerBandwidthStatsLifecycleHooks.java',
+        'com/PinkCats/bandwidthoptimizer/server/stat/ServerBandwidthStatsHudSync.java',
+        'com/PinkCats/bandwidthoptimizer/channel/mes/ChannelFrameJsonlLogger.java',
+        'com/PinkCats/bandwidthoptimizer/compat/minecraft/ForgeModLoadingContextCompat.java',
+        'com/PinkCats/bandwidthoptimizer/report/ChunkBoundaryBandwidthRecorder.java',
+        'com/PinkCats/bandwidthoptimizer/chunk/budget/ChunkClientCacheBudgetManager.java',
+        'com/PinkCats/bandwidthoptimizer/report/ChannelTransportPacketRankReportWriter.java',
+        'com/PinkCats/bandwidthoptimizer/report/ChannelTransportCompressionReportWriter.java',
+        'com/PinkCats/bandwidthoptimizer/report/ChannelTransportPacketRankCaptureManager.java',
+        'com/PinkCats/bandwidthoptimizer/report/ChannelTransportCompressionCaptureManager.java',
+        'com/PinkCats/bandwidthoptimizer/client/hud/BandwidthOptimizerHudOverlay.java',
+        'com/PinkCats/bandwidthoptimizer/channel/algorithm/zstd/ZstdRuntimeSupport.java',
+        'com/PinkCats/bandwidthoptimizer/chunk/verify/ChunkHotspotStats.java',
+        'com/PinkCats/bandwidthoptimizer/client/config/ClientChunkCacheConfig.java',
+        'com/PinkCats/bandwidthoptimizer/experient/ExperientAutoConnectController.java',
+        'com/PinkCats/bandwidthoptimizer/experient/ExperientChunkHotspotPathController.java',
+        'com/PinkCats/bandwidthoptimizer/experient/ExperientClientCaptureResetHooks.java',
+        'com/PinkCats/bandwidthoptimizer/experient/ExperientRunAllProbeHooks.java',
+        'com/PinkCats/bandwidthoptimizer/experient/ExperientServerCommandController.java',
+        'com/PinkCats/bandwidthoptimizer/experient/ExperientWatchBoundaryRefreshPatchController.java',
+        'com/PinkCats/bandwidthoptimizer/channel/ChannelTransportNetworkChannel.java',
+        'com/PinkCats/bandwidthoptimizer/mixin/minecraft/ClientboundCustomPayloadPacketAccessor.java',
+        'com/PinkCats/bandwidthoptimizer/mixin/minecraft/ServerboundCustomPayloadPacketAccessor.java',
+        'com/PinkCats/bandwidthoptimizer/mixin/minecraft/ClientPacketListenerChunkHandleMixin.java',
+        'com/PinkCats/bandwidthoptimizer/mixin/minecraft/PacketOutPipeMixin.java',
+        'com/PinkCats/bandwidthoptimizer/mixin/minecraft/PacketInPipeMixin.java'
+]
+
+def neoforgeExcludedCommonJava = [
+        'com/PinkCats/bandwidthoptimizer/channel/ChannelTransportHooks.java',
+        'com/PinkCats/bandwidthoptimizer/channel/ChannelTransportBypassRankLogger.java',
+        'com/PinkCats/bandwidthoptimizer/channel/algorithm/batch/ChannelTransportBatchManager.java',
+        'com/PinkCats/bandwidthoptimizer/channel/capture/ChannelCaptureHooks.java',
+        'com/PinkCats/bandwidthoptimizer/chunk/integration/transport/ChunkTransportControlFrameSender.java',
+        'com/PinkCats/bandwidthoptimizer/chunk/packet/ClientboundPlayPacketCodec.java',
+        'com/PinkCats/bandwidthoptimizer/server/stat/ServerBandwidthPersistentStats.java',
+        'com/PinkCats/bandwidthoptimizer/server/stat/ServerBandwidthStatsPersistence.java'
+]
+
+tasks.named('compileJava', JavaCompile).configure {
+    setSource(files(
+            project.fileTree('src/main/java'),
+            rootProject.fileTree('common/src/main/java') {
+                exclude neoforgeExcludedCommonJava
+            },
+            rootProject.fileTree('src/main/java') {
+                exclude neoforgeExcludedRootJava
+            }
+    ))
+}
+
+repositories {
+    maven {
+        name = 'PinkCatsLocal'
+        url = uri('C:/F/Maven')
+    }
+}
+
+configurations {
+    bundledLibs
+}
+
+dependencies {
+    String zstdJniVersion = '1.5.7-7'
+
+    compileOnly("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}") {
+        changing = true
+    }
+    implementation("com.pinkcats.torque:TorqueAPI-1.21.1-neoforge:${torque_api_version}") {
+        changing = true
+        transitive = false
+    }
+    implementation "com.github.luben:zstd-jni:${zstdJniVersion}"
+    bundledLibs "com.github.luben:zstd-jni:${zstdJniVersion}"
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    var replaceProperties = [minecraft_version      : '1.21.1',
+                             minecraft_version_range: '[1.21.1,1.22)',
+                             neo_version            : '21.1.219',
+                             neo_version_range      : '[21,)',
+                             loader_version_range   : '[4,)',
+                             torque_api_version     : torque_api_version,
+                             mod_id                 : mod_id,
+                             mod_name               : mod_name,
+                             mod_license            : mod_license,
+                             mod_version            : mod_version,
+                             mod_authors            : mod_authors,
+                             mod_description        : mod_description]
+
+    inputs.properties replaceProperties
+
+    filesMatching(['META-INF/neoforge.mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties + [project: project]
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    archiveFileName = "${package_name}-${mod_version}-neoforge-1.21.1.jar"
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes(['MixinConfigs': "${mod_id}.mixins.json"])
+    }
+
+    from {
+        configurations.bundledLibs.collect { dependency ->
+            zipTree(dependency)
+        }
+    } {
+        exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}

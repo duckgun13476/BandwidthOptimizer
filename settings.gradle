@@ -1,6 +1,11 @@
 pluginManagement {
     repositories {
         gradlePluginPortal()
+        mavenCentral()
+        maven {
+            name = 'NeoForge'
+            url = 'https://maven.neoforged.net/releases'
+        }
         maven {
             name = 'MinecraftForge'
             url = 'https://maven.minecraftforge.net/'
@@ -15,5 +20,7 @@ plugins {
 rootProject.name = 'BandwidthOptimizer'
 
 include 'forge-1.20.1'
+include 'neoforge-1.21.1'
 
 project(':forge-1.20.1').projectDir = file('project/forge/1.20.1')
+project(':neoforge-1.21.1').projectDir = file('project/neoforge/1.21.1')
