@@ -94,6 +94,7 @@ public final class KineticStreamingLayer implements TransportLayer {
             targetBuffer.clear();
             this.decompressCtx.decompressDirectByteBufferStream(targetBuffer, sourceBuffer);
             writeBuffer(output, targetBuffer);
+            ensureDecodedSizeWithinLimit(output);
         }
 
         return output.toByteArray();
@@ -103,6 +104,10 @@ public final class KineticStreamingLayer implements TransportLayer {
     private void appendDecodedBytes(byte[] decodedBytes) {
         if (decodedBytes.length == 0) {
             return;
+        }
+        if (decodedBytes.length > ChannelStreamingPacketCodec.MAX_DECODED_PACKET_BATCH_BYTES
+                || this.pendingDecodedBytes.length + decodedBytes.length > ChannelStreamingPacketCodec.MAX_DECODED_PACKET_BATCH_BYTES) {
+            throw new IllegalStateException("Channel streaming pending decoded bytes out of range");
         }
 
         byte[] mergedBytes = Arrays.copyOf(this.pendingDecodedBytes, this.pendingDecodedBytes.length + decodedBytes.length);
@@ -124,13 +129,23 @@ public final class KineticStreamingLayer implements TransportLayer {
         int packetBatchLength = lengthRead.value();
         int packetBatchStart = lengthRead.nextIndex();
         int packetBatchEnd = packetBatchStart + packetBatchLength;
-        if (packetBatchLength < 0 || packetBatchEnd > this.pendingDecodedBytes.length) {
+        if (packetBatchLength < 0 || packetBatchLength > ChannelStreamingPacketCodec.MAX_DECODED_PACKET_BATCH_BYTES) {
+            throw new IllegalStateException("Channel streaming packet batch length out of range: " + packetBatchLength);
+        }
+        if (packetBatchEnd > this.pendingDecodedBytes.length) {
             return null;
         }
 
         byte[] packetBatchBytes = Arrays.copyOfRange(this.pendingDecodedBytes, packetBatchStart, packetBatchEnd);
         this.pendingDecodedBytes = Arrays.copyOfRange(this.pendingDecodedBytes, packetBatchEnd, this.pendingDecodedBytes.length);
         return packetBatchBytes;
+    }
+
+
+    private static void ensureDecodedSizeWithinLimit(ByteArrayOutputStream output) {
+        if (output.size() > ChannelStreamingPacketCodec.MAX_DECODED_PACKET_BATCH_BYTES) {
+            throw new IllegalStateException("Channel streaming decoded bytes out of range: " + output.size());
+        }
     }
 
     // This function copies the written part of a direct ByteBuffer into the output stream.

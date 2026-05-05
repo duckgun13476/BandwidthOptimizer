@@ -7,6 +7,7 @@ import net.minecraft.network.FriendlyByteBuf;
 final class ChannelStreamingPacketCodec {
 
     private static final int SINGLE_PACKET_COUNT = 1;
+    static final int MAX_DECODED_PACKET_BATCH_BYTES = 8 * 1024 * 1024;
 
     private ChannelStreamingPacketCodec() {}
 
@@ -31,6 +32,11 @@ final class ChannelStreamingPacketCodec {
             }
 
             int packetLength = buffer.readVarInt();
+            if (packetLength < 0
+                    || packetLength > MAX_DECODED_PACKET_BATCH_BYTES
+                    || packetLength > buffer.readableBytes()) {
+                throw new IllegalStateException("Channel transport packet length out of range: " + packetLength);
+            }
             byte[] packetBytes = new byte[packetLength];
             buffer.readBytes(packetBytes);
             if (buffer.isReadable()) {

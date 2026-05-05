@@ -15,6 +15,10 @@ final class KineticTemplateMappingCodec {
     static final int ENTRY_LITERAL = 0;
     static final int ENTRY_EXACT_REFERENCE = 1;
     static final int ENTRY_TEMPLATE_REFERENCE = 2;
+    private static final int MAX_ADDITION_COUNT = 8192;
+    private static final int MAX_REMOVAL_COUNT = 8192;
+    private static final int MAX_TEMPLATE_SEGMENT_COUNT = 4096;
+    private static final int MAX_MAPPING_PAYLOAD_BYTES = 8 * 1024 * 1024;
 
     private KineticTemplateMappingCodec() {
     }
@@ -51,13 +55,13 @@ final class KineticTemplateMappingCodec {
                 throw new IllegalStateException("Unsupported mapping frame version: " + frameVersion);
             }
 
-            int additionCount = buffer.readVarInt();
+            int additionCount = readBoundedVarInt(buffer, MAX_ADDITION_COUNT, "mapping addition count");
             List<MappingAddition> additions = new ArrayList<>(additionCount);
             for (int index = 0; index < additionCount; index++) {
                 additions.add(readAddition(buffer));
             }
 
-            int removalCount = buffer.readVarInt();
+            int removalCount = readBoundedVarInt(buffer, MAX_REMOVAL_COUNT, "mapping removal count");
             List<MappingRemoval> removals = new ArrayList<>(removalCount);
             for (int index = 0; index < removalCount; index++) {
                 removals.add(new MappingRemoval(buffer.readVarInt(), buffer.readVarInt()));
@@ -114,7 +118,7 @@ final class KineticTemplateMappingCodec {
         int kind = buffer.readVarInt();
         int mappingId = buffer.readVarInt();
         if (kind == ADD_EXACT) {
-            int payloadLength = buffer.readVarInt();
+            int payloadLength = readBoundedReadableLength(buffer, MAX_MAPPING_PAYLOAD_BYTES, "exact mapping payload bytes");
             byte[] payload = new byte[payloadLength];
             buffer.readBytes(payload);
             return MappingAddition.exact(mappingId, payload);
@@ -122,15 +126,18 @@ final class KineticTemplateMappingCodec {
         if (kind != ADD_TEMPLATE)
             throw new IllegalArgumentException("Unknown mapping addition kind: " + kind);
 
-        int totalLength = buffer.readVarInt();
-        int segmentCount = buffer.readVarInt();
+        int totalLength = readBoundedVarInt(buffer, MAX_MAPPING_PAYLOAD_BYTES, "template total bytes");
+        int segmentCount = readBoundedVarInt(buffer, MAX_TEMPLATE_SEGMENT_COUNT, "template segment count");
         List<MappingSegment> segments = new ArrayList<>(segmentCount);
         for (int index = 0; index < segmentCount; index++) {
             boolean variable = buffer.readBoolean();
-            int length = buffer.readVarInt();
+            int length = readBoundedVarInt(buffer, MAX_MAPPING_PAYLOAD_BYTES, "template segment bytes");
             if (variable) {
                 segments.add(MappingSegment.variable(length));
                 continue;
+            }
+            if (length > buffer.readableBytes()) {
+                throw new IllegalStateException("template literal segment exceeds remaining bytes: " + length + " > " + buffer.readableBytes());
             }
             byte[] literalBytes = new byte[length];
             buffer.readBytes(literalBytes);
@@ -162,7 +169,7 @@ final class KineticTemplateMappingCodec {
         int entryType = buffer.readVarInt();
         return switch (entryType) {
             case ENTRY_LITERAL -> {
-                int payloadLength = buffer.readVarInt();
+                int payloadLength = readBoundedReadableLength(buffer, MAX_MAPPING_PAYLOAD_BYTES, "literal mapping payload bytes");
                 byte[] payload = new byte[payloadLength];
                 buffer.readBytes(payload);
                 yield MappingEntry.literal(payload);
@@ -170,12 +177,33 @@ final class KineticTemplateMappingCodec {
             case ENTRY_EXACT_REFERENCE -> MappingEntry.exactReference(buffer.readVarInt());
             case ENTRY_TEMPLATE_REFERENCE -> {
                 int mappingId = buffer.readVarInt();
+                if (buffer.readableBytes() > MAX_MAPPING_PAYLOAD_BYTES) {
+                    throw new IllegalStateException("template reference payload out of range: " + buffer.readableBytes());
+                }
                 byte[] rawVariablePayload = new byte[buffer.readableBytes()];
                 buffer.readBytes(rawVariablePayload);
                 yield MappingEntry.encodedTemplateReference(mappingId, rawVariablePayload);
             }
             default -> throw new IllegalArgumentException("Unknown mapping entry type: " + entryType);
         };
+    }
+
+
+    private static int readBoundedVarInt(FriendlyByteBuf buffer, int maxValue, String fieldName) {
+        int value = buffer.readVarInt();
+        if (value < 0 || value > maxValue) {
+            throw new IllegalStateException(fieldName + " out of range: " + value);
+        }
+        return value;
+    }
+
+
+    private static int readBoundedReadableLength(FriendlyByteBuf buffer, int maxValue, String fieldName) {
+        int value = readBoundedVarInt(buffer, maxValue, fieldName);
+        if (value > buffer.readableBytes()) {
+            throw new IllegalStateException(fieldName + " exceeds remaining bytes: " + value + " > " + buffer.readableBytes());
+        }
+        return value;
     }
 
     //tool ---

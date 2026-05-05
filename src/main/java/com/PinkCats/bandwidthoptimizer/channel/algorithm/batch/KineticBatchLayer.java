@@ -14,6 +14,10 @@ import java.util.List;
 public final class KineticBatchLayer implements TransportLayer {
 
     private static final int BATCH_PAYLOAD_VERSION = 1;
+    private static final int MAX_BATCH_PACKET_COUNT = 4096;
+    private static final int MAX_PACKET_ID_TABLE_ENTRIES = 4096;
+    private static final int MAX_BATCH_ENTRY_BYTES = 8 * 1024 * 1024;
+    private static final int MAX_BATCH_TOTAL_BYTES = 16 * 1024 * 1024;
 
     private final KineticPacketIdMappingLayer packetIdMappingLayer = new KineticPacketIdMappingLayer();
 
@@ -74,10 +78,12 @@ public final class KineticBatchLayer implements TransportLayer {
 
             boolean packetIdMappingEnabled = buffer.readBoolean();
             int[] packetIdTable = packetIdMappingEnabled ? readPacketIdTable(buffer) : new int[0];
-            int packetCount = buffer.readVarInt();
+            int packetCount = readBoundedVarInt(buffer, MAX_BATCH_PACKET_COUNT, "batch packet count");
             List<byte[]> batchEntryBytesList = new ArrayList<>(packetCount);
+            int totalPacketBytes = 0;
             for (int index = 0; index < packetCount; index++) {
-                int packetLength = buffer.readVarInt();
+                int packetLength = readBoundedReadableLength(buffer, MAX_BATCH_ENTRY_BYTES, "batch packet bytes");
+                totalPacketBytes = checkedTotalBytes(totalPacketBytes, packetLength);
                 byte[] packetBytes = new byte[packetLength];
                 buffer.readBytes(packetBytes);
                 batchEntryBytesList.add(packetBytes);
@@ -98,11 +104,36 @@ public final class KineticBatchLayer implements TransportLayer {
 
     // packetIdTable for use
     private static int[] readPacketIdTable(FriendlyByteBuf buffer) {
-        int[] packetIdTable = new int[buffer.readVarInt()];
+        int[] packetIdTable = new int[readBoundedVarInt(buffer, MAX_PACKET_ID_TABLE_ENTRIES, "packet id table size")];
         for (int index = 0; index < packetIdTable.length; index++) {
             packetIdTable[index] = buffer.readVarInt();
         }
         return packetIdTable;
+    }
+
+
+    private static int readBoundedVarInt(FriendlyByteBuf buffer, int maxValue, String fieldName) {
+        int value = buffer.readVarInt();
+        if (value < 0 || value > maxValue) {
+            throw new IllegalStateException(fieldName + " out of range: " + value);
+        }
+        return value;
+    }
+
+    private static int readBoundedReadableLength(FriendlyByteBuf buffer, int maxValue, String fieldName) {
+        int value = readBoundedVarInt(buffer, maxValue, fieldName);
+        if (value > buffer.readableBytes()) {
+            throw new IllegalStateException(fieldName + " exceeds remaining bytes: " + value + " > " + buffer.readableBytes());
+        }
+        return value;
+    }
+
+    private static int checkedTotalBytes(int currentBytes, int addedBytes) {
+        int totalBytes = currentBytes + addedBytes;
+        if (totalBytes < currentBytes || totalBytes > MAX_BATCH_TOTAL_BYTES) {
+            throw new IllegalStateException("batch total bytes out of range: " + totalBytes);
+        }
+        return totalBytes;
     }
 
     private static List<byte[]> copyPacketBytesList(List<byte[]> packetBytesList) {

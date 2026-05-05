@@ -513,6 +513,7 @@ public final class ChannelTransportHooks {
                 || packetDecoderFlowAccess == null
                 || !in.isReadable()
                 || !ChannelTransportRuntimeGuard.isTransportAvailable()
+                || shouldRejectInboundTransportCarrier(packetDecoderFlowAccess)
                 || shouldUseTransportForCurrentProtocol(readProtocolName(context))) {
             return false;
         }
@@ -525,15 +526,10 @@ public final class ChannelTransportHooks {
             return false;
         }
 
-        try {
-            decodeInboundPacketsIntoOutput(context, unwrappedFrame, out, packetDecoderFlowAccess);
-            in.readerIndex(in.writerIndex());
-            recordInboundTransportStats(context, readProtocolName(context), unwrappedFrame);
-            return true;
-        } catch (Throwable throwable) {
-            ChannelTransportRuntimeGuard.disableTransport("inbound-unwrap", throwable);
-            throw throwable;
-        }
+        decodeInboundPacketsIntoOutput(context, unwrappedFrame, out, packetDecoderFlowAccess);
+        in.readerIndex(in.writerIndex());
+        recordInboundTransportStats(context, readProtocolName(context), unwrappedFrame);
+        return true;
     }
 
     public static <T extends PacketListener> boolean expandDecodedTransportCarrierPackets(
@@ -547,6 +543,7 @@ public final class ChannelTransportHooks {
                 || packetDecoderFlowAccess == null
                 || out.size() <= outputSizeBeforeDecode
                 || !ChannelTransportRuntimeGuard.isTransportAvailable()
+                || shouldRejectInboundTransportCarrier(packetDecoderFlowAccess)
                 || shouldUseTransportForCurrentProtocol(readProtocolName(context))) {
             return false;
         }
@@ -1256,6 +1253,12 @@ public final class ChannelTransportHooks {
                 Config.RuntimeProperty.Transport.SERVERBOUND_TRANSPARENT_ENABLED,
                 Boolean.toString(Config.RuntimeProperty.Transport.DEFAULT_SERVERBOUND_TRANSPARENT_ENABLED)
         ));
+    }
+
+    //  transport carrier barrier，
+    private static boolean shouldRejectInboundTransportCarrier(PacketDecoderFlowAccess packetDecoderFlowAccess) {
+        return packetDecoderFlowAccess != null
+                && shouldBypassServerboundTransparentTransport(packetDecoderFlowAccess.bandwidthoptimizer$getPacketFlow());
     }
 
     @Incomplete("Only PLAY packet now")
