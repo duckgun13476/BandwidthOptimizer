@@ -16,7 +16,6 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
@@ -24,7 +23,6 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import org.slf4j.Logger;
 
 @Mod(Bandwidthoptimizer.MODID)
-@EventBusSubscriber(modid = Bandwidthoptimizer.MODID)
 public class Bandwidthoptimizer {
 
     public static final String MODID = "bandwidthoptimizer";
@@ -53,7 +51,7 @@ public class Bandwidthoptimizer {
     }
 
     @SubscribeEvent
-    public static void registerCommands(RegisterCommandsEvent event) {
+    public void registerCommands(RegisterCommandsEvent event) {
         BandwidthOptimizerCommand.register(event.getDispatcher());
     }
 

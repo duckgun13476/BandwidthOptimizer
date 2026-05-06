@@ -62,8 +62,8 @@ sourceSets {
         resources.srcDir rootProject.file('src/generated/resources')
     }
     test {
-        java.srcDir rootProject.file('src/test/java')
-        resources.srcDir rootProject.file('src/test/resources')
+        java.setSrcDirs([])
+        resources.setSrcDirs([])
     }
 }
 
@@ -95,6 +95,7 @@ def neoforgeExcludedRootJava = [
         'com/PinkCats/bandwidthoptimizer/mixin/minecraft/ClientboundCustomPayloadPacketAccessor.java',
         'com/PinkCats/bandwidthoptimizer/mixin/minecraft/ServerboundCustomPayloadPacketAccessor.java',
         'com/PinkCats/bandwidthoptimizer/mixin/minecraft/ClientPacketListenerChunkHandleMixin.java',
+        'com/PinkCats/bandwidthoptimizer/mixin/minecraft/ConnectionSendBoundaryMixin.java',
         'com/PinkCats/bandwidthoptimizer/mixin/minecraft/PacketOutPipeMixin.java',
         'com/PinkCats/bandwidthoptimizer/mixin/minecraft/PacketInPipeMixin.java'
 ]
@@ -133,6 +134,10 @@ configurations {
     bundledLibs
 }
 
+configurations.configureEach {
+    resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+}
+
 dependencies {
     String zstdJniVersion = '1.5.7-7'
 
@@ -144,6 +149,7 @@ dependencies {
         transitive = false
     }
     implementation "com.github.luben:zstd-jni:${zstdJniVersion}"
+    additionalRuntimeClasspath "com.github.luben:zstd-jni:${zstdJniVersion}"
     bundledLibs "com.github.luben:zstd-jni:${zstdJniVersion}"
 }
 
