@@ -9,9 +9,6 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.common.EventBusSubscriber;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -22,7 +19,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
-@EventBusSubscriber(modid = Bandwidthoptimizer.MODID)
 public final class ChannelTransportCompressionCaptureManager {
 
     private static final AtomicReference<ActiveCaptureSession> ACTIVE_CAPTURE_SESSION = new AtomicReference<>();
@@ -65,9 +61,8 @@ public final class ChannelTransportCompressionCaptureManager {
     }
 
 
-    @SubscribeEvent
     public static void onServerTick(ServerTickEvent.Post event) {
-                MinecraftServer server = event.getServer();
+        MinecraftServer server = event.getServer();
         ActiveCaptureSession activeCaptureSession = ACTIVE_CAPTURE_SESSION.get();
         if (server == null || activeCaptureSession == null || activeCaptureSession.server() != server) {
             return;

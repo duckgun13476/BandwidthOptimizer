@@ -9,6 +9,8 @@ import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
 import com.PinkCats.bandwidthoptimizer.chunk.lifecycle.ChunkLifecycleCoordinator;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.command.BandwidthOptimizerCommand;
+import com.PinkCats.bandwidthoptimizer.report.ChannelTransportCompressionCaptureManager;
+import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCaptureManager;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsNetworkChannel;
 import com.mojang.logging.LogUtils;
 import com.pinkcats.torque.layer.TorqueLayer;
@@ -20,6 +22,7 @@ import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.slf4j.Logger;
 
 @Mod(Bandwidthoptimizer.MODID)
@@ -54,6 +57,12 @@ public class Bandwidthoptimizer {
     @SubscribeEvent
     public void registerCommands(RegisterCommandsEvent event) {
         BandwidthOptimizerCommand.register(event.getDispatcher());
+    }
+
+    @SubscribeEvent
+    public void onServerTick(ServerTickEvent.Post event) {
+        ChannelTransportCompressionCaptureManager.onServerTick(event);
+        ChannelTransportPacketRankCaptureManager.onServerTick(event);
     }
 
     public static void prepareForClientRespawnBoundary(net.minecraft.server.level.ServerPlayer serverPlayer) {
