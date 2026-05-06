@@ -96,13 +96,24 @@ repositories {
     }
 }
 
+ext.bo_zstd_jni_version = '1.5.7-7'
+
 configurations {
-    bundledLibs
+    embeddedRuntimeLibs {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
+}
+
+def embeddedRuntimeLibsOutputDir = layout.buildDirectory.dir('generated/boEmbeddedRuntimeLibs')
+
+tasks.register('prepareEmbeddedRuntimeLibs', Copy) {
+    from(configurations.embeddedRuntimeLibs)
+    into(embeddedRuntimeLibsOutputDir.map { it.dir('META-INF/bandwidthoptimizer/libs') })
 }
 
 dependencies {
-    String zstdJniVersion = '1.5.7-7'
-
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
 
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
@@ -113,9 +124,10 @@ dependencies {
         changing = true
         transitive = false
     }
-    implementation "com.github.luben:zstd-jni:${zstdJniVersion}"
-    minecraftLibrary "com.github.luben:zstd-jni:${zstdJniVersion}"
-    bundledLibs "com.github.luben:zstd-jni:${zstdJniVersion}"
+    compileOnly "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
+    testRuntimeOnly "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
+    minecraftLibrary "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
+    embeddedRuntimeLibs "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
 }
 
 tasks.named('processResources', ProcessResources).configure {
@@ -134,6 +146,7 @@ tasks.named('processResources', ProcessResources).configure {
 }
 
 tasks.named('jar', Jar).configure {
+    dependsOn tasks.named('prepareEmbeddedRuntimeLibs')
     archiveFileName = "${package_name}-${mod_version}-forge-${minecraft_version}.jar"
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
@@ -147,13 +160,7 @@ tasks.named('jar', Jar).configure {
                     "MixinConfigs"            : "${mod_id}.mixins.json"])
     }
 
-    from {
-        configurations.bundledLibs.collect { dependency ->
-            zipTree(dependency)
-        }
-    } {
-        exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
-    }
+    from(embeddedRuntimeLibsOutputDir)
 
     finalizedBy 'reobfJar'
 }
