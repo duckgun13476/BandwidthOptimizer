@@ -194,8 +194,25 @@ public final class ExperientAutoConnectController {
                 maxAttempts,
                 autoConnectAddress
         );
-        ConnectScreen.startConnecting(currentScreen, minecraft, serverAddress, serverData, false);
+        startConnecting(currentScreen, minecraft, serverAddress, serverData);
         return ConnectOnceResult.STARTED;
+    }
+
+    private static void startConnecting(Screen currentScreen, Minecraft minecraft, ServerAddress serverAddress, ServerData serverData) {
+        try {
+            ConnectScreen.class
+                    .getMethod("startConnecting", Screen.class, Minecraft.class, ServerAddress.class, ServerData.class, boolean.class)
+                    .invoke(null, currentScreen, minecraft, serverAddress, serverData, false);
+            return;
+        } catch (ReflectiveOperationException ignored) {
+        }
+        try {
+            ConnectScreen.class
+                    .getMethod("startConnecting", Screen.class, Minecraft.class, ServerAddress.class, ServerData.class)
+                    .invoke(null, currentScreen, minecraft, serverAddress, serverData);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Unable to start Minecraft connection", exception);
+        }
     }
 
     private static boolean isServerAcceptingTcpConnections(ServerAddress serverAddress) {

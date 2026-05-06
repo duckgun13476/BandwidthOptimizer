@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.command;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.client.hud.BandwidthOptimizerHudOverlay;
+import com.PinkCats.bandwidthoptimizer.compat.minecraft.CommandSourceCompat;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
 import net.minecraft.commands.CommandSourceStack;
@@ -45,7 +46,7 @@ public final class ClientHudCommand {
         lastToggleAtMillis = now;
         boolean enabled = !BandwidthOptimizerHudOverlay.isEnabled();
         BandwidthOptimizerHudOverlay.setEnabled(enabled);
-        source.sendSuccess(() -> Component.literal(
+        CommandSourceCompat.sendSuccess(source, Component.literal(
                 "Bandwidth optimizer HUD " + (enabled ? "enabled" : "disabled") + " for this client."
         ), false);
         return Command.SINGLE_SUCCESS;

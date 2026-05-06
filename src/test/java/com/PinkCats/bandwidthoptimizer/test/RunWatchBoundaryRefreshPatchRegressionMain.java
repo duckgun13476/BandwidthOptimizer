@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 public final class RunWatchBoundaryRefreshPatchRegressionMain {
 
@@ -32,6 +33,11 @@ public final class RunWatchBoundaryRefreshPatchRegressionMain {
             "runtime_nack_received",
             "runtime_watch_boundary_refresh_patch_fallback_unavailable"
     );
+    private static final Set<String> SERVERBOUND_DISCONNECT_TAIL_PACKET_CLASSES = Set.of(
+            "net.minecraft.network.protocol.game.ServerboundAcceptTeleportationPacket",
+            "net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$Pos",
+            "net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$PosRot"
+    );
 
     private RunWatchBoundaryRefreshPatchRegressionMain() {}
 
@@ -39,8 +45,14 @@ public final class RunWatchBoundaryRefreshPatchRegressionMain {
         try {
             RegressionMarker marker = readRegressionMarker(DEFAULT_MARKER);
             List<ComparisonReport> compareReports = List.of(
-                    comparePair("server/send -> client/receive", DEFAULT_SERVER_SEND, DEFAULT_CLIENT_RECEIVE, true),
-                    comparePair("client/send -> server/receive", DEFAULT_CLIENT_SEND, DEFAULT_SERVER_RECEIVE, false)
+                    comparePair("server/send -> client/receive", DEFAULT_SERVER_SEND, DEFAULT_CLIENT_RECEIVE, true, null),
+                    comparePair(
+                            "client/send -> server/receive",
+                            DEFAULT_CLIENT_SEND,
+                            DEFAULT_SERVER_RECEIVE,
+                            true,
+                            SERVERBOUND_DISCONNECT_TAIL_PACKET_CLASSES
+                    )
             );
             List<String> failures = new ArrayList<>(collectComparisonFailures(compareReports));
             failures.addAll(collectLogFailures(marker, DEFAULT_SERVER_LOG, DEFAULT_CLIENT_LOG));
@@ -87,7 +99,13 @@ public final class RunWatchBoundaryRefreshPatchRegressionMain {
         );
     }
 
-    private static ComparisonReport comparePair(String label, Path leftPath, Path rightPath, boolean allowLeftTail) throws IOException {
+    private static ComparisonReport comparePair(
+            String label,
+            Path leftPath,
+            Path rightPath,
+            boolean allowLeftTail,
+            Set<String> allowedLeftTailPacketClasses
+    ) throws IOException {
         ensureFileExists(leftPath);
         ensureFileExists(rightPath);
 
@@ -106,7 +124,10 @@ public final class RunWatchBoundaryRefreshPatchRegressionMain {
                 }
 
                 comparedLines++;
-                if (leftLine != null && rightLine == null && allowLeftTail) {
+                if (leftLine != null
+                        && rightLine == null
+                        && allowLeftTail
+                        && isAllowedLeftTail(leftReader, leftLine, leftPath, comparedLines, allowedLeftTailPacketClasses)) {
                     break;
                 }
                 if (leftLine == null || rightLine == null) {
@@ -131,6 +152,29 @@ public final class RunWatchBoundaryRefreshPatchRegressionMain {
         }
 
         return new ComparisonReport(label, comparedLines, mismatches, stoppedEarly);
+    }
+
+    private static boolean isAllowedLeftTail(
+            BufferedReader leftReader,
+            String firstTailLine,
+            Path leftPath,
+            long firstTailLineNumber,
+            Set<String> allowedPacketClasses
+    ) throws IOException {
+        if (allowedPacketClasses == null) {
+            return true;
+        }
+        long lineNumber = firstTailLineNumber;
+        String line = firstTailLine;
+        while (line != null) {
+            ComparableFrame frame = parseComparableFrame(line, leftPath, lineNumber);
+            if (!allowedPacketClasses.contains(frame.packetClass())) {
+                return false;
+            }
+            line = leftReader.readLine();
+            lineNumber++;
+        }
+        return true;
     }
 
     private static ComparableFrame parseComparableFrame(String jsonLine, Path sourcePath, long lineNumber) {

@@ -7,14 +7,18 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordina
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.SignBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.lighting.LevelLightEngine;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
@@ -22,6 +26,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.registries.ForgeRegistries;
 
+import java.util.BitSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -233,7 +238,7 @@ public final class ExperientWatchBoundaryRefreshPatchController {
             return state.tickWait();
         }
 
-        MutationResult mutationResult = applySingleBlockMutation(serverPlayer.serverLevel(), state.layout().targetBlockPos());
+        MutationResult mutationResult = applySingleBlockMutation(com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer), state.layout().targetBlockPos());
         Bandwidthoptimizer.LOGGER.info(
                 "[ExperientWatchBoundary] Watch-boundary retain reached for player={}, chunk={}, mutatedBlock=({}, {}, {}), from={}, to={}, state={}",
                 serverPlayer.getGameProfile().getName(),
@@ -381,6 +386,7 @@ public final class ExperientWatchBoundaryRefreshPatchController {
             return state.tickWait();
         }
 
+        emitBlockEntityCoverageProbe(serverPlayer, state.layout().targetBlockPos().above());
         RunAllProbeFiles.markWatchBoundaryRefreshPatchCompleted(
                 serverPlayer,
                 state.layout().coordinate(),
@@ -450,7 +456,7 @@ public final class ExperientWatchBoundaryRefreshPatchController {
             return false;
         }
 
-        LevelChunk levelChunk = serverPlayer.serverLevel().getChunk(coordinate.chunkX(), coordinate.chunkZ());
+        LevelChunk levelChunk = com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getChunk(coordinate.chunkX(), coordinate.chunkZ());
         if (levelChunk == null) {
             Bandwidthoptimizer.LOGGER.warn(
                     "[ExperientWatchBoundary] Skip chunk sender flush because level chunk is missing for player={}, chunk={}",
@@ -460,8 +466,10 @@ public final class ExperientWatchBoundaryRefreshPatchController {
             return false;
         }
 
-        ClientboundLevelChunkWithLightPacket packet =
-                new ClientboundLevelChunkWithLightPacket(levelChunk, serverPlayer.serverLevel().getLightEngine(), null, null);
+        ClientboundLevelChunkWithLightPacket packet = createLevelChunkWithLightPacket(
+                levelChunk,
+                com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getLightEngine()
+        );
         serverPlayer.connection.send(packet);
         Bandwidthoptimizer.LOGGER.info(
                 "[ExperientWatchBoundary] Requested immediate chunk resend for player={}, chunk={}, packet={}",
@@ -472,13 +480,32 @@ public final class ExperientWatchBoundaryRefreshPatchController {
         return true;
     }
 
+    private static ClientboundLevelChunkWithLightPacket createLevelChunkWithLightPacket(
+            LevelChunk levelChunk,
+            LevelLightEngine lightEngine
+    ) {
+        try {
+            return ClientboundLevelChunkWithLightPacket.class
+                    .getConstructor(LevelChunk.class, LevelLightEngine.class, BitSet.class, BitSet.class)
+                    .newInstance(levelChunk, lightEngine, null, null);
+        } catch (ReflectiveOperationException ignored) {
+        }
+        try {
+            return ClientboundLevelChunkWithLightPacket.class
+                    .getConstructor(LevelChunk.class, LevelLightEngine.class, BitSet.class, BitSet.class, boolean.class)
+                    .newInstance(levelChunk, lightEngine, null, null, false);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Unable to create level chunk with light packet", exception);
+        }
+    }
+
     private static ScenarioLayout buildScenarioLayout(ServerPlayer serverPlayer) {
         ChunkPos chunkPos = serverPlayer.chunkPosition();
         double homeX = (chunkPos.x << 4) + 8.5D;
-        double homeY = resolveSafePathY(serverPlayer.serverLevel());
+        double homeY = resolveSafePathY(com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer));
         double homeZ = (chunkPos.z << 4) + 8.5D;
         int awayOffsetChunks = resolveAwayOffsetChunks(serverPlayer);
-        BlockPos targetBlockPos = resolveTargetMutationBlockPos(serverPlayer.serverLevel(), chunkPos);
+        BlockPos targetBlockPos = resolveTargetMutationBlockPos(com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer), chunkPos);
         return new ScenarioLayout(
                 homeX,
                 homeY,
@@ -533,7 +560,7 @@ public final class ExperientWatchBoundaryRefreshPatchController {
                 currentLayout.awayY(),
                 homeZ,
                 bestSelection.coordinate(),
-                resolveTargetMutationBlockPos(serverPlayer.serverLevel(), selectedChunkPos)
+                resolveTargetMutationBlockPos(com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer), selectedChunkPos)
         );
     }
 
@@ -574,6 +601,44 @@ public final class ExperientWatchBoundaryRefreshPatchController {
                 describeBlockState(originalBlockState),
                 describeBlockState(mutatedBlockState)
         );
+    }
+
+    private static void emitBlockEntityCoverageProbe(ServerPlayer serverPlayer, BlockPos probePos) {
+        ServerLevel serverLevel = com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer);
+        serverLevel.setBlockAndUpdate(probePos, Blocks.OAK_SIGN.defaultBlockState());
+        BlockEntity blockEntity = serverLevel.getBlockEntity(probePos);
+        if (!(blockEntity instanceof SignBlockEntity signBlockEntity)) {
+            return;
+        }
+        if (!applyModernSignProbeText(signBlockEntity)) {
+            applyLegacySignProbeText(signBlockEntity);
+        }
+        signBlockEntity.setChanged();
+        Packet<?> updatePacket = signBlockEntity.getUpdatePacket();
+        if (updatePacket != null) {
+            serverPlayer.connection.send(updatePacket);
+        }
+    }
+
+    private static boolean applyModernSignProbeText(SignBlockEntity signBlockEntity) {
+        try {
+            Object frontText = signBlockEntity.getClass().getMethod("getFrontText").invoke(signBlockEntity);
+            frontText = frontText.getClass()
+                    .getMethod("setMessage", int.class, Component.class)
+                    .invoke(frontText, 0, Component.literal("watch boundary coverage"));
+            signBlockEntity.getClass().getMethod("setText", frontText.getClass(), boolean.class).invoke(signBlockEntity, frontText, true);
+            return true;
+        } catch (ReflectiveOperationException ignored) {
+            return false;
+        }
+    }
+
+    private static void applyLegacySignProbeText(SignBlockEntity signBlockEntity) {
+        try {
+            signBlockEntity.getClass().getMethod("setMessage", int.class, Component.class)
+                    .invoke(signBlockEntity, 0, Component.literal("watch boundary coverage"));
+        } catch (ReflectiveOperationException ignored) {
+        }
     }
 
 

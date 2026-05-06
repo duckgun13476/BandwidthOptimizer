@@ -18,7 +18,6 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.SignBlockEntity;
-import net.minecraft.world.level.block.entity.SignText;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
@@ -29,6 +28,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -457,7 +457,7 @@ public final class ExperientChunkHotspotPathController {
             return null;
         }
 
-        ServerLevel currentLevel = serverPlayer.serverLevel();
+        ServerLevel currentLevel = com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer);
         ServerLevel targetLevel = resolveDimensionHopAlternateLevel(serverPlayer);
         if (targetLevel == null) {
             Bandwidthoptimizer.LOGGER.warn(
@@ -537,13 +537,13 @@ public final class ExperientChunkHotspotPathController {
     }
 
     private static PathState applyLightPulse(ServerPlayer serverPlayer, PathState state) {
-        BlockPos probePos = BlockPos.containing(
+        BlockPos probePos = blockPosContaining(
                 state.originX(),
                 state.originY() + LIGHT_PROBE_Y_OFFSET,
                 state.originZ()
         );
         boolean placeLightBlock = LIGHT_PULSE_SEQUENCE[state.nextLightPulseIndex()];
-        serverPlayer.serverLevel().setBlockAndUpdate(
+        com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).setBlockAndUpdate(
                 probePos,
                 placeLightBlock ? Blocks.SEA_LANTERN.defaultBlockState() : Blocks.AIR.defaultBlockState()
         );
@@ -632,7 +632,7 @@ public final class ExperientChunkHotspotPathController {
     }
 
     private static void emitBeforeAckLightBurst(ServerPlayer serverPlayer, double baseX, double baseY, double baseZ) {
-        BlockPos probeCenter = BlockPos.containing(baseX, baseY + BEFORE_ACK_LIGHT_PROBE_Y_OFFSET, baseZ);
+        BlockPos probeCenter = blockPosContaining(baseX, baseY + BEFORE_ACK_LIGHT_PROBE_Y_OFFSET, baseZ);
         prepareLightProbeChamber(serverPlayer, probeCenter);
         setLightProbeState(serverPlayer, probeCenter, true);
         sendLightUpdateProbePacket(serverPlayer, probeCenter);
@@ -643,7 +643,7 @@ public final class ExperientChunkHotspotPathController {
     private static void emitBeforeAckSectionBurst(ServerPlayer serverPlayer, double baseX, double baseY, double baseZ) {
         BlockPos anchorPos = resolveSectionProbeAnchor(baseX, baseY, baseZ);
         BlockState firstPatternState = selectFirstBeforeAckSectionProbeState(
-                serverPlayer.serverLevel().getBlockState(anchorPos)
+                com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getBlockState(anchorPos)
         );
         BlockState secondPatternState = selectSecondBeforeAckSectionProbeState(firstPatternState);
         applyAndSendSectionPattern(serverPlayer, anchorPos, firstPatternState);
@@ -672,7 +672,7 @@ public final class ExperientChunkHotspotPathController {
                     boolean boundary = Math.abs(offsetX) == LIGHT_CHAMBER_RADIUS
                             || Math.abs(offsetY) == LIGHT_CHAMBER_RADIUS
                             || Math.abs(offsetZ) == LIGHT_CHAMBER_RADIUS;
-                    serverPlayer.serverLevel().setBlockAndUpdate(
+                    com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).setBlockAndUpdate(
                             currentPos,
                             boundary ? Blocks.DEEPSLATE.defaultBlockState() : Blocks.AIR.defaultBlockState()
                     );
@@ -682,20 +682,20 @@ public final class ExperientChunkHotspotPathController {
     }
 
     private static void setLightProbeState(ServerPlayer serverPlayer, BlockPos probeCenter, boolean enabled) {
-        serverPlayer.serverLevel().setBlockAndUpdate(
+        com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).setBlockAndUpdate(
                 probeCenter,
                 enabled ? Blocks.SEA_LANTERN.defaultBlockState() : Blocks.AIR.defaultBlockState()
         );
     }
 
     private static void sendLightUpdateProbePacket(ServerPlayer serverPlayer, BlockPos probeCenter) {
-        LevelLightEngine lightEngine = serverPlayer.serverLevel().getChunkSource().getLightEngine();
+        LevelLightEngine lightEngine = com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getChunkSource().getLightEngine();
         lightEngine.checkBlock(probeCenter);
         int remainingPasses = MAX_LIGHT_ENGINE_UPDATE_PASSES;
         while (lightEngine.hasLightWork() && remainingPasses-- > 0) {
-            lightEngine.runLightUpdates();
+            runLightUpdates(lightEngine);
         }
-        serverPlayer.connection.send(new ClientboundLightUpdatePacket(new ChunkPos(probeCenter), lightEngine, null, null));
+        serverPlayer.connection.send(createLightUpdatePacket(new ChunkPos(probeCenter), lightEngine));
     }
 
 
@@ -711,7 +711,7 @@ public final class ExperientChunkHotspotPathController {
         for (int offsetX = 0; offsetX < SECTION_PROBE_WIDTH; offsetX++) {
             for (int offsetY = 0; offsetY < SECTION_PROBE_HEIGHT; offsetY++) {
                 for (int offsetZ = 0; offsetZ < SECTION_PROBE_DEPTH; offsetZ++) {
-                    serverPlayer.serverLevel().setBlockAndUpdate(
+                    com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).setBlockAndUpdate(
                             anchorPos.offset(offsetX, offsetY, offsetZ),
                             blockState
                     );
@@ -726,17 +726,15 @@ public final class ExperientChunkHotspotPathController {
             for (int offsetY = 0; offsetY < SECTION_PROBE_HEIGHT; offsetY++) {
                 for (int offsetZ = 0; offsetZ < SECTION_PROBE_DEPTH; offsetZ++) {
                     BlockPos currentPos = anchorPos.offset(offsetX, offsetY, offsetZ);
-                    serverPlayer.serverLevel().setBlockAndUpdate(currentPos, blockState);
+                    com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).setBlockAndUpdate(currentPos, blockState);
                     sectionRelativePositions.add(SectionPos.sectionRelativePos(currentPos));
                 }
             }
         }
 
-        LevelChunk levelChunk = (LevelChunk) serverPlayer.serverLevel().getChunk(anchorPos);
+        LevelChunk levelChunk = (LevelChunk) com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getChunk(anchorPos);
         LevelChunkSection levelChunkSection = levelChunk.getSection(levelChunk.getSectionIndex(anchorPos.getY()));
-        serverPlayer.connection.send(
-                new ClientboundSectionBlocksUpdatePacket(SectionPos.of(anchorPos), sectionRelativePositions, levelChunkSection)
-        );
+        serverPlayer.connection.send(createSectionBlocksUpdatePacket(SectionPos.of(anchorPos), sectionRelativePositions, levelChunkSection));
     }
 
     private static BlockState selectFirstBeforeAckSectionProbeState(BlockState currentBlockState) {
@@ -772,7 +770,7 @@ public final class ExperientChunkHotspotPathController {
 
 
     private static BlockPos resolveBlockEntityProbePos(double baseX, double baseY, double baseZ) {
-        return BlockPos.containing(
+        return blockPosContaining(
                 baseX + BLOCK_ENTITY_PROBE_X_OFFSET,
                 baseY + BLOCK_ENTITY_PROBE_Y_OFFSET,
                 baseZ + BLOCK_ENTITY_PROBE_Z_OFFSET
@@ -780,12 +778,12 @@ public final class ExperientChunkHotspotPathController {
     }
 
     private static SignBlockEntity ensureBlockEntityProbeInstalled(ServerPlayer serverPlayer, BlockPos probePos) {
-        BlockState blockState = serverPlayer.serverLevel().getBlockState(probePos);
+        BlockState blockState = com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getBlockState(probePos);
         if (!blockState.is(Blocks.OAK_SIGN)) {
-            serverPlayer.serverLevel().setBlockAndUpdate(probePos, Blocks.OAK_SIGN.defaultBlockState());
+            com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).setBlockAndUpdate(probePos, Blocks.OAK_SIGN.defaultBlockState());
         }
 
-        BlockEntity blockEntity = serverPlayer.serverLevel().getBlockEntity(probePos);
+        BlockEntity blockEntity = com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getBlockEntity(probePos);
         if (blockEntity instanceof SignBlockEntity signBlockEntity) {
             return signBlockEntity;
         }
@@ -794,20 +792,60 @@ public final class ExperientChunkHotspotPathController {
 
 
     private static void applyBlockEntityProbeText(SignBlockEntity signBlockEntity, String variantSuffix) {
-        SignText frontText = signBlockEntity.getFrontText()
-                .setMessage(0, Component.literal(BLOCK_ENTITY_FRONT_LINE_ONE_PREFIX + variantSuffix))
-                .setMessage(1, Component.literal(BLOCK_ENTITY_FRONT_LINE_TWO))
-                .setMessage(2, Component.literal(BLOCK_ENTITY_FRONT_LINE_THREE))
-                .setMessage(3, Component.literal(BLOCK_ENTITY_FRONT_LINE_FOUR))
-                .setHasGlowingText(true);
-        SignText backText = signBlockEntity.getBackText()
-                .setMessage(0, Component.literal(BLOCK_ENTITY_BACK_LINE_ONE))
-                .setMessage(1, Component.literal(BLOCK_ENTITY_BACK_LINE_TWO))
-                .setMessage(2, Component.literal(BLOCK_ENTITY_BACK_LINE_THREE))
-                .setMessage(3, Component.literal(BLOCK_ENTITY_BACK_LINE_FOUR))
-                .setHasGlowingText(true);
-        signBlockEntity.setText(frontText, true);
-        signBlockEntity.setText(backText, false);
+        if (!applyModernBlockEntityProbeText(signBlockEntity, variantSuffix)) {
+            applyLegacyBlockEntityProbeText(signBlockEntity, variantSuffix);
+        }
+        signBlockEntity.setChanged();
+    }
+
+    private static boolean applyModernBlockEntityProbeText(SignBlockEntity signBlockEntity, String variantSuffix) {
+        if (signBlockEntity == null) {
+            return false;
+        }
+        try {
+            Object frontText = signBlockEntity.getClass().getMethod("getFrontText").invoke(signBlockEntity);
+            Object backText = signBlockEntity.getClass().getMethod("getBackText").invoke(signBlockEntity);
+            frontText = setSignTextLine(frontText, 0, Component.literal(BLOCK_ENTITY_FRONT_LINE_ONE_PREFIX + variantSuffix));
+            frontText = setSignTextLine(frontText, 1, Component.literal(BLOCK_ENTITY_FRONT_LINE_TWO));
+            frontText = setSignTextLine(frontText, 2, Component.literal(BLOCK_ENTITY_FRONT_LINE_THREE));
+            frontText = setSignTextLine(frontText, 3, Component.literal(BLOCK_ENTITY_FRONT_LINE_FOUR));
+            frontText = setSignTextGlowing(frontText);
+            backText = setSignTextLine(backText, 0, Component.literal(BLOCK_ENTITY_BACK_LINE_ONE));
+            backText = setSignTextLine(backText, 1, Component.literal(BLOCK_ENTITY_BACK_LINE_TWO));
+            backText = setSignTextLine(backText, 2, Component.literal(BLOCK_ENTITY_BACK_LINE_THREE));
+            backText = setSignTextLine(backText, 3, Component.literal(BLOCK_ENTITY_BACK_LINE_FOUR));
+            backText = setSignTextGlowing(backText);
+            signBlockEntity.getClass().getMethod("setText", frontText.getClass(), boolean.class).invoke(signBlockEntity, frontText, true);
+            signBlockEntity.getClass().getMethod("setText", backText.getClass(), boolean.class).invoke(signBlockEntity, backText, false);
+            return true;
+        } catch (ReflectiveOperationException ignored) {
+            return false;
+        }
+    }
+
+    private static Object setSignTextLine(Object signText, int lineIndex, Component component) throws ReflectiveOperationException {
+        return signText.getClass().getMethod("setMessage", int.class, Component.class).invoke(signText, lineIndex, component);
+    }
+
+    private static Object setSignTextGlowing(Object signText) throws ReflectiveOperationException {
+        return signText.getClass().getMethod("setHasGlowingText", boolean.class).invoke(signText, true);
+    }
+
+    private static void applyLegacyBlockEntityProbeText(SignBlockEntity signBlockEntity, String variantSuffix) {
+        if (signBlockEntity == null) {
+            return;
+        }
+        try {
+            signBlockEntity.getClass().getMethod("setMessage", int.class, Component.class)
+                    .invoke(signBlockEntity, 0, Component.literal(BLOCK_ENTITY_FRONT_LINE_ONE_PREFIX + variantSuffix));
+            signBlockEntity.getClass().getMethod("setMessage", int.class, Component.class)
+                    .invoke(signBlockEntity, 1, Component.literal(BLOCK_ENTITY_FRONT_LINE_TWO));
+            signBlockEntity.getClass().getMethod("setMessage", int.class, Component.class)
+                    .invoke(signBlockEntity, 2, Component.literal(BLOCK_ENTITY_FRONT_LINE_THREE));
+            signBlockEntity.getClass().getMethod("setMessage", int.class, Component.class)
+                    .invoke(signBlockEntity, 3, Component.literal(BLOCK_ENTITY_FRONT_LINE_FOUR));
+        } catch (ReflectiveOperationException ignored) {
+        }
     }
 
     private static void broadcastBlockEntityProbeUpdate(
@@ -820,8 +858,65 @@ public final class ExperientChunkHotspotPathController {
         }
     }
 
+    private static void runLightUpdates(LevelLightEngine lightEngine) {
+        if (lightEngine == null) {
+            return;
+        }
+        try {
+            lightEngine.getClass().getMethod("runLightUpdates").invoke(lightEngine);
+            return;
+        } catch (ReflectiveOperationException ignored) {
+        }
+        try {
+            lightEngine.getClass()
+                    .getMethod("runUpdates", int.class, boolean.class, boolean.class)
+                    .invoke(lightEngine, MAX_LIGHT_ENGINE_UPDATE_PASSES, true, true);
+        } catch (ReflectiveOperationException ignored) {
+        }
+    }
+
+    private static Packet<?> createLightUpdatePacket(ChunkPos chunkPos, LevelLightEngine lightEngine) {
+        try {
+            return ClientboundLightUpdatePacket.class
+                    .getConstructor(ChunkPos.class, LevelLightEngine.class, BitSet.class, BitSet.class)
+                    .newInstance(chunkPos, lightEngine, null, null);
+        } catch (ReflectiveOperationException ignored) {
+        }
+        try {
+            return ClientboundLightUpdatePacket.class
+                    .getConstructor(ChunkPos.class, LevelLightEngine.class, BitSet.class, BitSet.class, boolean.class)
+                    .newInstance(chunkPos, lightEngine, null, null, false);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Unable to create light update packet", exception);
+        }
+    }
+
+    private static Packet<?> createSectionBlocksUpdatePacket(
+            SectionPos sectionPos,
+            ShortSet sectionRelativePositions,
+            LevelChunkSection levelChunkSection
+    ) {
+        try {
+            return ClientboundSectionBlocksUpdatePacket.class
+                    .getConstructor(SectionPos.class, ShortSet.class, LevelChunkSection.class)
+                    .newInstance(sectionPos, sectionRelativePositions, levelChunkSection);
+        } catch (ReflectiveOperationException ignored) {
+        }
+        try {
+            return ClientboundSectionBlocksUpdatePacket.class
+                    .getConstructor(SectionPos.class, ShortSet.class, LevelChunkSection.class, boolean.class)
+                    .newInstance(sectionPos, sectionRelativePositions, levelChunkSection, false);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Unable to create section blocks update packet", exception);
+        }
+    }
+
     private static int floorToBlock(double value) {
         return (int) Math.floor(value);
+    }
+
+    private static BlockPos blockPosContaining(double x, double y, double z) {
+        return new BlockPos(floorToBlock(x), floorToBlock(y), floorToBlock(z));
     }
 
 
@@ -879,7 +974,7 @@ public final class ExperientChunkHotspotPathController {
             return;
         }
 
-        ServerLevel currentLevel = serverPlayer.serverLevel();
+        ServerLevel currentLevel = com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer);
         if (!isDimensionHopReusableLevel(currentLevel)) {
             ServerLevel overworld = serverPlayer.getServer().getLevel(Level.OVERWORLD);
             if (overworld != null) {
@@ -899,7 +994,7 @@ public final class ExperientChunkHotspotPathController {
         Bandwidthoptimizer.LOGGER.info(
                 "[ExperientChunkPath] Prepared dimension-hop player={}, primaryDimension={}, alternateDimension={}, roundTrips={}",
                 serverPlayer.getGameProfile().getName(),
-                resolveDimensionName(serverPlayer.serverLevel()),
+                resolveDimensionName(com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer)),
                 resolveDimensionName(resolveDimensionHopAlternateLevel(serverPlayer)),
                 DIMENSION_HOP_TOTAL_ROUND_TRIPS
         );
@@ -969,14 +1064,14 @@ public final class ExperientChunkHotspotPathController {
             return null;
         }
 
-        if (Level.NETHER.equals(serverPlayer.serverLevel().dimension())) {
+        if (Level.NETHER.equals(com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).dimension())) {
             return serverPlayer.getServer().getLevel(Level.OVERWORLD);
         }
         return serverPlayer.getServer().getLevel(Level.NETHER);
     }
 
     private static double resolveSafePathY(ServerPlayer serverPlayer) {
-        return resolveSafePathY(serverPlayer == null ? null : serverPlayer.serverLevel());
+        return resolveSafePathY(serverPlayer == null ? null : com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer));
     }
 
     private static double resolveSafePathY(ServerLevel serverLevel) {
@@ -1090,7 +1185,7 @@ public final class ExperientChunkHotspotPathController {
         if (serverPlayer == null || serverPlayer.getServer() == null || targetLevel == null) {
             return false;
         }
-        if (serverPlayer.serverLevel() == targetLevel) {
+        if (com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer) == targetLevel) {
             return teleportPlayer(serverPlayer, targetX, targetY, targetZ);
         }
 

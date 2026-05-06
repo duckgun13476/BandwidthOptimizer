@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.report;
 
+import com.PinkCats.bandwidthoptimizer.compat.minecraft.CommandSourceCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -30,7 +31,7 @@ public final class ChannelTransportPacketRankCommand {
     }
 
     private static int root(CommandSourceStack source) {
-        source.sendSuccess(() -> Component.literal(
+        CommandSourceCompat.sendSuccess(source, Component.literal(
                 "Packet rank commands: /bandwidthoptimizer test packetrank run [ticks] | status"
                         + " ; defaultTicks=" + DEFAULT_CAPTURE_TICKS
         ), false);
@@ -60,7 +61,7 @@ public final class ChannelTransportPacketRankCommand {
             return 0;
         }
 
-        source.sendSuccess(() -> Component.literal(
+        CommandSourceCompat.sendSuccess(source, Component.literal(
                 "Packet rank capture started. ticks="
                         + captureTicks
                         + ", outputDir=transport-packet-rank"
@@ -71,17 +72,17 @@ public final class ChannelTransportPacketRankCommand {
     // packet rank status
     private static int status(CommandSourceStack source) {
         if (!DebugRuntimeConfig.isAnalysisEnabled()) {
-            source.sendSuccess(() -> Component.literal("Packet rank capture is disabled."), false);
+            CommandSourceCompat.sendSuccess(source, Component.literal("Packet rank capture is disabled."), false);
             return Command.SINGLE_SUCCESS;
         }
         ChannelTransportPacketRankCaptureManager.StatusSnapshot statusSnapshot =
                 ChannelTransportPacketRankCaptureManager.snapshotCurrentStatus(source.getServer());
         if (!statusSnapshot.running()) {
-            source.sendSuccess(() -> Component.literal("Packet rank capture is idle."), false);
+            CommandSourceCompat.sendSuccess(source, Component.literal("Packet rank capture is idle."), false);
             return Command.SINGLE_SUCCESS;
         }
 
-        source.sendSuccess(() -> Component.literal(
+        CommandSourceCompat.sendSuccess(source, Component.literal(
                 "Packet rank capture running. remainingTicks="
                         + statusSnapshot.remainingTicks()
                         + ", capturedPackets="

@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.command;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportCompressionCommand;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCommand;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsCommand;
+import com.PinkCats.bandwidthoptimizer.compat.minecraft.CommandSourceCompat;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
 import net.minecraft.commands.CommandSourceStack;
@@ -26,7 +27,7 @@ public final class BandwidthOptimizerCommand {
 
 
     private static int root(CommandSourceStack source) {
-        source.sendSuccess(() -> Component.literal(
+        CommandSourceCompat.sendSuccess(source, Component.literal(
                 "BandwidthOptimizer commands: /bandwidthoptimizer hud (client) | "
                         + "/bandwidthoptimizer test transportreport run [ticks] | "
                         + "/bandwidthoptimizer test packetrank run [ticks] | "

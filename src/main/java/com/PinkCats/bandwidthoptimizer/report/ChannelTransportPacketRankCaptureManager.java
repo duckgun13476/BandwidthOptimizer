@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.report;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.compat.minecraft.CommandSourceCompat;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
@@ -288,7 +289,7 @@ public final class ChannelTransportPacketRankCaptureManager {
                 reportPath,
                 latestReportPath
         );
-        activeCaptureSession.source().sendSuccess(() -> net.minecraft.network.chat.Component.literal(
+        CommandSourceCompat.sendSuccess(activeCaptureSession.source(), net.minecraft.network.chat.Component.literal(
                 "Packet rank report completed. packets="
                         + generatedReport.capturedPacketCount()
                         + ", negativeActualClasses="

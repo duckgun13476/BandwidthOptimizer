@@ -1,20 +1,16 @@
 package com.PinkCats.bandwidthoptimizer.channel.packet;
 
-import net.minecraft.network.protocol.BundleDelimiterPacket;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundCommandSuggestionsPacket;
 import net.minecraft.network.protocol.game.ClientboundCommandsPacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
-import net.minecraft.network.protocol.game.ClientboundDamageEventPacket;
 import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
-import net.minecraft.network.protocol.game.ClientboundHurtAnimationPacket;
 import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerCombatEnterPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerCombatEndPacket;
-import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundRotateHeadPacket;
@@ -47,16 +43,13 @@ public final class ChannelTransportBypassPacketList {
             ClientboundCommandsPacket.class,
             ClientboundCommandSuggestionsPacket.class,
             ClientboundContainerSetSlotPacket.class,
-            ClientboundDamageEventPacket.class,
             ClientboundEntityEventPacket.class,
             ClientboundForgetLevelChunkPacket.class,
-            ClientboundHurtAnimationPacket.class,
             ClientboundMoveEntityPacket.Pos.class,
             ClientboundMoveEntityPacket.PosRot.class,
             ClientboundMoveEntityPacket.Rot.class,
             ClientboundPlayerCombatEnterPacket.class,
             ClientboundPlayerCombatEndPacket.class,
-            ClientboundPlayerInfoUpdatePacket.class,
             ClientboundPlayerPositionPacket.class,
             ClientboundRemoveEntitiesPacket.class,
             ClientboundRotateHeadPacket.class,
@@ -81,6 +74,12 @@ public final class ChannelTransportBypassPacketList {
             ServerboundUseItemOnPacket.class,
             ServerboundUseItemPacket.class
     );
+    private static final Set<String> PACKET_CLASS_NAMES = Set.of(
+            "net.minecraft.network.protocol.BundleDelimiterPacket",
+            "net.minecraft.network.protocol.game.ClientboundDamageEventPacket",
+            "net.minecraft.network.protocol.game.ClientboundHurtAnimationPacket",
+            "net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket"
+    );
     private static final Set<String> CLIENTBOUND_KEEP_ALIVE_PACKET_CLASS_NAMES = Set.of(
             "net.minecraft.network.protocol.common.ClientboundKeepAlivePacket",
             "net.minecraft.network.protocol.game.ClientboundKeepAlivePacket"
@@ -90,10 +89,10 @@ public final class ChannelTransportBypassPacketList {
 
     // Some packet is useless when use intregated algorithm
     public static boolean shouldBypassTransparentTransport(Packet<?> packet) {
-        return packet instanceof BundleDelimiterPacket<?>
-                || (packet != null && (
+        return packet != null && (
                 PACKET_CLASSES.contains(packet.getClass())
+                        || PACKET_CLASS_NAMES.contains(packet.getClass().getName())
                         || CLIENTBOUND_KEEP_ALIVE_PACKET_CLASS_NAMES.contains(packet.getClass().getName())
-        ));
+        );
     }
 }

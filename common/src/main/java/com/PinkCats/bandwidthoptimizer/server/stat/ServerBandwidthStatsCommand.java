@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.server.stat;
 
+import com.PinkCats.bandwidthoptimizer.compat.minecraft.CommandSourceCompat;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.builder.ArgumentBuilder;
@@ -38,7 +39,7 @@ public final class ServerBandwidthStatsCommand {
     private static int total(CommandSourceStack source) {
         ServerBandwidthStatsRegistry.TotalsSnapshot totals =
                 ServerBandwidthStatsPersistence.snapshotTotals(source.getServer());
-        source.sendSuccess(() -> Component.literal(
+        CommandSourceCompat.sendSuccess(source, Component.literal(
                 "BO stats total: channels=" + totals.activeChannels()
                         + ", players=" + totals.boundPlayers()
                         + ", outRaw=" + formatBytes(totals.outboundRawEncodedBytes())
@@ -62,7 +63,7 @@ public final class ServerBandwidthStatsCommand {
         List<ChannelBandwidthStats.Snapshot> snapshots =
                 ServerBandwidthStatsPersistence.snapshotPlayers(source.getServer(), limit);
         if (snapshots.isEmpty()) {
-            source.sendSuccess(() -> Component.literal("BO stats players: no persisted players."), false);
+            CommandSourceCompat.sendSuccess(source, Component.literal("BO stats players: no persisted players."), false);
             return Command.SINGLE_SUCCESS;
         }
 
@@ -88,14 +89,14 @@ public final class ServerBandwidthStatsCommand {
                     ));
         }
 
-        source.sendSuccess(() -> Component.literal(builder.toString()), false);
+        CommandSourceCompat.sendSuccess(source, Component.literal(builder.toString()), false);
         return Command.SINGLE_SUCCESS;
     }
 
     private static int reset(CommandSourceStack source) {
         ServerBandwidthStatsRegistry.resetAll();
         ServerBandwidthStatsPersistence.resetAll(source.getServer());
-        source.sendSuccess(() -> Component.literal("BO stats reset complete."), true);
+        CommandSourceCompat.sendSuccess(source, Component.literal("BO stats reset complete."), true);
         return Command.SINGLE_SUCCESS;
     }
 

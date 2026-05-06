@@ -9,8 +9,6 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
 import net.minecraft.network.PacketSendListener;
-import net.minecraft.network.protocol.BundleDelimiterPacket;
-import net.minecraft.network.protocol.BundlePacket;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
 import net.minecraft.network.protocol.game.ClientboundLoginPacket;
@@ -209,7 +207,7 @@ public final class ChunkTransportBoundaryController {
                     "forget_chunk_boundary"
             );
         }
-        if (packet instanceof BundlePacket<?> || packet instanceof BundleDelimiterPacket) {
+        if (isBundleBoundaryPacket(packet)) {
             return new BoundaryTrigger(
                     true,
                     BUNDLE_WARMUP_CHUNK_PACKETS,
@@ -230,6 +228,12 @@ public final class ChunkTransportBoundaryController {
             );
         }
         return BoundaryTrigger.NONE;
+    }
+
+    private static boolean isBundleBoundaryPacket(Packet<?> packet) {
+        String packetClassName = packetClassName(packet);
+        return "net.minecraft.network.protocol.BundlePacket".equals(packetClassName)
+                || "net.minecraft.network.protocol.BundleDelimiterPacket".equals(packetClassName);
     }
 
     private static boolean isImmediateTransportListenerPacket(Packet<?> packet) {

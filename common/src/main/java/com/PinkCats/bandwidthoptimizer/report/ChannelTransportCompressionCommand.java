@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.report;
 
+import com.PinkCats.bandwidthoptimizer.compat.minecraft.CommandSourceCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -29,7 +30,7 @@ public final class ChannelTransportCompressionCommand {
     }
 
     private static int root(CommandSourceStack source) {
-        source.sendSuccess(() -> Component.literal(
+        CommandSourceCompat.sendSuccess(source, Component.literal(
                 "Transport report commands: /bandwidthoptimizer test transportreport run [ticks] | status"
                         + " ; defaultTicks=" + DEFAULT_CAPTURE_TICKS
         ), false);
@@ -59,7 +60,7 @@ public final class ChannelTransportCompressionCommand {
             return 0;
         }
 
-        source.sendSuccess(() -> Component.literal(
+        CommandSourceCompat.sendSuccess(source, Component.literal(
                 "Transport report capture started. ticks="
                         + captureTicks
                         + ", outputDir=run/transport-report"
@@ -70,17 +71,17 @@ public final class ChannelTransportCompressionCommand {
     //  transport status
     private static int status(CommandSourceStack source) {
         if (!DebugRuntimeConfig.isAnalysisEnabled()) {
-            source.sendSuccess(() -> Component.literal("Transport report is disabled."), false);
+            CommandSourceCompat.sendSuccess(source, Component.literal("Transport report is disabled."), false);
             return Command.SINGLE_SUCCESS;
         }
         ChannelTransportCompressionCaptureManager.StatusSnapshot statusSnapshot =
                 ChannelTransportCompressionCaptureManager.snapshotCurrentStatus(source.getServer());
         if (!statusSnapshot.running()) {
-            source.sendSuccess(() -> Component.literal("Transport report is idle."), false);
+            CommandSourceCompat.sendSuccess(source, Component.literal("Transport report is idle."), false);
             return Command.SINGLE_SUCCESS;
         }
 
-        source.sendSuccess(() -> Component.literal(
+        CommandSourceCompat.sendSuccess(source, Component.literal(
                 "Transport report running. remainingTicks="
                         + statusSnapshot.remainingTicks()
                         + ", capturedPackets="

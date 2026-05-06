@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.report;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.compat.minecraft.CommandSourceCompat;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
@@ -137,7 +138,7 @@ public final class ChannelTransportCompressionCaptureManager {
                 generatedReport.bestScenarioName(),
                 reportPath
         );
-        activeCaptureSession.source().sendSuccess(() -> Component.literal(
+        CommandSourceCompat.sendSuccess(activeCaptureSession.source(), Component.literal(
                 "Transport report completed. packets="
                         + generatedReport.capturedPacketCount()
                         + ", rawBytes="

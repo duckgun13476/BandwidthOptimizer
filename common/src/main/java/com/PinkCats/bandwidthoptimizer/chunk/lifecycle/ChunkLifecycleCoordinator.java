@@ -34,7 +34,7 @@ public final class ChunkLifecycleCoordinator {
         }
 
         ResourceKey<Level> previousDimension = PLAYER_DIMENSIONS.get(player.getUUID());
-        ResourceKey<Level> currentDimension = player.serverLevel().dimension();
+        ResourceKey<Level> currentDimension = com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(player).dimension();
         boolean sameDimensionRespawn = previousDimension != null && previousDimension.equals(currentDimension);
         if (sameDimensionRespawn) {
             if (DebugRuntimeConfig.isDiagnoseEnabled()) {
@@ -150,7 +150,7 @@ public final class ChunkLifecycleCoordinator {
         if (player == null) {
             return;
         }
-        PLAYER_DIMENSIONS.put(player.getUUID(), player.serverLevel().dimension());
+        PLAYER_DIMENSIONS.put(player.getUUID(), com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(player).dimension());
     }
 
     private static void forgetPlayerDimension(ServerPlayer player) {

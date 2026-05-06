@@ -64,6 +64,8 @@ def applySharedBandwidthOptimizerRunProperties = { Project projectRef, def runCo
             ['boExperientChunkHotspotPathRangeEndZ', 'bandwidthoptimizer.experient.chunkHotspotPathRangeEndZ'],
             ['boExperientChunkHotspotPathRangeStepBlocks', 'bandwidthoptimizer.experient.chunkHotspotPathRangeStepBlocks'],
             ['boExperientChunkHotspotPathRangeRoundTrips', 'bandwidthoptimizer.experient.chunkHotspotPathRangeRoundTrips'],
+            ['boDebugDiagnose', 'bandwidthoptimizer.debug.diagnose'],
+            ['boChunkDiagnosticOutputsEnabled', 'bandwidthoptimizer.chunk.diagnosticOutputsEnabled'],
             ['boTransportMappingEnabled', 'bandwidthoptimizer.transport.mappingEnabled'],
             ['boTransportZstdEnabled', 'bandwidthoptimizer.transport.zstdEnabled'],
             ['boTransportBatchEnabled', 'bandwidthoptimizer.transport.batchEnabled'],
@@ -280,6 +282,8 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeEndZ')
     appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeStepBlocks')
     appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeRoundTrips')
+    appendOptionalRunAllProperty(args, projectRef, 'boDebugDiagnose')
+    appendOptionalRunAllProperty(args, projectRef, 'boChunkDiagnosticOutputsEnabled')
     appendOptionalRunAllProperty(args, projectRef, 'boTransportMappingEnabled')
     appendOptionalRunAllProperty(args, projectRef, 'boTransportZstdEnabled')
     appendOptionalRunAllProperty(args, projectRef, 'boTransportBatchEnabled')
