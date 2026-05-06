@@ -78,6 +78,7 @@ def applySharedBandwidthOptimizerNeoForgeRunProperties = { Project projectRef, d
             ['boExperientChunkHotspotPathBoundaryHopMode', 'bandwidthoptimizer.experient.chunkHotspotPathBoundaryHopMode'],
             ['boExperientChunkHotspotPathDimensionHopMode', 'bandwidthoptimizer.experient.chunkHotspotPathDimensionHopMode'],
             ['boExperientChunkHotspotPathRangeBounceMode', 'bandwidthoptimizer.experient.chunkHotspotPathRangeBounceMode'],
+            ['boExperientRunAllMarkerExit', 'bandwidthoptimizer.experient.runAllMarkerExit'],
             ['boExperientWatchBoundaryRefreshPatchEnabled', 'bandwidthoptimizer.experient.watchBoundaryRefreshPatchEnabled']
     ].each { List<String> mapping ->
         applyBooleanNeoForgeRunProperty(projectRef, runConfig, mapping[0], mapping[1])
@@ -256,6 +257,9 @@ dependencies {
 
 tasks.named('processResources', ProcessResources).configure {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(rootProject.file('src/main/resources/assets')) {
+        into 'assets'
+    }
     var replaceProperties = [minecraft_version      : '1.21.1',
                              minecraft_version_range: '[1.21.1,1.22)',
                              neo_version            : '21.1.219',
@@ -316,6 +320,7 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
             'boExperientChunkHotspotPathBoundaryHopMode',
             'boExperientChunkHotspotPathDimensionHopMode',
             'boExperientChunkHotspotPathRangeBounceMode',
+            'boExperientRunAllMarkerExit',
             'boExperientWatchBoundaryRefreshPatchEnabled',
             'boExperientChunkHotspotPathRangeStartX',
             'boExperientChunkHotspotPathRangeStartY',
@@ -348,6 +353,9 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     }
     if (!projectRef.hasProperty('boDebugDiagnose')) {
         args.add('-PboDebugDiagnose=true')
+    }
+    if (!projectRef.hasProperty('boExperientRunAllMarkerExit')) {
+        args.add('-PboExperientRunAllMarkerExit=true')
     }
     return args
 }
@@ -455,6 +463,17 @@ def waitForFourWayCapturedTraffic(File clientSendJsonl, File clientReceiveJsonl,
         sleep(1000)
     }
     throw new GradleException('runAll timed out before all four jsonl streams were written.')
+}
+
+def waitForRunAllMarker(File markerFile, long timeoutMillis, String stageLabel) {
+    long deadline = System.currentTimeMillis() + timeoutMillis
+    while (System.currentTimeMillis() < deadline) {
+        if (markerFile.exists() && markerFile.length() > 0L) {
+            return
+        }
+        sleep(1000)
+    }
+    throw new GradleException("${stageLabel} timed out. Missing ${markerFile.absolutePath}")
 }
 
 def waitForFilesToSettle(List<File> files, long stableMillis, long timeoutMillis) {
@@ -625,6 +644,7 @@ tasks.register('runAll') {
         File serverChunkHotspotStats = project.file('run/server/chunk-hotspot-stats.properties')
         File clientChunkHotspotStats = project.file('run/client/chunk-hotspot-stats.properties')
         File serverLoginMarker = project.file('run/server/bo-runall-player-logged-in.marker')
+        File serverPathCompletedMarker = project.file('run/server/bo-runall-chunk-hotspot-path-completed.marker')
         File serverProperties = project.file('run/server/server.properties')
         File serverOpsFile = project.file('run/server/ops.json')
 
@@ -640,7 +660,8 @@ tasks.register('runAll') {
                 clientReceiveJsonl,
                 serverChunkHotspotStats,
                 clientChunkHotspotStats,
-                serverLoginMarker
+                serverLoginMarker,
+                serverPathCompletedMarker
         ])
 
         configureRunAllServerProperties(serverProperties)
@@ -675,6 +696,13 @@ tasks.register('runAll') {
 
             if (observeSeconds > 0L) {
                 sleep(observeSeconds * 1000L)
+                stopRunAllServerProcesses(project, projectDirFile, isWindows)
+                if (serverProcess.isAlive()) {
+                    serverProcess.waitFor(30L, TimeUnit.SECONDS)
+                }
+                if (clientProcess.isAlive()) {
+                    clientProcess.waitFor(15L, TimeUnit.SECONDS)
+                }
                 forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
                 waitForFilesToSettle(
                         [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
@@ -689,12 +717,18 @@ tasks.register('runAll') {
                 return
             }
 
-            clientProcess.waitFor()
-            waitForFilesToSettle([clientSendJsonl, serverReceiveJsonl], settleMillis, settleTimeoutMillis)
-            stopRunAllServerProcesses(project, projectDirFile, isWindows)
-            if (serverProcess.isAlive()) {
-                serverProcess.waitFor(30L, TimeUnit.SECONDS)
+            if ((project.findProperty('boExperientChunkHotspotPathEnabled') ?: 'false').toString().toBoolean()) {
+                waitForRunAllMarker(serverPathCompletedMarker, 300000L, 'NeoForge runAll chunk-hotspot path completion')
+                forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
+            } else {
+                clientProcess.waitFor()
+                waitForFilesToSettle([clientSendJsonl, serverReceiveJsonl], settleMillis, settleTimeoutMillis)
+                stopRunAllServerProcesses(project, projectDirFile, isWindows)
+                if (serverProcess.isAlive()) {
+                    serverProcess.waitFor(30L, TimeUnit.SECONDS)
+                }
             }
+            waitForFilesToSettle([clientSendJsonl, serverReceiveJsonl], settleMillis, settleTimeoutMillis)
             waitForFilesToSettle(
                     [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
                     settleMillis,

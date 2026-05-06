@@ -20,6 +20,8 @@ public final class ChannelJsonlCompareMain {
     private static final Path DEFAULT_SERVER_RECEIVE = Path.of("run", "server", "receive.jsonl");
     private static final Path DEFAULT_SERVER_CHUNK_HOTSPOT_STATS = Path.of("run", "server", "chunk-hotspot-stats.properties");
     private static final Path DEFAULT_CLIENT_CHUNK_HOTSPOT_STATS = Path.of("run", "client", "chunk-hotspot-stats.properties");
+    private static final Path DEFAULT_RUNALL_PATH_COMPLETED_MARKER =
+            Path.of("run", "server", "bo-runall-chunk-hotspot-path-completed.marker");
     private static final List<String> CHUNK_FRAME_OPS = List.of("publish_full", "publish_ref", "publish_patch", "ack", "nack");
 
     private ChannelJsonlCompareMain() {
@@ -39,10 +41,11 @@ public final class ChannelJsonlCompareMain {
 
     private static int runComparison(String[] args) throws IOException {
         List<ComparisonTarget> targets = createTargets(args);
+        boolean allowRunAllTrailingFrames = Files.exists(DEFAULT_RUNALL_PATH_COMPLETED_MARKER);
         List<ComparisonReport> reports = new ArrayList<>();
         boolean allMatched = true;
         for (ComparisonTarget target : targets) {
-            ComparisonReport report = comparePair(target);
+            ComparisonReport report = comparePair(target, allowRunAllTrailingFrames);
             reports.add(report);
             if (!report.matched()) {
                 allMatched = false;
@@ -68,38 +71,52 @@ public final class ChannelJsonlCompareMain {
         throw new IllegalArgumentException("Usage: no args, or two jsonl paths.");
     }
 
-    private static ComparisonReport comparePair(ComparisonTarget target) throws IOException {
+    private static ComparisonReport comparePair(ComparisonTarget target, boolean allowRunAllTrailingFrames) throws IOException {
         ensureFileExists(target.leftPath());
         ensureFileExists(target.rightPath());
+        List<ComparableFrame> leftFrames = readComparableFrames(target.leftPath());
+        List<ComparableFrame> rightFrames = readComparableFrames(target.rightPath());
         List<MismatchDetail> mismatches = new ArrayList<>();
         long comparedLines = 0L;
         boolean stoppedEarly = false;
-        try (BufferedReader leftReader = Files.newBufferedReader(target.leftPath());
-             BufferedReader rightReader = Files.newBufferedReader(target.rightPath())) {
-            while (true) {
-                String leftLine = leftReader.readLine();
-                String rightLine = rightReader.readLine();
-                if (leftLine == null && rightLine == null) {
+        int maxSize = Math.max(leftFrames.size(), rightFrames.size());
+        for (int index = 0; index < maxSize; index++) {
+            comparedLines++;
+            if (index >= leftFrames.size() || index >= rightFrames.size()) {
+                if (allowRunAllTrailingFrames) {
                     break;
                 }
-                comparedLines++;
-                if (leftLine == null || rightLine == null) {
-                    mismatches.add(new MismatchDetail(comparedLines, describeLengthMismatch(leftLine, rightLine)));
+                mismatches.add(new MismatchDetail(
+                        comparedLines,
+                        index >= leftFrames.size()
+                                ? "left file ended before right file"
+                                : "right file ended before left file"
+                ));
+                break;
+            }
+            String difference = describeFieldDifference(leftFrames.get(index), rightFrames.get(index));
+            if (difference != null) {
+                mismatches.add(new MismatchDetail(comparedLines, difference));
+                if (mismatches.size() >= MAX_MISMATCHES_TO_PRINT) {
+                    stoppedEarly = true;
                     break;
-                }
-                ComparableFrame leftFrame = parseComparableFrame(leftLine, target.leftPath(), comparedLines);
-                ComparableFrame rightFrame = parseComparableFrame(rightLine, target.rightPath(), comparedLines);
-                String difference = describeFieldDifference(leftFrame, rightFrame);
-                if (difference != null) {
-                    mismatches.add(new MismatchDetail(comparedLines, difference));
-                    if (mismatches.size() >= MAX_MISMATCHES_TO_PRINT) {
-                        stoppedEarly = true;
-                        break;
-                    }
                 }
             }
         }
         return new ComparisonReport(target, comparedLines, mismatches, stoppedEarly);
+    }
+
+    private static List<ComparableFrame> readComparableFrames(Path path) throws IOException {
+        List<ComparableFrame> frames = new ArrayList<>();
+        long lineNumber = 0L;
+        try (BufferedReader reader = Files.newBufferedReader(path)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                lineNumber++;
+                frames.add(parseComparableFrame(line, path, lineNumber));
+            }
+        }
+        return frames;
     }
 
     private static void ensureFileExists(Path path) {
@@ -199,13 +216,6 @@ public final class ChannelJsonlCompareMain {
             return null;
         }
         return String.join(" | ", differences);
-    }
-
-    private static String describeLengthMismatch(String leftLine, String rightLine) {
-        if (leftLine == null) {
-            return "left file ended before right file";
-        }
-        return "right file ended before left file";
     }
 
     private static String abbreviate(String value) {

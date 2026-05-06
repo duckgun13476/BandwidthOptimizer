@@ -399,7 +399,9 @@ public final class ExperientWatchBoundaryRefreshPatchController {
                 state.layout().coordinate().logText(),
                 chunkSnapshot.summaryText()
         );
-        disconnectPlayer(serverPlayer, "BandwidthOptimizer watch-boundary regression completed");
+        if (!ExperientChunkHotspotPathRuntimeConfig.isEnabled()) {
+            disconnectPlayer(serverPlayer, "BandwidthOptimizer watch-boundary regression completed");
+        }
         return null;
     }
 

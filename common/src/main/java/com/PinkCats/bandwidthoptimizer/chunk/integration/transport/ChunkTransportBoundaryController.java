@@ -207,6 +207,26 @@ public final class ChunkTransportBoundaryController {
                     "forget_chunk_boundary"
             );
         }
+        if (isChunkBatchBoundaryPacket(packet)) {
+            return new BoundaryTrigger(
+                    true,
+                    0,
+                    0L,
+                    false,
+                    false,
+                    "chunk_batch_boundary"
+            );
+        }
+        if (isBundleDelimiterBoundaryPacket(packet)) {
+            return new BoundaryTrigger(
+                    true,
+                    0,
+                    0L,
+                    false,
+                    false,
+                    "bundle_delimiter_boundary"
+            );
+        }
         if (isBundleBoundaryPacket(packet)) {
             return new BoundaryTrigger(
                     true,
@@ -232,10 +252,18 @@ public final class ChunkTransportBoundaryController {
 
     private static boolean isBundleBoundaryPacket(Packet<?> packet) {
         String packetClassName = packetClassName(packet);
-        return "net.minecraft.network.protocol.BundlePacket".equals(packetClassName)
-                || "net.minecraft.network.protocol.BundleDelimiterPacket".equals(packetClassName)
-                || "net.minecraft.network.protocol.game.ClientboundBundleDelimiterPacket".equals(packetClassName)
-                || "net.minecraft.network.protocol.game.ClientboundChunkBatchFinishedPacket".equals(packetClassName)
+        return "net.minecraft.network.protocol.BundlePacket".equals(packetClassName);
+    }
+
+    private static boolean isBundleDelimiterBoundaryPacket(Packet<?> packet) {
+        String packetClassName = packetClassName(packet);
+        return "net.minecraft.network.protocol.BundleDelimiterPacket".equals(packetClassName)
+                || "net.minecraft.network.protocol.game.ClientboundBundleDelimiterPacket".equals(packetClassName);
+    }
+
+    private static boolean isChunkBatchBoundaryPacket(Packet<?> packet) {
+        String packetClassName = packetClassName(packet);
+        return "net.minecraft.network.protocol.game.ClientboundChunkBatchFinishedPacket".equals(packetClassName)
                 || "net.minecraft.network.protocol.game.ClientboundChunkBatchStartPacket".equals(packetClassName);
     }
 

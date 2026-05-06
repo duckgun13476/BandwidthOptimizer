@@ -402,6 +402,8 @@ public class Config {
             public static final String SERVER_COMMAND_DELAY_TICKS =
                     "bandwidthoptimizer.experient.serverCommandDelayTicks";
             public static final int DEFAULT_SERVER_COMMAND_DELAY_TICKS = 0;
+            public static final String RUN_ALL_MARKER_EXIT =
+                    "bandwidthoptimizer.experient.runAllMarkerExit";
             public static final String CHUNK_HOTSPOT_PATH_ENABLED =
                     "bandwidthoptimizer.experient.chunkHotspotPathEnabled";
             public static final String CHUNK_HOTSPOT_PATH_STOP_AFTER_SECTION =

@@ -52,6 +52,7 @@ public final class ExperientChunkHotspotPathController {
     private static final int TWO_POINT_REUSE_FINAL_SETTLE_TICKS = 100;
     private static final int TWO_POINT_REUSE_TOTAL_TELEPORTS = 8;
     private static final long TWO_POINT_REUSE_QUIET_WINDOW_MILLIS = 500L;
+    private static final long DEFAULT_PATH_QUIET_WINDOW_MILLIS = 750L;
     private static final double TWO_POINT_REUSE_OFFSET_BLOCKS = 352.0D;
     private static final int BOUNDARY_HOP_EXTRA_OFFSET_CHUNKS = 1;
     private static final int BOUNDARY_HOP_MIN_OFFSET_CHUNKS = 3;
@@ -247,6 +248,12 @@ public final class ExperientChunkHotspotPathController {
         }
 
         if (state.nextWaypointIndex() >= TELEPORT_SEQUENCE.length) {
+            if (!ExperientChunkHotspotFullChunkTracker.hasPlayerBeenQuietFor(
+                    serverPlayer,
+                    DEFAULT_PATH_QUIET_WINDOW_MILLIS
+            )) {
+                return state.withDelayTicksRemaining(1);
+            }
             Bandwidthoptimizer.LOGGER.info(
                     "[ExperientChunkPath] Completed scripted path for player={}",
                     serverPlayer.getGameProfile().getName()
@@ -1121,6 +1128,10 @@ public final class ExperientChunkHotspotPathController {
 
     private static void disconnectPlayerAfterPathCompletion(ServerPlayer serverPlayer) {
         if (serverPlayer == null || serverPlayer.connection == null) {
+            return;
+        }
+        RunAllProbeFiles.markChunkHotspotPathCompleted(serverPlayer);
+        if (ExperientChunkHotspotPathRuntimeConfig.shouldUseRunAllMarkerExit()) {
             return;
         }
         serverPlayer.connection.disconnect(Component.literal("BandwidthOptimizer experient path completed"));

@@ -13,6 +13,8 @@ import java.nio.file.Path;
 public final class RunAllProbeFiles {
 
     public static final Path SERVER_PLAYER_LOGGED_IN_MARKER = Path.of("bo-runall-player-logged-in.marker");
+    public static final Path SERVER_CHUNK_HOTSPOT_PATH_COMPLETED_MARKER =
+            Path.of("bo-runall-chunk-hotspot-path-completed.marker");
     public static final Path SERVER_WATCH_BOUNDARY_REFRESH_PATCH_MARKER =
             Path.of("bo-watch-boundary-refresh-patch.marker");
 
@@ -103,6 +105,33 @@ public final class RunAllProbeFiles {
             Bandwidthoptimizer.LOGGER.warn(
                     "[RunAllProbe] Failed to write watch-boundary marker: {}",
                     SERVER_WATCH_BOUNDARY_REFRESH_PATCH_MARKER.toAbsolutePath(),
+                    exception
+            );
+        }
+    }
+
+    public static void markChunkHotspotPathCompleted(ServerPlayer serverPlayer) {
+        if (serverPlayer == null || !ExperientRuntimeFlags.isEnabled()) {
+            return;
+        }
+
+        String markerText = "captured_at_ms=" + System.currentTimeMillis()
+                + System.lineSeparator()
+                + "player_name=" + serverPlayer.getGameProfile().getName()
+                + System.lineSeparator()
+                + "player_uuid=" + serverPlayer.getUUID()
+                + System.lineSeparator();
+
+        try {
+            Files.writeString(
+                    SERVER_CHUNK_HOTSPOT_PATH_COMPLETED_MARKER,
+                    markerText,
+                    StandardCharsets.UTF_8
+            );
+        } catch (IOException exception) {
+            Bandwidthoptimizer.LOGGER.warn(
+                    "[RunAllProbe] Failed to write chunk-hotspot path marker: {}",
+                    SERVER_CHUNK_HOTSPOT_PATH_COMPLETED_MARKER.toAbsolutePath(),
                     exception
             );
         }

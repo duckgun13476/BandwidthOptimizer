@@ -39,6 +39,10 @@ public final class ExperientChunkHotspotPathRuntimeConfig {
         return readBooleanProperty(Config.RuntimeProperty.Experient.CHUNK_HOTSPOT_PATH_RANGE_BOUNCE_MODE);
     }
 
+    public static boolean shouldUseRunAllMarkerExit() {
+        return readBooleanProperty(Config.RuntimeProperty.Experient.RUN_ALL_MARKER_EXIT);
+    }
+
     public static double rangeStartX() {
         return readDoubleProperty(
                 Config.RuntimeProperty.Experient.CHUNK_HOTSPOT_PATH_RANGE_START_X,

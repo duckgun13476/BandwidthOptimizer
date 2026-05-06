@@ -670,6 +670,9 @@ public final class ChannelTransportHooks {
                     ? new ClientboundCustomPayloadPacket(new ChannelTransportBytePayload(transportFrameBytes))
                     : new ServerboundCustomPayloadPacket(new ChannelTransportBytePayload(transportFrameBytes));
             ProtocolInfo<? extends PacketListener> protocolInfo = readProtocolInfo(packetEncoderFlowAccess);
+            if (protocolInfo == null && context.handler() instanceof PacketEncoderProtocolInfoAccess access) {
+                protocolInfo = access.bandwidthoptimizer$getProtocolInfo();
+            }
             if (protocolInfo == null) {
                 return false;
             }
