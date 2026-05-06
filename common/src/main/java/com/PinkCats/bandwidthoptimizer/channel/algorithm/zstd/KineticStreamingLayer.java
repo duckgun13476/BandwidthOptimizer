@@ -1,9 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd;
 
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.TransportLayer;
-import com.github.luben.zstd.EndDirective;
-import com.github.luben.zstd.ZstdCompressCtx;
-import com.github.luben.zstd.ZstdDecompressCtx;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
@@ -15,14 +12,12 @@ public final class KineticStreamingLayer implements TransportLayer {
     private static final int DIRECT_BUFFER_BYTES = 64 * 1024;
 
     private final int compressionLevel;
-    private final ZstdCompressCtx compressCtx;
-    private final ZstdDecompressCtx decompressCtx;
+    private final ZstdRuntimeBridge.Context zstdContext;
     private byte[] pendingDecodedBytes = new byte[0];
 
     public KineticStreamingLayer(int compressionLevel) {
         this.compressionLevel = compressionLevel;
-        this.compressCtx = new ZstdCompressCtx().setLevel(compressionLevel);
-        this.decompressCtx = new ZstdDecompressCtx();
+        this.zstdContext = ZstdRuntimeBridge.createContext(compressionLevel);
     }
 
     @Override
@@ -45,9 +40,7 @@ public final class KineticStreamingLayer implements TransportLayer {
 
     @Override
     public void reset() {
-        this.compressCtx.reset();
-        this.compressCtx.setLevel(this.compressionLevel);
-        this.decompressCtx.reset();
+        this.zstdContext.reset(this.compressionLevel);
         this.pendingDecodedBytes = new byte[0];
     }
 
@@ -62,7 +55,7 @@ public final class KineticStreamingLayer implements TransportLayer {
 
         while (sourceBuffer.hasRemaining()) {
             targetBuffer.clear();
-            boolean flushed = this.compressCtx.compressDirectByteBufferStream(targetBuffer, sourceBuffer, EndDirective.CONTINUE);
+            boolean flushed = this.zstdContext.compressDirectByteBufferStream(targetBuffer, sourceBuffer, false);
             writeBuffer(output, targetBuffer);
             if (flushed && !sourceBuffer.hasRemaining()) {
                 break;
@@ -71,7 +64,7 @@ public final class KineticStreamingLayer implements TransportLayer {
 
         while (true) {
             targetBuffer.clear();
-            boolean flushed = this.compressCtx.compressDirectByteBufferStream(targetBuffer, sourceBuffer, EndDirective.END);
+            boolean flushed = this.zstdContext.compressDirectByteBufferStream(targetBuffer, sourceBuffer, true);
             writeBuffer(output, targetBuffer);
             if (flushed) {
                 break;
@@ -92,7 +85,7 @@ public final class KineticStreamingLayer implements TransportLayer {
 
         while (sourceBuffer.hasRemaining()) {
             targetBuffer.clear();
-            this.decompressCtx.decompressDirectByteBufferStream(targetBuffer, sourceBuffer);
+            this.zstdContext.decompressDirectByteBufferStream(targetBuffer, sourceBuffer);
             writeBuffer(output, targetBuffer);
             ensureDecodedSizeWithinLimit(output);
         }

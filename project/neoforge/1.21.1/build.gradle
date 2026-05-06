@@ -237,12 +237,25 @@ configurations.configureEach {
 }
 
 ext.bo_torque_embed_notation = "com.pinkcats.torque:TorqueAPI-1.21.1-neoforge:${torque_api_version}"
-ext.bo_extra_jarjar_embed_notations = 'com.github.luben:zstd-jni:1.5.7-7'
 apply from: rootProject.file('gradle/torque-embed-modern.gradle')
+ext.bo_zstd_jni_version = '1.5.7-7'
+
+configurations {
+    embeddedRuntimeLibs {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
+}
+
+def embeddedRuntimeLibsOutputDir = layout.buildDirectory.dir('generated/boEmbeddedRuntimeLibs')
+
+tasks.register('prepareEmbeddedRuntimeLibs', Copy) {
+    from(configurations.embeddedRuntimeLibs)
+    into(embeddedRuntimeLibsOutputDir.map { it.dir('META-INF/bandwidthoptimizer/libs') })
+}
 
 dependencies {
-    String zstdJniVersion = '1.5.7-7'
-
     compileOnly("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}") {
         changing = true
     }
@@ -250,8 +263,10 @@ dependencies {
         changing = true
         transitive = false
     }
-    implementation "com.github.luben:zstd-jni:${zstdJniVersion}"
-    additionalRuntimeClasspath "com.github.luben:zstd-jni:${zstdJniVersion}"
+    compileOnly "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
+    testRuntimeOnly "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
+    additionalRuntimeClasspath "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
+    embeddedRuntimeLibs "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
 }
 
 tasks.named('processResources', ProcessResources).configure {
@@ -280,8 +295,10 @@ tasks.named('processResources', ProcessResources).configure {
 }
 
 tasks.named('jar', Jar).configure {
+    dependsOn tasks.named('prepareEmbeddedRuntimeLibs')
     archiveFileName = "${package_name}-${mod_version}-neoforge-1.21.1.jar"
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(embeddedRuntimeLibsOutputDir)
     manifest {
         attributes(['MixinConfigs': "${mod_id}.mixins.json"])
     }
