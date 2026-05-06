@@ -232,15 +232,12 @@ repositories {
     }
 }
 
-configurations {
-    bundledLibs
-}
-
 configurations.configureEach {
     resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
 }
 
 ext.bo_torque_embed_notation = "com.pinkcats.torque:TorqueAPI-1.21.1-neoforge:${torque_api_version}"
+ext.bo_extra_jarjar_embed_notations = 'com.github.luben:zstd-jni:1.5.7-7'
 apply from: rootProject.file('gradle/torque-embed-modern.gradle')
 
 dependencies {
@@ -255,7 +252,6 @@ dependencies {
     }
     implementation "com.github.luben:zstd-jni:${zstdJniVersion}"
     additionalRuntimeClasspath "com.github.luben:zstd-jni:${zstdJniVersion}"
-    bundledLibs "com.github.luben:zstd-jni:${zstdJniVersion}"
 }
 
 tasks.named('processResources', ProcessResources).configure {
@@ -290,13 +286,6 @@ tasks.named('jar', Jar).configure {
         attributes(['MixinConfigs': "${mod_id}.mixins.json"])
     }
 
-    from {
-        configurations.bundledLibs.collect { dependency ->
-            zipTree(dependency)
-        }
-    } {
-        exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
-    }
 }
 
 tasks.withType(JavaCompile).configureEach {
