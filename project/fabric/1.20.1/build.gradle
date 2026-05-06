@@ -40,6 +40,10 @@ configurations {
     bundledLibs
 }
 
+configurations.configureEach {
+    resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+}
+
 dependencies {
     String zstdJniVersion = '1.5.7-7'
 

@@ -28,7 +28,7 @@ public final class ChannelTransportNetworkChannel {
                 PROTOCOL_VERSION
         );
         Bandwidthoptimizer.LOGGER.info(
-                "[Transport] Registered Forge network channel {} version={}",
+                "[Transport] Registered Fabric network channel {} version={}",
                 TRANSPORT_PAYLOAD_ID,
                 PROTOCOL_VERSION
         );

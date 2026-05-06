@@ -19,6 +19,7 @@ import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsLifecycle
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsNetworkChannel;
 import com.mojang.logging.LogUtils;
 import com.pinkcats.torque.layer.TorqueLayer;
+import com.pinkcats.torque.layer.fabric.Torqueapi;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -33,6 +34,7 @@ public class Bandwidthoptimizer implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        Torqueapi.ensureInitialized();
         ZstdRuntimeSupport.configureNativeTempFolder();
         if (ChannelCaptureRuntimeConfig.isJsonlCaptureEnabled()) {
             ChannelFrameJsonlLogger.initializeOutputFiles();
