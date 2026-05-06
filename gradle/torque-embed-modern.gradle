@@ -1,0 +1,74 @@
+def embeddedTorqueNotation = project.findProperty('bo_torque_embed_notation')?.toString()?.trim()
+if (!embeddedTorqueNotation) {
+    throw new GradleException("Missing bo_torque_embed_notation for project '${project.path}'")
+}
+
+def embeddedTorqueParts = embeddedTorqueNotation.split(':')
+if (embeddedTorqueParts.length < 3) {
+    throw new GradleException("Invalid bo_torque_embed_notation '${embeddedTorqueNotation}' for project '${project.path}'")
+}
+
+def embeddedTorqueGroup = embeddedTorqueParts[0]
+def embeddedTorqueArtifact = embeddedTorqueParts[1]
+def embeddedTorqueVersion = embeddedTorqueParts[2]
+def embeddedTorqueIsObfuscated = project.hasProperty('bo_torque_embed_is_obfuscated')
+        ? project.findProperty('bo_torque_embed_is_obfuscated').toString().toBoolean()
+        : embeddedTorqueArtifact.contains('-forge')
+def embeddedTorqueConfiguration = configurations.maybeCreate('boTorqueEmbedded')
+def embeddedTorqueOutputDir = layout.buildDirectory.dir('generated/boTorqueJarJar')
+
+embeddedTorqueConfiguration.canBeConsumed = false
+embeddedTorqueConfiguration.canBeResolved = true
+embeddedTorqueConfiguration.transitive = false
+
+dependencies {
+    boTorqueEmbedded(embeddedTorqueNotation) {
+        changing = true
+        transitive = false
+    }
+}
+
+tasks.register('prepareEmbeddedTorqueApi') {
+    inputs.files(embeddedTorqueConfiguration)
+    outputs.dir(embeddedTorqueOutputDir)
+
+    doLast {
+        def outputRoot = embeddedTorqueOutputDir.get().asFile
+        delete(outputRoot)
+
+        def jarJarDir = new File(outputRoot, 'META-INF/jarjar')
+        jarJarDir.mkdirs()
+
+        def embeddedJar = embeddedTorqueConfiguration.singleFile
+
+        copy {
+            from embeddedJar
+            into jarJarDir
+        }
+
+        def metadata = [
+                jars: [[
+                               identifier  : [
+                                       group   : embeddedTorqueGroup,
+                                       artifact: embeddedTorqueArtifact
+                               ],
+                               version     : [
+                                       range          : "[${embeddedTorqueVersion},)",
+                                       artifactVersion: embeddedTorqueVersion
+                               ],
+                               path        : "META-INF/jarjar/${embeddedJar.name}",
+                               isObfuscated: embeddedTorqueIsObfuscated
+                       ]]
+        ]
+
+        new File(jarJarDir, 'metadata.json').setText(
+                groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(metadata)),
+                'UTF-8'
+        )
+    }
+}
+
+tasks.named('jar').configure {
+    dependsOn tasks.named('prepareEmbeddedTorqueApi')
+    from(embeddedTorqueOutputDir)
+}

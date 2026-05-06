@@ -240,6 +240,9 @@ configurations.configureEach {
     resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
 }
 
+ext.bo_torque_embed_notation = "com.pinkcats.torque:TorqueAPI-1.21.1-neoforge:${torque_api_version}"
+apply from: rootProject.file('gradle/torque-embed-modern.gradle')
+
 dependencies {
     String zstdJniVersion = '1.5.7-7'
 
