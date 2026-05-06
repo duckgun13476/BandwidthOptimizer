@@ -38,6 +38,7 @@ public class Bandwidthoptimizer {
         BandwidthOptimizerLifecycle.register(TorqueLayer.platform());
 
         ChannelTransportNetworkChannel.setModEventBus(modEventBus);
+        ChannelTransportNetworkChannel.register();
         NeoForge.EVENT_BUS.register(this);
         modEventBus.addListener(this::commonSetup);
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);

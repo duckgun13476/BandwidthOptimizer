@@ -1,3 +1,17 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import java.io.BufferedReader
+import java.io.BufferedWriter
+import java.io.FileOutputStream
+import java.io.IOException
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import java.nio.charset.StandardCharsets
+import java.util.Locale
+import java.util.Properties
+import java.util.UUID
+import java.util.concurrent.TimeUnit
+
 plugins {
     id 'java'
     id 'idea'
@@ -15,19 +29,105 @@ java {
     toolchain.languageVersion = JavaLanguageVersion.of(21)
 }
 
+def applyOptionalNeoForgeRunProperty = { Project projectRef, def runConfig, String gradlePropertyName, String runtimePropertyName ->
+    if (projectRef.hasProperty(gradlePropertyName)) {
+        runConfig.systemProperty(runtimePropertyName, projectRef.property(gradlePropertyName).toString())
+    }
+}
+
+def applyBooleanNeoForgeRunProperty = { Project projectRef, def runConfig, String gradlePropertyName, String runtimePropertyName ->
+    if ((projectRef.findProperty(gradlePropertyName) ?: 'false').toString().toBoolean()) {
+        runConfig.systemProperty(runtimePropertyName, 'true')
+    }
+}
+
+def applySharedBandwidthOptimizerNeoForgeRunProperties = { Project projectRef, def runConfig ->
+    [
+            ['boExperimentalTransport', 'bandwidthoptimizer.experimentalTransport'],
+            ['boExperimentalChunkHotspotTransport', 'bandwidthoptimizer.experimentalChunkHotspotTransport'],
+            ['boExperientChunkHotspotPathRangeStartX', 'bandwidthoptimizer.experient.chunkHotspotPathRangeStartX'],
+            ['boExperientChunkHotspotPathRangeStartY', 'bandwidthoptimizer.experient.chunkHotspotPathRangeStartY'],
+            ['boExperientChunkHotspotPathRangeStartZ', 'bandwidthoptimizer.experient.chunkHotspotPathRangeStartZ'],
+            ['boExperientChunkHotspotPathRangeEndX', 'bandwidthoptimizer.experient.chunkHotspotPathRangeEndX'],
+            ['boExperientChunkHotspotPathRangeEndY', 'bandwidthoptimizer.experient.chunkHotspotPathRangeEndY'],
+            ['boExperientChunkHotspotPathRangeEndZ', 'bandwidthoptimizer.experient.chunkHotspotPathRangeEndZ'],
+            ['boExperientChunkHotspotPathRangeStepBlocks', 'bandwidthoptimizer.experient.chunkHotspotPathRangeStepBlocks'],
+            ['boExperientChunkHotspotPathRangeRoundTrips', 'bandwidthoptimizer.experient.chunkHotspotPathRangeRoundTrips'],
+            ['boDebugDiagnose', 'bandwidthoptimizer.debug.diagnose'],
+            ['boChunkDiagnosticOutputsEnabled', 'bandwidthoptimizer.chunk.diagnosticOutputsEnabled'],
+            ['boTransportMappingEnabled', 'bandwidthoptimizer.transport.mappingEnabled'],
+            ['boTransportZstdEnabled', 'bandwidthoptimizer.transport.zstdEnabled'],
+            ['boTransportBatchEnabled', 'bandwidthoptimizer.transport.batchEnabled'],
+            ['boTransportBatchWindowMillis', 'bandwidthoptimizer.transport.batchWindowMillis'],
+            ['boTransportPacketIdMappingEnabled', 'bandwidthoptimizer.transport.packetIdMappingEnabled'],
+            ['boTransportTelemetryDumpFileName', 'bandwidthoptimizer.transport.telemetryDumpFileName'],
+            ['boChannelJsonlCaptureEnabled', 'bandwidthoptimizer.channelJsonlCaptureEnabled'],
+            ['boChunkGlobalStoreBudgetBytes', 'bandwidthoptimizer.chunkGlobalStoreBudgetBytes'],
+            ['boChunkGlobalStoreMaxVersionsPerChunk', 'bandwidthoptimizer.chunkGlobalStoreMaxVersionsPerChunk'],
+            ['boChunkWatchBoundaryReuseMaxDeltaPackets', 'bandwidthoptimizer.chunk.watchBoundaryReuseMaxDeltaPackets'],
+            ['boChunkWatchBoundaryReuseMaxDeltaBytesRatio', 'bandwidthoptimizer.chunk.watchBoundaryReuseMaxDeltaBytesRatio']
+    ].each { List<String> mapping ->
+        applyOptionalNeoForgeRunProperty(projectRef, runConfig, mapping[0], mapping[1])
+    }
+
+    [
+            ['boExperientChunkHotspotPathEnabled', 'bandwidthoptimizer.experient.chunkHotspotPathEnabled'],
+            ['boExperientChunkHotspotPathStopAfterSection', 'bandwidthoptimizer.experient.chunkHotspotPathStopAfterSection'],
+            ['boExperientChunkHotspotPathStopAfterBlockEntity', 'bandwidthoptimizer.experient.chunkHotspotPathStopAfterBlockEntity'],
+            ['boExperientChunkHotspotPathTwoPointReuseMode', 'bandwidthoptimizer.experient.chunkHotspotPathTwoPointReuseMode'],
+            ['boExperientChunkHotspotPathBoundaryHopMode', 'bandwidthoptimizer.experient.chunkHotspotPathBoundaryHopMode'],
+            ['boExperientChunkHotspotPathDimensionHopMode', 'bandwidthoptimizer.experient.chunkHotspotPathDimensionHopMode'],
+            ['boExperientChunkHotspotPathRangeBounceMode', 'bandwidthoptimizer.experient.chunkHotspotPathRangeBounceMode'],
+            ['boExperientWatchBoundaryRefreshPatchEnabled', 'bandwidthoptimizer.experient.watchBoundaryRefreshPatchEnabled']
+    ].each { List<String> mapping ->
+        applyBooleanNeoForgeRunProperty(projectRef, runConfig, mapping[0], mapping[1])
+    }
+}
+
+def configureBandwidthOptimizerNeoForgeClientRun = { Project projectRef, def runConfig ->
+    runConfig.systemProperty('neoforge.enabledGameTestNamespaces', mod_id)
+    if ((projectRef.findProperty('boExperientEnabled') ?: 'false').toString().toBoolean()) {
+        runConfig.systemProperty('bandwidthoptimizer.experient.enabled', 'true')
+        if (projectRef.hasProperty('boExperientAutoConnectAddress')) {
+            runConfig.systemProperty('bandwidthoptimizer.experient.autoConnectAddress', projectRef.property('boExperientAutoConnectAddress').toString())
+            runConfig.systemProperty('bandwidthoptimizer.experient.autoConnectName', (projectRef.findProperty('boExperientAutoConnectName') ?: 'BandwidthOptimizer Experient').toString())
+            applyOptionalNeoForgeRunProperty(projectRef, runConfig, 'boExperientAutoConnectDelayTicks', 'bandwidthoptimizer.experient.autoConnectDelayTicks')
+            applyOptionalNeoForgeRunProperty(projectRef, runConfig, 'boExperientAutoConnectMaxAttempts', 'bandwidthoptimizer.experient.autoConnectMaxAttempts')
+            applyOptionalNeoForgeRunProperty(projectRef, runConfig, 'boExperientAutoConnectRetryDelayTicks', 'bandwidthoptimizer.experient.autoConnectRetryDelayTicks')
+        }
+        applyOptionalNeoForgeRunProperty(projectRef, runConfig, 'boExperientServerCommand', 'bandwidthoptimizer.experient.serverCommand')
+        applyOptionalNeoForgeRunProperty(projectRef, runConfig, 'boExperientServerCommandDelayTicks', 'bandwidthoptimizer.experient.serverCommandDelayTicks')
+    }
+    applySharedBandwidthOptimizerNeoForgeRunProperties(projectRef, runConfig)
+    applyOptionalNeoForgeRunProperty(projectRef, runConfig, 'boClientChunkCacheMaxMemoryMb', 'bandwidthoptimizer.clientChunkCacheMaxMemoryMb')
+    applyOptionalNeoForgeRunProperty(projectRef, runConfig, 'boClientChunkCacheRecycleTriggerFreeMb', 'bandwidthoptimizer.clientChunkCacheRecycleTriggerFreeMb')
+}
+
+def configureBandwidthOptimizerNeoForgeServerRun = { Project projectRef, def runConfig ->
+    runConfig.systemProperty('neoforge.enabledGameTestNamespaces', mod_id)
+    if ((projectRef.findProperty('boExperientEnabled') ?: 'false').toString().toBoolean()) {
+        runConfig.systemProperty('bandwidthoptimizer.experient.enabled', 'true')
+    }
+    applyOptionalNeoForgeRunProperty(projectRef, runConfig, 'boExperientServerCommand', 'bandwidthoptimizer.experient.serverCommand')
+    applyOptionalNeoForgeRunProperty(projectRef, runConfig, 'boExperientServerCommandDelayTicks', 'bandwidthoptimizer.experient.serverCommandDelayTicks')
+    applySharedBandwidthOptimizerNeoForgeRunProperties(projectRef, runConfig)
+}
+
 neoForge {
     version = '21.1.219'
 
     runs {
         client {
             client()
-            systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
+            gameDirectory.set(project.layout.projectDirectory.dir('run/client'))
+            configureBandwidthOptimizerNeoForgeClientRun(project, delegate)
         }
 
         server {
             server()
+            gameDirectory.set(project.layout.projectDirectory.dir('run/server'))
             programArgument '--nogui'
-            systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
+            configureBandwidthOptimizerNeoForgeServerRun(project, delegate)
         }
 
         gameTestServer {
@@ -62,8 +162,8 @@ sourceSets {
         resources.srcDir rootProject.file('src/generated/resources')
     }
     test {
-        java.setSrcDirs([])
-        resources.setSrcDirs([])
+        java.srcDir project.file('src/test/java')
+        resources.srcDir project.file('src/test/resources')
     }
 }
 
@@ -97,7 +197,8 @@ def neoforgeExcludedRootJava = [
         'com/PinkCats/bandwidthoptimizer/mixin/minecraft/ClientPacketListenerChunkHandleMixin.java',
         'com/PinkCats/bandwidthoptimizer/mixin/minecraft/ConnectionSendBoundaryMixin.java',
         'com/PinkCats/bandwidthoptimizer/mixin/minecraft/PacketOutPipeMixin.java',
-        'com/PinkCats/bandwidthoptimizer/mixin/minecraft/PacketInPipeMixin.java'
+        'com/PinkCats/bandwidthoptimizer/mixin/minecraft/PacketInPipeMixin.java',
+        'com/PinkCats/bandwidthoptimizer/mixin/minecraft/ServerGamePacketListenerImplAccessor.java'
 ]
 
 def neoforgeExcludedCommonJava = [
@@ -193,4 +294,419 @@ tasks.named('jar', Jar).configure {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
+}
+
+def appendOptionalRunAllProperty(List<String> args, Project projectRef, String propertyName) {
+    if (projectRef.hasProperty(propertyName)) {
+        args.add("-P${propertyName}=${projectRef.property(propertyName).toString()}")
+    }
+}
+
+def buildRunAllSharedGradleArgs(Project projectRef) {
+    List<String> args = ['--console=plain', '-PboExperientEnabled=true']
+    [
+            'boExperientServerCommand',
+            'boExperientServerCommandDelayTicks',
+            'boExperimentalTransport',
+            'boExperimentalChunkHotspotTransport',
+            'boExperientChunkHotspotPathEnabled',
+            'boExperientChunkHotspotPathStopAfterSection',
+            'boExperientChunkHotspotPathStopAfterBlockEntity',
+            'boExperientChunkHotspotPathTwoPointReuseMode',
+            'boExperientChunkHotspotPathBoundaryHopMode',
+            'boExperientChunkHotspotPathDimensionHopMode',
+            'boExperientChunkHotspotPathRangeBounceMode',
+            'boExperientWatchBoundaryRefreshPatchEnabled',
+            'boExperientChunkHotspotPathRangeStartX',
+            'boExperientChunkHotspotPathRangeStartY',
+            'boExperientChunkHotspotPathRangeStartZ',
+            'boExperientChunkHotspotPathRangeEndX',
+            'boExperientChunkHotspotPathRangeEndY',
+            'boExperientChunkHotspotPathRangeEndZ',
+            'boExperientChunkHotspotPathRangeStepBlocks',
+            'boExperientChunkHotspotPathRangeRoundTrips',
+            'boDebugDiagnose',
+            'boChunkDiagnosticOutputsEnabled',
+            'boTransportMappingEnabled',
+            'boTransportZstdEnabled',
+            'boTransportBatchEnabled',
+            'boTransportBatchWindowMillis',
+            'boTransportPacketIdMappingEnabled',
+            'boTransportTelemetryDumpFileName',
+            'boChannelJsonlCaptureEnabled',
+            'boChunkGlobalStoreBudgetBytes',
+            'boChunkGlobalStoreMaxVersionsPerChunk',
+            'boChunkWatchBoundaryReuseMaxDeltaPackets',
+            'boChunkWatchBoundaryReuseMaxDeltaBytesRatio',
+            'boClientChunkCacheMaxMemoryMb',
+            'boClientChunkCacheRecycleTriggerFreeMb'
+    ].each { String propertyName ->
+        appendOptionalRunAllProperty(args, projectRef, propertyName)
+    }
+    if (!projectRef.hasProperty('boChannelJsonlCaptureEnabled')) {
+        args.add('-PboChannelJsonlCaptureEnabled=true')
+    }
+    if (!projectRef.hasProperty('boDebugDiagnose')) {
+        args.add('-PboDebugDiagnose=true')
+    }
+    return args
+}
+
+def buildExperientAutoConnectGradleArgs(Project projectRef, String address, String serverName, long delayTicks) {
+    List<String> args = buildRunAllSharedGradleArgs(projectRef)
+    args.add("-PboExperientAutoConnectAddress=${address}")
+    args.add("-PboExperientAutoConnectName=${serverName}")
+    args.add("-PboExperientAutoConnectDelayTicks=${delayTicks}")
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientAutoConnectMaxAttempts')
+    appendOptionalRunAllProperty(args, projectRef, 'boExperientAutoConnectRetryDelayTicks')
+    return args
+}
+
+def readRunAllLongProperty(Project projectRef, String propertyName, long defaultValue) {
+    if (!projectRef.hasProperty(propertyName)) {
+        return defaultValue
+    }
+    String rawValue = projectRef.property(propertyName).toString().trim()
+    if (rawValue.isEmpty()) {
+        return defaultValue
+    }
+    long parsedValue = Long.parseLong(rawValue)
+    if (parsedValue < 0L) {
+        throw new GradleException("${propertyName} must be >= 0")
+    }
+    return parsedValue
+}
+
+def startNeoForgeRunTaskProcess(File rootDirFile, File projectDirFile, boolean isWindows, String wrapperPath, String taskName, List<String> extraGradleArgs, File outputFile, String consoleLabel) {
+    List<String> command = []
+    if (isWindows) {
+        command.addAll(['cmd', '/c', wrapperPath])
+    } else {
+        command.add(wrapperPath)
+    }
+    command.addAll(['-p', projectDirFile.absolutePath])
+    if (extraGradleArgs != null) {
+        command.addAll(extraGradleArgs.findAll { it != null && !it.isBlank() })
+    }
+    command.add(taskName)
+
+    ProcessBuilder builder = new ProcessBuilder(command.collect { it.toString() })
+    builder.directory(rootDirFile)
+    builder.redirectErrorStream(true)
+    Process process = builder.start()
+    streamRunTaskOutputToConsole(process, outputFile, consoleLabel)
+    return process
+}
+
+def streamRunTaskOutputToConsole(Process process, File outputFile, String consoleLabel) {
+    String safeConsoleLabel = (consoleLabel == null || consoleLabel.isBlank()) ? 'run-task' : consoleLabel
+    Thread.startDaemon("neoforge-runall-log-pump-${safeConsoleLabel}") {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(process.inputStream, StandardCharsets.UTF_8))
+        BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(outputFile, true), StandardCharsets.UTF_8))
+        try {
+            String line
+            while ((line = reader.readLine()) != null) {
+                synchronized (System.out) {
+                    System.out.println("[${safeConsoleLabel}] ${line}")
+                }
+                writer.write(line)
+                writer.newLine()
+                writer.flush()
+            }
+        } finally {
+            try {
+                reader.close()
+            } catch (IOException ignored) {
+            }
+            try {
+                writer.close()
+            } catch (IOException ignored) {
+            }
+        }
+    }
+}
+
+def waitForLogMarker(File logFile, List<String> successMarkers, List<String> failureMarkers, long timeoutMillis, String stageLabel) {
+    long deadline = System.currentTimeMillis() + timeoutMillis
+    while (System.currentTimeMillis() < deadline) {
+        if (logFile.exists()) {
+            String logText = logFile.getText('UTF-8')
+            if (failureMarkers.any { String marker -> logText.contains(marker) }) {
+                throw new GradleException("${stageLabel} failed. Check ${logFile.absolutePath}")
+            }
+            if (successMarkers.any { String marker -> logText.contains(marker) }) {
+                return
+            }
+        }
+        sleep(1000)
+    }
+    throw new GradleException("${stageLabel} timed out. Check ${logFile.absolutePath}")
+}
+
+def waitForFourWayCapturedTraffic(File clientSendJsonl, File clientReceiveJsonl, File serverSendJsonl, File serverReceiveJsonl, long timeoutMillis) {
+    long deadline = System.currentTimeMillis() + timeoutMillis
+    while (System.currentTimeMillis() < deadline) {
+        if ((clientSendJsonl.exists() ? clientSendJsonl.length() : 0L) > 0L
+                && (clientReceiveJsonl.exists() ? clientReceiveJsonl.length() : 0L) > 0L
+                && (serverSendJsonl.exists() ? serverSendJsonl.length() : 0L) > 0L
+                && (serverReceiveJsonl.exists() ? serverReceiveJsonl.length() : 0L) > 0L) {
+            return
+        }
+        sleep(1000)
+    }
+    throw new GradleException('runAll timed out before all four jsonl streams were written.')
+}
+
+def waitForFilesToSettle(List<File> files, long stableMillis, long timeoutMillis) {
+    if (files.isEmpty() || stableMillis <= 0L) {
+        return
+    }
+    Map<String, Long> lastSnapshot = files.collectEntries { File file ->
+        [(file.absolutePath): file.exists() ? file.length() : -1L]
+    }
+    long stableSince = System.currentTimeMillis()
+    long deadline = System.currentTimeMillis() + timeoutMillis
+    while (System.currentTimeMillis() < deadline) {
+        sleep(500)
+        Map<String, Long> currentSnapshot = files.collectEntries { File file ->
+            [(file.absolutePath): file.exists() ? file.length() : -1L]
+        }
+        if (currentSnapshot == lastSnapshot) {
+            if (System.currentTimeMillis() - stableSince >= stableMillis) {
+                return
+            }
+        } else {
+            lastSnapshot = currentSnapshot
+            stableSince = System.currentTimeMillis()
+        }
+    }
+    throw new GradleException('runAll timed out while waiting for output files to settle.')
+}
+
+def clearRunAllProbeFiles(List<File> files) {
+    files.each { File file ->
+        if (file.exists()) {
+            file.delete()
+        }
+    }
+}
+
+def configureRunAllServerProperties(File propertiesFile) {
+    Properties properties = new Properties()
+    if (propertiesFile.exists()) {
+        propertiesFile.withInputStream { input ->
+            properties.load(input)
+        }
+    } else {
+        propertiesFile.parentFile.mkdirs()
+    }
+    properties.setProperty('online-mode', 'false')
+    properties.setProperty('enforce-secure-profile', 'false')
+    properties.setProperty('server-ip', '')
+    properties.setProperty('server-port', '25565')
+    properties.setProperty('level-name', 'bo-runall-world')
+    propertiesFile.withOutputStream { output ->
+        properties.store(output, 'BandwidthOptimizer NeoForge runAll local test server')
+    }
+    new File(propertiesFile.parentFile, 'eula.txt').setText('eula=true' + System.lineSeparator(), StandardCharsets.UTF_8.name())
+}
+
+def configureRunAllServerOperators(File opsFile) {
+    List<Map<String, Object>> opsEntries = []
+    if (opsFile.exists()) {
+        Object parsed = new JsonSlurper().parse(opsFile, StandardCharsets.UTF_8.name())
+        if (parsed instanceof List) {
+            opsEntries.addAll((List<Map<String, Object>>) parsed)
+        }
+    } else {
+        opsFile.parentFile.mkdirs()
+    }
+
+    String offlineUuid = UUID.nameUUIDFromBytes('OfflinePlayer:Dev'.getBytes(StandardCharsets.UTF_8)).toString()
+    Map<String, Object> operatorEntry = [
+            uuid               : offlineUuid,
+            name               : 'Dev',
+            level              : 4,
+            bypassesPlayerLimit: false
+    ]
+    int existingIndex = opsEntries.findIndexOf { Map<String, Object> entry ->
+        'Dev'.equalsIgnoreCase(String.valueOf(entry.get('name')))
+    }
+    if (existingIndex >= 0) {
+        Map<String, Object> mergedEntry = new LinkedHashMap<>(opsEntries.get(existingIndex))
+        mergedEntry.putAll(operatorEntry)
+        opsEntries.set(existingIndex, mergedEntry)
+    } else {
+        opsEntries.add(operatorEntry)
+    }
+
+    opsFile.setText(JsonOutput.prettyPrint(JsonOutput.toJson(opsEntries)) + System.lineSeparator(), StandardCharsets.UTF_8.name())
+}
+
+def stopExistingRunAllProcesses(Project projectRef, File projectDirFile, boolean isWindows) {
+    if (!isWindows) {
+        return
+    }
+    String escapedProjectDir = projectDirFile.absolutePath.replace("'", "''")
+    projectRef.exec {
+        commandLine 'powershell', '-NoProfile', '-Command',
+                "\$targets = Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -and \$_.CommandLine -like '*${escapedProjectDir}*' -and (\$_.CommandLine -like '*gradlew.bat*runClient*' -or \$_.CommandLine -like '*gradlew.bat*runServer*' -or \$_.CommandLine -like '*net.neoforged.devlaunch*' -or \$_.CommandLine -like '*cpw.mods.bootstraplauncher*') }; \$targets | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }"
+        ignoreExitValue = true
+    }
+}
+
+def stopRunAllServerProcesses(Project projectRef, File projectDirFile, boolean isWindows) {
+    if (!isWindows) {
+        return
+    }
+    String escapedProjectDir = projectDirFile.absolutePath.replace("'", "''")
+    String escapedServerDir = new File(projectDirFile, 'run/server').absolutePath.replace("'", "''")
+    projectRef.exec {
+        commandLine 'powershell', '-NoProfile', '-Command',
+                "\$targets = Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -and ((\$_.CommandLine -like '*${escapedProjectDir}*' -and \$_.CommandLine -like '*gradlew.bat*runServer*') -or (\$_.CommandLine -like '*${escapedServerDir}*' -and (\$_.CommandLine -like '*net.neoforged.devlaunch*' -or \$_.CommandLine -like '*cpw.mods.bootstraplauncher*'))) }; \$targets | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }"
+        ignoreExitValue = true
+    }
+}
+
+def forceStopRunAllProcesses(Project projectRef, File projectDirFile, boolean isWindows, List<Process> processes) {
+    stopExistingRunAllProcesses(projectRef, projectDirFile, isWindows)
+    processes.findAll { it != null }.each { Process process ->
+        if (!process.isAlive()) {
+            return
+        }
+        process.destroy()
+        process.waitFor(5L, TimeUnit.SECONDS)
+        if (process.isAlive()) {
+            process.destroyForcibly()
+            process.waitFor(5L, TimeUnit.SECONDS)
+        }
+    }
+}
+
+tasks.register('runChannelJsonlCompare', JavaExec) {
+    group = 'verification'
+    description = 'Compares NeoForge 1.21.1 runAll jsonl traffic.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
+}
+
+tasks.register('runChunkBranchCoverageVerify', JavaExec) {
+    group = 'verification'
+    description = 'Verifies NeoForge 1.21.1 runAll chunk transport branch coverage.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.PinkCats.bandwidthoptimizer.test.RunAllChunkBranchCoverageMain'
+}
+
+tasks.register('runAll') {
+    group = 'application'
+    description = 'Starts NeoForge 1.21.1 server and client from this subproject, then verifies four-way jsonl traffic.'
+    dependsOn(tasks.named('testClasses'))
+
+    doLast {
+        String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+        boolean isWindows = osName.contains('windows')
+        File rootDirFile = rootProject.projectDir
+        File projectDirFile = project.projectDir
+        String wrapperPath = new File(rootDirFile, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        long observeSeconds = readRunAllLongProperty(project, 'boRunAllObserveSeconds', 0L)
+        long settleMillis = readRunAllLongProperty(project, 'boRunAllSettleMillis', 3000L)
+        long settleTimeoutMillis = readRunAllLongProperty(project, 'boRunAllSettleTimeoutMillis', 15000L)
+
+        File serverDir = project.file('run/server')
+        File clientDir = project.file('run/client')
+        File serverTaskLog = project.file('run/runall-server-task.log')
+        File clientTaskLog = project.file('run/runall-client-task.log')
+        File serverSendJsonl = project.file('run/server/send.jsonl')
+        File serverReceiveJsonl = project.file('run/server/receive.jsonl')
+        File clientSendJsonl = project.file('run/client/send.jsonl')
+        File clientReceiveJsonl = project.file('run/client/receive.jsonl')
+        File serverChunkHotspotStats = project.file('run/server/chunk-hotspot-stats.properties')
+        File clientChunkHotspotStats = project.file('run/client/chunk-hotspot-stats.properties')
+        File serverLoginMarker = project.file('run/server/bo-runall-player-logged-in.marker')
+        File serverProperties = project.file('run/server/server.properties')
+        File serverOpsFile = project.file('run/server/ops.json')
+
+        stopExistingRunAllProcesses(project, projectDirFile, isWindows)
+        sleep(3000)
+
+        clearRunAllProbeFiles([
+                serverTaskLog,
+                clientTaskLog,
+                serverSendJsonl,
+                serverReceiveJsonl,
+                clientSendJsonl,
+                clientReceiveJsonl,
+                serverChunkHotspotStats,
+                clientChunkHotspotStats,
+                serverLoginMarker
+        ])
+
+        configureRunAllServerProperties(serverProperties)
+        configureRunAllServerOperators(serverOpsFile)
+
+        Process serverProcess = null
+        Process clientProcess = null
+        try {
+            println 'runAll: starting NeoForge 1.21.1 local server.'
+            serverProcess = startNeoForgeRunTaskProcess(rootDirFile, projectDirFile, isWindows, wrapperPath, 'runServer', buildRunAllSharedGradleArgs(project), serverTaskLog, 'runServer')
+            waitForLogMarker(
+                    serverTaskLog,
+                    ['Done ('],
+                    ['BUILD FAILED', 'Failed to start the minecraft server', 'Address already in use', 'Crash report saved to'],
+                    240000L,
+                    'NeoForge runAll server startup'
+            )
+
+            List<String> clientGradleArgs = buildExperientAutoConnectGradleArgs(project, '127.0.0.1:25565', 'BO NeoForge RunAll Local', 20L)
+            println 'runAll: server is ready, starting NeoForge 1.21.1 client.'
+            clientProcess = startNeoForgeRunTaskProcess(rootDirFile, projectDirFile, isWindows, wrapperPath, 'runClient', clientGradleArgs, clientTaskLog, 'runClient')
+            waitForLogMarker(
+                    clientTaskLog,
+                    ['Connecting to 127.0.0.1, 25565', 'Connecting to 127.0.0.1:25565'],
+                    ['Failed to connect to the server', 'Connection refused', 'Internal Exception', 'Reached max attempts'],
+                    240000L,
+                    'NeoForge runAll client connect'
+            )
+
+            waitForFourWayCapturedTraffic(clientSendJsonl, clientReceiveJsonl, serverSendJsonl, serverReceiveJsonl, 240000L)
+            println "runAll: four-way jsonl started. server=${serverDir.absolutePath}, client=${clientDir.absolutePath}"
+
+            if (observeSeconds > 0L) {
+                sleep(observeSeconds * 1000L)
+                forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
+                waitForFilesToSettle(
+                        [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
+                        settleMillis,
+                        settleTimeoutMillis
+                )
+                javaexec {
+                    classpath = sourceSets.test.runtimeClasspath
+                    mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
+                }
+                println 'runAll: NeoForge 1.21.1 runAll completed.'
+                return
+            }
+
+            clientProcess.waitFor()
+            waitForFilesToSettle([clientSendJsonl, serverReceiveJsonl], settleMillis, settleTimeoutMillis)
+            stopRunAllServerProcesses(project, projectDirFile, isWindows)
+            if (serverProcess.isAlive()) {
+                serverProcess.waitFor(30L, TimeUnit.SECONDS)
+            }
+            waitForFilesToSettle(
+                    [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
+                    settleMillis,
+                    settleTimeoutMillis
+            )
+            javaexec {
+                classpath = sourceSets.test.runtimeClasspath
+                mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
+            }
+            println 'runAll: NeoForge 1.21.1 runAll completed.'
+        } finally {
+            forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
+        }
+    }
 }

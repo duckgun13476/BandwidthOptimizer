@@ -76,7 +76,8 @@ public final class ChannelTransportHooks {
             return;
         }
 
-        String protocolName = readProtocolName(context);
+        ConnectionProtocol connectionProtocol = readConnectionProtocol(packetEncoderFlowAccess);
+        String protocolName = readProtocolName(connectionProtocol);
         byte[] originalPacketBytes = ByteBufUtil.getBytes(out, startIndexInclusive, endIndexExclusive - startIndexInclusive, false);
 
 
@@ -195,7 +196,8 @@ public final class ChannelTransportHooks {
             );
         }
         byte[] transportInputPacketBytes = chunkTransportEncodedBytes == null ? originalPacketBytes : chunkTransportEncodedBytes;
-        PacketFlow outboundPacketFlow = resolvePacketFlow(packetEncoderFlowAccess, readConnectionProtocol(context), packet);
+        byte[] directFallbackPacketBytes = originalPacketBytes;
+        PacketFlow outboundPacketFlow = resolvePacketFlow(packetEncoderFlowAccess, connectionProtocol, packet);
         ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace =
                 ChunkBoundaryBandwidthRecorder.beginOutboundTrace(
                         context,
@@ -207,6 +209,7 @@ public final class ChannelTransportHooks {
                 );
 
         if (shouldBypassTransparentTransport(context, protocolName, packet, outboundPacketFlow)) {
+            ChannelTransportBatchManager.flushOutboundBatchNow(context);
             recordDirectPacketTrace(
                     context,
                     "transparent_bypass",
@@ -246,7 +249,7 @@ public final class ChannelTransportHooks {
         try {
             if (shouldBypassServerboundCarrierByInputSize(outboundPacketFlow, transportInputPacketBytes.length)) {
                 out.writerIndex(startIndexInclusive);
-                out.writeBytes(transportInputPacketBytes);
+                out.writeBytes(directFallbackPacketBytes);
                 if (forceImmediateTransport && DebugRuntimeConfig.isDiagnoseEnabled()) {
                     Bandwidthoptimizer.LOGGER.info(
                             "[Transport][ImmediatePolicy][Fallback] reason=serverbound_carrier_size, packetClass={}, inputBytes={}, channel={}",
@@ -261,25 +264,25 @@ public final class ChannelTransportHooks {
                         protocolName,
                         packet,
                         outboundPacketFlow,
-                        transportInputPacketBytes
+                        directFallbackPacketBytes
                 );
-                recordOutboundBypassStats(context, protocolName, transportInputPacketBytes.length, 1);
+                recordOutboundBypassStats(context, protocolName, directFallbackPacketBytes.length, 1);
                 ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
                         outboundPacketCapture,
-                        transportInputPacketBytes.length
+                        directFallbackPacketBytes.length
                 );
                 ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
                         boundaryPacketTrace,
                         "DIRECT_PASSTHROUGH",
                         "DIRECT",
-                        transportInputPacketBytes.length,
-                        chunkTransportEncodedBytes != null,
+                        directFallbackPacketBytes.length,
+                        false,
                         1
                 );
                 return;
             }
 
-            if (!forceImmediateTransport && ChannelTransportBatchManager.shouldBatchOutboundPacket(context)) {
+            if (chunkTransportEncodedBytes == null && !forceImmediateTransport && ChannelTransportBatchManager.shouldBatchOutboundPacket(context)) {
                 out.writerIndex(startIndexInclusive);
                 if (DebugRuntimeConfig.isDiagnoseEnabled()) {
                     ChannelTransportTraceJournal.record(
@@ -345,18 +348,18 @@ public final class ChannelTransportHooks {
             }
             if (shouldBypassUnprofitableCarrier(wrappedFrame)) {
                 out.writerIndex(startIndexInclusive);
-                out.writeBytes(transportInputPacketBytes);
-                recordOutboundBypassStats(context, protocolName, transportInputPacketBytes.length, 1);
+                out.writeBytes(directFallbackPacketBytes);
+                recordOutboundBypassStats(context, protocolName, directFallbackPacketBytes.length, 1);
                 ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
                         outboundPacketCapture,
-                        transportInputPacketBytes.length
+                        directFallbackPacketBytes.length
                 );
                 ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
                         boundaryPacketTrace,
                         "DIRECT_PASSTHROUGH",
                         "DIRECT",
-                        transportInputPacketBytes.length,
-                        chunkTransportEncodedBytes != null,
+                        directFallbackPacketBytes.length,
+                        false,
                         1
                 );
                 return;
@@ -374,7 +377,7 @@ public final class ChannelTransportHooks {
 
             out.writerIndex(startIndexInclusive);
             if (!writeTransportCarrierPacket(context, outboundPacketFlow, out, wrappedFrame.transportFrameBytes(), packetEncoderFlowAccess)) {
-                out.writeBytes(transportInputPacketBytes);
+                out.writeBytes(directFallbackPacketBytes);
                 if (forceImmediateTransport && DebugRuntimeConfig.isDiagnoseEnabled()) {
                     Bandwidthoptimizer.LOGGER.info(
                             "[Transport][ImmediatePolicy][Fallback] reason=carrier_write_failed, packetClass={}, inputBytes={}, channel={}",
@@ -389,19 +392,19 @@ public final class ChannelTransportHooks {
                         protocolName,
                         packet,
                         outboundPacketFlow,
-                        transportInputPacketBytes
+                        directFallbackPacketBytes
                 );
-                recordOutboundBypassStats(context, protocolName, transportInputPacketBytes.length, 1);
+                recordOutboundBypassStats(context, protocolName, directFallbackPacketBytes.length, 1);
                 ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
                         outboundPacketCapture,
-                        transportInputPacketBytes.length
+                        directFallbackPacketBytes.length
                 );
                 ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
                         boundaryPacketTrace,
                         "DIRECT_PASSTHROUGH",
                         "DIRECT",
-                        transportInputPacketBytes.length,
-                        chunkTransportEncodedBytes != null,
+                        directFallbackPacketBytes.length,
+                        false,
                         1
                 );
                 return;
@@ -521,7 +524,7 @@ public final class ChannelTransportHooks {
                 || packetDecoderFlowAccess == null
                 || !in.isReadable()
                 || !ChannelTransportRuntimeGuard.isTransportAvailable()
-                || !shouldUseTransportForCurrentProtocol(readProtocolName(context))) {
+                || !shouldUseTransportForCurrentProtocol(readProtocolName(packetDecoderFlowAccess))) {
             return false;
         }
 
@@ -535,7 +538,7 @@ public final class ChannelTransportHooks {
 
         decodeInboundPacketsIntoOutput(context, unwrappedFrame, out, packetDecoderFlowAccess);
         in.readerIndex(in.writerIndex());
-        recordInboundTransportStats(context, readProtocolName(context), unwrappedFrame);
+        recordInboundTransportStats(context, readProtocolName(packetDecoderFlowAccess), unwrappedFrame);
         return true;
     }
 
@@ -550,7 +553,7 @@ public final class ChannelTransportHooks {
                 || packetDecoderFlowAccess == null
                 || out.size() <= outputSizeBeforeDecode
                 || !ChannelTransportRuntimeGuard.isTransportAvailable()
-                || !shouldUseTransportForCurrentProtocol(readProtocolName(context))) {
+                || !shouldUseTransportForCurrentProtocol(readProtocolName(packetDecoderFlowAccess))) {
             return false;
         }
 
@@ -576,7 +579,7 @@ public final class ChannelTransportHooks {
 
             List<Object> restoredPackets = new ArrayList<>();
             decodeInboundPacketsIntoOutput(context, unwrappedFrame, restoredPackets, packetDecoderFlowAccess);
-            recordInboundTransportStats(context, readProtocolName(context), unwrappedFrame);
+            recordInboundTransportStats(context, readProtocolName(packetDecoderFlowAccess), unwrappedFrame);
             expandedAny = true;
             index = replaceDecodedCarrierWithRestoredPackets(out, index, restoredPackets);
         }
@@ -772,8 +775,26 @@ public final class ChannelTransportHooks {
         return "PLAY";
     }
 
-    private static ConnectionProtocol readConnectionProtocol(ChannelHandlerContext context) {
-        return ConnectionProtocol.PLAY;
+    private static String readProtocolName(PacketEncoderFlowAccess packetEncoderFlowAccess) {
+        return readProtocolName(readConnectionProtocol(packetEncoderFlowAccess));
+    }
+
+    private static String readProtocolName(PacketDecoderFlowAccess packetDecoderFlowAccess) {
+        return readProtocolName(readConnectionProtocol(packetDecoderFlowAccess));
+    }
+
+    private static String readProtocolName(ConnectionProtocol protocol) {
+        return protocol == null ? "<unknown>" : protocol.name();
+    }
+
+    private static ConnectionProtocol readConnectionProtocol(PacketEncoderFlowAccess packetEncoderFlowAccess) {
+        ProtocolInfo<? extends PacketListener> protocolInfo = readProtocolInfo(packetEncoderFlowAccess);
+        return protocolInfo == null ? null : protocolInfo.id();
+    }
+
+    private static ConnectionProtocol readConnectionProtocol(PacketDecoderFlowAccess packetDecoderFlowAccess) {
+        ProtocolInfo<? extends PacketListener> protocolInfo = readProtocolInfo(packetDecoderFlowAccess);
+        return protocolInfo == null ? null : protocolInfo.id();
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

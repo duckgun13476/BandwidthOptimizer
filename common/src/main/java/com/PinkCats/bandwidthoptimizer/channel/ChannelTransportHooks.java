@@ -206,6 +206,7 @@ public final class ChannelTransportHooks {
                 );
 
         if (shouldBypassTransparentTransport(context, protocolName, packet, outboundPacketFlow)) {
+            ChannelTransportBatchManager.flushOutboundBatchNow(context);
             recordDirectPacketTrace(
                     context,
                     "transparent_bypass",

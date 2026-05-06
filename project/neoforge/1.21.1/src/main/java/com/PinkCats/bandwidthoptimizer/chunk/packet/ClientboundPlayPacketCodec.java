@@ -25,6 +25,8 @@ public final class ClientboundPlayPacketCodec {
             byte[] bytes = new byte[buffer.readableBytes()];
             buffer.getBytes(0, bytes);
             return bytes;
+        } catch (RuntimeException exception) {
+            return null;
         } finally {
             buffer.release();
         }
@@ -43,6 +45,8 @@ public final class ClientboundPlayPacketCodec {
             @SuppressWarnings("unchecked")
             Packet<ClientGamePacketListener> typedPacket = (Packet<ClientGamePacketListener>) packet;
             return typedPacket;
+        } catch (RuntimeException exception) {
+            return null;
         } finally {
             buffer.release();
         }

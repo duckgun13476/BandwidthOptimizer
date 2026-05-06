@@ -8,6 +8,7 @@ import net.minecraft.network.protocol.game.ClientboundCommandsPacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
+import net.minecraft.network.protocol.game.ClientboundLoginPacket;
 import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerCombatEnterPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerCombatEndPacket;
@@ -45,6 +46,7 @@ public final class ChannelTransportBypassPacketList {
             ClientboundContainerSetSlotPacket.class,
             ClientboundEntityEventPacket.class,
             ClientboundForgetLevelChunkPacket.class,
+            ClientboundLoginPacket.class,
             ClientboundMoveEntityPacket.Pos.class,
             ClientboundMoveEntityPacket.PosRot.class,
             ClientboundMoveEntityPacket.Rot.class,
@@ -76,6 +78,9 @@ public final class ChannelTransportBypassPacketList {
     );
     private static final Set<String> PACKET_CLASS_NAMES = Set.of(
             "net.minecraft.network.protocol.BundleDelimiterPacket",
+            "net.minecraft.network.protocol.game.ClientboundBundleDelimiterPacket",
+            "net.minecraft.network.protocol.game.ClientboundChunkBatchFinishedPacket",
+            "net.minecraft.network.protocol.game.ClientboundChunkBatchStartPacket",
             "net.minecraft.network.protocol.game.ClientboundDamageEventPacket",
             "net.minecraft.network.protocol.game.ClientboundHurtAnimationPacket",
             "net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket"
