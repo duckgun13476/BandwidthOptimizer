@@ -417,7 +417,7 @@ public final class ChannelTransportBatchManager {
     }
 
     private static String readProtocolName(ChannelHandlerContext context) {
-        Object protocol = net.minecraft.network.ConnectionProtocol.PLAY;
+        Object protocol = context.channel().attr(net.minecraft.network.Connection.ATTRIBUTE_PROTOCOL).get();
         return protocol == null ? "null" : String.valueOf(protocol);
     }
 

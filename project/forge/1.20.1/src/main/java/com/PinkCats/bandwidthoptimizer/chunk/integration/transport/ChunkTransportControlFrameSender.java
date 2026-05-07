@@ -334,7 +334,7 @@ public final class ChunkTransportControlFrameSender {
     }
 
     private static String readProtocolName(Channel channel) {
-        Object protocol = net.minecraft.network.ConnectionProtocol.PLAY;
+        Object protocol = channel.attr(net.minecraft.network.Connection.ATTRIBUTE_PROTOCOL).get();
         return protocol == null ? "null" : String.valueOf(protocol);
     }
 

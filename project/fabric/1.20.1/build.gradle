@@ -68,12 +68,11 @@ sourceSets {
         java.srcDir '../../../common/src/main/java'
         java.srcDir 'src/main/java'
         resources.srcDir '../../../common/src/main/resources'
-        resources.srcDir '../../../src/main/resources'
         resources.srcDir 'src/main/resources'
         resources.exclude 'META-INF/mods.toml'
     }
     test {
-        java.srcDir '../../../src/test/java'
+        java.srcDir '../../../project/forge/1.20.1/src/test/java'
     }
 }
 

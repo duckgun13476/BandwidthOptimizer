@@ -71,7 +71,7 @@ minecraft {
 
         data {
             workingDirectory project.file('run-data')
-            args '--mod', mod_id, '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
+            args '--mod', mod_id, '--all', '--output', file('src/generated/resources/'), '--existing', file('project/forge/1.20.1/src/main/resources/')
         }
     }
 }
@@ -84,7 +84,13 @@ mixin {
 sourceSets {
     main {
         java.srcDir 'common/src/main/java'
+        java.srcDir 'project/forge/1.20.1/src/main/java'
         resources.srcDir 'common/src/main/resources'
+        resources.srcDir 'project/forge/1.20.1/src/main/resources'
+    }
+    test {
+        java.srcDir 'project/forge/1.20.1/src/test/java'
+        resources.srcDir 'project/forge/1.20.1/src/test/resources'
     }
 }
 sourceSets.main.resources { srcDir 'src/generated/resources' }

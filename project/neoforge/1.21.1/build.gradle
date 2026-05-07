@@ -138,7 +138,7 @@ neoForge {
 
         data {
             data()
-            programArguments.addAll '--mod', mod_id, '--all', '--output', rootProject.file('src/generated/resources/').absolutePath, '--existing', rootProject.file('src/main/resources/').absolutePath
+            programArguments.addAll '--mod', mod_id, '--all', '--output', rootProject.file('src/generated/resources/').absolutePath, '--existing', project.file('src/main/resources/').absolutePath
         }
 
         configureEach {
@@ -154,6 +154,14 @@ neoForge {
     }
 }
 
+def neoforgeExcludedCommonJava = [
+        'com/PinkCats/bandwidthoptimizer/channel/ChannelTransportBypassRankLogger.java',
+        'com/PinkCats/bandwidthoptimizer/channel/capture/ChannelCaptureHooks.java',
+        'com/PinkCats/bandwidthoptimizer/chunk/packet/ClientboundPlayPacketCodec.java',
+        'com/PinkCats/bandwidthoptimizer/server/stat/ServerBandwidthPersistentStats.java',
+        'com/PinkCats/bandwidthoptimizer/server/stat/ServerBandwidthStatsPersistence.java'
+]
+
 sourceSets {
     main {
         java.srcDir rootProject.file('common/src/main/java')
@@ -168,59 +176,11 @@ sourceSets {
     }
 }
 
-def neoforgeExcludedRootJava = [
-        'com/PinkCats/bandwidthoptimizer/Bandwidthoptimizer.java',
-        'com/PinkCats/bandwidthoptimizer/Config.java',
-        'com/PinkCats/bandwidthoptimizer/command/ClientHudCommand.java',
-        'com/PinkCats/bandwidthoptimizer/server/stat/ServerBandwidthStatsLifecycleHooks.java',
-        'com/PinkCats/bandwidthoptimizer/server/stat/ServerBandwidthStatsHudSync.java',
-        'com/PinkCats/bandwidthoptimizer/channel/mes/ChannelFrameJsonlLogger.java',
-        'com/PinkCats/bandwidthoptimizer/compat/minecraft/ForgeModLoadingContextCompat.java',
-        'com/PinkCats/bandwidthoptimizer/report/ChunkBoundaryBandwidthRecorder.java',
-        'com/PinkCats/bandwidthoptimizer/chunk/budget/ChunkClientCacheBudgetManager.java',
-        'com/PinkCats/bandwidthoptimizer/report/ChannelTransportPacketRankReportWriter.java',
-        'com/PinkCats/bandwidthoptimizer/report/ChannelTransportCompressionReportWriter.java',
-        'com/PinkCats/bandwidthoptimizer/report/ChannelTransportPacketRankCaptureManager.java',
-        'com/PinkCats/bandwidthoptimizer/report/ChannelTransportCompressionCaptureManager.java',
-        'com/PinkCats/bandwidthoptimizer/client/hud/BandwidthOptimizerHudOverlay.java',
-        'com/PinkCats/bandwidthoptimizer/channel/algorithm/zstd/ZstdRuntimeSupport.java',
-        'com/PinkCats/bandwidthoptimizer/chunk/verify/ChunkHotspotStats.java',
-        'com/PinkCats/bandwidthoptimizer/client/config/ClientChunkCacheConfig.java',
-        'com/PinkCats/bandwidthoptimizer/experient/ExperientAutoConnectController.java',
-        'com/PinkCats/bandwidthoptimizer/experient/ExperientChunkHotspotPathController.java',
-        'com/PinkCats/bandwidthoptimizer/experient/ExperientClientCaptureResetHooks.java',
-        'com/PinkCats/bandwidthoptimizer/experient/ExperientRunAllProbeHooks.java',
-        'com/PinkCats/bandwidthoptimizer/experient/ExperientServerCommandController.java',
-        'com/PinkCats/bandwidthoptimizer/experient/ExperientWatchBoundaryRefreshPatchController.java',
-        'com/PinkCats/bandwidthoptimizer/channel/ChannelTransportNetworkChannel.java',
-        'com/PinkCats/bandwidthoptimizer/mixin/minecraft/ClientboundCustomPayloadPacketAccessor.java',
-        'com/PinkCats/bandwidthoptimizer/mixin/minecraft/ServerboundCustomPayloadPacketAccessor.java',
-        'com/PinkCats/bandwidthoptimizer/mixin/minecraft/ClientPacketListenerChunkHandleMixin.java',
-        'com/PinkCats/bandwidthoptimizer/mixin/minecraft/ConnectionSendBoundaryMixin.java',
-        'com/PinkCats/bandwidthoptimizer/mixin/minecraft/PacketOutPipeMixin.java',
-        'com/PinkCats/bandwidthoptimizer/mixin/minecraft/PacketInPipeMixin.java',
-        'com/PinkCats/bandwidthoptimizer/mixin/minecraft/ServerGamePacketListenerImplAccessor.java'
-]
-
-def neoforgeExcludedCommonJava = [
-        'com/PinkCats/bandwidthoptimizer/channel/ChannelTransportHooks.java',
-        'com/PinkCats/bandwidthoptimizer/channel/ChannelTransportBypassRankLogger.java',
-        'com/PinkCats/bandwidthoptimizer/channel/algorithm/batch/ChannelTransportBatchManager.java',
-        'com/PinkCats/bandwidthoptimizer/channel/capture/ChannelCaptureHooks.java',
-        'com/PinkCats/bandwidthoptimizer/chunk/integration/transport/ChunkTransportControlFrameSender.java',
-        'com/PinkCats/bandwidthoptimizer/chunk/packet/ClientboundPlayPacketCodec.java',
-        'com/PinkCats/bandwidthoptimizer/server/stat/ServerBandwidthPersistentStats.java',
-        'com/PinkCats/bandwidthoptimizer/server/stat/ServerBandwidthStatsPersistence.java'
-]
-
 tasks.named('compileJava', JavaCompile).configure {
     setSource(files(
             project.fileTree('src/main/java'),
             rootProject.fileTree('common/src/main/java') {
                 exclude neoforgeExcludedCommonJava
-            },
-            rootProject.fileTree('src/main/java') {
-                exclude neoforgeExcludedRootJava
             }
     ))
 }
@@ -271,7 +231,7 @@ dependencies {
 
 tasks.named('processResources', ProcessResources).configure {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from(rootProject.file('src/main/resources/assets')) {
+    from(rootProject.file('common/src/main/resources/assets')) {
         into 'assets'
     }
     var replaceProperties = [minecraft_version      : '1.21.1',

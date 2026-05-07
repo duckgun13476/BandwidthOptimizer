@@ -51,7 +51,7 @@ minecraft {
 
         data {
             workingDirectory rootProject.file('run-data')
-            args '--mod', mod_id, '--all', '--output', rootProject.file('src/generated/resources/'), '--existing', rootProject.file('src/main/resources/')
+            args '--mod', mod_id, '--all', '--output', rootProject.file('src/generated/resources/'), '--existing', project.file('src/main/resources/')
         }
     }
 }
@@ -64,14 +64,14 @@ mixin {
 sourceSets {
     main {
         java.srcDir rootProject.file('common/src/main/java')
-        java.srcDir rootProject.file('src/main/java')
+        java.srcDir project.file('src/main/java')
         resources.srcDir rootProject.file('common/src/main/resources')
-        resources.srcDir rootProject.file('src/main/resources')
+        resources.srcDir project.file('src/main/resources')
         resources.srcDir rootProject.file('src/generated/resources')
     }
     test {
-        java.srcDir rootProject.file('src/test/java')
-        resources.srcDir rootProject.file('src/test/resources')
+        java.srcDir project.file('src/test/java')
+        resources.srcDir project.file('src/test/resources')
     }
 }
 
