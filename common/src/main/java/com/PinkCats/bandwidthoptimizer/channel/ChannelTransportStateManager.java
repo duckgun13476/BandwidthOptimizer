@@ -25,4 +25,12 @@ public final class ChannelTransportStateManager {
         ChannelTransportSession racedSession = channel.attr(TRANSPORT_SESSION_KEY).setIfAbsent(newSession);
         return racedSession != null ? racedSession : newSession;
     }
+
+    // 重置当前物理连接上的透明传输字典，避免 Velocity 切服后继续使用上一个后端的压缩状态。
+    public static void clearSession(Channel channel, String reason) {
+        if (channel == null) {
+            return;
+        }
+        channel.attr(TRANSPORT_SESSION_KEY).set(null);
+    }
 }

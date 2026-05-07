@@ -166,6 +166,21 @@ public final class ChunkTransportBoundaryController {
         getOrCreateBoundaryState(channel).recordRuntimeFailure(coordinate, reason);
     }
 
+    // 重置当前连接的区块传输边界状态，让 Velocity 切到新后端后从新的 epoch 重新开始接收区块帧。
+    public static void resetChannelState(ChannelHandlerContext context, String reason) {
+        if (context == null || context.channel() == null) {
+            return;
+        }
+        context.channel().attr(CHANNEL_BOUNDARY_STATE_KEY).set(new ChannelBoundaryState());
+        if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ChunkTransport][Boundary][Reset] channel={}, reason={}",
+                    context.channel().id().asLongText(),
+                    reason == null ? "" : reason
+            );
+        }
+    }
+
 
     private static BoundaryTrigger resolveBoundaryTrigger(String protocolName, Packet<?> packet) {
         if (packet instanceof ClientboundLoginPacket) {

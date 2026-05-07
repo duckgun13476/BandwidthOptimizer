@@ -74,6 +74,11 @@ public final class ChannelTransportBatchManager {
         flushOutboundBatch(context.channel());
     }
 
+    // 丢弃当前连接上尚未发送或等待回放的 batch，切服时不能把旧后端的延迟包带到新后端。
+    public static void clearChannelState(Channel channel, String reason) {
+        clearBatchState(channel, false);
+    }
+
     // Prevent sensitive overtake problem
     public static boolean shouldBatchOutboundPacket(ChannelHandlerContext context) {
         if (context == null || !ChannelTransportBatchRuntimeConfig.isBatchEnabled()) {
@@ -478,6 +483,10 @@ public final class ChannelTransportBatchManager {
     }
 
     private static void clearBatchState(Channel channel) {
+        clearBatchState(channel, true);
+    }
+
+    private static void clearBatchState(Channel channel, boolean clearCloseCleanupMarker) {
         if (channel == null) {
             return;
         }
@@ -490,7 +499,9 @@ public final class ChannelTransportBatchManager {
         channel.attr(OUTBOUND_BATCH_STATE_KEY).set(null);
         channel.attr(INBOUND_BATCH_STATE_KEY).set(null);
         channel.attr(BATCH_APPLICABILITY_STATE_KEY).set(null);
-        channel.attr(BATCH_CLOSE_CLEANUP_ATTACHED_KEY).set(null);
+        if (clearCloseCleanupMarker) {
+            channel.attr(BATCH_CLOSE_CLEANUP_ATTACHED_KEY).set(null);
+        }
     }
 
     private static boolean isChannelUsable(Channel channel) {
