@@ -1,0 +1,186 @@
+import java.io.BufferedReader
+import java.io.BufferedWriter
+import java.io.FileOutputStream
+import java.io.IOException
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import java.nio.charset.StandardCharsets
+
+// 判断当前版本项目是否启用 runAll 相关验证任务，默认启用，特殊版本可用 -PboRunAllTasksEnabled=false 关闭。
+ext.boIsRunAllTasksEnabled = { projectRef ->
+    Object rawValue = projectRef.gradle.startParameter.projectProperties.get('boRunAllTasksEnabled')
+    if (rawValue == null && projectRef.hasProperty('boRunAllTasksEnabled')) {
+        rawValue = projectRef.property('boRunAllTasksEnabled')
+    }
+    (rawValue ?: 'true').toString().toBoolean()
+}
+
+// 推导服务端 BO 默认输出目录，必须与 common 里的 bandwidthoptimizer-native 默认目录保持一致。
+ext.boServerOutputRoot = { projectRef ->
+    projectRef.file('run/server/bandwidthoptimizer-native')
+}
+
+// 推导客户端 BO 默认输出目录，必须与 common 里的 bandwidthoptimizer-native 默认目录保持一致。
+ext.boClientOutputRoot = { projectRef ->
+    projectRef.file('run/client/bandwidthoptimizer-native')
+}
+
+// 判断 runAll 类任务是否通过显式版本路径调用，避免根项目无版本选择器一次触发多个版本。
+ext.boIsExplicitVersionRunAllTaskRequest = { projectRef, taskName ->
+    List<String> requestedTasks = gradle.startParameter.taskNames.collect { it.toString() }
+    String qualifiedTaskPath = "${projectRef.path}:${taskName}"
+    boolean requestedByQualifiedPath = requestedTasks.any { String requestedTask ->
+        requestedTask == qualifiedTaskPath
+    }
+    File requestedProjectDir = gradle.startParameter.projectDir
+    boolean requestedByProjectDirectory = requestedTasks.any { String requestedTask ->
+        requestedTask == taskName
+    } && requestedProjectDir != null && requestedProjectDir.canonicalFile == projectRef.projectDir.canonicalFile
+    return requestedByQualifiedPath || requestedByProjectDirectory
+}
+
+// 强制 runAll 类任务使用版本路径，防止 ./gradlew runAll 在多版本工程里误触发聚合。
+ext.boRequireExplicitVersionRunAllTaskRequest = { projectRef, taskName ->
+    if (!ext.boIsExplicitVersionRunAllTaskRequest(projectRef, taskName)) {
+        throw new GradleException("${taskName} 已拆分到版本项目内，请使用 ./gradlew ${projectRef.path}:${taskName}")
+    }
+}
+
+// 把可选 Gradle 属性转发给内部 runServer/runClient 子进程。
+ext.boAppendOptionalRunAllProperty = { args, projectRef, propertyName ->
+    if (projectRef.hasProperty(propertyName)) {
+        args.add("-P${propertyName}=${projectRef.property(propertyName).toString()}")
+    }
+}
+
+// 读取 runAll 数值参数，空值回退默认值，负数直接失败。
+ext.boReadRunAllLongProperty = { projectRef, propertyName, defaultValue ->
+    if (!projectRef.hasProperty(propertyName)) {
+        return defaultValue
+    }
+    String rawValue = projectRef.property(propertyName).toString().trim()
+    if (rawValue.isEmpty()) {
+        return defaultValue
+    }
+    try {
+        long parsedValue = Long.parseLong(rawValue)
+        if (parsedValue < 0L) {
+            throw new GradleException("${propertyName} 不能是负数，当前值=${rawValue}")
+        }
+        return parsedValue
+    } catch (NumberFormatException exception) {
+        throw new GradleException("${propertyName} 必须是整数，当前值=${rawValue}", exception)
+    }
+}
+
+// 把子进程输出同步写入控制台和任务日志文件。
+ext.boStreamRunTaskOutputToConsole = { process, outputFile, consoleLabel, threadPrefix ->
+    String safeConsoleLabel = (consoleLabel == null || consoleLabel.isBlank()) ? 'run-task' : consoleLabel
+    String safeThreadPrefix = (threadPrefix == null || threadPrefix.isBlank()) ? 'runAll-log-pump' : threadPrefix
+    Thread.startDaemon("${safeThreadPrefix}-${safeConsoleLabel}") {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(process.inputStream, StandardCharsets.UTF_8))
+        BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(outputFile, true), StandardCharsets.UTF_8))
+        try {
+            String line
+            while ((line = reader.readLine()) != null) {
+                synchronized (System.out) {
+                    System.out.println("[${safeConsoleLabel}] ${line}")
+                }
+                writer.write(line)
+                writer.newLine()
+                writer.flush()
+            }
+        } finally {
+            try {
+                reader.close()
+            } catch (IOException ignored) {
+            }
+            try {
+                writer.close()
+            } catch (IOException ignored) {
+            }
+        }
+    }
+}
+
+// 等待日志出现成功标记；如果先出现失败标记就立即失败。
+ext.boWaitForLogMarker = { logFile, successMarkers, failureMarkers, timeoutMillis, stageLabel ->
+    long deadline = System.currentTimeMillis() + timeoutMillis
+    while (System.currentTimeMillis() < deadline) {
+        if (logFile.exists()) {
+            String logText = logFile.getText('UTF-8')
+            if (failureMarkers.any { String marker -> logText.contains(marker) }) {
+                throw new GradleException("${stageLabel} 失败，请检查 ${logFile.absolutePath}")
+            }
+            if (successMarkers.any { String marker -> logText.contains(marker) }) {
+                return
+            }
+        }
+        Thread.sleep(1000)
+    }
+    throw new GradleException("${stageLabel} 超时，请检查 ${logFile.absolutePath}")
+}
+
+// 等待四个方向的 jsonl 都开始写入，作为 runAll 抓包链路可用的最低信号。
+ext.boWaitForFourWayCapturedTraffic = { clientSendJsonl, clientReceiveJsonl, serverSendJsonl, serverReceiveJsonl, timeoutMillis ->
+    long deadline = System.currentTimeMillis() + timeoutMillis
+    while (System.currentTimeMillis() < deadline) {
+        long clientSendLength = clientSendJsonl.exists() ? clientSendJsonl.length() : 0L
+        long clientReceiveLength = clientReceiveJsonl.exists() ? clientReceiveJsonl.length() : 0L
+        long serverSendLength = serverSendJsonl.exists() ? serverSendJsonl.length() : 0L
+        long serverReceiveLength = serverReceiveJsonl.exists() ? serverReceiveJsonl.length() : 0L
+        if (clientSendLength > 0L && clientReceiveLength > 0L && serverSendLength > 0L && serverReceiveLength > 0L) {
+            return
+        }
+        Thread.sleep(1000)
+    }
+    throw new GradleException('runAll 超时：四个方向的 jsonl 仍未全部出现内容。')
+}
+
+// 清理 runAll 上一轮留下的探针文件。
+ext.boClearRunAllProbeFiles = { files ->
+    files.each { File file ->
+        if (file.exists()) {
+            file.delete()
+        }
+    }
+}
+
+// 等待一个 marker 文件出现且有内容。
+ext.boWaitForMarkerFile = { markerFile, timeoutMillis, stageLabel ->
+    long deadline = System.currentTimeMillis() + timeoutMillis
+    while (System.currentTimeMillis() < deadline) {
+        if (markerFile.exists() && markerFile.length() > 0L) {
+            return
+        }
+        Thread.sleep(500)
+    }
+    throw new GradleException("${stageLabel} 超时，请检查 ${markerFile.absolutePath}")
+}
+
+// 等待文件大小稳定，避免进程刚停时 jsonl/properties 还没刷完。
+ext.boWaitForFilesToSettle = { files, stableMillis, timeoutMillis ->
+    if (files.isEmpty() || stableMillis <= 0L) {
+        return
+    }
+    Map<String, Long> lastSnapshot = files.collectEntries { File file ->
+        [(file.absolutePath): file.exists() ? file.length() : -1L]
+    }
+    long stableSince = System.currentTimeMillis()
+    long deadline = System.currentTimeMillis() + timeoutMillis
+    while (System.currentTimeMillis() < deadline) {
+        Thread.sleep(500)
+        Map<String, Long> currentSnapshot = files.collectEntries { File file ->
+            [(file.absolutePath): file.exists() ? file.length() : -1L]
+        }
+        if (currentSnapshot == lastSnapshot) {
+            if (System.currentTimeMillis() - stableSince >= stableMillis) {
+                return
+            }
+        } else {
+            lastSnapshot = currentSnapshot
+            stableSince = System.currentTimeMillis()
+        }
+    }
+    throw new GradleException('runAll 等待输出文件写入稳定超时。')
+}

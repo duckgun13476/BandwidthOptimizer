@@ -1,11 +1,5 @@
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
-import java.io.BufferedReader
-import java.io.BufferedWriter
-import java.io.FileOutputStream
-import java.io.IOException
-import java.io.InputStreamReader
-import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -14,28 +8,22 @@ import java.util.Properties
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-def boVersionRunAllTaskProjectPaths = [':forge-1.20.1']
-def boIsVersionRunAllProject = boVersionRunAllTaskProjectPaths.contains(project.path)
+apply from: rootProject.file('gradle/bo-runall-common.gradle')
 
-// 判断当前 runAll 类任务是否是带版本项目路径显式调用，避免根目录 unqualified 任务选择器一次跑多个版本。
-def isExplicitVersionRunAllTaskRequest = { Project projectRef, String taskName ->
-    List<String> requestedTasks = gradle.startParameter.taskNames.collect { it.toString() }
-    String qualifiedTaskPath = "${projectRef.path}:${taskName}"
-    boolean requestedByQualifiedPath = requestedTasks.any { String requestedTask ->
-        requestedTask == qualifiedTaskPath
-    }
-    File requestedProjectDir = gradle.startParameter.projectDir
-    boolean requestedByProjectDirectory = requestedTasks.any { String requestedTask ->
-        requestedTask == taskName
-    } && requestedProjectDir != null && requestedProjectDir.canonicalFile == projectRef.projectDir.canonicalFile
-    return requestedByQualifiedPath || requestedByProjectDirectory
-}
-
-// 在版本内运行任务时强制要求显式路径，防止 ./gradlew runAll 在多版本工程里变成全局聚合启动。
-def requireExplicitVersionRunAllTaskRequest = { Project projectRef, String taskName ->
-    if (!isExplicitVersionRunAllTaskRequest(projectRef, taskName)) {
-        throw new GradleException("${taskName} 已拆分到版本项目内，请使用 ./gradlew ${projectRef.path}:${taskName}")
-    }
+def boRunAllTasksEnabled = ext.boIsRunAllTasksEnabled.call(project)
+def isExplicitVersionRunAllTaskRequest = ext.boIsExplicitVersionRunAllTaskRequest
+def requireExplicitVersionRunAllTaskRequest = ext.boRequireExplicitVersionRunAllTaskRequest
+def boServerOutputRoot = ext.boServerOutputRoot
+def boClientOutputRoot = ext.boClientOutputRoot
+def appendOptionalRunAllProperty = ext.boAppendOptionalRunAllProperty
+def readRunAllLongProperty = ext.boReadRunAllLongProperty
+def waitForLogMarker = ext.boWaitForLogMarker
+def waitForFourWayCapturedTraffic = ext.boWaitForFourWayCapturedTraffic
+def clearRunAllProbeFiles = ext.boClearRunAllProbeFiles
+def waitForMarkerFile = ext.boWaitForMarkerFile
+def waitForFilesToSettle = ext.boWaitForFilesToSettle
+def streamRunTaskOutputToConsole = { Process process, File outputFile, String consoleLabel ->
+    ext.boStreamRunTaskOutputToConsole(process, outputFile, consoleLabel, 'runAll-log-pump')
 }
 
 def applyOptionalRunProperty = { Project projectRef, def runConfig, String gradlePropertyName, String runtimePropertyName ->
@@ -222,46 +210,9 @@ def startExistingRunTaskProcess(File projectDir, boolean isWindows, String wrapp
     return process
 }
 
-def streamRunTaskOutputToConsole(Process process, File outputFile, String consoleLabel) {
-
-    String safeConsoleLabel = (consoleLabel == null || consoleLabel.isBlank()) ? 'run-task' : consoleLabel
-    Thread.startDaemon("runAll-log-pump-${safeConsoleLabel}") {
-        BufferedReader reader = new BufferedReader(new InputStreamReader(process.inputStream, StandardCharsets.UTF_8))
-        BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(outputFile, true), StandardCharsets.UTF_8))
-
-        try {
-            String line
-            while ((line = reader.readLine()) != null) {
-                synchronized (System.out) {
-                    System.out.println("[${safeConsoleLabel}] ${line}")
-                }
-                writer.write(line)
-                writer.newLine()
-                writer.flush()
-            }
-        } finally {
-            try {
-                reader.close()
-            } catch (IOException ignored) {
-            }
-            try {
-                writer.close()
-            } catch (IOException ignored) {
-            }
-        }
-    }
-}
-
 def buildExperientEnabledGradleArgs() {
 
     return ['-PboExperientEnabled=true']
-}
-
-def appendOptionalRunAllProperty(List<String> args, Project projectRef, String propertyName) {
-
-    if (projectRef.hasProperty(propertyName)) {
-        args.add("-P${propertyName}=${projectRef.property(propertyName).toString()}")
-    }
 }
 
 def removeRunAllPropertiesByPrefix(List<String> args, String propertyPrefix) {
@@ -413,26 +364,6 @@ def runWatchBoundaryRefreshPatchVerifyNow(Project projectRef) {
     }
 }
 
-def waitForLogMarker(File logFile, List<String> successMarkers, List<String> failureMarkers, long timeoutMillis, String stageLabel) {
-
-    long deadline = System.currentTimeMillis() + timeoutMillis
-
-    while (System.currentTimeMillis() < deadline) {
-        if (logFile.exists()) {
-            String logText = logFile.getText('UTF-8')
-            if (failureMarkers.any { marker -> logText.contains(marker) }) {
-                throw new GradleException("${stageLabel} 失败，命中失败标记。请检查 ${logFile.absolutePath}")
-            }
-            if (successMarkers.any { marker -> logText.contains(marker) }) {
-                return
-            }
-        }
-        sleep(1000)
-    }
-
-    throw new GradleException("${stageLabel} 超时。请检查 ${logFile.absolutePath}")
-}
-
 def configureRunAllServerProperties(File propertiesFile) {
 
     Properties properties = new Properties()
@@ -550,56 +481,6 @@ def stopRunAllServerProcesses(Project projectRef, File projectDirFile, boolean i
     }
 }
 
-def clearRunAllProbeFiles(List<File> files) {
-
-    files.each { file ->
-        if (file.exists()) {
-            file.delete()
-        }
-    }
-}
-
-def waitForFourWayCapturedTraffic(File clientSendJsonl, File clientReceiveJsonl, File serverSendJsonl, File serverReceiveJsonl, long timeoutMillis) {
-
-    long deadline = System.currentTimeMillis() + timeoutMillis
-
-    while (System.currentTimeMillis() < deadline) {
-        long clientSendLength = clientSendJsonl.exists() ? clientSendJsonl.length() : 0L
-        long clientReceiveLength = clientReceiveJsonl.exists() ? clientReceiveJsonl.length() : 0L
-        long serverSendLength = serverSendJsonl.exists() ? serverSendJsonl.length() : 0L
-        long serverReceiveLength = serverReceiveJsonl.exists() ? serverReceiveJsonl.length() : 0L
-
-        if (clientSendLength > 0L && clientReceiveLength > 0L && serverSendLength > 0L && serverReceiveLength > 0L) {
-            return
-        }
-        sleep(1000)
-    }
-
-    throw new GradleException('runAll 超时：四个方向的 jsonl 仍未全部出现内容。')
-}
-
-def readRunAllLongProperty(Project projectRef, String propertyName, long defaultValue) {
-
-    if (!projectRef.hasProperty(propertyName)) {
-        return defaultValue
-    }
-
-    String rawValue = projectRef.property(propertyName).toString().trim()
-    if (rawValue.isEmpty()) {
-        return defaultValue
-    }
-
-    try {
-        long parsedValue = Long.parseLong(rawValue)
-        if (parsedValue < 0L) {
-            throw new GradleException("${propertyName} 不能是负数，当前值 ${rawValue}")
-        }
-        return parsedValue
-    } catch (NumberFormatException exception) {
-        throw new GradleException("${propertyName} 必须是整数，当前值 ${rawValue}", exception)
-    }
-}
-
 def readRunAllAutoExitTrigger(Project projectRef) {
 
     String rawValue = projectRef.findProperty('boRunAllExitTrigger')?.toString()?.trim()
@@ -614,20 +495,6 @@ def readRunAllAutoExitTrigger(Project projectRef) {
     }
 
     throw new GradleException("boRunAllExitTrigger 只支持 server-login、four-way-jsonl 或 client-disconnected，当前值 ${rawValue}")
-}
-
-def waitForMarkerFile(File markerFile, long timeoutMillis, String stageLabel) {
-
-    long deadline = System.currentTimeMillis() + timeoutMillis
-
-    while (System.currentTimeMillis() < deadline) {
-        if (markerFile.exists() && markerFile.length() > 0L) {
-            return
-        }
-        sleep(500)
-    }
-
-    throw new GradleException("${stageLabel} 超时。请检查 ${markerFile.absolutePath}")
 }
 
 def waitForRunAllAutoExitTrigger(
@@ -663,38 +530,6 @@ def waitForRunAllAutoExitTrigger(
     }
 
     throw new GradleException("未知的自动退出触发条件 ${exitTrigger}")
-}
-
-def waitForFilesToSettle(List<File> files, long stableMillis, long timeoutMillis) {
-
-    if (files.isEmpty() || stableMillis <= 0L) {
-        return
-    }
-
-    Map<String, Long> lastSnapshot = files.collectEntries { File file ->
-        [(file.absolutePath): file.exists() ? file.length() : -1L]
-    }
-    long stableSince = System.currentTimeMillis()
-    long deadline = System.currentTimeMillis() + timeoutMillis
-
-    while (System.currentTimeMillis() < deadline) {
-        sleep(500)
-
-        Map<String, Long> currentSnapshot = files.collectEntries { File file ->
-            [(file.absolutePath): file.exists() ? file.length() : -1L]
-        }
-
-        if (currentSnapshot == lastSnapshot) {
-            if (System.currentTimeMillis() - stableSince >= stableMillis) {
-                return
-            }
-        } else {
-            lastSnapshot = currentSnapshot
-            stableSince = System.currentTimeMillis()
-        }
-    }
-
-    throw new GradleException('runAllAutoExitCompare 等待 jsonl 写入稳定超时。')
 }
 
 def forceStopRunAllProcesses(Project projectRef, File projectDirFile, boolean isWindows, List<Process> processes) {
@@ -799,7 +634,7 @@ def readTransportReportScenarios(File scenarioListFile) {
     return scenarios
 }
 
-if (boIsVersionRunAllProject) {
+if (boRunAllTasksEnabled) {
 // 在任务图生成后提前拦截未指定版本路径的 runAll 类任务，避免先执行 testClasses 等依赖。
 gradle.taskGraph.whenReady { TaskExecutionGraph taskGraph ->
     ['runAll', 'runAllAutoExitCompare', 'runWatchBoundaryRefreshPatchRegression'].each { String taskName ->
@@ -823,12 +658,14 @@ tasks.register('runChannelTransportReport') {
         String wrapperPath = new File(rootProject.projectDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
         long scenarioTimeoutMillis = readRunAllLongProperty(project, 'boTransportReportScenarioTimeoutMillis', 480000L)
         long scenarioRetryCount = readRunAllLongProperty(project, 'boTransportReportScenarioRetries', 1L)
-        File reportDir = project.file('run/transport-report')
+        File serverOutputDir = boServerOutputRoot(project)
+        File clientOutputDir = boClientOutputRoot(project)
+        File reportDir = new File(boServerOutputRoot(project), 'transport-report')
         File scenarioListFile = new File(reportDir, 'scenario-defaults.tsv')
         File manifestFile = new File(reportDir, 'scenario-manifest.tsv')
         File reportFile = new File(reportDir, 'transport-algorithm-report.txt')
-        File scenarioDumpFileServer = project.file('run/server/transport-telemetry-dump.properties')
-        File scenarioDumpFileClient = project.file('run/client/transport-telemetry-dump.properties')
+        File scenarioDumpFileServer = new File(serverOutputDir, 'transport-telemetry-dump.properties')
+        File scenarioDumpFileClient = new File(clientOutputDir, 'transport-telemetry-dump.properties')
 
         List<Map<String, String>> scenarios = [
                 [id: 'sza', displayName: 'SZA 仅 Zstd', baseline: 'true', boTransportMappingEnabled: 'false', boTransportBatchEnabled: 'false', boTransportPacketIdMappingEnabled: 'false'],
@@ -941,19 +778,22 @@ tasks.register('runAll') {
 
         File serverDir = project.file('run/server')
         File clientDir = project.file('run/client')
+        File serverOutputDir = boServerOutputRoot(project)
+        File clientOutputDir = boClientOutputRoot(project)
+        File sharedOutputDir = boServerOutputRoot(project)
         File serverLatestLog = project.file('run/server/logs/latest.log')
         File clientLatestLog = project.file('run/client/logs/latest.log')
         File serverTaskLog = project.file('run/runall-server-task.log')
         File clientTaskLog = project.file('run/runall-client-task.log')
-        File serverSendJsonl = project.file('run/server/send.jsonl')
-        File serverReceiveJsonl = project.file('run/server/receive.jsonl')
-        File clientSendJsonl = project.file('run/client/send.jsonl')
-        File clientReceiveJsonl = project.file('run/client/receive.jsonl')
-        File serverChunkHotspotStats = project.file('run/server/chunk-hotspot-stats.properties')
-        File clientChunkHotspotStats = project.file('run/client/chunk-hotspot-stats.properties')
-        File serverTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, serverDir)
-        File clientTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, clientDir)
-        File captureResetRequest = project.file('run/bo-runall-capture-reset.request')
+        File serverSendJsonl = new File(serverOutputDir, 'send.jsonl')
+        File serverReceiveJsonl = new File(serverOutputDir, 'receive.jsonl')
+        File clientSendJsonl = new File(clientOutputDir, 'send.jsonl')
+        File clientReceiveJsonl = new File(clientOutputDir, 'receive.jsonl')
+        File serverChunkHotspotStats = new File(serverOutputDir, 'chunk-hotspot-stats.properties')
+        File clientChunkHotspotStats = new File(clientOutputDir, 'chunk-hotspot-stats.properties')
+        File serverTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, serverOutputDir)
+        File clientTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, clientOutputDir)
+        File captureResetRequest = new File(sharedOutputDir, 'bo-runall-capture-reset.request')
         File serverProperties = project.file('run/server/server.properties')
         File serverOpsFile = project.file('run/server/ops.json')
         boolean transportEnabled = isRunAllTransportEnabledByDefault(project)
@@ -1099,16 +939,19 @@ tasks.register('runAllAutoExitCompare') {
 
         File serverTaskLog = project.file('run/runall-server-task.log')
         File clientTaskLog = project.file('run/runall-client-task.log')
-        File serverSendJsonl = project.file('run/server/send.jsonl')
-        File serverReceiveJsonl = project.file('run/server/receive.jsonl')
-        File clientSendJsonl = project.file('run/client/send.jsonl')
-        File clientReceiveJsonl = project.file('run/client/receive.jsonl')
-        File serverChunkHotspotStats = project.file('run/server/chunk-hotspot-stats.properties')
-        File clientChunkHotspotStats = project.file('run/client/chunk-hotspot-stats.properties')
-        File serverTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, project.file('run/server'))
-        File clientTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, project.file('run/client'))
-        File captureResetRequest = project.file('run/bo-runall-capture-reset.request')
-        File serverLoginMarker = project.file('run/server/bo-runall-player-logged-in.marker')
+        File serverOutputDir = boServerOutputRoot(project)
+        File clientOutputDir = boClientOutputRoot(project)
+        File sharedOutputDir = boServerOutputRoot(project)
+        File serverSendJsonl = new File(serverOutputDir, 'send.jsonl')
+        File serverReceiveJsonl = new File(serverOutputDir, 'receive.jsonl')
+        File clientSendJsonl = new File(clientOutputDir, 'send.jsonl')
+        File clientReceiveJsonl = new File(clientOutputDir, 'receive.jsonl')
+        File serverChunkHotspotStats = new File(serverOutputDir, 'chunk-hotspot-stats.properties')
+        File clientChunkHotspotStats = new File(clientOutputDir, 'chunk-hotspot-stats.properties')
+        File serverTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, serverOutputDir)
+        File clientTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, clientOutputDir)
+        File captureResetRequest = new File(sharedOutputDir, 'bo-runall-capture-reset.request')
+        File serverLoginMarker = new File(serverOutputDir, 'bo-runall-player-logged-in.marker')
         File serverProperties = project.file('run/server/server.properties')
         File serverOpsFile = project.file('run/server/ops.json')
         boolean transportEnabled = isRunAllTransportEnabledByDefault(project)
@@ -1228,17 +1071,20 @@ tasks.register('runWatchBoundaryRefreshPatchRegression') {
 
         File serverTaskLog = project.file('run/runall-server-task.log')
         File clientTaskLog = project.file('run/runall-client-task.log')
-        File serverSendJsonl = project.file('run/server/send.jsonl')
-        File serverReceiveJsonl = project.file('run/server/receive.jsonl')
-        File clientSendJsonl = project.file('run/client/send.jsonl')
-        File clientReceiveJsonl = project.file('run/client/receive.jsonl')
-        File serverChunkHotspotStats = project.file('run/server/chunk-hotspot-stats.properties')
-        File clientChunkHotspotStats = project.file('run/client/chunk-hotspot-stats.properties')
-        File serverTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, project.file('run/server'))
-        File clientTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, project.file('run/client'))
-        File captureResetRequest = project.file('run/bo-runall-capture-reset.request')
-        File serverLoginMarker = project.file('run/server/bo-runall-player-logged-in.marker')
-        File watchBoundaryMarker = project.file('run/server/bo-watch-boundary-refresh-patch.marker')
+        File serverOutputDir = boServerOutputRoot(project)
+        File clientOutputDir = boClientOutputRoot(project)
+        File sharedOutputDir = boServerOutputRoot(project)
+        File serverSendJsonl = new File(serverOutputDir, 'send.jsonl')
+        File serverReceiveJsonl = new File(serverOutputDir, 'receive.jsonl')
+        File clientSendJsonl = new File(clientOutputDir, 'send.jsonl')
+        File clientReceiveJsonl = new File(clientOutputDir, 'receive.jsonl')
+        File serverChunkHotspotStats = new File(serverOutputDir, 'chunk-hotspot-stats.properties')
+        File clientChunkHotspotStats = new File(clientOutputDir, 'chunk-hotspot-stats.properties')
+        File serverTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, serverOutputDir)
+        File clientTransportTelemetryDump = resolveRunAllTransportTelemetryDumpPath(project, clientOutputDir)
+        File captureResetRequest = new File(sharedOutputDir, 'bo-runall-capture-reset.request')
+        File serverLoginMarker = new File(serverOutputDir, 'bo-runall-player-logged-in.marker')
+        File watchBoundaryMarker = new File(serverOutputDir, 'bo-watch-boundary-refresh-patch.marker')
         File serverProperties = project.file('run/server/server.properties')
         File serverOpsFile = project.file('run/server/ops.json')
 

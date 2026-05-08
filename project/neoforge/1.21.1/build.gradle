@@ -1,11 +1,5 @@
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
-import java.io.BufferedReader
-import java.io.BufferedWriter
-import java.io.FileOutputStream
-import java.io.IOException
-import java.io.InputStreamReader
-import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 import java.util.Properties
@@ -19,6 +13,23 @@ plugins {
 }
 
 apply from: rootProject.file('gradle/bo-property-loader.gradle')
+apply from: rootProject.file('gradle/bo-runall-common.gradle')
+
+def boServerOutputRoot = ext.boServerOutputRoot
+def boClientOutputRoot = ext.boClientOutputRoot
+def appendOptionalRunAllProperty = ext.boAppendOptionalRunAllProperty
+def readRunAllLongProperty = ext.boReadRunAllLongProperty
+def isExplicitVersionRunAllTaskRequest = ext.boIsExplicitVersionRunAllTaskRequest
+def requireExplicitVersionRunAllTaskRequest = ext.boRequireExplicitVersionRunAllTaskRequest
+def waitForLogMarker = ext.boWaitForLogMarker
+def waitForFourWayCapturedTraffic = ext.boWaitForFourWayCapturedTraffic
+def waitForRunAllMarker = ext.boWaitForMarkerFile
+def waitForFilesToSettle = ext.boWaitForFilesToSettle
+def clearRunAllProbeFiles = ext.boClearRunAllProbeFiles
+def streamRunTaskOutputToConsole = { Process process, File outputFile, String consoleLabel ->
+    ext.boStreamRunTaskOutputToConsole(process, outputFile, consoleLabel, 'neoforge-runall-log-pump')
+}
+
 
 group = mod_group_id
 version = mod_version
@@ -41,14 +52,6 @@ def applyBooleanNeoForgeRunProperty = { Project projectRef, def runConfig, Strin
     if ((projectRef.findProperty(gradlePropertyName) ?: 'false').toString().toBoolean()) {
         runConfig.systemProperty(runtimePropertyName, 'true')
     }
-}
-
-def boServerOutputRoot = { Project projectRef ->
-    projectRef.file('run/server/bandwidthoptimizer-native')
-}
-
-def boClientOutputRoot = { Project projectRef ->
-    projectRef.file('run/client/bandwidthoptimizer-native')
 }
 
 def applySharedBandwidthOptimizerNeoForgeRunProperties = { Project projectRef, def runConfig ->
@@ -279,12 +282,6 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
 
-def appendOptionalRunAllProperty(List<String> args, Project projectRef, String propertyName) {
-    if (projectRef.hasProperty(propertyName)) {
-        args.add("-P${propertyName}=${projectRef.property(propertyName).toString()}")
-    }
-}
-
 def buildRunAllSharedGradleArgs(Project projectRef) {
     List<String> args = ['--console=plain', '-PboExperientEnabled=true']
     [
@@ -349,42 +346,8 @@ def buildExperientAutoConnectGradleArgs(Project projectRef, String address, Stri
     return args
 }
 
-def readRunAllLongProperty(Project projectRef, String propertyName, long defaultValue) {
-    if (!projectRef.hasProperty(propertyName)) {
-        return defaultValue
-    }
-    String rawValue = projectRef.property(propertyName).toString().trim()
-    if (rawValue.isEmpty()) {
-        return defaultValue
-    }
-    long parsedValue = Long.parseLong(rawValue)
-    if (parsedValue < 0L) {
-        throw new GradleException("${propertyName} must be >= 0")
-    }
-    return parsedValue
-}
-
 // 判断 runAll 是否是带当前版本项目路径显式调用，避免根目录 ./gradlew runAll 触发多版本聚合。
-def isExplicitVersionRunAllTaskRequest(Project projectRef, String taskName) {
-    List<String> requestedTasks = gradle.startParameter.taskNames.collect { it.toString() }
-    String qualifiedTaskPath = "${projectRef.path}:${taskName}"
-    boolean requestedByQualifiedPath = requestedTasks.any { String requestedTask ->
-        requestedTask == qualifiedTaskPath
-    }
-    File requestedProjectDir = gradle.startParameter.projectDir
-    boolean requestedByProjectDirectory = requestedTasks.any { String requestedTask ->
-        requestedTask == taskName
-    } && requestedProjectDir != null && requestedProjectDir.canonicalFile == projectRef.projectDir.canonicalFile
-    return requestedByQualifiedPath || requestedByProjectDirectory
-}
-
 // runAll divide by version
-def requireExplicitVersionRunAllTaskRequest(Project projectRef, String taskName) {
-    if (!isExplicitVersionRunAllTaskRequest(projectRef, taskName)) {
-        throw new GradleException("${taskName} 已拆分到版本项目内，请使用 ./gradlew ${projectRef.path}:${taskName}")
-    }
-}
-
 def startNeoForgeRunTaskProcess(File rootDirFile, File projectDirFile, boolean isWindows, String wrapperPath, String taskName, List<String> extraGradleArgs, File outputFile, String consoleLabel) {
     List<String> command = []
     if (isWindows) {
@@ -404,110 +367,6 @@ def startNeoForgeRunTaskProcess(File rootDirFile, File projectDirFile, boolean i
     Process process = builder.start()
     streamRunTaskOutputToConsole(process, outputFile, consoleLabel)
     return process
-}
-
-def streamRunTaskOutputToConsole(Process process, File outputFile, String consoleLabel) {
-    String safeConsoleLabel = (consoleLabel == null || consoleLabel.isBlank()) ? 'run-task' : consoleLabel
-    Thread.startDaemon("neoforge-runall-log-pump-${safeConsoleLabel}") {
-        BufferedReader reader = new BufferedReader(new InputStreamReader(process.inputStream, StandardCharsets.UTF_8))
-        BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(outputFile, true), StandardCharsets.UTF_8))
-        try {
-            String line
-            while ((line = reader.readLine()) != null) {
-                synchronized (System.out) {
-                    System.out.println("[${safeConsoleLabel}] ${line}")
-                }
-                writer.write(line)
-                writer.newLine()
-                writer.flush()
-            }
-        } finally {
-            try {
-                reader.close()
-            } catch (IOException ignored) {
-            }
-            try {
-                writer.close()
-            } catch (IOException ignored) {
-            }
-        }
-    }
-}
-
-def waitForLogMarker(File logFile, List<String> successMarkers, List<String> failureMarkers, long timeoutMillis, String stageLabel) {
-    long deadline = System.currentTimeMillis() + timeoutMillis
-    while (System.currentTimeMillis() < deadline) {
-        if (logFile.exists()) {
-            String logText = logFile.getText('UTF-8')
-            if (failureMarkers.any { String marker -> logText.contains(marker) }) {
-                throw new GradleException("${stageLabel} failed. Check ${logFile.absolutePath}")
-            }
-            if (successMarkers.any { String marker -> logText.contains(marker) }) {
-                return
-            }
-        }
-        sleep(1000)
-    }
-    throw new GradleException("${stageLabel} timed out. Check ${logFile.absolutePath}")
-}
-
-def waitForFourWayCapturedTraffic(File clientSendJsonl, File clientReceiveJsonl, File serverSendJsonl, File serverReceiveJsonl, long timeoutMillis) {
-    long deadline = System.currentTimeMillis() + timeoutMillis
-    while (System.currentTimeMillis() < deadline) {
-        if ((clientSendJsonl.exists() ? clientSendJsonl.length() : 0L) > 0L
-                && (clientReceiveJsonl.exists() ? clientReceiveJsonl.length() : 0L) > 0L
-                && (serverSendJsonl.exists() ? serverSendJsonl.length() : 0L) > 0L
-                && (serverReceiveJsonl.exists() ? serverReceiveJsonl.length() : 0L) > 0L) {
-            return
-        }
-        sleep(1000)
-    }
-    throw new GradleException('runAll timed out before all four jsonl streams were written.')
-}
-
-def waitForRunAllMarker(File markerFile, long timeoutMillis, String stageLabel) {
-    long deadline = System.currentTimeMillis() + timeoutMillis
-    while (System.currentTimeMillis() < deadline) {
-        if (markerFile.exists() && markerFile.length() > 0L) {
-            return
-        }
-        sleep(1000)
-    }
-    throw new GradleException("${stageLabel} timed out. Missing ${markerFile.absolutePath}")
-}
-
-def waitForFilesToSettle(List<File> files, long stableMillis, long timeoutMillis) {
-    if (files.isEmpty() || stableMillis <= 0L) {
-        return
-    }
-    Map<String, Long> lastSnapshot = files.collectEntries { File file ->
-        [(file.absolutePath): file.exists() ? file.length() : -1L]
-    }
-    long stableSince = System.currentTimeMillis()
-    long deadline = System.currentTimeMillis() + timeoutMillis
-    while (System.currentTimeMillis() < deadline) {
-        sleep(500)
-        Map<String, Long> currentSnapshot = files.collectEntries { File file ->
-            [(file.absolutePath): file.exists() ? file.length() : -1L]
-        }
-        if (currentSnapshot == lastSnapshot) {
-            if (System.currentTimeMillis() - stableSince >= stableMillis) {
-                return
-            }
-        } else {
-            lastSnapshot = currentSnapshot
-            stableSince = System.currentTimeMillis()
-        }
-    }
-    throw new GradleException('runAll timed out while waiting for output files to settle.')
-}
-
-def clearRunAllProbeFiles(List<File> files) {
-    files.each { File file ->
-        if (file.exists()) {
-            file.delete()
-        }
-    }
 }
 
 def configureRunAllServerProperties(File propertiesFile) {
