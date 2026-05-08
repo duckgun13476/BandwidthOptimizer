@@ -31,6 +31,7 @@ public class Bandwidthoptimizer {
     public static final String MODID = "bandwidthoptimizer";
     public static final Logger LOGGER = LogUtils.getLogger();
 
+    // 初始化 NeoForge 版本的通道、生命周期和配置入口。
     public Bandwidthoptimizer(IEventBus modEventBus, ModContainer modContainer) {
         ZstdRuntimeSupport.configureNativeTempFolder();
         if (ChannelCaptureRuntimeConfig.isJsonlCaptureEnabled()) {
@@ -42,12 +43,15 @@ public class Bandwidthoptimizer {
 
         ChannelTransportNetworkChannel.setModEventBus(modEventBus);
         ChannelTransportNetworkChannel.register();
+        ServerBandwidthStatsNetworkChannel.setModEventBus(modEventBus);
+        ServerBandwidthStatsNetworkChannel.register();
         NeoForge.EVENT_BUS.register(this);
         modEventBus.addListener(this::commonSetup);
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
         modContainer.registerConfig(ModConfig.Type.CLIENT, ClientChunkCacheConfig.SPEC);
     }
 
+    // 在 common setup 阶段补一次幂等注册，兼容旧初始化顺序。
     private void commonSetup(FMLCommonSetupEvent event) {
         ChannelTransportNetworkChannel.register();
         ServerBandwidthStatsNetworkChannel.register();
