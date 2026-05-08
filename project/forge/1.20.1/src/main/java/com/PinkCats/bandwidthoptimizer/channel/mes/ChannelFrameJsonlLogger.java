@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.channel.mes;
 
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
+import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 import net.minecraftforge.fml.loading.FMLEnvironment;
 
 import java.io.BufferedWriter;
@@ -16,8 +17,8 @@ import java.security.NoSuchAlgorithmException;
 public final class ChannelFrameJsonlLogger {
 
     private static final Object LOCK = new Object();
-    private static final Path SEND_OUTPUT_PATH = Path.of("send.jsonl");
-    private static final Path RECEIVE_OUTPUT_PATH = Path.of("receive.jsonl");
+    private static final Path SEND_OUTPUT_PATH = BandwidthOptimizerOutputPaths.resolve("send.jsonl");
+    private static final Path RECEIVE_OUTPUT_PATH = BandwidthOptimizerOutputPaths.resolve("receive.jsonl");
 
     private static BufferedWriter sendWriter;
     private static BufferedWriter receiveWriter;

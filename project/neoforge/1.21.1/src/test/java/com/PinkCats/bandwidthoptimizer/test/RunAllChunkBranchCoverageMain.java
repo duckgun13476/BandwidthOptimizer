@@ -12,7 +12,8 @@ import java.util.Map;
 public final class RunAllChunkBranchCoverageMain {
 
     private static final Path DEFAULT_SERVER_LOG = Path.of("run", "runall-server-task.log");
-    private static final Path DEFAULT_SERVER_SEND_JSONL = Path.of("run", "server", "send.jsonl");
+    private static final Path DEFAULT_SERVER_SEND_JSONL =
+            Path.of("run", "server", "bandwidthoptimizer-native", "send.jsonl");
     private static final String LIGHT_UPDATE = "net.minecraft.network.protocol.game.ClientboundLightUpdatePacket";
     private static final String SECTION_BLOCKS_UPDATE = "net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket";
     private static final String BLOCK_ENTITY_UPDATE = "net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket";

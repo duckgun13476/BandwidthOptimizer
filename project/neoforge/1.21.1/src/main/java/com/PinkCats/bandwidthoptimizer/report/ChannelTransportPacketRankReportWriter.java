@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.batch.ChannelTransportBatchRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 import net.neoforged.fml.loading.FMLPaths;
 
 import java.io.IOException;
@@ -34,7 +35,7 @@ public final class ChannelTransportPacketRankReportWriter {
         List<PacketClassAggregate> aggregates = aggregateByPacketClass(enrichedObservations);
         Summary summary = summarize(enrichedObservations, aggregates);
 
-        Path reportDirectory = FMLPaths.GAMEDIR.get().resolve("transport-packet-rank");
+        Path reportDirectory = BandwidthOptimizerOutputPaths.resolve("transport-packet-rank");
         Files.createDirectories(reportDirectory);
         Path timestampedReportPath = reportDirectory.resolve(
                 "packet-rank-" + REPORT_FILE_TIMESTAMP.format(LocalDateTime.now()) + ".txt"

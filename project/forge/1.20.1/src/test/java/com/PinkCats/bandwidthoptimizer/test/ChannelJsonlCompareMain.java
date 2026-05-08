@@ -18,12 +18,14 @@ import java.util.Objects;
 public final class ChannelJsonlCompareMain {
 
     private static final int MAX_MISMATCHES_TO_PRINT = 5;
-    private static final Path DEFAULT_SERVER_SEND = Path.of("run", "server", "send.jsonl");
-    private static final Path DEFAULT_CLIENT_RECEIVE = Path.of("run", "client", "receive.jsonl");
-    private static final Path DEFAULT_CLIENT_SEND = Path.of("run", "client", "send.jsonl");
-    private static final Path DEFAULT_SERVER_RECEIVE = Path.of("run", "server", "receive.jsonl");
-    private static final Path DEFAULT_SERVER_CHUNK_HOTSPOT_STATS = Path.of("run", "server", "chunk-hotspot-stats.properties");
-    private static final Path DEFAULT_CLIENT_CHUNK_HOTSPOT_STATS = Path.of("run", "client", "chunk-hotspot-stats.properties");
+    private static final Path DEFAULT_SERVER_SEND = Path.of("run", "server", "bandwidthoptimizer-native", "send.jsonl");
+    private static final Path DEFAULT_CLIENT_RECEIVE = Path.of("run", "client", "bandwidthoptimizer-native", "receive.jsonl");
+    private static final Path DEFAULT_CLIENT_SEND = Path.of("run", "client", "bandwidthoptimizer-native", "send.jsonl");
+    private static final Path DEFAULT_SERVER_RECEIVE = Path.of("run", "server", "bandwidthoptimizer-native", "receive.jsonl");
+    private static final Path DEFAULT_SERVER_CHUNK_HOTSPOT_STATS =
+            Path.of("run", "server", "bandwidthoptimizer-native", "chunk-hotspot-stats.properties");
+    private static final Path DEFAULT_CLIENT_CHUNK_HOTSPOT_STATS =
+            Path.of("run", "client", "bandwidthoptimizer-native", "chunk-hotspot-stats.properties");
 
     private ChannelJsonlCompareMain() {}
 

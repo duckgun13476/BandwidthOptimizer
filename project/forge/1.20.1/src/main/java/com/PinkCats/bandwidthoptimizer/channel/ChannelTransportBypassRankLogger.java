@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.channel;
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
@@ -34,12 +35,12 @@ public final class ChannelTransportBypassRankLogger {
     private static long nextPeriodicDumpAtMillis;
     private static long nextReportFailureLogAtMillis;
     private static final DateTimeFormatter REPORT_DISPLAY_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.ROOT);
-    private static final String LATEST_REPORT_FILE_NAME = "latest-bypass-report.txt";
+    private static final String LATEST_REPORT_FILE_NAME = "latest-bypass-report.md";
 
     private ChannelTransportBypassRankLogger() {}
 
 
-    // 记录完整包对象的 bypass 流量，入口保持轻量，只做聚合计数。
+    // Bypass
     public static void recordPacket(
             ChannelHandlerContext context,
             String reason,
@@ -74,7 +75,6 @@ public final class ChannelTransportBypassRankLogger {
         );
     }
 
-    // 记录已经编码后的 bypass 流量，避免依赖诊断开关导致运行期看不到旁路排行。
     public static void recordEncodedPacket(
             ChannelHandlerContext context,
             String reason,
@@ -116,7 +116,7 @@ public final class ChannelTransportBypassRankLogger {
     }
 
 
-    // 手动刷新当前窗口的 bypass 报告，用于停服或调试命令收口。
+    // refresh
     public static void dumpNow(String reason) {
         synchronized (LOCK) {
             if (windowBypassCount <= 0L && windowBypassBytes <= 0L) {
@@ -127,7 +127,7 @@ public final class ChannelTransportBypassRankLogger {
         }
     }
 
-    // 输出当前窗口的 bypass 排行，并在写出后清空窗口计数但保留总计。
+
     private static void dumpLocked(String reason) {
         List<Map.Entry<BypassKey, BypassCounter>> entries = new ArrayList<>(COUNTERS.entrySet());
         entries.sort(Comparator
@@ -163,7 +163,6 @@ public final class ChannelTransportBypassRankLogger {
         windowBypassBytes = 0L;
     }
 
-    // 把窗口排行写入日志，日志开关只影响这里，不影响内存统计和报告文件。
     private static void logEntries(List<Map.Entry<BypassKey, BypassCounter>> entries, int topN) {
         int emitted = 0;
         for (Map.Entry<BypassKey, BypassCounter> entry : entries) {
@@ -197,7 +196,7 @@ public final class ChannelTransportBypassRankLogger {
         }
     }
 
-    // 解析 custom payload 的原始通道，方便报告直接定位被旁路的模组通道。
+
     private static ResourceLocation customPayloadChannel(Packet<?> packet) {
         if (packet instanceof ClientboundCustomPayloadPacket clientboundCustomPayloadPacket) {
             return clientboundCustomPayloadPacket.getIdentifier();
@@ -208,7 +207,6 @@ public final class ChannelTransportBypassRankLogger {
         return null;
     }
 
-    // 尝试从编码后的包头读取原始 packet id，失败时使用 -1 表示未知。
     private static int tryReadLeadingVarInt(byte[] packetBytes) {
         if (packetBytes == null || packetBytes.length == 0) {
             return -1;
@@ -226,7 +224,7 @@ public final class ChannelTransportBypassRankLogger {
         return -1;
     }
 
-    // 获取 Netty channel 的短 id，避免报告里只能看到包类型而无法关联连接。
+
     private static String channelIdText(ChannelHandlerContext context) {
         if (context == null || context.channel() == null) {
             return "<no-channel>";
@@ -242,12 +240,10 @@ public final class ChannelTransportBypassRankLogger {
         return packetBytes == null ? 0 : packetBytes.length;
     }
 
-    // 统一处理空文本，保证统计 key 不会因为 null 破坏聚合。
     private static String textOrFallback(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
     }
 
-    // 日志仍然受旧诊断开关控制，避免默认情况下刷屏。
     private static boolean isLogEnabled() {
         if (!DebugRuntimeConfig.isAnalysisEnabled()) {
             return false;
@@ -258,7 +254,6 @@ public final class ChannelTransportBypassRankLogger {
         );
     }
 
-    // 报告默认自动开启，只写周期聚合结果，不做逐包落盘。
     private static boolean isReportEnabled() {
         return readBoolean(
                 Config.RuntimeProperty.Transport.BYPASS_RANK_REPORT_ENABLED,
@@ -266,25 +261,28 @@ public final class ChannelTransportBypassRankLogger {
         );
     }
 
-    // 写出 latest 报告文件，使用覆盖式快照避免长期运行堆积文件。
+    // report
     private static void writeReportLocked(String reason, List<Map.Entry<BypassKey, BypassCounter>> entries, int topN) {
         Path reportDirectory = resolveReportDirectory();
         LocalDateTime now = LocalDateTime.now();
         String reportTimestamp = REPORT_DISPLAY_TIMESTAMP.format(now);
         Path latestReport = reportDirectory.resolve(LATEST_REPORT_FILE_NAME);
         StringBuilder builder = new StringBuilder(4096);
-        builder.append("BandwidthOptimizer Transport Bypass Report").append(System.lineSeparator());
-        builder.append("generatedAt=").append(reportTimestamp).append(System.lineSeparator());
-        builder.append("reason=").append(reason).append(System.lineSeparator());
-        builder.append("windowCount=").append(windowBypassCount).append(System.lineSeparator());
-        builder.append("windowBytes=").append(windowBypassBytes).append(" (").append(formatBytes(windowBypassBytes)).append(")").append(System.lineSeparator());
-        builder.append("totalCount=").append(totalBypassCount).append(System.lineSeparator());
-        builder.append("totalBytes=").append(totalBypassBytes).append(" (").append(formatBytes(totalBypassBytes)).append(")").append(System.lineSeparator());
-        builder.append("keys=").append(entries.size()).append(System.lineSeparator());
-        builder.append("topN=").append(topN).append(System.lineSeparator());
-        builder.append("note=Only aggregated counters are stored; payload bytes are not retained.").append(System.lineSeparator());
+        builder.append("# BandwidthOptimizer Transport Bypass Report").append(System.lineSeparator());
         builder.append(System.lineSeparator());
-        builder.append("rank\twindowCount\twindowBytes\twindowBytesHuman\ttotalCount\ttotalBytes\ttotalBytesHuman\tavgBytes\treason\tprotocol\tflow\tpacketClass\tpayloadChannel\trawPacketId\tlastChannel").append(System.lineSeparator());
+        builder.append("- Generated at: `").append(reportTimestamp).append('`').append(System.lineSeparator());
+        builder.append("- Flush reason: `").append(markdownCell(reason)).append('`').append(System.lineSeparator());
+        builder.append("- Window: `").append(windowBypassCount).append(" packets`, `")
+                .append(windowBypassBytes).append(" bytes / ").append(formatBytes(windowBypassBytes)).append('`').append(System.lineSeparator());
+        builder.append("- Total: `").append(totalBypassCount).append(" packets`, `")
+                .append(totalBypassBytes).append(" bytes / ").append(formatBytes(totalBypassBytes)).append('`').append(System.lineSeparator());
+        builder.append("- Keys: `").append(entries.size()).append("`, TopN: `").append(topN).append('`').append(System.lineSeparator());
+        builder.append("- Note: only aggregated counters are stored; payload bytes are not retained.").append(System.lineSeparator());
+        builder.append(System.lineSeparator());
+        builder.append("## Bypass Rank").append(System.lineSeparator());
+        builder.append(System.lineSeparator());
+        builder.append("| Rank | Window Count | Window Bytes | Total Count | Total Bytes | Avg Bytes | Reason | Protocol | Flow | Packet Class | Payload Channel | Raw Packet ID | Last Channel |").append(System.lineSeparator());
+        builder.append("|---:|---:|---:|---:|---:|---:|---|---|---|---|---|---:|---|").append(System.lineSeparator());
 
         int emitted = 0;
         for (Map.Entry<BypassKey, BypassCounter> entry : entries) {
@@ -298,6 +296,7 @@ public final class ChannelTransportBypassRankLogger {
             emitted++;
             appendReportEntry(builder, emitted, entry.getKey(), counter);
         }
+        appendIncompleteOptimizationSection(builder, entries);
 
         try {
             Files.createDirectories(reportDirectory);
@@ -308,36 +307,109 @@ public final class ChannelTransportBypassRankLogger {
         }
     }
 
-    // 追加一行 TSV 统计，字段内制表符会被替换，避免破坏列结构。
     private static void appendReportEntry(StringBuilder builder, int rank, BypassKey key, BypassCounter counter) {
-        builder.append(rank).append('\t')
-                .append(counter.windowCount()).append('\t')
-                .append(counter.windowBytes()).append('\t')
-                .append(formatBytes(counter.windowBytes())).append('\t')
-                .append(counter.totalCount()).append('\t')
-                .append(counter.totalBytes()).append('\t')
-                .append(formatBytes(counter.totalBytes())).append('\t')
-                .append(counter.averageBytes()).append('\t')
-                .append(sanitizeReportValue(key.reason())).append('\t')
-                .append(sanitizeReportValue(key.protocolName())).append('\t')
-                .append(sanitizeReportValue(key.packetFlow())).append('\t')
-                .append(sanitizeReportValue(key.packetClassName())).append('\t')
-                .append(key.payloadChannel().isEmpty() ? "<none>" : sanitizeReportValue(key.payloadChannel())).append('\t')
-                .append(key.rawPacketId()).append('\t')
-                .append(sanitizeReportValue(counter.lastChannelId()))
+        builder.append("| ").append(rank)
+                .append(" | ").append(counter.windowCount())
+                .append(" | `").append(counter.windowBytes()).append(" / ").append(formatBytes(counter.windowBytes())).append('`')
+                .append(" | ").append(counter.totalCount())
+                .append(" | `").append(counter.totalBytes()).append(" / ").append(formatBytes(counter.totalBytes())).append('`')
+                .append(" | ").append(counter.averageBytes())
+                .append(" | `").append(markdownCell(key.reason())).append('`')
+                .append(" | `").append(markdownCell(key.protocolName())).append('`')
+                .append(" | `").append(markdownCell(key.packetFlow())).append('`')
+                .append(" | `").append(markdownCell(key.packetClassName())).append('`')
+                .append(" | `").append(key.payloadChannel().isEmpty() ? "<none>" : markdownCell(key.payloadChannel())).append('`')
+                .append(" | ").append(key.rawPacketId())
+                .append(" | `").append(markdownCell(counter.lastChannelId())).append("` |")
                 .append(System.lineSeparator());
     }
 
-    // 报告目录使用游戏目录下的相对路径，避免 common 层依赖具体加载器 API。
+    private static void appendIncompleteOptimizationSection(StringBuilder builder, List<Map.Entry<BypassKey, BypassCounter>> entries) {
+        List<Map.Entry<BypassKey, BypassCounter>> missedEntries = new ArrayList<>(entries);
+        missedEntries.removeIf(entry -> entry.getValue().totalCount() <= 0L && entry.getValue().windowCount() <= 0L);
+        missedEntries.sort(Comparator
+                .<Map.Entry<BypassKey, BypassCounter>, String>comparing(entry -> classifyIncompleteOptimizationReason(entry.getKey()))
+                .thenComparing(Comparator.<Map.Entry<BypassKey, BypassCounter>>comparingLong(entry -> entry.getValue().totalBytes()).reversed())
+                .thenComparing(entry -> entry.getKey().packetClassName())
+                .thenComparing(entry -> entry.getKey().reason()));
+
+        builder.append(System.lineSeparator());
+        builder.append("## Incomplete Batch/Zstd/Template Dictionary Packet List").append(System.lineSeparator());
+        builder.append(System.lineSeparator());
+        builder.append("Every row below is a direct/bypass/fallback packet key that did not fully enter batch, zstd, and template dictionary transport.").append(System.lineSeparator());
+        builder.append(System.lineSeparator());
+        builder.append("| Miss Stage | Category | Window Count | Window Bytes | Total Count | Total Bytes | Avg Bytes | Reason | Protocol | Flow | Packet Class | Payload Channel | Raw Packet ID | Last Channel |").append(System.lineSeparator());
+        builder.append("|---|---|---:|---:|---:|---:|---:|---|---|---|---|---|---:|---|").append(System.lineSeparator());
+
+        for (Map.Entry<BypassKey, BypassCounter> entry : missedEntries) {
+            appendIncompleteOptimizationEntry(builder, entry.getKey(), entry.getValue());
+        }
+    }
+
+    private static void appendIncompleteOptimizationEntry(StringBuilder builder, BypassKey key, BypassCounter counter) {
+        builder.append("| `no_batch_zstd_template_dictionary`")
+                .append(" | `").append(markdownCell(classifyIncompleteOptimizationReason(key))).append('`')
+                .append(" | ").append(counter.windowCount())
+                .append(" | `").append(counter.windowBytes()).append(" / ").append(formatBytes(counter.windowBytes())).append('`')
+                .append(" | ").append(counter.totalCount())
+                .append(" | `").append(counter.totalBytes()).append(" / ").append(formatBytes(counter.totalBytes())).append('`')
+                .append(" | ").append(counter.averageBytes())
+                .append(" | `").append(markdownCell(key.reason())).append('`')
+                .append(" | `").append(markdownCell(key.protocolName())).append('`')
+                .append(" | `").append(markdownCell(key.packetFlow())).append('`')
+                .append(" | `").append(markdownCell(key.packetClassName())).append('`')
+                .append(" | `").append(key.payloadChannel().isEmpty() ? "<none>" : markdownCell(key.payloadChannel())).append('`')
+                .append(" | ").append(key.rawPacketId())
+                .append(" | `").append(markdownCell(counter.lastChannelId())).append("` |")
+                .append(System.lineSeparator());
+    }
+
+    private static String classifyIncompleteOptimizationReason(BypassKey key) {
+        String reason = key == null ? "" : textOrFallback(key.reason(), "");
+        if (reason.startsWith("connection_strong_boundary:")) {
+            return "forced_strong_boundary";
+        }
+        if (reason.startsWith("connection_interaction_boundary:")) {
+            return "forced_interaction_boundary";
+        }
+        if (reason.contains("bundle")) {
+            return "forced_bundle_boundary";
+        }
+        if (reason.contains("keep_alive")) {
+            return "forced_keep_alive_boundary";
+        }
+        if (reason.startsWith("protocol_boundary")) {
+            return "forced_protocol_boundary";
+        }
+        if (reason.startsWith("packet_send_listener")) {
+            return "forced_packet_send_listener";
+        }
+        if (reason.startsWith("transparent_bypass")) {
+            return "transparent_direct_or_packet_blacklist";
+        }
+        if (reason.contains("serverbound_carrier_size")) {
+            return "serverbound_carrier_size_fallback";
+        }
+        if (reason.contains("unprofitable")) {
+            return "unprofitable_transport_fallback";
+        }
+        if (reason.contains("disabled")) {
+            return "transport_disabled_fallback";
+        }
+        if (reason.contains("chunk")) {
+            return "chunk_transport_fallback";
+        }
+        return "other_direct_or_fallback";
+    }
+
     private static Path resolveReportDirectory() {
         String directory = readString(
                 Config.RuntimeProperty.Transport.BYPASS_RANK_REPORT_DIRECTORY,
                 Config.RuntimeProperty.Transport.DEFAULT_BYPASS_RANK_REPORT_DIRECTORY
         );
-        return Path.of(directory);
+        return BandwidthOptimizerOutputPaths.resolveDirectory(directory);
     }
 
-    // 限频记录报告写入失败，避免磁盘不可写时每个周期刷屏。
     private static void logReportFailureThrottled(IOException exception) {
         long nowMillis = System.currentTimeMillis();
         if (nowMillis < nextReportFailureLogAtMillis) {
@@ -347,7 +419,16 @@ public final class ChannelTransportBypassRankLogger {
         Bandwidthoptimizer.LOGGER.warn("[Transport][BypassRank] Failed to write bypass report", exception);
     }
 
-    // 清理报告字段中的换行和制表符，保证文件可以直接按 TSV 查看。
+
+    private static String markdownCell(String value) {
+        return textOrFallback(value, "")
+                .replace("\\", "\\\\")
+                .replace("|", "\\|")
+                .replace('\n', ' ')
+                .replace('\r', ' ')
+                .replace('`', '\'');
+    }
+
     private static String sanitizeReportValue(String value) {
         return textOrFallback(value, "").replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');
     }
@@ -360,7 +441,6 @@ public final class ChannelTransportBypassRankLogger {
         return Boolean.parseBoolean(rawValue);
     }
 
-    // 读取运行期字符串属性，属性缺失时使用默认值。
     private static String readString(String propertyName, String fallback) {
         String rawValue = System.getProperty(propertyName);
         if (rawValue == null || rawValue.isBlank()) {

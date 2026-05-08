@@ -6,6 +6,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.Chun
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelopeCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkDiagnosticRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
@@ -147,7 +148,7 @@ public final class ChunkBoundaryBandwidthRecorder {
         }
 
         try {
-            Path reportDirectory = FMLPaths.GAMEDIR.get().resolve("chunk-boundary-bandwidth");
+            Path reportDirectory = BandwidthOptimizerOutputPaths.resolve("chunk-boundary-bandwidth");
             Files.createDirectories(reportDirectory);
             latestReportPath = reportDirectory.resolve("latest-boundary-bandwidth.txt");
             Files.writeString(

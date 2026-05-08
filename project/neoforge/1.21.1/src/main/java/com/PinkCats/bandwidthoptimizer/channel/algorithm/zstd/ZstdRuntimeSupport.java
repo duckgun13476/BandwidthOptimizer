@@ -1,7 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
-import net.neoforged.fml.loading.FMLPaths;
+import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -20,7 +20,7 @@ public final class ZstdRuntimeSupport {
             return;
         }
 
-        Path tempFolder = FMLPaths.GAMEDIR.get().resolve("bandwidthoptimizer-native");
+        Path tempFolder = BandwidthOptimizerOutputPaths.nativeDriveDirectory();
         try {
             Files.createDirectories(tempFolder);
             System.setProperty(TEMP_FOLDER_PROPERTY, tempFolder.toAbsolutePath().toString());

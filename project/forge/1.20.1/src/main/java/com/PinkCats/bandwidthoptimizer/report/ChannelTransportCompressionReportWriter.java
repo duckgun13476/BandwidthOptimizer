@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.report;
 
+import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 import net.minecraftforge.fml.loading.FMLPaths;
 
 import java.io.IOException;
@@ -31,7 +32,7 @@ public final class ChannelTransportCompressionReportWriter {
         ChannelTransportCompressionReplaySimulator.ScenarioSimulationResult baselineScenario = findBaselineScenario(scenarioResults);
         ChannelTransportCompressionReplaySimulator.ScenarioSimulationResult bestScenario = findBestScenario(scenarioResults);
 
-        Path reportDirectory = FMLPaths.GAMEDIR.get().resolve("run").resolve("transport-report");
+        Path reportDirectory = BandwidthOptimizerOutputPaths.resolve("transport-report");
         Files.createDirectories(reportDirectory);
         Path reportPath = reportDirectory.resolve("in-game-transport-report-" + REPORT_FILE_TIMESTAMP.format(LocalDateTime.now()) + ".txt");
         String reportText = buildReportText(captureDurationTicks, captureSummary, scenarioResults, baselineScenario, bestScenario);

@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.experient;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
+import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -12,11 +13,12 @@ import java.nio.file.Path;
 
 public final class RunAllProbeFiles {
 
-    public static final Path SERVER_PLAYER_LOGGED_IN_MARKER = Path.of("bo-runall-player-logged-in.marker");
+    public static final Path SERVER_PLAYER_LOGGED_IN_MARKER =
+            BandwidthOptimizerOutputPaths.resolve("bo-runall-player-logged-in.marker");
     public static final Path SERVER_CHUNK_HOTSPOT_PATH_COMPLETED_MARKER =
-            Path.of("bo-runall-chunk-hotspot-path-completed.marker");
+            BandwidthOptimizerOutputPaths.resolve("bo-runall-chunk-hotspot-path-completed.marker");
     public static final Path SERVER_WATCH_BOUNDARY_REFRESH_PATCH_MARKER =
-            Path.of("bo-watch-boundary-refresh-patch.marker");
+            BandwidthOptimizerOutputPaths.resolve("bo-watch-boundary-refresh-patch.marker");
 
     private RunAllProbeFiles() {}
 

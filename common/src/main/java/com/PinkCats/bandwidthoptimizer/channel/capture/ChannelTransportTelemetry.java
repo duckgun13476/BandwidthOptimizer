@@ -6,6 +6,7 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.ChannelTransportOperationTelemetry;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -409,7 +410,7 @@ public final class ChannelTransportTelemetry {
             }
 
             try {
-                writeTelemetryDumpFile(Path.of(dumpFileName));
+                writeTelemetryDumpFile(BandwidthOptimizerOutputPaths.resolve(dumpFileName));
                 LAST_TELEMETRY_DUMP_AT_MILLIS.set(refreshedNow);
             } catch (IOException exception) {
                 Bandwidthoptimizer.LOGGER.warn("[Transport] Failed to write telemetry dump file {}", dumpFileName, exception);

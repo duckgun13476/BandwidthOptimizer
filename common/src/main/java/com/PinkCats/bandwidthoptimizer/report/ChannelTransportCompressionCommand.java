@@ -63,7 +63,7 @@ public final class ChannelTransportCompressionCommand {
         CommandSourceCompat.sendSuccess(source, Component.literal(
                 "Transport report capture started. ticks="
                         + captureTicks
-                        + ", outputDir=run/transport-report"
+                        + ", outputDir=bandwidthoptimizer-native/transport-report"
         ), true);
         return Command.SINGLE_SUCCESS;
     }

@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd;
 
+import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Constructor;
@@ -108,7 +110,7 @@ final class ZstdRuntimeBridge {
     private static Path embeddedJarPath() {
         String configuredTempFolder = System.getProperty(ZSTD_TEMP_FOLDER_PROPERTY);
         Path tempFolder = configuredTempFolder == null || configuredTempFolder.isBlank()
-                ? Path.of(System.getProperty("java.io.tmpdir"), "bandwidthoptimizer-native")
+                ? BandwidthOptimizerOutputPaths.nativeDriveDirectory()
                 : Path.of(configuredTempFolder);
         return tempFolder.resolve("embedded-libs").resolve("zstd-jni-1.5.7-7.jar");
     }

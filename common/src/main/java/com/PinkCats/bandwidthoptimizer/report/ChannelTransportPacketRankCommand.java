@@ -64,7 +64,7 @@ public final class ChannelTransportPacketRankCommand {
         CommandSourceCompat.sendSuccess(source, Component.literal(
                 "Packet rank capture started. ticks="
                         + captureTicks
-                        + ", outputDir=transport-packet-rank"
+                        + ", outputDir=bandwidthoptimizer-native/transport-packet-rank"
         ), true);
         return Command.SINGLE_SUCCESS;
     }

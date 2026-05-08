@@ -18,13 +18,14 @@ import java.util.Set;
 public final class RunWatchBoundaryRefreshPatchRegressionMain {
 
     private static final int MAX_MISMATCHES_TO_PRINT = 5;
-    private static final Path DEFAULT_SERVER_SEND = Path.of("run", "server", "send.jsonl");
-    private static final Path DEFAULT_CLIENT_RECEIVE = Path.of("run", "client", "receive.jsonl");
-    private static final Path DEFAULT_CLIENT_SEND = Path.of("run", "client", "send.jsonl");
-    private static final Path DEFAULT_SERVER_RECEIVE = Path.of("run", "server", "receive.jsonl");
+    private static final Path DEFAULT_SERVER_SEND = Path.of("run", "server", "bandwidthoptimizer-native", "send.jsonl");
+    private static final Path DEFAULT_CLIENT_RECEIVE = Path.of("run", "client", "bandwidthoptimizer-native", "receive.jsonl");
+    private static final Path DEFAULT_CLIENT_SEND = Path.of("run", "client", "bandwidthoptimizer-native", "send.jsonl");
+    private static final Path DEFAULT_SERVER_RECEIVE = Path.of("run", "server", "bandwidthoptimizer-native", "receive.jsonl");
     private static final Path DEFAULT_SERVER_LOG = Path.of("run", "runall-server-task.log");
     private static final Path DEFAULT_CLIENT_LOG = Path.of("run", "runall-client-task.log");
-    private static final Path DEFAULT_MARKER = Path.of("run", "server", "bo-watch-boundary-refresh-patch.marker");
+    private static final Path DEFAULT_MARKER =
+            Path.of("run", "server", "bandwidthoptimizer-native", "bo-watch-boundary-refresh-patch.marker");
     private static final String SERVER_PATCH_REASON = "refresh_patch_after_watch_boundary";
     private static final String CLIENT_ACK_REASON = "runtime_patch_reused_after_watch_boundary";
     private static final List<String> FORBIDDEN_REASON_MARKERS = List.of(

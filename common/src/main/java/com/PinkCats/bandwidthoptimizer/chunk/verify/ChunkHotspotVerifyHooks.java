@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.verify;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -13,7 +14,7 @@ import java.nio.file.StandardOpenOption;
 
 public final class ChunkHotspotVerifyHooks {
 
-    public static final Path REPORT_OUTPUT_PATH = Path.of("chunk-hotspot-stats.properties");
+    public static final Path REPORT_OUTPUT_PATH = BandwidthOptimizerOutputPaths.resolve("chunk-hotspot-stats.properties");
 
     private static final Object LOCK = new Object();
     private static long lastWriteFailureLogAtMillis;

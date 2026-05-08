@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
+import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -12,7 +13,8 @@ import java.nio.file.Path;
 
 public final class ExperientCaptureResetCoordinator {
 
-    private static final Path SHARED_RESET_REQUEST_PATH = Path.of("..", "bo-runall-capture-reset.request");
+    private static final Path SHARED_RESET_REQUEST_PATH =
+            BandwidthOptimizerOutputPaths.resolveShared("bo-runall-capture-reset.request");
     private static int lastAppliedAttemptCount;
 
     private ExperientCaptureResetCoordinator() {}

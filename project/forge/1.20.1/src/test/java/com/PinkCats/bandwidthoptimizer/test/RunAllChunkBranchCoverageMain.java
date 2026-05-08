@@ -26,7 +26,8 @@ import java.util.Map;
 public final class RunAllChunkBranchCoverageMain {
 
     private static final Path DEFAULT_SERVER_LOG = Path.of("run", "runall-server-task.log");
-    private static final Path DEFAULT_SERVER_SEND_JSONL = Path.of("run", "server", "send.jsonl");
+    private static final Path DEFAULT_SERVER_SEND_JSONL =
+            Path.of("run", "server", "bandwidthoptimizer-native", "send.jsonl");
     private static final List<String> REQUIRED_REASON_MARKERS = List.of(
             "reuse_cached_full_snapshot_after_watch_boundary"
     );

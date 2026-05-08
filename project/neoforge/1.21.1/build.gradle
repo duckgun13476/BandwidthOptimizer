@@ -43,6 +43,14 @@ def applyBooleanNeoForgeRunProperty = { Project projectRef, def runConfig, Strin
     }
 }
 
+def boServerOutputRoot = { Project projectRef ->
+    projectRef.file('run/server/bandwidthoptimizer-native')
+}
+
+def boClientOutputRoot = { Project projectRef ->
+    projectRef.file('run/client/bandwidthoptimizer-native')
+}
+
 def applySharedBandwidthOptimizerNeoForgeRunProperties = { Project projectRef, def runConfig ->
     [
             ['boExperimentalTransport', 'bandwidthoptimizer.experimentalTransport'],
@@ -370,7 +378,7 @@ def isExplicitVersionRunAllTaskRequest(Project projectRef, String taskName) {
     return requestedByQualifiedPath || requestedByProjectDirectory
 }
 
-// runAll 已按版本拆分，未显式指定版本时直接失败，防止误跑其它版本。
+// runAll divide by version
 def requireExplicitVersionRunAllTaskRequest(Project projectRef, String taskName) {
     if (!isExplicitVersionRunAllTaskRequest(projectRef, taskName)) {
         throw new GradleException("${taskName} 已拆分到版本项目内，请使用 ./gradlew ${projectRef.path}:${taskName}")
@@ -610,7 +618,6 @@ tasks.register('runChunkBranchCoverageVerify', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.test.RunAllChunkBranchCoverageMain'
 }
 
-// 在任务图生成后提前拦截未指定版本路径的 runAll，避免先执行 testClasses 等依赖。
 gradle.taskGraph.whenReady { TaskExecutionGraph taskGraph ->
     Task runAllTask = tasks.named('runAll').get()
     if (taskGraph.hasTask(runAllTask)) {
@@ -636,16 +643,18 @@ tasks.register('runAll') {
 
         File serverDir = project.file('run/server')
         File clientDir = project.file('run/client')
+        File serverOutputDir = boServerOutputRoot(project)
+        File clientOutputDir = boClientOutputRoot(project)
         File serverTaskLog = project.file('run/runall-server-task.log')
         File clientTaskLog = project.file('run/runall-client-task.log')
-        File serverSendJsonl = project.file('run/server/send.jsonl')
-        File serverReceiveJsonl = project.file('run/server/receive.jsonl')
-        File clientSendJsonl = project.file('run/client/send.jsonl')
-        File clientReceiveJsonl = project.file('run/client/receive.jsonl')
-        File serverChunkHotspotStats = project.file('run/server/chunk-hotspot-stats.properties')
-        File clientChunkHotspotStats = project.file('run/client/chunk-hotspot-stats.properties')
-        File serverLoginMarker = project.file('run/server/bo-runall-player-logged-in.marker')
-        File serverPathCompletedMarker = project.file('run/server/bo-runall-chunk-hotspot-path-completed.marker')
+        File serverSendJsonl = new File(serverOutputDir, 'send.jsonl')
+        File serverReceiveJsonl = new File(serverOutputDir, 'receive.jsonl')
+        File clientSendJsonl = new File(clientOutputDir, 'send.jsonl')
+        File clientReceiveJsonl = new File(clientOutputDir, 'receive.jsonl')
+        File serverChunkHotspotStats = new File(serverOutputDir, 'chunk-hotspot-stats.properties')
+        File clientChunkHotspotStats = new File(clientOutputDir, 'chunk-hotspot-stats.properties')
+        File serverLoginMarker = new File(serverOutputDir, 'bo-runall-player-logged-in.marker')
+        File serverPathCompletedMarker = new File(serverOutputDir, 'bo-runall-chunk-hotspot-path-completed.marker')
         File serverProperties = project.file('run/server/server.properties')
         File serverOpsFile = project.file('run/server/ops.json')
 
