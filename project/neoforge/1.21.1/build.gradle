@@ -354,6 +354,27 @@ def readRunAllLongProperty(Project projectRef, String propertyName, long default
     return parsedValue
 }
 
+// 判断 runAll 是否是带当前版本项目路径显式调用，避免根目录 ./gradlew runAll 触发多版本聚合。
+def isExplicitVersionRunAllTaskRequest(Project projectRef, String taskName) {
+    List<String> requestedTasks = gradle.startParameter.taskNames.collect { it.toString() }
+    String qualifiedTaskPath = "${projectRef.path}:${taskName}"
+    boolean requestedByQualifiedPath = requestedTasks.any { String requestedTask ->
+        requestedTask == qualifiedTaskPath
+    }
+    File requestedProjectDir = gradle.startParameter.projectDir
+    boolean requestedByProjectDirectory = requestedTasks.any { String requestedTask ->
+        requestedTask == taskName
+    } && requestedProjectDir != null && requestedProjectDir.canonicalFile == projectRef.projectDir.canonicalFile
+    return requestedByQualifiedPath || requestedByProjectDirectory
+}
+
+// runAll 已按版本拆分，未显式指定版本时直接失败，防止误跑其它版本。
+def requireExplicitVersionRunAllTaskRequest(Project projectRef, String taskName) {
+    if (!isExplicitVersionRunAllTaskRequest(projectRef, taskName)) {
+        throw new GradleException("${taskName} 已拆分到版本项目内，请使用 ./gradlew ${projectRef.path}:${taskName}")
+    }
+}
+
 def startNeoForgeRunTaskProcess(File rootDirFile, File projectDirFile, boolean isWindows, String wrapperPath, String taskName, List<String> extraGradleArgs, File outputFile, String consoleLabel) {
     List<String> command = []
     if (isWindows) {
@@ -587,12 +608,21 @@ tasks.register('runChunkBranchCoverageVerify', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.test.RunAllChunkBranchCoverageMain'
 }
 
+// 在任务图生成后提前拦截未指定版本路径的 runAll，避免先执行 testClasses 等依赖。
+gradle.taskGraph.whenReady { TaskExecutionGraph taskGraph ->
+    Task runAllTask = tasks.named('runAll').get()
+    if (taskGraph.hasTask(runAllTask)) {
+        requireExplicitVersionRunAllTaskRequest(project, 'runAll')
+    }
+}
+
 tasks.register('runAll') {
     group = 'application'
     description = 'Starts NeoForge 1.21.1 server and client from this subproject, then verifies four-way jsonl traffic.'
     dependsOn(tasks.named('testClasses'))
 
     doLast {
+        requireExplicitVersionRunAllTaskRequest(project, 'runAll')
         String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
         boolean isWindows = osName.contains('windows')
         File rootDirFile = rootProject.projectDir

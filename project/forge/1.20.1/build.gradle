@@ -5,6 +5,7 @@ plugins {
 }
 
 apply plugin: 'org.spongepowered.mixin'
+apply from: rootProject.file('test.gradle')
 
 group = mod_group_id
 version = mod_version
@@ -23,7 +24,7 @@ minecraft {
 
     runs {
         configureEach {
-            workingDirectory rootProject.file('run')
+            workingDirectory project.file('run')
             property 'mixin.debug', 'true'
             property 'mixin.debug.export', 'true'
             property 'forge.logging.markers', 'REGISTRIES'
@@ -37,11 +38,13 @@ minecraft {
         }
 
         client {
-            workingDirectory rootProject.file('run/client')
+            workingDirectory project.file('run/client')
+            configureBandwidthOptimizerClientRun(project, delegate)
         }
 
         server {
-            workingDirectory rootProject.file('run/server')
+            workingDirectory project.file('run/server')
+            configureBandwidthOptimizerServerRun(project, delegate)
             args '--nogui'
         }
 

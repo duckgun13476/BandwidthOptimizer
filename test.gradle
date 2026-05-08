@@ -14,6 +14,29 @@ import java.util.Properties
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
+def boVersionRunAllTaskProjectPaths = [':forge-1.20.1']
+def boIsVersionRunAllProject = boVersionRunAllTaskProjectPaths.contains(project.path)
+
+// 判断当前 runAll 类任务是否是带版本项目路径显式调用，避免根目录 unqualified 任务选择器一次跑多个版本。
+def isExplicitVersionRunAllTaskRequest = { Project projectRef, String taskName ->
+    List<String> requestedTasks = gradle.startParameter.taskNames.collect { it.toString() }
+    String qualifiedTaskPath = "${projectRef.path}:${taskName}"
+    boolean requestedByQualifiedPath = requestedTasks.any { String requestedTask ->
+        requestedTask == qualifiedTaskPath
+    }
+    File requestedProjectDir = gradle.startParameter.projectDir
+    boolean requestedByProjectDirectory = requestedTasks.any { String requestedTask ->
+        requestedTask == taskName
+    } && requestedProjectDir != null && requestedProjectDir.canonicalFile == projectRef.projectDir.canonicalFile
+    return requestedByQualifiedPath || requestedByProjectDirectory
+}
+
+// 在版本内运行任务时强制要求显式路径，防止 ./gradlew runAll 在多版本工程里变成全局聚合启动。
+def requireExplicitVersionRunAllTaskRequest = { Project projectRef, String taskName ->
+    if (!isExplicitVersionRunAllTaskRequest(projectRef, taskName)) {
+        throw new GradleException("${taskName} 已拆分到版本项目内，请使用 ./gradlew ${projectRef.path}:${taskName}")
+    }
+}
 
 def applyOptionalRunProperty = { Project projectRef, def runConfig, String gradlePropertyName, String runtimePropertyName ->
     if (projectRef.hasProperty(gradlePropertyName)) {
@@ -165,6 +188,7 @@ tasks.register('runChannelTransportRoundTrip', JavaExec) {
     )
 }
 
+// 启动指定版本项目里的已有 Gradle run 任务，统一使用根 wrapper，并通过 -p 绑定到版本目录。
 def startExistingRunTaskProcess(File projectDir, boolean isWindows, String wrapperPath, String taskName, List<String> extraGradleArgs, String taskArgs, File outputFile, String consoleLabel) {
     outputFile.parentFile.mkdirs()
     if (outputFile.exists()) {
@@ -177,6 +201,7 @@ def startExistingRunTaskProcess(File projectDir, boolean isWindows, String wrapp
     } else {
         command.add(wrapperPath)
     }
+    command.addAll(['-p', projectDir.absolutePath])
 
     if (extraGradleArgs != null) {
         command.addAll(extraGradleArgs.findAll { it != null && !it.isBlank() })
@@ -190,7 +215,7 @@ def startExistingRunTaskProcess(File projectDir, boolean isWindows, String wrapp
 
     List<String> normalizedCommand = command.collect { entry -> entry.toString() }
     ProcessBuilder builder = new ProcessBuilder(normalizedCommand)
-    builder.directory(projectDir)
+    builder.directory(new File(wrapperPath).parentFile)
     builder.redirectErrorStream(true)
     Process process = builder.start()
     streamRunTaskOutputToConsole(process, outputFile, consoleLabel)
@@ -774,6 +799,17 @@ def readTransportReportScenarios(File scenarioListFile) {
     return scenarios
 }
 
+if (boIsVersionRunAllProject) {
+// 在任务图生成后提前拦截未指定版本路径的 runAll 类任务，避免先执行 testClasses 等依赖。
+gradle.taskGraph.whenReady { TaskExecutionGraph taskGraph ->
+    ['runAll', 'runAllAutoExitCompare', 'runWatchBoundaryRefreshPatchRegression'].each { String taskName ->
+        Task taskRef = tasks.named(taskName).get()
+        if (taskGraph.hasTask(taskRef)) {
+            requireExplicitVersionRunAllTaskRequest(project, taskName)
+        }
+    }
+}
+
 tasks.register('runChannelTransportReport') {
     group = 'verification'
     description = 'Runs multiple transport algorithm scenarios on top of runAll, then dumps a consolidated txt compression report.'
@@ -784,7 +820,7 @@ tasks.register('runChannelTransportReport') {
         String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
         boolean isWindows = osName.contains('windows')
         File projectDirFile = project.projectDir
-        String wrapperPath = new File(projectDirFile, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        String wrapperPath = new File(rootProject.projectDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
         long scenarioTimeoutMillis = readRunAllLongProperty(project, 'boTransportReportScenarioTimeoutMillis', 480000L)
         long scenarioRetryCount = readRunAllLongProperty(project, 'boTransportReportScenarioRetries', 1L)
         File reportDir = project.file('run/transport-report')
@@ -893,10 +929,11 @@ tasks.register('runAll') {
     dependsOn(tasks.named('testClasses'))
 
     doLast {
+        requireExplicitVersionRunAllTaskRequest(project, 'runAll')
         String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
         boolean isWindows = osName.contains('windows')
         File projectDirFile = project.projectDir
-        String wrapperPath = new File(projectDirFile, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        String wrapperPath = new File(rootProject.projectDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
         long observeSeconds = readRunAllLongProperty(project, 'boRunAllObserveSeconds', 0L)
         long settleMillis = readRunAllLongProperty(project, 'boRunAllSettleMillis', 3000L)
         long settleTimeoutMillis = readRunAllLongProperty(project, 'boRunAllSettleTimeoutMillis', 15000L)
@@ -1049,10 +1086,11 @@ tasks.register('runAllAutoExitCompare') {
     dependsOn(tasks.named('testClasses'))
 
     doLast {
+        requireExplicitVersionRunAllTaskRequest(project, 'runAllAutoExitCompare')
         String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
         boolean isWindows = osName.contains('windows')
         File projectDirFile = project.projectDir
-        String wrapperPath = new File(projectDirFile, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        String wrapperPath = new File(rootProject.projectDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
         String exitTrigger = readRunAllAutoExitTrigger(project)
         long exitDelaySeconds = readRunAllLongProperty(project, 'boRunAllExitDelaySeconds', 3L)
         long triggerTimeoutMillis = readRunAllLongProperty(project, 'boRunAllTriggerTimeoutMillis', 180000L)
@@ -1178,10 +1216,11 @@ tasks.register('runWatchBoundaryRefreshPatchRegression') {
     dependsOn(tasks.named('testClasses'))
 
     doLast {
+        requireExplicitVersionRunAllTaskRequest(project, 'runWatchBoundaryRefreshPatchRegression')
         String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
         boolean isWindows = osName.contains('windows')
         File projectDirFile = project.projectDir
-        String wrapperPath = new File(projectDirFile, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        String wrapperPath = new File(rootProject.projectDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
         long exitDelaySeconds = readRunAllLongProperty(project, 'boRunAllExitDelaySeconds', 3L)
         long triggerTimeoutMillis = readRunAllLongProperty(project, 'boRunAllTriggerTimeoutMillis', 240000L)
         long settleMillis = readRunAllLongProperty(project, 'boRunAllSettleMillis', 3000L)
@@ -1305,5 +1344,7 @@ tasks.register('runWatchBoundaryRefreshPatchRegression') {
             forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
         }
     }
+}
+
 }
 
