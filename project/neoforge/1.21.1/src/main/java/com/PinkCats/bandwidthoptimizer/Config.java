@@ -344,6 +344,12 @@ public class Config {
             public static final String BYPASS_RANK_LOG_TOP_N =
                     "bandwidthoptimizer.transport.bypassRankLogTopN";
             public static final int DEFAULT_BYPASS_RANK_LOG_TOP_N = 20;
+            public static final String BYPASS_RANK_REPORT_ENABLED =
+                    "bandwidthoptimizer.transport.bypassRankReportEnabled";
+            public static final boolean DEFAULT_BYPASS_RANK_REPORT_ENABLED = true;
+            public static final String BYPASS_RANK_REPORT_DIRECTORY =
+                    "bandwidthoptimizer.transport.bypassRankReportDirectory";
+            public static final String DEFAULT_BYPASS_RANK_REPORT_DIRECTORY = "transport-bypass-report";
 
             private Transport() {
             }
