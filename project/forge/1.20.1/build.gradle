@@ -5,6 +5,7 @@ plugins {
 }
 
 apply plugin: 'org.spongepowered.mixin'
+apply from: rootProject.file('gradle/bo-property-loader.gradle')
 apply from: rootProject.file('test.gradle')
 
 group = mod_group_id
@@ -109,7 +110,7 @@ dependencies {
     compileOnly("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}") {
         changing = true
     }
-    implementation fg.deobf("com.pinkcats.torque:TorqueAPI-1.20.1-forge:${torque_api_version}") {
+    implementation fg.deobf("com.pinkcats.torque:TorqueAPI-${minecraft_version}-forge:${torque_api_version}") {
         changing = true
         transitive = false
     }

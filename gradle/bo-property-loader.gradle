@@ -1,0 +1,39 @@
+import org.codehaus.groovy.runtime.MethodClosure
+
+// 加载指定 gradle.properties 文件，已有命令行属性不会被覆盖。
+def loadGradleProperties(File propertyFile) {
+    if (propertyFile == null || !propertyFile.exists()) {
+        return
+    }
+    Properties properties = new Properties()
+    propertyFile.withInputStream { input ->
+        properties.load(input)
+    }
+    properties.each { key, value ->
+        String propertyName = key.toString()
+        if (!project.hasProperty(propertyName)) {
+            project.ext.set(propertyName, value)
+        }
+    }
+}
+
+// 从当前项目向上查找共享属性文件，保证 -p 进入版本目录时也能加载。
+def findSharedGradleProperties() {
+    File currentDir = project.projectDir
+    while (currentDir != null) {
+        File candidate = new File(currentDir, 'gradle/bo-common.properties')
+        if (candidate.exists()) {
+            return candidate
+        }
+        currentDir = currentDir.parentFile
+    }
+    return null
+}
+
+File sharedGradleProperties = findSharedGradleProperties()
+loadGradleProperties(sharedGradleProperties)
+loadGradleProperties(project.file('gradle.properties'))
+
+ext {
+    loadGradleProperties = this.&loadGradleProperties as MethodClosure
+}

@@ -18,6 +18,8 @@ plugins {
     id 'net.neoforged.moddev' version '2.0.107'
 }
 
+apply from: rootProject.file('gradle/bo-property-loader.gradle')
+
 group = mod_group_id
 version = mod_version
 
@@ -115,7 +117,7 @@ def configureBandwidthOptimizerNeoForgeServerRun = { Project projectRef, def run
 }
 
 neoForge {
-    version = '21.1.219'
+    version = neo_version
 
     runs {
         client {
@@ -196,7 +198,7 @@ configurations.configureEach {
     resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
 }
 
-ext.bo_torque_embed_notation = "com.pinkcats.torque:TorqueAPI-1.21.1-neoforge:${torque_api_version}"
+ext.bo_torque_embed_notation = "com.pinkcats.torque:TorqueAPI-${minecraft_version}-neoforge:${torque_api_version}"
 apply from: rootProject.file('gradle/torque-embed-modern.gradle')
 ext.bo_zstd_jni_version = '1.5.7-7'
 
@@ -219,7 +221,7 @@ dependencies {
     compileOnly("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}") {
         changing = true
     }
-    implementation("com.pinkcats.torque:TorqueAPI-1.21.1-neoforge:${torque_api_version}") {
+    implementation("com.pinkcats.torque:TorqueAPI-${minecraft_version}-neoforge:${torque_api_version}") {
         changing = true
         transitive = false
     }
@@ -234,11 +236,11 @@ tasks.named('processResources', ProcessResources).configure {
     from(rootProject.file('common/src/main/resources/assets')) {
         into 'assets'
     }
-    var replaceProperties = [minecraft_version      : '1.21.1',
-                             minecraft_version_range: '[1.21.1,1.22)',
-                             neo_version            : '21.1.219',
-                             neo_version_range      : '[21,)',
-                             loader_version_range   : '[4,)',
+    var replaceProperties = [minecraft_version      : minecraft_version,
+                             minecraft_version_range: minecraft_version_range,
+                             neo_version            : neo_version,
+                             neo_version_range      : neo_version_range,
+                             loader_version_range   : loader_version_range,
                              torque_api_version     : torque_api_version,
                              mod_id                 : mod_id,
                              mod_name               : mod_name,
@@ -256,7 +258,7 @@ tasks.named('processResources', ProcessResources).configure {
 
 tasks.named('jar', Jar).configure {
     dependsOn tasks.named('prepareEmbeddedRuntimeLibs')
-    archiveFileName = "${package_name}-${mod_version}-neoforge-1.21.1.jar"
+    archiveFileName = "${package_name}-${mod_version}-neoforge-${minecraft_version}.jar"
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from(embeddedRuntimeLibsOutputDir)
     manifest {

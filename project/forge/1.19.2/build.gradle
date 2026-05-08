@@ -5,6 +5,7 @@ plugins {
 }
 
 apply plugin: 'org.spongepowered.mixin'
+apply from: rootProject.file('gradle/bo-property-loader.gradle')
 
 group = mod_group_id
 version = mod_version
@@ -17,11 +18,8 @@ java {
     toolchain.languageVersion = JavaLanguageVersion.of(17)
 }
 
-def targetMinecraftVersion = '1.19.2'
-def targetForgeVersion = '43.5.0'
-
 minecraft {
-    mappings channel: mapping_channel, version: targetMinecraftVersion
+    mappings channel: mapping_channel, version: mapping_version
     copyIdeResources = true
 
     runs {
@@ -96,13 +94,13 @@ configurations.configureEach {
 dependencies {
     String zstdJniVersion = '1.5.7-7'
 
-    minecraft "net.minecraftforge:forge:${targetMinecraftVersion}-${targetForgeVersion}"
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
 
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
     compileOnly("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}") {
         changing = true
     }
-    implementation fg.deobf("com.pinkcats.torque:TorqueAPI-1.19.2-forge:${torque_api_version}") {
+    implementation fg.deobf("com.pinkcats.torque:TorqueAPI-${minecraft_version}-forge:${torque_api_version}") {
         changing = true
         transitive = false
     }
@@ -113,9 +111,9 @@ dependencies {
 
 tasks.named('processResources', ProcessResources).configure {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    var replaceProperties = [minecraft_version   : targetMinecraftVersion, minecraft_version_range: '[1.19.2,1.20)',
-                             forge_version       : targetForgeVersion, forge_version_range: '[43,)',
-                             loader_version_range: '[43,)',
+    var replaceProperties = [minecraft_version   : minecraft_version, minecraft_version_range: minecraft_version_range,
+                             forge_version       : forge_version, forge_version_range: forge_version_range,
+                             loader_version_range: loader_version_range,
                              torque_api_version  : torque_api_version,
                              mod_id              : mod_id, mod_name: mod_name, mod_license: mod_license, mod_version: mod_version,
                              mod_authors         : mod_authors, mod_description: mod_description,]
@@ -128,7 +126,7 @@ tasks.named('processResources', ProcessResources).configure {
 }
 
 tasks.named('jar', Jar).configure {
-    archiveFileName = "${package_name}-${mod_version}-forge-${targetMinecraftVersion}.jar"
+    archiveFileName = "${package_name}-${mod_version}-forge-${minecraft_version}.jar"
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
         attributes(["Specification-Title"     : mod_id,

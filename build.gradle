@@ -10,284 +10,31 @@ buildscript {
 }
 
 plugins {
-    id 'eclipse'
     id 'idea'
-    id 'net.minecraftforge.gradle' version '[6.0.16,6.2)'
-    id 'net.darkhax.curseforgegradle' version '1.1.24'
-    id 'me.modmuss50.mod-publish-plugin' version '0.8.3'
 }
 
-apply plugin: 'org.spongepowered.mixin'
-apply from: 'test.gradle'
-
-def publishCurseForgePlugin = project.plugins.findPlugin('net.darkhax.curseforgegradle')
-def publishCurseForgeTaskType = publishCurseForgePlugin.class.classLoader.loadClass('net.darkhax.curseforgegradle.TaskPublishCurseForge')
-
-group = mod_group_id
-version = mod_version
-
-base {
-    archivesName = mod_id
-}
-
-java {
-    toolchain.languageVersion = JavaLanguageVersion.of(17)
-}
-
-minecraft {
-    mappings channel: mapping_channel, version: mapping_version
-    copyIdeResources = true
-
-    runs {
-
-        configureEach {
-            workingDirectory project.file('run')
-            property 'mixin.debug', 'true'
-            property 'mixin.debug.export', 'true'
-            property 'forge.logging.markers', 'REGISTRIES'
-            property 'forge.logging.console.level', 'debug'
-
-            mods {
-                "${mod_id}" {
-                    source sourceSets.main
-                }
-            }
+allprojects {
+    repositories {
+        maven {
+            name = "PinkCatsLocal"
+            url = uri("C:/F/Maven")
         }
+        mavenCentral()
+    }
 
-        client {
-            workingDirectory project.file('run/client')
-            configureBandwidthOptimizerClientRun(project, delegate)
-        }
-
-        server {
-            workingDirectory project.file('run/server')
-            configureBandwidthOptimizerServerRun(project, delegate)
-            args '--nogui'
-        }
-
-        gameTestServer {
-            property 'forge.enabledGameTestNamespaces', mod_id
-        }
-
-        data {
-            workingDirectory project.file('run-data')
-            args '--mod', mod_id, '--all', '--output', file('src/generated/resources/'), '--existing', file('project/forge/1.20.1/src/main/resources/')
-        }
+    configurations.configureEach {
+        resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
     }
 }
 
-mixin {
-    add sourceSets.main, "${mod_id}.refmap.json"
-    config "${mod_id}.mixins.json"
+tasks.register('runClientAllVersions') {
+    group = 'Development'
+    description = 'Root aggregate placeholder for version-specific client runs.'
+    dependsOn ':forge-1.19.2:runClient', ':forge-1.20.1:runClient', ':neoforge-1.21.1:runClient'
 }
 
-sourceSets {
-    main {
-        java.srcDir 'common/src/main/java'
-        java.srcDir 'project/forge/1.20.1/src/main/java'
-        resources.srcDir 'common/src/main/resources'
-        resources.srcDir 'project/forge/1.20.1/src/main/resources'
-    }
-    test {
-        java.srcDir 'project/forge/1.20.1/src/test/java'
-        resources.srcDir 'project/forge/1.20.1/src/test/resources'
-    }
-}
-sourceSets.main.resources { srcDir 'src/generated/resources' }
-
-repositories {
-    maven {
-        name = "PinkCatsLocal"
-        url = uri("C:/F/Maven")
-    }
-}
-
-ext.bo_zstd_jni_version = '1.5.7-7'
-
-configurations {
-    embeddedRuntimeLibs {
-        canBeConsumed = false
-        canBeResolved = true
-        transitive = false
-    }
-}
-
-def embeddedRuntimeLibsOutputDir = layout.buildDirectory.dir('generated/boEmbeddedRuntimeLibs')
-
-tasks.register('prepareEmbeddedRuntimeLibs', Copy) {
-    from(configurations.embeddedRuntimeLibs)
-    into(embeddedRuntimeLibsOutputDir.map { it.dir('META-INF/bandwidthoptimizer/libs') })
-}
-
-dependencies {
-    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
-
-    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
-    compileOnly("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}") {
-        changing = true
-    }
-    implementation fg.deobf("com.pinkcats.torque:TorqueAPI-1.20.1-forge:${torque_api_version}") {
-        changing = true
-        transitive = false
-    }
-    compileOnly "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
-    testRuntimeOnly "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
-    minecraftLibrary "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
-    embeddedRuntimeLibs "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
-}
-
-tasks.named('processResources', ProcessResources).configure {
-    var replaceProperties = [minecraft_version   : minecraft_version, minecraft_version_range: minecraft_version_range,
-                             forge_version       : forge_version, forge_version_range: forge_version_range,
-                             loader_version_range: loader_version_range,
-                             torque_api_version  : torque_api_version,
-                             mod_id              : mod_id, mod_name: mod_name, mod_license: mod_license, mod_version: mod_version,
-                             mod_authors         : mod_authors, mod_description: mod_description,]
-
-    inputs.properties replaceProperties
-
-    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
-        expand replaceProperties + [project: project]
-    }
-}
-
-tasks.named('jar', Jar).configure {
-    dependsOn tasks.named('prepareEmbeddedRuntimeLibs')
-    archiveFileName = "${package_name}-${mod_version}-forge-${minecraft_version}.jar"
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    manifest {
-        attributes(["Specification-Title"     : mod_id,
-                    "Specification-Vendor"    : mod_authors,
-                    "Specification-Version"   : "1",
-                    "Implementation-Title"    : project.name,
-                    "Implementation-Version"  : project.jar.archiveVersion,
-                    "Implementation-Vendor"   : mod_authors,
-                    "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
-                    "MixinConfigs"            : "${mod_id}.mixins.json"])
-    }
-
-    from(embeddedRuntimeLibsOutputDir)
-
-    finalizedBy 'reobfJar'
-}
-
-tasks.withType(JavaCompile).configureEach {
-    options.encoding = 'UTF-8'
-}
-tasks.register('PublishInfo') {
-    group = 'Publishing'
-    description = 'Prints local publishing configuration and token availability.'
-    doLast {
-        println "Reobfuscated JAR file path: ${tasks.named('jar', Jar).get().archiveFile.get().asFile.absolutePath}"
-        println "version = \"${mod_version}\""
-        println "displayName = \"${mod_name} v${mod_version} for Forge ${minecraft_version}\""
-        println "curseforge_id = ${curseforge_id}"
-        println "modrinth_id = ${modrinth_id}"
-        String changelogEntry = currentVersionChangelogEntry()
-        if (changelogEntry == null || changelogEntry.isBlank()) {
-            println "\u001B[31mMissing changelog entry for ${mod_version} in ${changelogFile().absolutePath}\u001B[0m"
-            throw new GradleException("Missing changelog entry for ${mod_version}")
-        }
-        println 'changelog ='
-        println changelogEntry
-        Properties apiProperties = loadApiProperties()
-        println "CF_TOKEN present: ${apiProperties.getProperty('CF_TOKEN') != null}"
-        println "MODRINTH_TOKEN present: ${apiProperties.getProperty('MODRINTH_TOKEN') != null}"
-    }
-}
-tasks.register('publishAll') {
-    group = 'Publishing'
-    description = 'Publishes the current build to CurseForge and Modrinth.'
-    dependsOn 'publishCurseForge'
-    dependsOn 'publishMods'
-}
-tasks.register('publishCurseForge', publishCurseForgeTaskType) {
-    group = 'Publishing'
-    description = 'Publishes the current build to CurseForge.'
-    dependsOn 'reobfJar'
-    onlyIf {
-        hasPublishValue(curseforge_id)
-                && loadApiProperties().getProperty('CF_TOKEN') != null
-                && changelogFile().exists()
-    }
-    apiToken = loadApiProperties().getProperty('CF_TOKEN')
-    def mainFile = upload(curseforge_id, tasks.named('jar', Jar).get().archiveFile.get().asFile)
-    mainFile.changelog = fullChangelogText()
-    mainFile.addEnvironment('Client', 'Server')
-    mainFile.addGameVersion(minecraft_version)
-    mainFile.addModLoader('Forge')
-    mainFile.displayName = "${mod_name} v${mod_version} for Forge ${minecraft_version}"
-    mainFile.releaseType = publish_version
-    disableVersionDetection()
-}
-publishMods {
-    def modrinthToken = loadApiProperties().getProperty('MODRINTH_TOKEN')
-    file = tasks.named('jar', Jar).get().archiveFile
-    changelog = fullChangelogText()
-    type = publish_version == 'alpha' ? ALPHA : (publish_version == 'beta' ? BETA : STABLE)
-    version = mod_version
-    displayName = "${mod_name} v${mod_version} for Forge ${minecraft_version}"
-    modLoaders.add('forge')
-    if (modrinthToken != null && hasPublishValue(modrinth_id)) {
-        modrinth {
-            accessToken = modrinthToken
-            projectId = modrinth_id
-            minecraftVersions.add(minecraft_version)
-        }
-    }
-}
-tasks.named('publishMods') {
-    dependsOn 'reobfJar'
-    onlyIf {
-        hasPublishValue(modrinth_id)
-                && loadApiProperties().getProperty('MODRINTH_TOKEN') != null
-                && changelogFile().exists()
-    }
-}
-
-
-Properties loadApiProperties() {
-    Properties properties = new Properties()
-    File propertiesFile = file('api.properties')
-    if (propertiesFile.exists()) {
-        propertiesFile.withInputStream { properties.load(it) }
-    }
-    return properties
-}
-File changelogFile() {
-    return rootProject.file('update/changelog.md')
-}
-String fullChangelogText() {
-    File file = changelogFile()
-    if (!file.exists()) {
-        return ''
-    }
-    return file.getText('UTF-8')
-}
-String currentVersionChangelogEntry() {
-    File file = changelogFile()
-    if (!file.exists()) {
-        return ''
-    }
-    List<String> lines = file.readLines('UTF-8')
-    String targetHeader = "#### v${mod_version}".trim()
-    int startIndex = lines.findIndexOf { String line -> line.trim() == targetHeader }
-    if (startIndex < 0) {
-        return ''
-    }
-    int endIndex = lines.size()
-    for (int index = startIndex + 1; index < lines.size(); index++) {
-        if (lines[index].trim().startsWith('#### v')) {
-            endIndex = index
-            break
-        }
-    }
-    return lines.subList(startIndex, endIndex)
-            .dropWhile { String line -> line.trim().isEmpty() }
-            .join('\n')
-            .trim()
-}
-boolean hasPublishValue(Object value) {
-    String text = String.valueOf(value == null ? '' : value).trim()
-    return !text.isEmpty() && !text.equalsIgnoreCase('todo') && !text.equals('0')
+tasks.register('runServerAllVersions') {
+    group = 'Development'
+    description = 'Root aggregate placeholder for version-specific server runs.'
+    dependsOn ':forge-1.19.2:runServer', ':forge-1.20.1:runServer', ':neoforge-1.21.1:runServer'
 }
