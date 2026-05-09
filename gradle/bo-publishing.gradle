@@ -1,0 +1,229 @@
+// BandwidthOptimizer publish mission
+
+ext.boReadPublishingProperties = {
+    def propertiesFile = rootProject.file('api.properties')
+    if (!propertiesFile.exists()) {
+        return null
+    }
+
+    def properties = new Properties()
+    properties.load(new FileInputStream(propertiesFile))
+    return properties
+}
+
+ext.boReadPrimaryChangelog = {
+    def changelogFile = rootProject.file('update/changelog.md')
+    if (!changelogFile.exists()) {
+        return ''
+    }
+    String text = changelogFile.getText('UTF-8')
+    def matcher = text =~ /(?ms)\A(####\s+v[^\n]+.*?)(?=\n####\s+v|\z)/
+    return matcher.find() ? matcher.group(1).trim() : text.trim()
+}
+
+ext.boReadFullChangelog = {
+    def changelogFile = rootProject.file('update/changelog.md')
+    return changelogFile.exists() ? changelogFile.getText('UTF-8') : ''
+}
+
+ext.boReadStringListProperty = { String name, List<String> defaultValue = [] ->
+    def value = project.findProperty(name)
+    if (value == null) {
+        return defaultValue
+    }
+    if (value instanceof Collection) {
+        return value.collect { it.toString().trim() }.findAll { !it.isEmpty() }
+    }
+    return value.toString()
+            .split(',')
+            .collect { it.trim() }
+            .findAll { !it.isEmpty() }
+}
+
+ext.boReadPublishArtifactTaskName = {
+    return project.findProperty('bo_publish_artifact_task_name')?.toString()?.trim() ?: 'jar'
+}
+
+ext.boReadPublishLoaderId = {
+    return project.findProperty('bo_publish_loader_id')?.toString()?.trim() ?: ''
+}
+
+ext.boReadPublishDisplaySuffix = {
+    def configuredSuffix = project.findProperty('bo_publish_display_suffix')?.toString()?.trim()
+    if (configuredSuffix != null && !configuredSuffix.isEmpty()) {
+        return configuredSuffix.startsWith('_') ? configuredSuffix : "_${configuredSuffix}"
+    }
+
+    def loaderId = boReadPublishLoaderId()
+    return loaderId ? "_${loaderId}" : ''
+}
+
+ext.boReadPublishVersionSuffix = {
+    def configuredSuffix = project.findProperty('bo_publish_version_suffix')?.toString()?.trim()
+    if (configuredSuffix != null && !configuredSuffix.isEmpty()) {
+        return configuredSuffix.startsWith('-') ? configuredSuffix : "-${configuredSuffix}"
+    }
+
+    def loaderId = boReadPublishLoaderId()
+    return loaderId ? "-${loaderId}" : ''
+}
+
+ext.boReadPublishDisplayName = {
+    return "${mod_name}_v${mod_version}_for_MC_${minecraft_version}${boReadPublishDisplaySuffix()}"
+}
+
+ext.boReadPublishVersionId = {
+    return "${minecraft_version}-${mod_version}${boReadPublishVersionSuffix()}"
+}
+
+ext.boReadPublishCurseForgeLoaders = {
+    return boReadStringListProperty('bo_publish_curseforge_loaders')
+}
+
+ext.boReadPublishModrinthLoaders = {
+    return boReadStringListProperty('bo_publish_modrinth_loaders')
+}
+
+ext.boReadPublishRequiredDependencies = {
+    return boReadStringListProperty('bo_publish_required_dependencies')
+}
+
+ext.boReadPublishOptionalDependencies = {
+    return boReadStringListProperty('bo_publish_optional_dependencies')
+}
+
+ext.boReadPublishArtifactFile = {
+    def relativePath = project.findProperty('bo_publish_artifact_relative_path')?.toString()?.trim()
+    if (relativePath != null && !relativePath.isEmpty()) {
+        return project.file(relativePath)
+    }
+
+    def artifactTask = tasks.named(boReadPublishArtifactTaskName()).get()
+    if (!artifactTask.hasProperty('archiveFile')) {
+        throw new GradleException("Publishing task '${artifactTask.name}' does not expose archiveFile in project '${project.path}'")
+    }
+    return artifactTask.archiveFile.get().asFile
+}
+
+def curseForgeTaskClass = [
+        this.class.classLoader,
+        Thread.currentThread().contextClassLoader,
+        project.buildscript.classLoader
+].findResult { loader ->
+    if (loader == null) {
+        return null
+    }
+    try {
+        return Class.forName('net.darkhax.curseforgegradle.TaskPublishCurseForge', true, loader)
+    } catch (Throwable ignored) {
+        return null
+    }
+}
+
+if (curseForgeTaskClass == null) {
+    throw new GradleException("Unable to resolve TaskPublishCurseForge for project '${project.path}'")
+}
+
+tasks.register('PublishInfo') {
+    group = 'Publishing'
+
+    doLast {
+        println "Publish artifact path: ${boReadPublishArtifactFile().absolutePath}"
+        println "version = \"${boReadPublishVersionId()}\"\n" +
+                "    displayName = \"${boReadPublishDisplayName()}\""
+        def properties = boReadPublishingProperties()
+        if (properties != null) {
+            println "CF_TOKEN: ${properties.getProperty('CF_TOKEN')}"
+            println "MODRINTH_TOKEN: ${properties.getProperty('MODRINTH_TOKEN')}"
+        } else {
+            println "api.properties not exist"
+        }
+    }
+}
+
+tasks.register('publishInfo') {
+    group = 'Publishing'
+    description = 'Alias for PublishInfo.'
+    dependsOn 'PublishInfo'
+}
+
+tasks.register('publishAll') {
+    dependsOn 'publishCurseForge'
+    dependsOn 'publishMods'
+    group = 'Publishing'
+}
+
+tasks.register('allworkPublishInfo') {
+    group = 'Allwork'
+    description = 'Allwork alias for PublishInfo.'
+    dependsOn 'PublishInfo'
+}
+
+tasks.register('allworkPublishAll') {
+    group = 'Allwork'
+    description = 'Allwork alias for publishAll.'
+    dependsOn 'publishAll'
+}
+
+tasks.register('allworkJarJar') {
+    group = 'Allwork'
+    description = 'Allwork alias for the configured final publish artifact task.'
+    dependsOn boReadPublishArtifactTaskName()
+}
+
+tasks.register('publishCurseForge', curseForgeTaskClass) {
+    dependsOn boReadPublishArtifactTaskName()
+
+    def properties = boReadPublishingProperties()
+    apiToken = properties?.getProperty('CF_TOKEN')
+
+    def mainFile = upload(curseforge_id, boReadPublishArtifactFile())
+    mainFile.changelog = boReadPrimaryChangelog()
+    mainFile.addEnvironment('Client', 'Server')
+    mainFile.addGameVersion("${minecraft_version}")
+    boReadPublishCurseForgeLoaders().each { loaderName ->
+        mainFile.addModLoader(loaderName)
+    }
+    boReadPublishRequiredDependencies().each { dependencyId ->
+        mainFile.addRequirement(dependencyId)
+    }
+    boReadPublishOptionalDependencies().each { dependencyId ->
+        mainFile.addOptional(dependencyId)
+    }
+    mainFile.displayName = boReadPublishDisplayName()
+    mainFile.releaseType = publish_version
+    disableVersionDetection()
+}
+
+publishMods {
+    def properties = boReadPublishingProperties()
+    def modrinthTokenGet = properties?.getProperty('MODRINTH_TOKEN')
+
+    file = boReadPublishArtifactFile()
+    changelog = boReadFullChangelog()
+    type = STABLE
+    version = boReadPublishVersionId()
+    displayName = boReadPublishDisplayName()
+
+    boReadPublishModrinthLoaders().each { loaderName ->
+        modLoaders.add(loaderName)
+    }
+
+    if (modrinthTokenGet != null) {
+        modrinth {
+            accessToken = modrinthTokenGet
+            projectId = "${modrinth_id}"
+            minecraftVersions.add(minecraft_version)
+            boReadPublishRequiredDependencies().each { dependencyId ->
+                requires(dependencyId)
+            }
+            boReadPublishOptionalDependencies().each { dependencyId ->
+                optional(dependencyId)
+            }
+        }
+    }
+}
+
+tasks.matching { it.name in ['publishMods', 'publishModrinth'] }.configureEach {
+    dependsOn boReadPublishArtifactTaskName()
+}

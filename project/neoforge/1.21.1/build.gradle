@@ -1,19 +1,25 @@
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
+
 import java.nio.charset.StandardCharsets
-import java.util.Locale
-import java.util.Properties
-import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 plugins {
     id 'java'
     id 'idea'
     id 'net.neoforged.moddev' version '2.0.107'
+    id 'net.darkhax.curseforgegradle' version '1.1.28'
+    id 'me.modmuss50.mod-publish-plugin' version '1.0.0'
 }
 
 apply from: rootProject.file('gradle/bo-property-loader.gradle')
 apply from: rootProject.file('gradle/bo-runall-common.gradle')
+
+ext.bo_publish_artifact_task_name = 'jar'
+ext.bo_publish_artifact_relative_path = "build/libs/${package_name}-${mod_version}-neoforge-${minecraft_version}.jar"
+ext.bo_publish_loader_id = 'neoforge'
+ext.bo_publish_curseforge_loaders = ['NeoForge']
+ext.bo_publish_modrinth_loaders = ['neoforge']
 
 group = mod_group_id
 version = mod_version
@@ -269,6 +275,8 @@ tasks.named('jar', Jar).configure {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
+
+apply from: rootProject.file('gradle/bo-publishing.gradle')
 
 def buildRunAllSharedGradleArgs(Project projectRef) {
     List<String> args = ['--console=plain', '-PboExperientEnabled=true']

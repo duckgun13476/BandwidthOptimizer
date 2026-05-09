@@ -27,6 +27,8 @@ allprojects {
     }
 }
 
+apply from: rootProject.file('gradle/bo-publishing-root.gradle')
+
 tasks.register('runClientAllVersions') {
     group = 'Development'
     description = 'Root aggregate placeholder for version-specific client runs.'

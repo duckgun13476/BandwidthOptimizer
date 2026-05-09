@@ -1,0 +1,91 @@
+// publish root only Forge 1.20.1 and NeoForge 1.21.1。
+
+def boPublishableProjectPaths = [
+        ':forge-1.20.1',
+        ':neoforge-1.21.1'
+]
+
+gradle.projectsEvaluated {
+    Task previousCurseForgeTask = null
+    Task previousModrinthTask = null
+
+    boPublishableProjectPaths.collect { rootProject.project(it) }.each { targetProject ->
+        Task curseForgeTask = targetProject.tasks.findByName('publishCurseForge')
+        Task modrinthTask = targetProject.tasks.findByName('publishModrinth')
+        Task publishModsTask = targetProject.tasks.findByName('publishMods')
+
+        if (curseForgeTask != null) {
+            if (previousCurseForgeTask != null) {
+                curseForgeTask.mustRunAfter(previousCurseForgeTask)
+            }
+            if (previousModrinthTask != null) {
+                curseForgeTask.mustRunAfter(previousModrinthTask)
+            }
+        }
+
+        if (modrinthTask != null) {
+            if (curseForgeTask != null) {
+                modrinthTask.mustRunAfter(curseForgeTask)
+            }
+            if (previousCurseForgeTask != null) {
+                modrinthTask.mustRunAfter(previousCurseForgeTask)
+            }
+            if (previousModrinthTask != null) {
+                modrinthTask.mustRunAfter(previousModrinthTask)
+            }
+        }
+
+        if (publishModsTask != null && modrinthTask != null) {
+            publishModsTask.mustRunAfter(modrinthTask)
+        }
+
+        if (curseForgeTask != null) {
+            previousCurseForgeTask = curseForgeTask
+        }
+        if (modrinthTask != null) {
+            previousModrinthTask = modrinthTask
+        }
+    }
+}
+
+tasks.register('allworkPublishInfoAllVersions') {
+    group = 'Allwork'
+    description = 'Print publish info for Forge 1.20.1 and NeoForge 1.21.1.'
+    dependsOn boPublishableProjectPaths.collect { "${it}:allworkPublishInfo" }
+}
+
+tasks.register('publishInfoAllVersions') {
+    group = 'Publishing'
+    description = 'Print publish info for Forge 1.20.1 and NeoForge 1.21.1.'
+    dependsOn 'allworkPublishInfoAllVersions'
+}
+
+tasks.register('allworkPublishAllVersions') {
+    group = 'Allwork'
+    description = 'Publish Forge 1.20.1 and NeoForge 1.21.1.'
+    dependsOn boPublishableProjectPaths.collect { "${it}:allworkPublishAll" }
+}
+
+tasks.register('publishAllVersions') {
+    group = 'Publishing'
+    description = 'Publish Forge 1.20.1 and NeoForge 1.21.1.'
+    dependsOn 'allworkPublishAllVersions'
+}
+
+tasks.register('allworkPackageAllVersions') {
+    group = 'Allwork'
+    description = 'Build final jars for Forge 1.20.1 and NeoForge 1.21.1.'
+    dependsOn boPublishableProjectPaths.collect { "${it}:allworkJarJar" }
+}
+
+tasks.register('allworkJarJarAllVersions') {
+    group = 'Allwork'
+    description = 'Alias for allworkPackageAllVersions.'
+    dependsOn 'allworkPackageAllVersions'
+}
+
+tasks.register('packageAllVersions') {
+    group = 'Publishing'
+    description = 'Build final jars for Forge 1.20.1 and NeoForge 1.21.1.'
+    dependsOn 'allworkPackageAllVersions'
+}
