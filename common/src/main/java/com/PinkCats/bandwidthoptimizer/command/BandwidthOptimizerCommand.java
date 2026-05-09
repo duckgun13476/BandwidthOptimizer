@@ -13,7 +13,6 @@ import net.minecraft.network.chat.Component;
 public final class BandwidthOptimizerCommand {
     private BandwidthOptimizerCommand() {}
 
-
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("bandwidthoptimizer")
                 .executes(context -> root(context.getSource()))
@@ -22,12 +21,6 @@ public final class BandwidthOptimizerCommand {
                         .then(ChannelTransportCompressionCommand.buildCommand())
                         .then(ChannelTransportPacketRankCommand.buildCommand()))
                 .then(ServerBandwidthStatsCommand.buildCommand())
-        );
-        dispatcher.register(Commands.literal("bandwidthoptimizer_test")
-                .requires(source -> source.hasPermission(2))
-                .executes(context -> testRoot(context.getSource()))
-                .then(ChannelTransportCompressionCommand.buildCommand())
-                .then(ChannelTransportPacketRankCommand.buildCommand())
         );
     }
 
@@ -38,16 +31,6 @@ public final class BandwidthOptimizerCommand {
                         + "/bandwidthoptimizer test transportreport run [ticks] | "
                         + "/bandwidthoptimizer test packetrank run [ticks] | "
                         + "/bandwidthoptimizer stats total|players [limit]|reset"
-        ), false);
-        return Command.SINGLE_SUCCESS;
-    }
-
-    private static int testRoot(CommandSourceStack source) {
-        CommandSourceCompat.sendSuccess(source, Component.literal(
-                "BandwidthOptimizer test commands: /bandwidthoptimizer_test transportreport run [ticks] | "
-                        + "/bandwidthoptimizer_test packetrank run [ticks] | "
-                        + "/bandwidthoptimizer test transportreport run [ticks] | "
-                        + "/bandwidthoptimizer test packetrank run [ticks]"
         ), false);
         return Command.SINGLE_SUCCESS;
     }

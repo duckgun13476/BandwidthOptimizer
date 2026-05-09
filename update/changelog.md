@@ -1,4 +1,10 @@
 
+#### v2.6.4.1-release
+1. Fixed severe memory growth in template dictionary and chunk snapshot caches.
+2. Improved zstd native driver loading, fallback, and cleanup.
+3. Fixed HUD bypass stats display and aligned server-side bypass reporting.
+4. Improved NeoForge 1.21.1 and Forge 1.20.1 release stability.
+
 #### v2.6.4
 1. Add strict channel check.
 2. Fix the bypass range too big.
