@@ -84,8 +84,8 @@ def applySharedBandwidthOptimizerNeoForgeRunProperties = { Project projectRef, d
 
 def configureBandwidthOptimizerNeoForgeClientRun = { Project projectRef, def runConfig ->
     runConfig.systemProperty('neoforge.enabledGameTestNamespaces', mod_id)
-    runConfig.systemProperty('bandwidthoptimizer.outputDirectory', ext.boClientOutputRoot.call(projectRef).absolutePath)
-    runConfig.systemProperty('bandwidthoptimizer.sharedOutputDirectory', ext.boServerOutputRoot.call(projectRef).absolutePath)
+    runConfig.systemProperty('bandwidthoptimizer.outputDirectory', project.ext.boClientOutputRoot.call(projectRef).absolutePath)
+    runConfig.systemProperty('bandwidthoptimizer.sharedOutputDirectory', project.ext.boServerOutputRoot.call(projectRef).absolutePath)
     if ((projectRef.findProperty('boExperientEnabled') ?: 'false').toString().toBoolean()) {
         runConfig.systemProperty('bandwidthoptimizer.experient.enabled', 'true')
         if (projectRef.hasProperty('boExperientAutoConnectAddress')) {
@@ -105,8 +105,8 @@ def configureBandwidthOptimizerNeoForgeClientRun = { Project projectRef, def run
 
 def configureBandwidthOptimizerNeoForgeServerRun = { Project projectRef, def runConfig ->
     runConfig.systemProperty('neoforge.enabledGameTestNamespaces', mod_id)
-    runConfig.systemProperty('bandwidthoptimizer.outputDirectory', ext.boServerOutputRoot.call(projectRef).absolutePath)
-    runConfig.systemProperty('bandwidthoptimizer.sharedOutputDirectory', ext.boServerOutputRoot.call(projectRef).absolutePath)
+    runConfig.systemProperty('bandwidthoptimizer.outputDirectory', project.ext.boServerOutputRoot.call(projectRef).absolutePath)
+    runConfig.systemProperty('bandwidthoptimizer.sharedOutputDirectory', project.ext.boServerOutputRoot.call(projectRef).absolutePath)
     if ((projectRef.findProperty('boExperientEnabled') ?: 'false').toString().toBoolean()) {
         runConfig.systemProperty('bandwidthoptimizer.experient.enabled', 'true')
     }
@@ -310,7 +310,7 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
             'boClientChunkCacheMaxMemoryMb',
             'boClientChunkCacheRecycleTriggerFreeMb'
     ].each { String propertyName ->
-        ext.boAppendOptionalRunAllProperty.call(args, projectRef, propertyName)
+        project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, propertyName)
     }
     if (!projectRef.hasProperty('boChannelJsonlCaptureEnabled')) {
         args.add('-PboChannelJsonlCaptureEnabled=true')
@@ -329,8 +329,8 @@ def buildExperientAutoConnectGradleArgs(Project projectRef, String address, Stri
     args.add("-PboExperientAutoConnectAddress=${address}")
     args.add("-PboExperientAutoConnectName=${serverName}")
     args.add("-PboExperientAutoConnectDelayTicks=${delayTicks}")
-    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientAutoConnectMaxAttempts')
-    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientAutoConnectRetryDelayTicks')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientAutoConnectMaxAttempts')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientAutoConnectRetryDelayTicks')
     return args
 }
 
@@ -352,7 +352,7 @@ def startNeoForgeRunTaskProcess(File rootDirFile, File projectDirFile, boolean i
     builder.directory(rootDirFile)
     builder.redirectErrorStream(true)
     Process process = builder.start()
-    ext.boStreamRunTaskOutputToConsole(process, outputFile, consoleLabel, 'neoforge-runall-log-pump')
+    project.ext.boStreamRunTaskOutputToConsole(process, outputFile, consoleLabel, 'neoforge-runall-log-pump')
     return process
 }
 
@@ -467,7 +467,7 @@ tasks.register('runChunkBranchCoverageVerify', JavaExec) {
 gradle.taskGraph.whenReady { TaskExecutionGraph taskGraph ->
     Task runAllTask = tasks.named('runAll').get()
     if (taskGraph.hasTask(runAllTask)) {
-        ext.boRequireExplicitVersionRunAllTaskRequest.call(project, 'runAll')
+        project.ext.boRequireExplicitVersionRunAllTaskRequest.call(project, 'runAll')
     }
 }
 
@@ -477,20 +477,20 @@ tasks.register('runAll') {
     dependsOn(tasks.named('testClasses'))
 
     doLast {
-        ext.boRequireExplicitVersionRunAllTaskRequest.call(project, 'runAll')
+        project.ext.boRequireExplicitVersionRunAllTaskRequest.call(project, 'runAll')
         String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
         boolean isWindows = osName.contains('windows')
         File rootDirFile = rootProject.projectDir
         File projectDirFile = project.projectDir
         String wrapperPath = new File(rootDirFile, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
-        long observeSeconds = ext.boReadRunAllLongProperty.call(project, 'boRunAllObserveSeconds', 0L)
-        long settleMillis = ext.boReadRunAllLongProperty.call(project, 'boRunAllSettleMillis', 3000L)
-        long settleTimeoutMillis = ext.boReadRunAllLongProperty.call(project, 'boRunAllSettleTimeoutMillis', 15000L)
+        long observeSeconds = project.ext.boReadRunAllLongProperty.call(project, 'boRunAllObserveSeconds', 0L)
+        long settleMillis = project.ext.boReadRunAllLongProperty.call(project, 'boRunAllSettleMillis', 3000L)
+        long settleTimeoutMillis = project.ext.boReadRunAllLongProperty.call(project, 'boRunAllSettleTimeoutMillis', 15000L)
 
         File serverDir = project.file('run/server')
         File clientDir = project.file('run/client')
-        File serverOutputDir = ext.boServerOutputRoot.call(project)
-        File clientOutputDir = ext.boClientOutputRoot.call(project)
+        File serverOutputDir = project.ext.boServerOutputRoot.call(project)
+        File clientOutputDir = project.ext.boClientOutputRoot.call(project)
         File serverTaskLog = project.file('run/runall-server-task.log')
         File clientTaskLog = project.file('run/runall-client-task.log')
         File serverSendJsonl = new File(serverOutputDir, 'send.jsonl')
@@ -507,7 +507,7 @@ tasks.register('runAll') {
         stopExistingRunAllProcesses(project, projectDirFile, isWindows)
         sleep(3000)
 
-        ext.boClearRunAllProbeFiles.call([
+        project.ext.boClearRunAllProbeFiles.call([
                 serverTaskLog,
                 clientTaskLog,
                 serverSendJsonl,
@@ -528,7 +528,7 @@ tasks.register('runAll') {
         try {
             println 'runAll: starting NeoForge 1.21.1 local server.'
             serverProcess = startNeoForgeRunTaskProcess(rootDirFile, projectDirFile, isWindows, wrapperPath, 'runServer', buildRunAllSharedGradleArgs(project), serverTaskLog, 'runServer')
-            ext.boWaitForLogMarker.call(
+            project.ext.boWaitForLogMarker.call(
                     serverTaskLog,
                     ['Done ('],
                     ['BUILD FAILED', 'Failed to start the minecraft server', 'Address already in use', 'Crash report saved to'],
@@ -539,7 +539,7 @@ tasks.register('runAll') {
             List<String> clientGradleArgs = buildExperientAutoConnectGradleArgs(project, '127.0.0.1:25565', 'BO NeoForge RunAll Local', 20L)
             println 'runAll: server is ready, starting NeoForge 1.21.1 client.'
             clientProcess = startNeoForgeRunTaskProcess(rootDirFile, projectDirFile, isWindows, wrapperPath, 'runClient', clientGradleArgs, clientTaskLog, 'runClient')
-            ext.boWaitForLogMarker.call(
+            project.ext.boWaitForLogMarker.call(
                     clientTaskLog,
                     ['Connecting to 127.0.0.1, 25565', 'Connecting to 127.0.0.1:25565'],
                     ['Failed to connect to the server', 'Connection refused', 'Internal Exception', 'Reached max attempts'],
@@ -547,7 +547,7 @@ tasks.register('runAll') {
                     'NeoForge runAll client connect'
             )
 
-            ext.boWaitForFourWayCapturedTraffic.call(clientSendJsonl, clientReceiveJsonl, serverSendJsonl, serverReceiveJsonl, 240000L)
+            project.ext.boWaitForFourWayCapturedTraffic.call(clientSendJsonl, clientReceiveJsonl, serverSendJsonl, serverReceiveJsonl, 240000L)
             println "runAll: four-way jsonl started. server=${serverDir.absolutePath}, client=${clientDir.absolutePath}"
 
             if (observeSeconds > 0L) {
@@ -560,7 +560,7 @@ tasks.register('runAll') {
                     clientProcess.waitFor(15L, TimeUnit.SECONDS)
                 }
                 forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
-                ext.boWaitForFilesToSettle.call(
+                project.ext.boWaitForFilesToSettle.call(
                         [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
                         settleMillis,
                         settleTimeoutMillis
@@ -574,18 +574,18 @@ tasks.register('runAll') {
             }
 
             if ((project.findProperty('boExperientChunkHotspotPathEnabled') ?: 'false').toString().toBoolean()) {
-                ext.boWaitForMarkerFile.call(serverPathCompletedMarker, 300000L, 'NeoForge runAll chunk-hotspot path completion')
+                project.ext.boWaitForMarkerFile.call(serverPathCompletedMarker, 300000L, 'NeoForge runAll chunk-hotspot path completion')
                 forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
             } else {
                 clientProcess.waitFor()
-                ext.boWaitForFilesToSettle.call([clientSendJsonl, serverReceiveJsonl], settleMillis, settleTimeoutMillis)
+                project.ext.boWaitForFilesToSettle.call([clientSendJsonl, serverReceiveJsonl], settleMillis, settleTimeoutMillis)
                 stopRunAllServerProcesses(project, projectDirFile, isWindows)
                 if (serverProcess.isAlive()) {
                     serverProcess.waitFor(30L, TimeUnit.SECONDS)
                 }
             }
-            ext.boWaitForFilesToSettle.call([clientSendJsonl, serverReceiveJsonl], settleMillis, settleTimeoutMillis)
-            ext.boWaitForFilesToSettle.call(
+            project.ext.boWaitForFilesToSettle.call([clientSendJsonl, serverReceiveJsonl], settleMillis, settleTimeoutMillis)
+            project.ext.boWaitForFilesToSettle.call(
                     [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
                     settleMillis,
                     settleTimeoutMillis

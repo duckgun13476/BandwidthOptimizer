@@ -14,6 +14,18 @@ public final class ZstdRuntimeSupport {
     private ZstdRuntimeSupport() {}
 
     public static void configureNativeTempFolder() {
+        // archive
+        BandwidthOptimizerOutputPaths.LegacyMigrationResult migrationResult =
+                BandwidthOptimizerOutputPaths.migrateLegacyDefaultLayout();
+        if (migrationResult.changed()) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "Migrated legacy BandwidthOptimizer output layout: movedOutputs={}, deletedLegacyFiles={}, failures={}",
+                    migrationResult.movedOutputFiles(),
+                    migrationResult.deletedLegacyFiles(),
+                    migrationResult.failedOperations()
+            );
+        }
+
         String configured = System.getProperty(TEMP_FOLDER_PROPERTY);
         if (configured != null && !configured.isBlank()) {
             Bandwidthoptimizer.LOGGER.info("Using preconfigured zstd native temp folder: {}", configured);
