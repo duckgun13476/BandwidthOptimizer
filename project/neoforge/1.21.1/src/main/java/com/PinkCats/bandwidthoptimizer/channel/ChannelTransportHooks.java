@@ -79,6 +79,7 @@ public final class ChannelTransportHooks {
         ConnectionProtocol connectionProtocol = readConnectionProtocol(packetEncoderFlowAccess);
         String protocolName = readProtocolName(connectionProtocol);
         byte[] originalPacketBytes = ByteBufUtil.getBytes(out, startIndexInclusive, endIndexExclusive - startIndexInclusive, false);
+        PacketFlow outboundPacketFlow = resolvePacketFlow(packetEncoderFlowAccess, connectionProtocol, packet);
 
 
         if (!ChannelTransportRuntimeGuard.isTransportAvailable()
@@ -88,7 +89,7 @@ public final class ChannelTransportHooks {
                     "transport_unavailable_or_protocol",
                     protocolName,
                     packet,
-                    null,
+                    outboundPacketFlow,
                     originalPacketBytes
             );
             recordOutboundBypassStats(context, protocolName, originalPacketBytes.length, 1);
@@ -144,7 +145,7 @@ public final class ChannelTransportHooks {
                     controlDecision.forceDirectTransport() ? controlDecision.reason() : boundaryDecision.reason(),
                     protocolName,
                     packet,
-                    null,
+                    outboundPacketFlow,
                     originalPacketBytes
             );
             recordOutboundBypassStats(context, protocolName, originalPacketBytes.length, 1);
@@ -197,7 +198,6 @@ public final class ChannelTransportHooks {
         }
         byte[] transportInputPacketBytes = chunkTransportEncodedBytes == null ? originalPacketBytes : chunkTransportEncodedBytes;
         byte[] directFallbackPacketBytes = originalPacketBytes;
-        PacketFlow outboundPacketFlow = resolvePacketFlow(packetEncoderFlowAccess, connectionProtocol, packet);
         ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace =
                 ChunkBoundaryBandwidthRecorder.beginOutboundTrace(
                         context,

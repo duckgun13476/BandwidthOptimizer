@@ -1,4 +1,21 @@
 
+#### v2.6.3
+1. Fixed `Flow` being reported as `NONE` in the transport bypass report.
+2. Added old-path archiving and unified the working output path.
+3. Fixed a memory leak in the chunk global cache cleanup path.
+
+#### v2.6.2
+1. Fixed chunk cache state not being closed correctly after Velocity / proxy server switching.
+2. Fixed a server crash when the channel client was missing.
+3. Added silent bypass recording and bypass rank reporting to identify packets that did not enter the batch / zstd / template dictionary pipeline.
+
+#### v2.6.1
+1. Fixed the NeoForge 1.21.1 semantic migration.
+
+#### v2.6
+1. Added the NeoForge 1.21.1 migration.
+2. Reworked the project structure for multi-version support.
+
 #### v2.5-beta
 1. Fixed chunk cache reuse after repeated Nether portal travel, reducing repeated full chunk sends.
 2. Added server total bandwidth stats and per-player bandwidth stats with HUD, commands, and world persistence.

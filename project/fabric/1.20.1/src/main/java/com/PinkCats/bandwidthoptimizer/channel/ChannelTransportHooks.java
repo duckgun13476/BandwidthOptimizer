@@ -77,6 +77,7 @@ public final class ChannelTransportHooks {
 
         String protocolName = readProtocolName(context);
         byte[] originalPacketBytes = ByteBufUtil.getBytes(out, startIndexInclusive, endIndexExclusive - startIndexInclusive, false);
+        PacketFlow outboundPacketFlow = resolvePacketFlow(packetEncoderFlowAccess, readConnectionProtocolOrNull(context), packet);
 
 
         if (!ChannelTransportRuntimeGuard.isTransportAvailable()
@@ -86,7 +87,7 @@ public final class ChannelTransportHooks {
                     "transport_unavailable_or_protocol",
                     protocolName,
                     packet,
-                    null,
+                    outboundPacketFlow,
                     originalPacketBytes
             );
             recordOutboundBypassStats(context, protocolName, originalPacketBytes.length, 1);
@@ -142,7 +143,7 @@ public final class ChannelTransportHooks {
                     controlDecision.forceDirectTransport() ? controlDecision.reason() : boundaryDecision.reason(),
                     protocolName,
                     packet,
-                    null,
+                    outboundPacketFlow,
                     originalPacketBytes
             );
             recordOutboundBypassStats(context, protocolName, originalPacketBytes.length, 1);
@@ -194,7 +195,6 @@ public final class ChannelTransportHooks {
             );
         }
         byte[] transportInputPacketBytes = chunkTransportEncodedBytes == null ? originalPacketBytes : chunkTransportEncodedBytes;
-        PacketFlow outboundPacketFlow = resolvePacketFlow(packetEncoderFlowAccess, readConnectionProtocol(context), packet);
         ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace =
                 ChunkBoundaryBandwidthRecorder.beginOutboundTrace(
                         context,
@@ -812,6 +812,14 @@ public final class ChannelTransportHooks {
             throw new IllegalStateException("Missing ConnectionProtocol on inbound transport decode");
         }
         return protocol;
+    }
+
+    // protocol check
+    private static ConnectionProtocol readConnectionProtocolOrNull(ChannelHandlerContext context) {
+        if (context == null || context.channel() == null) {
+            return null;
+        }
+        return context.channel().attr(Connection.ATTRIBUTE_PROTOCOL).get();
     }
 
     private static void recordDirectPacketTrace(
