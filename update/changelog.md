@@ -1,4 +1,9 @@
 
+#### v2.6.4
+1. Add strict channel check.
+2. Fix the bypass range too big.
+3. Fix version label mistake.
+
 #### v2.6.3
 1. Fixed `Flow` being reported as `NONE` in the transport bypass report.
 2. Added old-path archiving and unified the working output path.

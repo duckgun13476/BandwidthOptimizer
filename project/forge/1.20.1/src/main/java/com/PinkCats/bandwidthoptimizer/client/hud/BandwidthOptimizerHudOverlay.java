@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
@@ -49,76 +50,11 @@ public final class BandwidthOptimizerHudOverlay {
         int y = 6;
 
         RenderSystem.enableBlend();
-        Object guiGraphics = invokeNoArg(event, "getGuiGraphics");
-        if (guiGraphics != null) {
-            invokeGuiGraphicsFill(guiGraphics, x, y, x + hud.boxWidth(), y + hud.boxHeight(), 0xA0101018);
-            invokeGuiGraphicsFill(guiGraphics, x, y, x + hud.boxWidth(), y + 1, 0xFF66D9EF);
-        } else {
-            Object poseStack = invokeNoArg(event, "getPoseStack");
-            invokePoseStackFill(poseStack, x, y, x + hud.boxWidth(), y + hud.boxHeight(), 0xA0101018);
-            invokePoseStackFill(poseStack, x, y, x + hud.boxWidth(), y + 1, 0xFF66D9EF);
-        }
+        GuiGraphics guiGraphics = event.getGuiGraphics();
+        guiGraphics.fill(x, y, x + hud.boxWidth(), y + hud.boxHeight(), 0xA0101018);
+        guiGraphics.fill(x, y, x + hud.boxWidth(), y + 1, 0xFF66D9EF);
         for (int index = 0; index < hud.lines().size(); index++) {
-            drawHudString(guiGraphics, event, minecraft.font, hud.lines().get(index), x + 5, y + 4 + index * hud.lineHeight(), 0xF2F2F2);
-        }
-    }
-
-    private static Object invokeNoArg(Object target, String methodName) {
-        if (target == null || methodName == null) {
-            return null;
-        }
-        try {
-            return target.getClass().getMethod(methodName).invoke(target);
-        } catch (ReflectiveOperationException ignored) {
-            return null;
-        }
-    }
-
-    private static void invokeGuiGraphicsFill(Object guiGraphics, int minX, int minY, int maxX, int maxY, int color) {
-        if (guiGraphics == null) {
-            return;
-        }
-        try {
-            guiGraphics.getClass()
-                    .getMethod("fill", int.class, int.class, int.class, int.class, int.class)
-                    .invoke(guiGraphics, minX, minY, maxX, maxY, color);
-        } catch (ReflectiveOperationException ignored) {
-        }
-    }
-
-    private static void invokePoseStackFill(Object poseStack, int minX, int minY, int maxX, int maxY, int color) {
-        if (poseStack == null) {
-            return;
-        }
-        try {
-            Class<?> guiComponentClass = Class.forName("net.minecraft.client.gui.GuiComponent");
-            guiComponentClass
-                    .getMethod("fill", poseStack.getClass(), int.class, int.class, int.class, int.class, int.class)
-                    .invoke(null, poseStack, minX, minY, maxX, maxY, color);
-        } catch (ReflectiveOperationException ignored) {
-        }
-    }
-
-    private static void drawHudString(Object guiGraphics, RenderGuiOverlayEvent.Post event, Font font, String text, int x, int y, int color) {
-        if (guiGraphics != null) {
-            try {
-                guiGraphics.getClass()
-                        .getMethod("drawString", Font.class, String.class, int.class, int.class, int.class, boolean.class)
-                        .invoke(guiGraphics, font, text, x, y, color, false);
-                return;
-            } catch (ReflectiveOperationException ignored) {
-            }
-        }
-
-        Object poseStack = invokeNoArg(event, "getPoseStack");
-        if (poseStack == null) {
-            return;
-        }
-        try {
-            font.getClass()
-                    .getMethod("draw", poseStack.getClass(), String.class, float.class, float.class, int.class)
-                    .invoke(font, poseStack, text, (float) x, (float) y, color);
-        } catch (ReflectiveOperationException ignored) {
+            guiGraphics.drawString(minecraft.font, hud.lines().get(index), x + 5, y + 4 + index * hud.lineHeight(), 0xF2F2F2, false);
         }
     }
 

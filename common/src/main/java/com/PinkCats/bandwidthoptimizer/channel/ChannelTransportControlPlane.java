@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
+import com.PinkCats.bandwidthoptimizer.compat.minecraft.CustomPayloadPacketCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -9,7 +10,6 @@ import io.netty.util.AttributeKey;
 import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -202,30 +202,11 @@ public final class ChannelTransportControlPlane {
     }
 
     private static String readCustomPayloadChannel(Packet<?> packet) {
-        Object identifier = invokeNoArg(packet, "getIdentifier");
-        if (identifier != null) {
-            return identifier.toString();
-        }
-        Object payload = invokeNoArg(packet, "payload");
-        Object type = invokeNoArg(payload, "type");
-        Object id = invokeNoArg(type, "id");
-        return id == null ? "" : id.toString();
+        return CustomPayloadPacketCompat.payloadChannel(packet);
     }
 
     private static String normalizePayloadChannel(String payloadChannel) {
         return payloadChannel == null ? "" : payloadChannel.trim().toLowerCase(Locale.ROOT);
-    }
-
-    private static Object invokeNoArg(Object target, String methodName) {
-        if (target == null || methodName == null || methodName.isBlank()) {
-            return null;
-        }
-        try {
-            Method method = target.getClass().getMethod(methodName);
-            return method.invoke(target);
-        } catch (ReflectiveOperationException | RuntimeException exception) {
-            return null;
-        }
     }
 
     private static ControlState getOrCreateControlState(Channel channel) {
