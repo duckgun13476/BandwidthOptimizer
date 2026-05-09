@@ -28,6 +28,7 @@ public final class BandwidthOptimizerHudStats {
             RECENT_SAMPLES.clear();
             lastSampleAtMillis = 0L;
         }
+        ChannelTransportTelemetry.reset();
         ClientServerBandwidthHudStats.reset();
     }
 
@@ -70,6 +71,8 @@ public final class BandwidthOptimizerHudStats {
                 totals.totalBypassPacketBytes(),
                 recentTotals.totalBypassPacketCount(),
                 recentTotals.totalBypassPacketBytes(),
+                totals.outboundBypassPacketBytes(),
+                totals.inboundBypassPacketBytes(),
                 totals.outboundBypassPacketCount(),
                 totals.inboundBypassPacketCount(),
                 totals.totalMapLiteralEntries(),
@@ -126,11 +129,10 @@ public final class BandwidthOptimizerHudStats {
         long totalPacketCount = inboundTransport == null ? 0L : inboundTransport.packetCount();
         long outboundBypassPacketCount = outboundTransport == null ? 0L : outboundTransport.bypassPacketCount();
         long inboundBypassPacketCount = inboundTransport == null ? 0L : inboundTransport.bypassPacketCount();
+        long outboundBypassPacketBytes = outboundTransport == null ? 0L : outboundTransport.bypassPacketBytes();
+        long inboundBypassPacketBytes = inboundTransport == null ? 0L : inboundTransport.bypassPacketBytes();
         long totalBypassPacketCount = sum(outboundBypassPacketCount, inboundBypassPacketCount);
-        long totalBypassPacketBytes = sum(
-                outboundTransport == null ? 0L : outboundTransport.bypassPacketBytes(),
-                inboundTransport == null ? 0L : inboundTransport.bypassPacketBytes()
-        );
+        long totalBypassPacketBytes = sum(outboundBypassPacketBytes, inboundBypassPacketBytes);
         long localCacheBytes = shadowCacheSnapshot == null ? 0L : shadowCacheSnapshot.totalEncodedBytes();
         long localCachePacketCount = shadowCacheSnapshot == null ? 0L : shadowCacheSnapshot.packetCount();
         long localCacheChunkCount = shadowCacheSnapshot == null ? 0L : shadowCacheSnapshot.chunkCount();
@@ -172,6 +174,8 @@ public final class BandwidthOptimizerHudStats {
                 totalPacketCount,
                 totalBypassPacketCount,
                 totalBypassPacketBytes,
+                outboundBypassPacketBytes,
+                inboundBypassPacketBytes,
                 outboundBypassPacketCount,
                 inboundBypassPacketCount,
                 totalMapLiteralEntries,
@@ -224,6 +228,8 @@ public final class BandwidthOptimizerHudStats {
                     positiveDelta(totals.totalPacketCount(), firstSample.totalPacketCount()),
                     positiveDelta(totals.totalBypassPacketCount(), firstSample.totalBypassPacketCount()),
                     positiveDelta(totals.totalBypassPacketBytes(), firstSample.totalBypassPacketBytes()),
+                    totals.outboundBypassPacketBytes(),
+                    totals.inboundBypassPacketBytes(),
                     totals.outboundBypassPacketCount(),
                     totals.inboundBypassPacketCount(),
                     totals.totalMapLiteralEntries(),
@@ -317,6 +323,8 @@ public final class BandwidthOptimizerHudStats {
             long totalPacketCount,
             long totalBypassPacketCount,
             long totalBypassPacketBytes,
+            long outboundBypassPacketBytes,
+            long inboundBypassPacketBytes,
             long outboundBypassPacketCount,
             long inboundBypassPacketCount,
             long totalMapLiteralEntries,
@@ -326,7 +334,7 @@ public final class BandwidthOptimizerHudStats {
             long totalMapTemplateAdditions
     ) {
         private static Totals empty() {
-            return new Totals(0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+            return new Totals(0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
         }
     }
 
@@ -354,6 +362,8 @@ public final class BandwidthOptimizerHudStats {
             long totalBypassPacketBytes,
             long recentBypassPacketCount,
             long recentBypassPacketBytes,
+            long outboundBypassPacketBytes,
+            long inboundBypassPacketBytes,
             long outboundBypassPacketCount,
             long inboundBypassPacketCount,
             long totalMapLiteralEntries,

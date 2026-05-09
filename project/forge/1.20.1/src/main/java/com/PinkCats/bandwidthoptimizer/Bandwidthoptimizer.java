@@ -37,6 +37,10 @@ public class Bandwidthoptimizer {
         return networkProtocolVersion;
     }
 
+    public static String displayVersion() {
+        return networkProtocolVersion().replace('_', '.');
+    }
+
     public static String versionedNetworkPath(String basePath) {
         return basePath + "_" + networkProtocolVersion();
     }

@@ -3,6 +3,7 @@
 1. Add strict channel check.
 2. Fix the bypass range too big.
 3. Fix version label mistake.
+4. Fix unstable reflection.
 
 #### v2.6.3
 1. Fixed `Flow` being reported as `NONE` in the transport bypass report.

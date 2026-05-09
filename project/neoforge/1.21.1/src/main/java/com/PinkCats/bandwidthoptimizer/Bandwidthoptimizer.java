@@ -32,12 +32,14 @@ public class Bandwidthoptimizer {
     public static final Logger LOGGER = LogUtils.getLogger();
     private static volatile String networkProtocolVersion = "dev";
 
-    // 返回当前发布版本对应的网络协议版本，用于让不同 mod 版本在握手阶段互斥。
     public static String networkProtocolVersion() {
         return networkProtocolVersion;
     }
 
-    // 把基础通道名拼成带版本号的通道路径，避免旧版客户端继续声明同一个通道。
+    public static String displayVersion() {
+        return networkProtocolVersion().replace('_', '.');
+    }
+
     public static String versionedNetworkPath(String basePath) {
         return basePath + "_" + networkProtocolVersion();
     }

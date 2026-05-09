@@ -66,6 +66,44 @@ public final class ChannelTransportTelemetry {
 
     private ChannelTransportTelemetry() {}
 
+    public static void reset() {
+        OUTBOUND_WRAP_COUNT.set(0L);
+        INBOUND_UNWRAP_COUNT.set(0L);
+        OUTBOUND_SHRINK_SAMPLE_COUNT.set(0L);
+        LAST_TELEMETRY_DUMP_AT_MILLIS.set(0L);
+        LAST_ACTIVITY_AT_MILLIS.set(0L);
+        OUTBOUND_RAW_PACKET_BYTES.reset();
+        OUTBOUND_MAPPING_STAGE_BYTES.reset();
+        OUTBOUND_TRANSPORT_BODY_BYTES.reset();
+        OUTBOUND_TRANSPORT_FRAME_BYTES.reset();
+        OUTBOUND_ORIGINAL_PACKET_COUNT.reset();
+        OUTBOUND_SHRUNK_FRAME_COUNT.reset();
+        OUTBOUND_EXPANDED_FRAME_COUNT.reset();
+        OUTBOUND_LITERAL_ENTRY_COUNT.reset();
+        OUTBOUND_EXACT_REFERENCE_COUNT.reset();
+        OUTBOUND_TEMPLATE_REFERENCE_COUNT.reset();
+        OUTBOUND_EXACT_ADDITION_COUNT.reset();
+        OUTBOUND_TEMPLATE_ADDITION_COUNT.reset();
+        OUTBOUND_EXACT_REMOVAL_COUNT.reset();
+        OUTBOUND_TEMPLATE_REMOVAL_COUNT.reset();
+        OUTBOUND_BYPASS_PACKET_COUNT.reset();
+        OUTBOUND_BYPASS_PACKET_BYTES.reset();
+        INBOUND_TRANSPORT_FRAME_BYTES.reset();
+        INBOUND_TRANSPORT_BODY_BYTES.reset();
+        INBOUND_MAPPING_STAGE_BYTES.reset();
+        INBOUND_RESTORED_PACKET_BYTES.reset();
+        INBOUND_RESTORED_PACKET_COUNT.reset();
+        INBOUND_LITERAL_ENTRY_COUNT.reset();
+        INBOUND_EXACT_REFERENCE_COUNT.reset();
+        INBOUND_TEMPLATE_REFERENCE_COUNT.reset();
+        INBOUND_EXACT_ADDITION_COUNT.reset();
+        INBOUND_TEMPLATE_ADDITION_COUNT.reset();
+        INBOUND_EXACT_REMOVAL_COUNT.reset();
+        INBOUND_TEMPLATE_REMOVAL_COUNT.reset();
+        INBOUND_BYPASS_PACKET_COUNT.reset();
+        INBOUND_BYPASS_PACKET_BYTES.reset();
+    }
+
     // This function records one outbound transport wrap, including stage bytes and mapping counters.
     public static void recordOutboundWrap(String protocolName, ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame) {
         if (wrappedFrame == null) {
