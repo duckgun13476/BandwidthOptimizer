@@ -1,11 +1,4 @@
-import java.io.BufferedReader
-import java.io.BufferedWriter
-import java.io.FileOutputStream
-import java.io.IOException
-import java.io.InputStreamReader
-import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
-
 // 判断当前版本项目是否启用 runAll 相关验证任务，默认启用，特殊版本可用 -PboRunAllTasksEnabled=false 关闭。
 ext.boIsRunAllTasksEnabled = { projectRef ->
     Object rawValue = projectRef.gradle.startParameter.projectProperties.get('boRunAllTasksEnabled')
@@ -15,12 +8,12 @@ ext.boIsRunAllTasksEnabled = { projectRef ->
     (rawValue ?: 'true').toString().toBoolean()
 }
 
-// 推导服务端 BO 默认输出目录，必须与 common 里的 bandwidthoptimizer-native 默认目录保持一致。
+// 推导服务端 BO 默认输出目录，集中写入版本运行目录下的 bandwidthoptimizer-native。
 ext.boServerOutputRoot = { projectRef ->
     projectRef.file('run/server/bandwidthoptimizer-native')
 }
 
-// 推导客户端 BO 默认输出目录，必须与 common 里的 bandwidthoptimizer-native 默认目录保持一致。
+// 推导客户端 BO 默认输出目录，集中写入版本运行目录下的 bandwidthoptimizer-native。
 ext.boClientOutputRoot = { projectRef ->
     projectRef.file('run/client/bandwidthoptimizer-native')
 }

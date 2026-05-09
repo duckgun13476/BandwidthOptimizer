@@ -11,21 +11,6 @@ import java.util.concurrent.TimeUnit
 apply from: rootProject.file('gradle/bo-runall-common.gradle')
 
 def boRunAllTasksEnabled = ext.boIsRunAllTasksEnabled.call(project)
-def isExplicitVersionRunAllTaskRequest = ext.boIsExplicitVersionRunAllTaskRequest
-def requireExplicitVersionRunAllTaskRequest = ext.boRequireExplicitVersionRunAllTaskRequest
-def boServerOutputRoot = ext.boServerOutputRoot
-def boClientOutputRoot = ext.boClientOutputRoot
-def appendOptionalRunAllProperty = ext.boAppendOptionalRunAllProperty
-def readRunAllLongProperty = ext.boReadRunAllLongProperty
-def waitForLogMarker = ext.boWaitForLogMarker
-def waitForFourWayCapturedTraffic = ext.boWaitForFourWayCapturedTraffic
-def clearRunAllProbeFiles = ext.boClearRunAllProbeFiles
-def waitForMarkerFile = ext.boWaitForMarkerFile
-def waitForFilesToSettle = ext.boWaitForFilesToSettle
-def streamRunTaskOutputToConsole = { Process process, File outputFile, String consoleLabel ->
-    ext.boStreamRunTaskOutputToConsole(process, outputFile, consoleLabel, 'runAll-log-pump')
-}
-
 def applyOptionalRunProperty = { Project projectRef, def runConfig, String gradlePropertyName, String runtimePropertyName ->
     if (projectRef.hasProperty(gradlePropertyName)) {
         runConfig.property(runtimePropertyName, projectRef.property(gradlePropertyName).toString())
@@ -109,6 +94,8 @@ def applySharedBandwidthOptimizerRunProperties = { Project projectRef, def runCo
 ext.configureBandwidthOptimizerClientRun = { Project projectRef, def runConfig ->
 
     runConfig.property('forge.enabledGameTestNamespaces', mod_id)
+    runConfig.property('bandwidthoptimizer.outputDirectory', ext.boClientOutputRoot.call(projectRef).absolutePath)
+    runConfig.property('bandwidthoptimizer.sharedOutputDirectory', ext.boServerOutputRoot.call(projectRef).absolutePath)
     applyExperientClientRunProperties(projectRef, runConfig)
     applySharedBandwidthOptimizerRunProperties(projectRef, runConfig)
     applyOptionalRunProperty(projectRef, runConfig, 'boClientChunkCacheMaxMemoryMb', 'bandwidthoptimizer.clientChunkCacheMaxMemoryMb')
@@ -118,6 +105,8 @@ ext.configureBandwidthOptimizerClientRun = { Project projectRef, def runConfig -
 ext.configureBandwidthOptimizerServerRun = { Project projectRef, def runConfig ->
 
     runConfig.property('forge.enabledGameTestNamespaces', mod_id)
+    runConfig.property('bandwidthoptimizer.outputDirectory', ext.boServerOutputRoot.call(projectRef).absolutePath)
+    runConfig.property('bandwidthoptimizer.sharedOutputDirectory', ext.boServerOutputRoot.call(projectRef).absolutePath)
     applyExperientServerRunProperties(projectRef, runConfig)
     applySharedBandwidthOptimizerRunProperties(projectRef, runConfig)
 }
@@ -176,7 +165,7 @@ tasks.register('runChannelTransportRoundTrip', JavaExec) {
     )
 }
 
-// 启动指定版本项目里的已有 Gradle run 任务，统一使用根 wrapper，并通过 -p 绑定到版本目录。
+// run Gradle run mission.
 def startExistingRunTaskProcess(File projectDir, boolean isWindows, String wrapperPath, String taskName, List<String> extraGradleArgs, String taskArgs, File outputFile, String consoleLabel) {
     outputFile.parentFile.mkdirs()
     if (outputFile.exists()) {
@@ -206,7 +195,7 @@ def startExistingRunTaskProcess(File projectDir, boolean isWindows, String wrapp
     builder.directory(new File(wrapperPath).parentFile)
     builder.redirectErrorStream(true)
     Process process = builder.start()
-    streamRunTaskOutputToConsole(process, outputFile, consoleLabel)
+    ext.boStreamRunTaskOutputToConsole(process, outputFile, consoleLabel, 'runAll-log-pump')
     return process
 }
 
@@ -238,41 +227,41 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
 
     List<String> args = []
     args.addAll(buildExperientEnabledGradleArgs())
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientServerCommand')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientServerCommandDelayTicks')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperimentalTransport')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperimentalChunkHotspotTransport')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathEnabled')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathStopAfterSection')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathStopAfterBlockEntity')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathTwoPointReuseMode')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathBoundaryHopMode')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathDimensionHopMode')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeBounceMode')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientWatchBoundaryRefreshPatchEnabled')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeStartX')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeStartY')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeStartZ')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeEndX')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeEndY')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeEndZ')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeStepBlocks')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientChunkHotspotPathRangeRoundTrips')
-    appendOptionalRunAllProperty(args, projectRef, 'boDebugDiagnose')
-    appendOptionalRunAllProperty(args, projectRef, 'boChunkDiagnosticOutputsEnabled')
-    appendOptionalRunAllProperty(args, projectRef, 'boTransportMappingEnabled')
-    appendOptionalRunAllProperty(args, projectRef, 'boTransportZstdEnabled')
-    appendOptionalRunAllProperty(args, projectRef, 'boTransportBatchEnabled')
-    appendOptionalRunAllProperty(args, projectRef, 'boTransportBatchWindowMillis')
-    appendOptionalRunAllProperty(args, projectRef, 'boTransportPacketIdMappingEnabled')
-    appendOptionalRunAllProperty(args, projectRef, 'boTransportTelemetryDumpFileName')
-    appendOptionalRunAllProperty(args, projectRef, 'boChannelJsonlCaptureEnabled')
-    appendOptionalRunAllProperty(args, projectRef, 'boChunkGlobalStoreBudgetBytes')
-    appendOptionalRunAllProperty(args, projectRef, 'boChunkGlobalStoreMaxVersionsPerChunk')
-    appendOptionalRunAllProperty(args, projectRef, 'boChunkWatchBoundaryReuseMaxDeltaPackets')
-    appendOptionalRunAllProperty(args, projectRef, 'boChunkWatchBoundaryReuseMaxDeltaBytesRatio')
-    appendOptionalRunAllProperty(args, projectRef, 'boClientChunkCacheMaxMemoryMb')
-    appendOptionalRunAllProperty(args, projectRef, 'boClientChunkCacheRecycleTriggerFreeMb')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientServerCommand')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientServerCommandDelayTicks')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperimentalTransport')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperimentalChunkHotspotTransport')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathEnabled')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathStopAfterSection')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathStopAfterBlockEntity')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathTwoPointReuseMode')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathBoundaryHopMode')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathDimensionHopMode')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathRangeBounceMode')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientWatchBoundaryRefreshPatchEnabled')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathRangeStartX')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathRangeStartY')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathRangeStartZ')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathRangeEndX')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathRangeEndY')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathRangeEndZ')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathRangeStepBlocks')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathRangeRoundTrips')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boDebugDiagnose')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkDiagnosticOutputsEnabled')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportMappingEnabled')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportZstdEnabled')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportBatchEnabled')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportBatchWindowMillis')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportPacketIdMappingEnabled')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportTelemetryDumpFileName')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChannelJsonlCaptureEnabled')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkGlobalStoreBudgetBytes')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkGlobalStoreMaxVersionsPerChunk')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkWatchBoundaryReuseMaxDeltaPackets')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkWatchBoundaryReuseMaxDeltaBytesRatio')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boClientChunkCacheMaxMemoryMb')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boClientChunkCacheRecycleTriggerFreeMb')
     if (!projectRef.hasProperty('boChannelJsonlCaptureEnabled')) {
         args.add('-PboChannelJsonlCaptureEnabled=true')
     }
@@ -315,8 +304,8 @@ def buildExperientAutoConnectGradleArgs(Project projectRef, String address, Stri
             "-PboExperientAutoConnectName=${serverName}",
             "-PboExperientAutoConnectDelayTicks=${delayTicks}"
     ])
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientAutoConnectMaxAttempts')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientAutoConnectRetryDelayTicks')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientAutoConnectMaxAttempts')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientAutoConnectRetryDelayTicks')
     return args
 }
 
@@ -509,17 +498,17 @@ def waitForRunAllAutoExitTrigger(
 ) {
 
     if (exitTrigger == 'server-login') {
-        waitForMarkerFile(serverLoginMarker, timeoutMillis, 'runAllAutoExitCompare 等待玩家进服')
+        ext.boWaitForMarkerFile.call(serverLoginMarker, timeoutMillis, 'runAllAutoExitCompare 等待玩家进服')
         return
     }
 
     if (exitTrigger == 'four-way-jsonl') {
-        waitForFourWayCapturedTraffic(clientSendJsonl, clientReceiveJsonl, serverSendJsonl, serverReceiveJsonl, timeoutMillis)
+        ext.boWaitForFourWayCapturedTraffic.call(clientSendJsonl, clientReceiveJsonl, serverSendJsonl, serverReceiveJsonl, timeoutMillis)
         return
     }
 
     if (exitTrigger == 'client-disconnected') {
-        waitForLogMarker(
+        ext.boWaitForLogMarker.call(
                 clientTaskLog,
                 ['[ExperientAutoConnect] Completed connection ended, stopping client process.'],
                 ['Failed to connect to the server', 'Connection refused', 'Internal Exception', 'Reached max attempts'],
@@ -556,8 +545,8 @@ def buildTransportReportScenarioGradleArgs(Project projectRef, Map<String, Strin
     List<String> args = ['--console=plain', '-PboExperimentalTransport=true', '-PboTransportZstdEnabled=true']
     String observeSeconds = projectRef.findProperty('boRunAllObserveSeconds')?.toString()?.trim()
     args.add("-PboRunAllObserveSeconds=${(observeSeconds == null || observeSeconds.isEmpty()) ? '15' : observeSeconds}")
-    appendOptionalRunAllProperty(args, projectRef, 'boRunAllSettleMillis')
-    appendOptionalRunAllProperty(args, projectRef, 'boRunAllSettleTimeoutMillis')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boRunAllSettleMillis')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boRunAllSettleTimeoutMillis')
     args.add('-PboTransportTelemetryDumpFileName=transport-telemetry-dump.properties')
 
     String batchWindowMillis = projectRef.findProperty('boTransportBatchWindowMillis')?.toString()?.trim()
@@ -640,7 +629,7 @@ gradle.taskGraph.whenReady { TaskExecutionGraph taskGraph ->
     ['runAll', 'runAllAutoExitCompare', 'runWatchBoundaryRefreshPatchRegression'].each { String taskName ->
         Task taskRef = tasks.named(taskName).get()
         if (taskGraph.hasTask(taskRef)) {
-            requireExplicitVersionRunAllTaskRequest(project, taskName)
+            ext.boRequireExplicitVersionRunAllTaskRequest.call(project, taskName)
         }
     }
 }
@@ -656,11 +645,11 @@ tasks.register('runChannelTransportReport') {
         boolean isWindows = osName.contains('windows')
         File projectDirFile = project.projectDir
         String wrapperPath = new File(rootProject.projectDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
-        long scenarioTimeoutMillis = readRunAllLongProperty(project, 'boTransportReportScenarioTimeoutMillis', 480000L)
-        long scenarioRetryCount = readRunAllLongProperty(project, 'boTransportReportScenarioRetries', 1L)
-        File serverOutputDir = boServerOutputRoot(project)
-        File clientOutputDir = boClientOutputRoot(project)
-        File reportDir = new File(boServerOutputRoot(project), 'transport-report')
+        long scenarioTimeoutMillis = ext.boReadRunAllLongProperty.call(project, 'boTransportReportScenarioTimeoutMillis', 480000L)
+        long scenarioRetryCount = ext.boReadRunAllLongProperty.call(project, 'boTransportReportScenarioRetries', 1L)
+        File serverOutputDir = ext.boServerOutputRoot.call(project)
+        File clientOutputDir = ext.boClientOutputRoot.call(project)
+        File reportDir = new File(ext.boServerOutputRoot.call(project), 'transport-report')
         File scenarioListFile = new File(reportDir, 'scenario-defaults.tsv')
         File manifestFile = new File(reportDir, 'scenario-manifest.tsv')
         File reportFile = new File(reportDir, 'transport-algorithm-report.txt')
@@ -693,7 +682,7 @@ tasks.register('runChannelTransportReport') {
             long totalAttempts = scenarioRetryCount + 1L
 
             for (long attemptIndex = 1L; attemptIndex <= totalAttempts; attemptIndex++) {
-                clearRunAllProbeFiles([scenarioLogFile, scenarioDumpFileServer, scenarioDumpFileClient, archivedServerDumpFile, archivedClientDumpFile])
+                ext.boClearRunAllProbeFiles.call([scenarioLogFile, scenarioDumpFileServer, scenarioDumpFileClient, archivedServerDumpFile, archivedClientDumpFile])
 
                 println "runChannelTransportReport: 正在执行场景 ${scenario.displayName}"
                 List<String> scenarioArgs = buildTransportReportScenarioGradleArgs(project, [
@@ -766,21 +755,21 @@ tasks.register('runAll') {
     dependsOn(tasks.named('testClasses'))
 
     doLast {
-        requireExplicitVersionRunAllTaskRequest(project, 'runAll')
+        ext.boRequireExplicitVersionRunAllTaskRequest.call(project, 'runAll')
         String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
         boolean isWindows = osName.contains('windows')
         File projectDirFile = project.projectDir
         String wrapperPath = new File(rootProject.projectDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
-        long observeSeconds = readRunAllLongProperty(project, 'boRunAllObserveSeconds', 0L)
-        long settleMillis = readRunAllLongProperty(project, 'boRunAllSettleMillis', 3000L)
-        long settleTimeoutMillis = readRunAllLongProperty(project, 'boRunAllSettleTimeoutMillis', 15000L)
+        long observeSeconds = ext.boReadRunAllLongProperty.call(project, 'boRunAllObserveSeconds', 0L)
+        long settleMillis = ext.boReadRunAllLongProperty.call(project, 'boRunAllSettleMillis', 3000L)
+        long settleTimeoutMillis = ext.boReadRunAllLongProperty.call(project, 'boRunAllSettleTimeoutMillis', 15000L)
         boolean verifyChunkBranches = isRunAllChunkBranchCoverageVerificationEnabled(project)
 
         File serverDir = project.file('run/server')
         File clientDir = project.file('run/client')
-        File serverOutputDir = boServerOutputRoot(project)
-        File clientOutputDir = boClientOutputRoot(project)
-        File sharedOutputDir = boServerOutputRoot(project)
+        File serverOutputDir = ext.boServerOutputRoot.call(project)
+        File clientOutputDir = ext.boClientOutputRoot.call(project)
+        File sharedOutputDir = ext.boServerOutputRoot.call(project)
         File serverLatestLog = project.file('run/server/logs/latest.log')
         File clientLatestLog = project.file('run/client/logs/latest.log')
         File serverTaskLog = project.file('run/runall-server-task.log')
@@ -801,7 +790,7 @@ tasks.register('runAll') {
         stopExistingRunAllProcesses(project, projectDirFile, isWindows)
         sleep(3000)
 
-        clearRunAllProbeFiles([
+        ext.boClearRunAllProbeFiles.call([
                 serverLatestLog,
                 clientLatestLog,
                 serverTaskLog,
@@ -827,7 +816,7 @@ tasks.register('runAll') {
 
         println 'runAll: 正在启动本地测试服务端。'
         Process serverProcess = startExistingRunTaskProcess(projectDirFile, isWindows, wrapperPath, 'runServer', buildRunAllSharedGradleArgs(project), null, serverTaskLog, 'runServer')
-        waitForLogMarker(
+        ext.boWaitForLogMarker.call(
                 serverTaskLog,
                 ['Done ('],
                 ['BUILD FAILED', 'Failed to start the minecraft server', 'Perhaps a server is already running on that port', 'Address already in use'],
@@ -849,7 +838,7 @@ tasks.register('runAll') {
                 'runClient'
         )
 
-        waitForLogMarker(
+        ext.boWaitForLogMarker.call(
                 clientTaskLog,
                 ['Connecting to 127.0.0.1, 25565', 'Connecting to 127.0.0.1:25565'],
                 ['Failed to connect to the server', 'disconnect.genericReason', 'Connection refused', 'Internal Exception'],
@@ -857,7 +846,7 @@ tasks.register('runAll') {
                 '客户端连接'
         )
 
-        waitForFourWayCapturedTraffic(
+        ext.boWaitForFourWayCapturedTraffic.call(
                 clientSendJsonl,
                 clientReceiveJsonl,
                 serverSendJsonl,
@@ -883,7 +872,7 @@ tasks.register('runAll') {
             println "runAll: 正在观察 transport ${observeSeconds} 秒，到时后会强制结束客户端和服务端。"
             sleep(observeSeconds * 1000L)
             forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
-            waitForFilesToSettle(
+            ext.boWaitForFilesToSettle.call(
                     [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
                     settleMillis,
                     settleTimeoutMillis
@@ -893,7 +882,7 @@ tasks.register('runAll') {
         }
 
         clientProcess.waitFor()
-        waitForFilesToSettle(
+        ext.boWaitForFilesToSettle.call(
                 [clientSendJsonl, serverReceiveJsonl],
                 settleMillis,
                 settleTimeoutMillis
@@ -907,7 +896,7 @@ tasks.register('runAll') {
         }
 
         if (verifyChunkBranches) {
-            waitForFilesToSettle(
+            ext.boWaitForFilesToSettle.call(
                     [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
                     settleMillis,
                     settleTimeoutMillis
@@ -926,22 +915,22 @@ tasks.register('runAllAutoExitCompare') {
     dependsOn(tasks.named('testClasses'))
 
     doLast {
-        requireExplicitVersionRunAllTaskRequest(project, 'runAllAutoExitCompare')
+        ext.boRequireExplicitVersionRunAllTaskRequest.call(project, 'runAllAutoExitCompare')
         String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
         boolean isWindows = osName.contains('windows')
         File projectDirFile = project.projectDir
         String wrapperPath = new File(rootProject.projectDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
         String exitTrigger = readRunAllAutoExitTrigger(project)
-        long exitDelaySeconds = readRunAllLongProperty(project, 'boRunAllExitDelaySeconds', 3L)
-        long triggerTimeoutMillis = readRunAllLongProperty(project, 'boRunAllTriggerTimeoutMillis', 180000L)
-        long settleMillis = readRunAllLongProperty(project, 'boRunAllSettleMillis', 3000L)
-        long settleTimeoutMillis = readRunAllLongProperty(project, 'boRunAllSettleTimeoutMillis', 15000L)
+        long exitDelaySeconds = ext.boReadRunAllLongProperty.call(project, 'boRunAllExitDelaySeconds', 3L)
+        long triggerTimeoutMillis = ext.boReadRunAllLongProperty.call(project, 'boRunAllTriggerTimeoutMillis', 180000L)
+        long settleMillis = ext.boReadRunAllLongProperty.call(project, 'boRunAllSettleMillis', 3000L)
+        long settleTimeoutMillis = ext.boReadRunAllLongProperty.call(project, 'boRunAllSettleTimeoutMillis', 15000L)
 
         File serverTaskLog = project.file('run/runall-server-task.log')
         File clientTaskLog = project.file('run/runall-client-task.log')
-        File serverOutputDir = boServerOutputRoot(project)
-        File clientOutputDir = boClientOutputRoot(project)
-        File sharedOutputDir = boServerOutputRoot(project)
+        File serverOutputDir = ext.boServerOutputRoot.call(project)
+        File clientOutputDir = ext.boClientOutputRoot.call(project)
+        File sharedOutputDir = ext.boServerOutputRoot.call(project)
         File serverSendJsonl = new File(serverOutputDir, 'send.jsonl')
         File serverReceiveJsonl = new File(serverOutputDir, 'receive.jsonl')
         File clientSendJsonl = new File(clientOutputDir, 'send.jsonl')
@@ -959,7 +948,7 @@ tasks.register('runAllAutoExitCompare') {
         stopExistingRunAllProcesses(project, projectDirFile, isWindows)
         sleep(3000)
 
-        clearRunAllProbeFiles([
+        ext.boClearRunAllProbeFiles.call([
                 serverTaskLog,
                 clientTaskLog,
                 serverSendJsonl,
@@ -989,7 +978,7 @@ tasks.register('runAllAutoExitCompare') {
 
             println 'runAllAutoExitCompare: 正在启动本地测试服务端。'
             serverProcess = startExistingRunTaskProcess(projectDirFile, isWindows, wrapperPath, 'runServer', buildRunAllSharedGradleArgs(project), null, serverTaskLog, 'runServer')
-            waitForLogMarker(
+            ext.boWaitForLogMarker.call(
                     serverTaskLog,
                     ['Done ('],
                     ['BUILD FAILED', 'Failed to start the minecraft server', 'Perhaps a server is already running on that port', 'Address already in use'],
@@ -1011,7 +1000,7 @@ tasks.register('runAllAutoExitCompare') {
                     'runClient'
             )
 
-            waitForLogMarker(
+            ext.boWaitForLogMarker.call(
                     clientTaskLog,
                     ['Connecting to 127.0.0.1, 25565', 'Connecting to 127.0.0.1:25565'],
                     ['Failed to connect to the server', 'disconnect.genericReason', 'Connection refused', 'Internal Exception'],
@@ -1039,7 +1028,7 @@ tasks.register('runAllAutoExitCompare') {
             }
 
             forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
-            waitForFilesToSettle(
+            ext.boWaitForFilesToSettle.call(
                     [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
                     settleMillis,
                     settleTimeoutMillis
@@ -1059,21 +1048,21 @@ tasks.register('runWatchBoundaryRefreshPatchRegression') {
     dependsOn(tasks.named('testClasses'))
 
     doLast {
-        requireExplicitVersionRunAllTaskRequest(project, 'runWatchBoundaryRefreshPatchRegression')
+        ext.boRequireExplicitVersionRunAllTaskRequest.call(project, 'runWatchBoundaryRefreshPatchRegression')
         String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
         boolean isWindows = osName.contains('windows')
         File projectDirFile = project.projectDir
         String wrapperPath = new File(rootProject.projectDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
-        long exitDelaySeconds = readRunAllLongProperty(project, 'boRunAllExitDelaySeconds', 3L)
-        long triggerTimeoutMillis = readRunAllLongProperty(project, 'boRunAllTriggerTimeoutMillis', 240000L)
-        long settleMillis = readRunAllLongProperty(project, 'boRunAllSettleMillis', 3000L)
-        long settleTimeoutMillis = readRunAllLongProperty(project, 'boRunAllSettleTimeoutMillis', 15000L)
+        long exitDelaySeconds = ext.boReadRunAllLongProperty.call(project, 'boRunAllExitDelaySeconds', 3L)
+        long triggerTimeoutMillis = ext.boReadRunAllLongProperty.call(project, 'boRunAllTriggerTimeoutMillis', 240000L)
+        long settleMillis = ext.boReadRunAllLongProperty.call(project, 'boRunAllSettleMillis', 3000L)
+        long settleTimeoutMillis = ext.boReadRunAllLongProperty.call(project, 'boRunAllSettleTimeoutMillis', 15000L)
 
         File serverTaskLog = project.file('run/runall-server-task.log')
         File clientTaskLog = project.file('run/runall-client-task.log')
-        File serverOutputDir = boServerOutputRoot(project)
-        File clientOutputDir = boClientOutputRoot(project)
-        File sharedOutputDir = boServerOutputRoot(project)
+        File serverOutputDir = ext.boServerOutputRoot.call(project)
+        File clientOutputDir = ext.boClientOutputRoot.call(project)
+        File sharedOutputDir = ext.boServerOutputRoot.call(project)
         File serverSendJsonl = new File(serverOutputDir, 'send.jsonl')
         File serverReceiveJsonl = new File(serverOutputDir, 'receive.jsonl')
         File clientSendJsonl = new File(clientOutputDir, 'send.jsonl')
@@ -1091,7 +1080,7 @@ tasks.register('runWatchBoundaryRefreshPatchRegression') {
         stopExistingRunAllProcesses(project, projectDirFile, isWindows)
         sleep(3000)
 
-        clearRunAllProbeFiles([
+        ext.boClearRunAllProbeFiles.call([
                 serverTaskLog,
                 clientTaskLog,
                 serverSendJsonl,
@@ -1117,8 +1106,8 @@ tasks.register('runWatchBoundaryRefreshPatchRegression') {
                 '-PboExperientAutoConnectName=BO WatchBoundary Regression',
                 '-PboExperientAutoConnectDelayTicks=20'
         ])
-        appendOptionalRunAllProperty(clientGradleArgs, project, 'boExperientAutoConnectMaxAttempts')
-        appendOptionalRunAllProperty(clientGradleArgs, project, 'boExperientAutoConnectRetryDelayTicks')
+        ext.boAppendOptionalRunAllProperty.call(clientGradleArgs, project, 'boExperientAutoConnectMaxAttempts')
+        ext.boAppendOptionalRunAllProperty.call(clientGradleArgs, project, 'boExperientAutoConnectRetryDelayTicks')
 
         Process serverProcess = null
         Process clientProcess = null
@@ -1136,7 +1125,7 @@ tasks.register('runWatchBoundaryRefreshPatchRegression') {
                     serverTaskLog,
                     'runServer'
             )
-            waitForLogMarker(
+            ext.boWaitForLogMarker.call(
                     serverTaskLog,
                     ['Done ('],
                     ['BUILD FAILED', 'Failed to start the minecraft server', 'Perhaps a server is already running on that port', 'Address already in use'],
@@ -1155,7 +1144,7 @@ tasks.register('runWatchBoundaryRefreshPatchRegression') {
                     clientTaskLog,
                     'runClient'
             )
-            waitForLogMarker(
+            ext.boWaitForLogMarker.call(
                     clientTaskLog,
                     ['Connecting to 127.0.0.1, 25565', 'Connecting to 127.0.0.1:25565'],
                     ['Failed to connect to the server', 'disconnect.genericReason', 'Connection refused', 'Internal Exception'],
@@ -1164,7 +1153,7 @@ tasks.register('runWatchBoundaryRefreshPatchRegression') {
             )
 
             println 'runWatchBoundaryRefreshPatchRegression: 正在等待 watch-boundary 场景完成 marker。'
-            waitForMarkerFile(
+            ext.boWaitForMarkerFile.call(
                     watchBoundaryMarker,
                     triggerTimeoutMillis,
                     'runWatchBoundaryRefreshPatchRegression 等待 watch-boundary marker'
@@ -1178,7 +1167,7 @@ tasks.register('runWatchBoundaryRefreshPatchRegression') {
             }
 
             forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
-            waitForFilesToSettle(
+            ext.boWaitForFilesToSettle.call(
                     [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
                     settleMillis,
                     settleTimeoutMillis

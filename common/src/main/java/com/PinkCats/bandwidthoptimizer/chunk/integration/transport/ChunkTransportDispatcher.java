@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.integration.transport;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.chunk.budget.ChunkClientCacheBudgetManager;
 import com.PinkCats.bandwidthoptimizer.chunk.budget.ChunkClientTrimmedFullBaseStore;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketClassifier;
@@ -860,6 +861,7 @@ public final class ChunkTransportDispatcher {
         }
     }
 
+    // Inbound client
     private static void observeInboundSnapshot(
             ChannelHandlerContext context,
             ChunkHotspotFrame frame,
@@ -882,6 +884,7 @@ public final class ChunkTransportDispatcher {
                 restoredPacket,
                 restoredPacketBytes
         );
+        ChunkClientCacheBudgetManager.enforceInboundBudget(context, "client_chunk_transport_budget");
     }
 
     private static void acknowledgeWatchBoundaryRefreshPatchIfNeeded(

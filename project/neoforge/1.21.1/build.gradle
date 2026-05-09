@@ -15,22 +15,6 @@ plugins {
 apply from: rootProject.file('gradle/bo-property-loader.gradle')
 apply from: rootProject.file('gradle/bo-runall-common.gradle')
 
-def boServerOutputRoot = ext.boServerOutputRoot
-def boClientOutputRoot = ext.boClientOutputRoot
-def appendOptionalRunAllProperty = ext.boAppendOptionalRunAllProperty
-def readRunAllLongProperty = ext.boReadRunAllLongProperty
-def isExplicitVersionRunAllTaskRequest = ext.boIsExplicitVersionRunAllTaskRequest
-def requireExplicitVersionRunAllTaskRequest = ext.boRequireExplicitVersionRunAllTaskRequest
-def waitForLogMarker = ext.boWaitForLogMarker
-def waitForFourWayCapturedTraffic = ext.boWaitForFourWayCapturedTraffic
-def waitForRunAllMarker = ext.boWaitForMarkerFile
-def waitForFilesToSettle = ext.boWaitForFilesToSettle
-def clearRunAllProbeFiles = ext.boClearRunAllProbeFiles
-def streamRunTaskOutputToConsole = { Process process, File outputFile, String consoleLabel ->
-    ext.boStreamRunTaskOutputToConsole(process, outputFile, consoleLabel, 'neoforge-runall-log-pump')
-}
-
-
 group = mod_group_id
 version = mod_version
 
@@ -100,6 +84,8 @@ def applySharedBandwidthOptimizerNeoForgeRunProperties = { Project projectRef, d
 
 def configureBandwidthOptimizerNeoForgeClientRun = { Project projectRef, def runConfig ->
     runConfig.systemProperty('neoforge.enabledGameTestNamespaces', mod_id)
+    runConfig.systemProperty('bandwidthoptimizer.outputDirectory', ext.boClientOutputRoot.call(projectRef).absolutePath)
+    runConfig.systemProperty('bandwidthoptimizer.sharedOutputDirectory', ext.boServerOutputRoot.call(projectRef).absolutePath)
     if ((projectRef.findProperty('boExperientEnabled') ?: 'false').toString().toBoolean()) {
         runConfig.systemProperty('bandwidthoptimizer.experient.enabled', 'true')
         if (projectRef.hasProperty('boExperientAutoConnectAddress')) {
@@ -119,6 +105,8 @@ def configureBandwidthOptimizerNeoForgeClientRun = { Project projectRef, def run
 
 def configureBandwidthOptimizerNeoForgeServerRun = { Project projectRef, def runConfig ->
     runConfig.systemProperty('neoforge.enabledGameTestNamespaces', mod_id)
+    runConfig.systemProperty('bandwidthoptimizer.outputDirectory', ext.boServerOutputRoot.call(projectRef).absolutePath)
+    runConfig.systemProperty('bandwidthoptimizer.sharedOutputDirectory', ext.boServerOutputRoot.call(projectRef).absolutePath)
     if ((projectRef.findProperty('boExperientEnabled') ?: 'false').toString().toBoolean()) {
         runConfig.systemProperty('bandwidthoptimizer.experient.enabled', 'true')
     }
@@ -322,7 +310,7 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
             'boClientChunkCacheMaxMemoryMb',
             'boClientChunkCacheRecycleTriggerFreeMb'
     ].each { String propertyName ->
-        appendOptionalRunAllProperty(args, projectRef, propertyName)
+        ext.boAppendOptionalRunAllProperty.call(args, projectRef, propertyName)
     }
     if (!projectRef.hasProperty('boChannelJsonlCaptureEnabled')) {
         args.add('-PboChannelJsonlCaptureEnabled=true')
@@ -341,12 +329,11 @@ def buildExperientAutoConnectGradleArgs(Project projectRef, String address, Stri
     args.add("-PboExperientAutoConnectAddress=${address}")
     args.add("-PboExperientAutoConnectName=${serverName}")
     args.add("-PboExperientAutoConnectDelayTicks=${delayTicks}")
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientAutoConnectMaxAttempts')
-    appendOptionalRunAllProperty(args, projectRef, 'boExperientAutoConnectRetryDelayTicks')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientAutoConnectMaxAttempts')
+    ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientAutoConnectRetryDelayTicks')
     return args
 }
 
-// 判断 runAll 是否是带当前版本项目路径显式调用，避免根目录 ./gradlew runAll 触发多版本聚合。
 // runAll divide by version
 def startNeoForgeRunTaskProcess(File rootDirFile, File projectDirFile, boolean isWindows, String wrapperPath, String taskName, List<String> extraGradleArgs, File outputFile, String consoleLabel) {
     List<String> command = []
@@ -365,7 +352,7 @@ def startNeoForgeRunTaskProcess(File rootDirFile, File projectDirFile, boolean i
     builder.directory(rootDirFile)
     builder.redirectErrorStream(true)
     Process process = builder.start()
-    streamRunTaskOutputToConsole(process, outputFile, consoleLabel)
+    ext.boStreamRunTaskOutputToConsole(process, outputFile, consoleLabel, 'neoforge-runall-log-pump')
     return process
 }
 
@@ -480,7 +467,7 @@ tasks.register('runChunkBranchCoverageVerify', JavaExec) {
 gradle.taskGraph.whenReady { TaskExecutionGraph taskGraph ->
     Task runAllTask = tasks.named('runAll').get()
     if (taskGraph.hasTask(runAllTask)) {
-        requireExplicitVersionRunAllTaskRequest(project, 'runAll')
+        ext.boRequireExplicitVersionRunAllTaskRequest.call(project, 'runAll')
     }
 }
 
@@ -490,20 +477,20 @@ tasks.register('runAll') {
     dependsOn(tasks.named('testClasses'))
 
     doLast {
-        requireExplicitVersionRunAllTaskRequest(project, 'runAll')
+        ext.boRequireExplicitVersionRunAllTaskRequest.call(project, 'runAll')
         String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
         boolean isWindows = osName.contains('windows')
         File rootDirFile = rootProject.projectDir
         File projectDirFile = project.projectDir
         String wrapperPath = new File(rootDirFile, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
-        long observeSeconds = readRunAllLongProperty(project, 'boRunAllObserveSeconds', 0L)
-        long settleMillis = readRunAllLongProperty(project, 'boRunAllSettleMillis', 3000L)
-        long settleTimeoutMillis = readRunAllLongProperty(project, 'boRunAllSettleTimeoutMillis', 15000L)
+        long observeSeconds = ext.boReadRunAllLongProperty.call(project, 'boRunAllObserveSeconds', 0L)
+        long settleMillis = ext.boReadRunAllLongProperty.call(project, 'boRunAllSettleMillis', 3000L)
+        long settleTimeoutMillis = ext.boReadRunAllLongProperty.call(project, 'boRunAllSettleTimeoutMillis', 15000L)
 
         File serverDir = project.file('run/server')
         File clientDir = project.file('run/client')
-        File serverOutputDir = boServerOutputRoot(project)
-        File clientOutputDir = boClientOutputRoot(project)
+        File serverOutputDir = ext.boServerOutputRoot.call(project)
+        File clientOutputDir = ext.boClientOutputRoot.call(project)
         File serverTaskLog = project.file('run/runall-server-task.log')
         File clientTaskLog = project.file('run/runall-client-task.log')
         File serverSendJsonl = new File(serverOutputDir, 'send.jsonl')
@@ -520,7 +507,7 @@ tasks.register('runAll') {
         stopExistingRunAllProcesses(project, projectDirFile, isWindows)
         sleep(3000)
 
-        clearRunAllProbeFiles([
+        ext.boClearRunAllProbeFiles.call([
                 serverTaskLog,
                 clientTaskLog,
                 serverSendJsonl,
@@ -541,7 +528,7 @@ tasks.register('runAll') {
         try {
             println 'runAll: starting NeoForge 1.21.1 local server.'
             serverProcess = startNeoForgeRunTaskProcess(rootDirFile, projectDirFile, isWindows, wrapperPath, 'runServer', buildRunAllSharedGradleArgs(project), serverTaskLog, 'runServer')
-            waitForLogMarker(
+            ext.boWaitForLogMarker.call(
                     serverTaskLog,
                     ['Done ('],
                     ['BUILD FAILED', 'Failed to start the minecraft server', 'Address already in use', 'Crash report saved to'],
@@ -552,7 +539,7 @@ tasks.register('runAll') {
             List<String> clientGradleArgs = buildExperientAutoConnectGradleArgs(project, '127.0.0.1:25565', 'BO NeoForge RunAll Local', 20L)
             println 'runAll: server is ready, starting NeoForge 1.21.1 client.'
             clientProcess = startNeoForgeRunTaskProcess(rootDirFile, projectDirFile, isWindows, wrapperPath, 'runClient', clientGradleArgs, clientTaskLog, 'runClient')
-            waitForLogMarker(
+            ext.boWaitForLogMarker.call(
                     clientTaskLog,
                     ['Connecting to 127.0.0.1, 25565', 'Connecting to 127.0.0.1:25565'],
                     ['Failed to connect to the server', 'Connection refused', 'Internal Exception', 'Reached max attempts'],
@@ -560,7 +547,7 @@ tasks.register('runAll') {
                     'NeoForge runAll client connect'
             )
 
-            waitForFourWayCapturedTraffic(clientSendJsonl, clientReceiveJsonl, serverSendJsonl, serverReceiveJsonl, 240000L)
+            ext.boWaitForFourWayCapturedTraffic.call(clientSendJsonl, clientReceiveJsonl, serverSendJsonl, serverReceiveJsonl, 240000L)
             println "runAll: four-way jsonl started. server=${serverDir.absolutePath}, client=${clientDir.absolutePath}"
 
             if (observeSeconds > 0L) {
@@ -573,7 +560,7 @@ tasks.register('runAll') {
                     clientProcess.waitFor(15L, TimeUnit.SECONDS)
                 }
                 forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
-                waitForFilesToSettle(
+                ext.boWaitForFilesToSettle.call(
                         [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
                         settleMillis,
                         settleTimeoutMillis
@@ -587,18 +574,18 @@ tasks.register('runAll') {
             }
 
             if ((project.findProperty('boExperientChunkHotspotPathEnabled') ?: 'false').toString().toBoolean()) {
-                waitForRunAllMarker(serverPathCompletedMarker, 300000L, 'NeoForge runAll chunk-hotspot path completion')
+                ext.boWaitForMarkerFile.call(serverPathCompletedMarker, 300000L, 'NeoForge runAll chunk-hotspot path completion')
                 forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
             } else {
                 clientProcess.waitFor()
-                waitForFilesToSettle([clientSendJsonl, serverReceiveJsonl], settleMillis, settleTimeoutMillis)
+                ext.boWaitForFilesToSettle.call([clientSendJsonl, serverReceiveJsonl], settleMillis, settleTimeoutMillis)
                 stopRunAllServerProcesses(project, projectDirFile, isWindows)
                 if (serverProcess.isAlive()) {
                     serverProcess.waitFor(30L, TimeUnit.SECONDS)
                 }
             }
-            waitForFilesToSettle([clientSendJsonl, serverReceiveJsonl], settleMillis, settleTimeoutMillis)
-            waitForFilesToSettle(
+            ext.boWaitForFilesToSettle.call([clientSendJsonl, serverReceiveJsonl], settleMillis, settleTimeoutMillis)
+            ext.boWaitForFilesToSettle.call(
                     [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
                     settleMillis,
                     settleTimeoutMillis

@@ -379,11 +379,15 @@ public final class ChunkGlobalSnapshotStore {
         }
     }
 
+    // release blob & Materialized fix memory leak.
     private static void evictUnreferencedBlobsToBudget(String reason) {
         while (retainedBlobBytes > MAX_BLOB_BUDGET_BYTES) {
             Map.Entry<String, ChunkGlobalSnapshotRecord> candidateEntry = findEvictionCandidate();
             if (candidateEntry == null) {
-                break;
+                if (!releaseOldestMaterializedSnapshot("blob_budget_" + reason)) {
+                    break;
+                }
+                continue;
             }
 
             ChunkGlobalSnapshotRecord removedRecord = SNAPSHOT_RECORDS.remove(candidateEntry.getKey());
@@ -407,6 +411,75 @@ public final class ChunkGlobalSnapshotStore {
         }
     }
 
+    // release blob fix memory leak.
+    private static boolean releaseOldestMaterializedSnapshot(String reason) {
+        MaterializedSnapshotEvictionCandidate candidate = findOldestMaterializedSnapshotCandidate();
+        if (candidate == null) {
+            return false;
+        }
+
+        LinkedHashMap<Long, ChunkMaterializedSnapshotRecord> versionRecords =
+                MATERIALIZED_SNAPSHOTS.get(candidate.chunkStoreKey());
+        if (versionRecords == null) {
+            return false;
+        }
+
+        ChunkMaterializedSnapshotRecord removedRecord = versionRecords.remove(candidate.fullSnapshotVersion());
+        if (removedRecord == null) {
+            return false;
+        }
+
+        releaseMaterializedSnapshotReferences(removedRecord);
+        materializedSnapshotCount = Math.max(materializedSnapshotCount - 1L, 0L);
+        totalMaterializedSnapshotEvictions++;
+        if (versionRecords.isEmpty()) {
+            MATERIALIZED_SNAPSHOTS.remove(candidate.chunkStoreKey());
+        }
+        if (shouldLogDiagnose()) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ChunkStore][Evict] scope=materialized_snapshot, reason={}, chunkStoreKey={}, chunk={}, fullVersion={}, fullHash={}, retainedBlobBytes={}/{}",
+                    reason,
+                    candidate.chunkStoreKey(),
+                    removedRecord.coordinate().logText(),
+                    removedRecord.fullSnapshotVersion(),
+                    shortenHash(removedRecord.fullSnapshotHash()),
+                    retainedBlobBytes,
+                    MAX_BLOB_BUDGET_BYTES
+            );
+        }
+        return true;
+    }
+
+    // final snapshot
+    private static MaterializedSnapshotEvictionCandidate findOldestMaterializedSnapshotCandidate() {
+        MaterializedSnapshotEvictionCandidate candidate = null;
+        long oldestUpdatedAtMillis = Long.MAX_VALUE;
+        for (Map.Entry<String, LinkedHashMap<Long, ChunkMaterializedSnapshotRecord>> chunkEntry :
+                MATERIALIZED_SNAPSHOTS.entrySet()) {
+            LinkedHashMap<Long, ChunkMaterializedSnapshotRecord> versionRecords = chunkEntry.getValue();
+            if (versionRecords == null || versionRecords.isEmpty()) {
+                continue;
+            }
+
+            for (Map.Entry<Long, ChunkMaterializedSnapshotRecord> versionEntry : versionRecords.entrySet()) {
+                ChunkMaterializedSnapshotRecord record = versionEntry.getValue();
+                if (record == null) {
+                    continue;
+                }
+                long updatedAtMillis = record.updatedAtMillis();
+                if (candidate == null || updatedAtMillis < oldestUpdatedAtMillis) {
+                    candidate = new MaterializedSnapshotEvictionCandidate(
+                            chunkEntry.getKey(),
+                            versionEntry.getKey()
+                    );
+                    oldestUpdatedAtMillis = updatedAtMillis;
+                }
+            }
+        }
+        return candidate;
+    }
+
+    // final blob。
     private static Map.Entry<String, ChunkGlobalSnapshotRecord> findEvictionCandidate() {
         Map.Entry<String, ChunkGlobalSnapshotRecord> candidateEntry = null;
         long oldestAccessAtMillis = Long.MAX_VALUE;
@@ -423,6 +496,12 @@ public final class ChunkGlobalSnapshotStore {
             }
         }
         return candidateEntry;
+    }
+
+    private record MaterializedSnapshotEvictionCandidate(
+            String chunkStoreKey,
+            long fullSnapshotVersion
+    ) {
     }
 
     private static void removeHotspotDistinctHashes(ChunkGlobalSnapshotRecord record) {
@@ -645,6 +724,10 @@ public final class ChunkGlobalSnapshotStore {
 
         private LinkedHashSet<String> referencedBlobHashes() {
             return new LinkedHashSet<>(this.referencedBlobHashes);
+        }
+
+        private long updatedAtMillis() {
+            return this.updatedAtMillis;
         }
     }
 }
