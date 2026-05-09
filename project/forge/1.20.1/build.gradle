@@ -95,6 +95,8 @@ repositories {
 }
 
 ext.bo_zstd_jni_version = '1.5.7-7'
+ext.bo_torque_embed_notation = "com.pinkcats.torque:TorqueAPI-${minecraft_version}-forge:${torque_api_version}"
+apply from: rootProject.file('gradle/torque-embed-modern.gradle')
 
 configurations {
     embeddedRuntimeLibs {

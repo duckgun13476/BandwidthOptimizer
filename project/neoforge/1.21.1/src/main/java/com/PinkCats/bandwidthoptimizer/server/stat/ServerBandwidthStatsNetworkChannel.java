@@ -12,20 +12,18 @@ import net.neoforged.neoforge.network.registration.NetworkRegistry;
 public final class ServerBandwidthStatsNetworkChannel {
 
     static final ResourceLocation CHANNEL_ID =
-            ResourceLocation.fromNamespaceAndPath(Bandwidthoptimizer.MODID, "server_bandwidth_stats");
-    private static final String PROTOCOL_VERSION = "1";
+            ResourceLocation.fromNamespaceAndPath(Bandwidthoptimizer.MODID, Bandwidthoptimizer.versionedNetworkPath("server_bandwidth_stats"));
+    private static final String PROTOCOL_VERSION = Bandwidthoptimizer.networkProtocolVersion();
 
     private static IEventBus modEventBus;
     private static boolean registered;
 
     private ServerBandwidthStatsNetworkChannel() {}
 
-    // 保存 mod 事件总线，让统计 HUD payload 能在 NeoForge payload 注册事件期间完成方向注册。
     public static synchronized void setModEventBus(IEventBus eventBus) {
         modEventBus = eventBus;
     }
 
-    // 注册服务端到客户端的统计 HUD payload，使用 optional 兼容未安装客户端或未协商出该通道的连接。
     public static synchronized void register() {
         if (registered) {
             return;
@@ -50,7 +48,6 @@ public final class ServerBandwidthStatsNetworkChannel {
         );
     }
 
-    // 只向已经协商出统计 HUD channel 的客户端发送，避免 NeoForge 拒绝未知 payload 导致服务端 tick 崩溃。
     public static void sendToPlayer(ServerPlayer player, ServerBandwidthStatsPayload payload) {
         if (player == null || !NetworkRegistry.hasChannel(player.connection, CHANNEL_ID)) {
             return;

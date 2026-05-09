@@ -11,8 +11,8 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 public final class ChannelTransportNetworkChannel {
 
     public static final ResourceLocation TRANSPORT_PAYLOAD_ID =
-            ResourceLocation.fromNamespaceAndPath(Bandwidthoptimizer.MODID, "transport");
-    private static final String PROTOCOL_VERSION = "1";
+            ResourceLocation.fromNamespaceAndPath(Bandwidthoptimizer.MODID, Bandwidthoptimizer.versionedNetworkPath("transport"));
+    private static final String PROTOCOL_VERSION = Bandwidthoptimizer.networkProtocolVersion();
 
     private static IEventBus modEventBus;
     private static boolean registered;
@@ -34,7 +34,6 @@ public final class ChannelTransportNetworkChannel {
             StreamCodec<RegistryFriendlyByteBuf, ChannelTransportBytePayload> codec = ChannelTransportBytePayload.STREAM_CODEC;
             modEventBus.addListener((RegisterPayloadHandlersEvent event) ->
                     event.registrar(PROTOCOL_VERSION)
-                            .optional()
                             .playBidirectional(type, codec, (payload, context) -> {}));
         }
         Bandwidthoptimizer.LOGGER.info(

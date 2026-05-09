@@ -30,9 +30,20 @@ public class Bandwidthoptimizer {
 
     public static final String MODID = "bandwidthoptimizer";
     public static final Logger LOGGER = LogUtils.getLogger();
+    private static volatile String networkProtocolVersion = "dev";
 
-    // 初始化 NeoForge 版本的通道、生命周期和配置入口。
+    // 返回当前发布版本对应的网络协议版本，用于让不同 mod 版本在握手阶段互斥。
+    public static String networkProtocolVersion() {
+        return networkProtocolVersion;
+    }
+
+    // 把基础通道名拼成带版本号的通道路径，避免旧版客户端继续声明同一个通道。
+    public static String versionedNetworkPath(String basePath) {
+        return basePath + "_" + networkProtocolVersion();
+    }
+
     public Bandwidthoptimizer(IEventBus modEventBus, ModContainer modContainer) {
+        configureNetworkProtocolVersion(readModVersionFromLoaderContainer(modContainer));
         ZstdRuntimeSupport.configureNativeTempFolder();
         if (ChannelCaptureRuntimeConfig.isJsonlCaptureEnabled()) {
             ChannelFrameJsonlLogger.initializeOutputFiles();
@@ -51,7 +62,6 @@ public class Bandwidthoptimizer {
         modContainer.registerConfig(ModConfig.Type.CLIENT, ClientChunkCacheConfig.SPEC);
     }
 
-    // 在 common setup 阶段补一次幂等注册，兼容旧初始化顺序。
     private void commonSetup(FMLCommonSetupEvent event) {
         ChannelTransportNetworkChannel.register();
         ServerBandwidthStatsNetworkChannel.register();
@@ -71,5 +81,46 @@ public class Bandwidthoptimizer {
 
     public static void prepareForClientRespawnBoundary(net.minecraft.server.level.ServerPlayer serverPlayer) {
         ChunkLifecycleCoordinator.prepareForClientRespawnBoundary(serverPlayer);
+    }
+
+    private static String readModVersionFromLoaderContainer(ModContainer modContainer) {
+        if (modContainer == null) {
+            return null;
+        }
+        try {
+            return modContainer.getModInfo().getVersion().toString();
+        } catch (RuntimeException exception) {
+            return null;
+        }
+    }
+
+    private static void configureNetworkProtocolVersion(String rawVersion) {
+        networkProtocolVersion = sanitizeNetworkVersion(rawVersion);
+        LOGGER.info("[Transport] Network protocol version resolved from mod metadata: {}", networkProtocolVersion);
+    }
+
+    private static String sanitizeNetworkVersion(String rawVersion) {
+        if (rawVersion == null) {
+            return "dev";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (int index = 0; index < rawVersion.length(); index++) {
+            char character = Character.toLowerCase(rawVersion.charAt(index));
+            if ((character >= 'a' && character <= 'z')
+                    || (character >= '0' && character <= '9')
+                    || character == '_'
+                    || character == '-'
+                    || character == '.') {
+                builder.append(character == '.' ? '_' : character);
+            } else {
+                builder.append('_');
+            }
+        }
+        String sanitized = builder.toString();
+        while (sanitized.contains("__")) {
+            sanitized = sanitized.replace("__", "_");
+        }
+        sanitized = sanitized.replaceAll("^_+|_+$", "");
+        return sanitized.isEmpty() ? "dev" : sanitized;
     }
 }

@@ -30,8 +30,19 @@ public class Bandwidthoptimizer {
 
     public static final String MODID = "bandwidthoptimizer";
     public static final Logger LOGGER = LogUtils.getLogger();
+    private static volatile String networkProtocolVersion = "dev";
+
+    public static String networkProtocolVersion() {
+        return networkProtocolVersion;
+    }
+
+    public static String versionedNetworkPath(String basePath) {
+        return basePath + "_" + networkProtocolVersion();
+    }
 
     public Bandwidthoptimizer() {
+        ModLoadingContext modLoadingContext = ForgeModLoadingContextCompat.getCurrentModLoadingContext();
+        configureNetworkProtocolVersion(readModVersionFromLoaderContainer(modLoadingContext));
         ZstdRuntimeSupport.configureNativeTempFolder();
         if (ChannelCaptureRuntimeConfig.isJsonlCaptureEnabled()) {
             ChannelFrameJsonlLogger.initializeOutputFiles();
@@ -40,7 +51,6 @@ public class Bandwidthoptimizer {
         ChannelTransportRuntimeGuard.initialize();
         BandwidthOptimizerLifecycle.register(TorqueLayer.platform());
 
-        ModLoadingContext modLoadingContext = ForgeModLoadingContextCompat.getCurrentModLoadingContext();
         FMLJavaModLoadingContext modContext = modLoadingContext.extension();
         IEventBus modEventBus = modContext.getModEventBus();
 
@@ -63,5 +73,47 @@ public class Bandwidthoptimizer {
 
     public static void prepareForClientRespawnBoundary(net.minecraft.server.level.ServerPlayer serverPlayer) {
         ChunkLifecycleCoordinator.prepareForClientRespawnBoundary(serverPlayer);
+    }
+
+    @SuppressWarnings("removal")
+    private static String readModVersionFromLoaderContainer(ModLoadingContext modLoadingContext) {
+        if (modLoadingContext == null || modLoadingContext.getActiveContainer() == null) {
+            return null;
+        }
+        try {
+            return modLoadingContext.getActiveContainer().getModInfo().getVersion().toString();
+        } catch (RuntimeException exception) {
+            return null;
+        }
+    }
+
+    private static void configureNetworkProtocolVersion(String rawVersion) {
+        networkProtocolVersion = sanitizeNetworkVersion(rawVersion);
+        LOGGER.info("[Transport] Network protocol version resolved from mod metadata: {}", networkProtocolVersion);
+    }
+
+    private static String sanitizeNetworkVersion(String rawVersion) {
+        if (rawVersion == null) {
+            return "dev";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (int index = 0; index < rawVersion.length(); index++) {
+            char character = Character.toLowerCase(rawVersion.charAt(index));
+            if ((character >= 'a' && character <= 'z')
+                    || (character >= '0' && character <= '9')
+                    || character == '_'
+                    || character == '-'
+                    || character == '.') {
+                builder.append(character == '.' ? '_' : character);
+            } else {
+                builder.append('_');
+            }
+        }
+        String sanitized = builder.toString();
+        while (sanitized.contains("__")) {
+            sanitized = sanitized.replace("__", "_");
+        }
+        sanitized = sanitized.replaceAll("^_+|_+$", "");
+        return sanitized.isEmpty() ? "dev" : sanitized;
     }
 }
