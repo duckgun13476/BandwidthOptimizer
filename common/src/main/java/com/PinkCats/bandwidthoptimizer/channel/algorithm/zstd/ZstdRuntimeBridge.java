@@ -10,9 +10,12 @@ import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.ByteBuffer;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 final class ZstdRuntimeBridge {
 
@@ -20,7 +23,15 @@ final class ZstdRuntimeBridge {
     private static final String DECOMPRESS_CONTEXT_CLASS = "com.github.luben.zstd.ZstdDecompressCtx";
     private static final String END_DIRECTIVE_CLASS = "com.github.luben.zstd.EndDirective";
     private static final String EMBEDDED_ZSTD_RESOURCE = "META-INF/bandwidthoptimizer/libs/zstd-jni-1.5.7-7.jar";
+    private static final String EMBEDDED_ZSTD_FILE_NAME = "zstd-jni-1.5.7-7.jar";
     private static final String ZSTD_TEMP_FOLDER_PROPERTY = "ZstdTempFolder";
+    private static final String DRIVER_BACKUP_DIRECTORY = "driver-backup";
+    private static final String EMBEDDED_LIBS_DIRECTORY = "embedded-libs";
+    private static final int MAX_BACKUP_DRIVER_DIRECTORIES = 3;
+    private static final int MAX_PRIMARY_NATIVE_DRIVER_FILES = 3;
+    private static final int MAX_LEGACY_ROOT_NATIVE_DRIVER_FILES = 1;
+    private static final DateTimeFormatter BACKUP_DIRECTORY_TIME_FORMAT =
+            DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS");
     private static final Bindings BINDINGS = loadBindings();
 
     private ZstdRuntimeBridge() {
@@ -49,11 +60,19 @@ final class ZstdRuntimeBridge {
         }
 
         try {
-            return bind(createEmbeddedClassLoader());
-        } catch (Throwable throwable) {
-            IllegalStateException exception = new IllegalStateException("zstd-jni is unavailable", throwable);
-            exception.addSuppressed(firstFailure);
-            throw exception;
+            Bindings bindings = bind(createEmbeddedClassLoader(false));
+            cleanupDriversAfterPrimarySuccess();
+            return bindings;
+        } catch (Throwable primaryEmbeddedFailure) {
+            try {
+                return bind(createEmbeddedClassLoader(true));
+            } catch (Throwable backupEmbeddedFailure) {
+                primaryEmbeddedFailure.addSuppressed(backupEmbeddedFailure);
+                Throwable throwable = primaryEmbeddedFailure;
+                IllegalStateException exception = new IllegalStateException("zstd-jni is unavailable", throwable);
+                exception.addSuppressed(firstFailure);
+                throw exception;
+            }
         }
     }
 
@@ -93,26 +112,212 @@ final class ZstdRuntimeBridge {
         );
     }
 
-    private static ClassLoader createEmbeddedClassLoader() throws IOException {
+    private static ClassLoader createEmbeddedClassLoader(boolean backupDriver) throws IOException {
         ClassLoader sourceClassLoader = ZstdRuntimeBridge.class.getClassLoader();
-        Path embeddedJarPath = embeddedJarPath();
-        try (InputStream inputStream = sourceClassLoader.getResourceAsStream(EMBEDDED_ZSTD_RESOURCE)) {
-            if (inputStream == null) {
-                throw new IOException("Missing embedded zstd-jni resource: " + EMBEDDED_ZSTD_RESOURCE);
-            }
-            Files.createDirectories(embeddedJarPath.getParent());
-            Files.copy(inputStream, embeddedJarPath, StandardCopyOption.REPLACE_EXISTING);
+        Path driverDirectory = backupDriver ? backupDriverDirectory() : configuredTempFolder();
+        if (backupDriver) {
+            System.setProperty(ZSTD_TEMP_FOLDER_PROPERTY, driverDirectory.toAbsolutePath().toString());
         }
+        Path embeddedJarPath = writeEmbeddedJar(sourceClassLoader, driverDirectory, backupDriver);
         URL embeddedJarUrl = embeddedJarPath.toUri().toURL();
         return new URLClassLoader(new URL[]{embeddedJarUrl}, ClassLoader.getPlatformClassLoader());
     }
 
-    private static Path embeddedJarPath() {
+    // 将嵌入的 zstd jar 写入驱动目录；主目录已有可读 jar 时直接复用，避免 Windows 文件占用导致覆盖失败。
+    private static Path writeEmbeddedJar(ClassLoader sourceClassLoader, Path driverDirectory, boolean forceUniqueFile) throws IOException {
+        Path embeddedJarPath = embeddedJarPath(driverDirectory, forceUniqueFile);
+        if (!forceUniqueFile && Files.isRegularFile(embeddedJarPath) && Files.size(embeddedJarPath) > 0L) {
+            return embeddedJarPath;
+        }
+
+        Files.createDirectories(embeddedJarPath.getParent());
+        try (InputStream inputStream = sourceClassLoader.getResourceAsStream(EMBEDDED_ZSTD_RESOURCE)) {
+            if (inputStream == null) {
+                throw new IOException("Missing embedded zstd-jni resource: " + EMBEDDED_ZSTD_RESOURCE);
+            }
+            try {
+                Files.copy(inputStream, embeddedJarPath, forceUniqueFile
+                        ? new StandardCopyOption[0]
+                        : new StandardCopyOption[]{StandardCopyOption.REPLACE_EXISTING});
+            } catch (FileAlreadyExistsException exception) {
+                if (Files.isRegularFile(embeddedJarPath) && Files.size(embeddedJarPath) > 0L) {
+                    return embeddedJarPath;
+                }
+                throw exception;
+            }
+        }
+        return embeddedJarPath;
+    }
+
+    private static Path embeddedJarPath(Path driverDirectory, boolean forceUniqueFile) {
+        String fileName = forceUniqueFile
+                ? "zstd-jni-1.5.7-7-" + Thread.currentThread().getId() + ".jar"
+                : EMBEDDED_ZSTD_FILE_NAME;
+        return driverDirectory.resolve(EMBEDDED_LIBS_DIRECTORY).resolve(fileName);
+    }
+
+    private static Path configuredTempFolder() {
         String configuredTempFolder = System.getProperty(ZSTD_TEMP_FOLDER_PROPERTY);
-        Path tempFolder = configuredTempFolder == null || configuredTempFolder.isBlank()
+        return configuredTempFolder == null || configuredTempFolder.isBlank()
                 ? BandwidthOptimizerOutputPaths.nativeDriveDirectory()
                 : Path.of(configuredTempFolder);
-        return tempFolder.resolve("embedded-libs").resolve("zstd-jni-1.5.7-7.jar");
+    }
+
+    // 主驱动目录被旧进程占用时，退到独立 backup 目录，让 jar 与 native dll 都从新路径加载。
+    private static Path backupDriverDirectory() throws IOException {
+        Path backupRoot = BandwidthOptimizerOutputPaths.nativeDriveDirectory().resolve(DRIVER_BACKUP_DIRECTORY);
+        Files.createDirectories(backupRoot);
+        String directoryName = BACKUP_DIRECTORY_TIME_FORMAT.format(LocalDateTime.now())
+                + "-" + Thread.currentThread().getId();
+        Path backupDirectory = backupRoot.resolve(directoryName);
+        Files.createDirectories(backupDirectory);
+        return backupDirectory;
+    }
+
+    // 主驱动目录可用时，清理多余的 backup 驱动目录；被占用或删除失败的目录直接跳过。
+    private static void cleanupDriversAfterPrimarySuccess() {
+        cleanupPrimaryNativeDrivers();
+        cleanupLegacyRootDrivers();
+        cleanupBackupDriversAfterPrimarySuccess();
+    }
+
+    // 主驱动目录可用时，清理旧的 zstd native dll/so/dylib；当前被加载的文件删除失败会自动保留。
+    private static void cleanupPrimaryNativeDrivers() {
+        Path driverDirectory = configuredTempFolder();
+        if (!Files.isDirectory(driverDirectory)) {
+            return;
+        }
+        try (java.util.stream.Stream<Path> paths = Files.list(driverDirectory)) {
+            java.util.List<Path> nativeFiles = paths
+                    .filter(Files::isRegularFile)
+                    .filter(ZstdRuntimeBridge::isZstdNativeDriverFile)
+                    .sorted((left, right) -> compareLastModifiedDescending(left, right))
+                    .toList();
+            for (int index = MAX_PRIMARY_NATIVE_DRIVER_FILES; index < nativeFiles.size(); index++) {
+                try {
+                    Files.deleteIfExists(nativeFiles.get(index));
+                } catch (IOException ignored) {
+                }
+            }
+        } catch (IOException ignored) {
+        }
+    }
+
+    private static boolean isZstdNativeDriverFile(Path path) {
+        if (path == null || path.getFileName() == null) {
+            return false;
+        }
+        String fileName = path.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+        return fileName.matches("libzstd-jni(_dh)?-1\\.5\\.7-\\d+\\.(dll|so|dylib)");
+    }
+
+    private static boolean isEmbeddedZstdJarFile(Path path) {
+        if (path == null || path.getFileName() == null) {
+            return false;
+        }
+        String fileName = path.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+        return EMBEDDED_ZSTD_FILE_NAME.equals(fileName)
+                || fileName.matches("zstd-jni-1\\.5\\.7-7-\\d+\\.jar");
+    }
+
+    // 新版 drive 可用后，保守清理旧版 native 根目录中遗留的 zstd 驱动缓存。
+    private static void cleanupLegacyRootDrivers() {
+        Path outputRoot = BandwidthOptimizerOutputPaths.outputRoot();
+        Path primaryDrive = BandwidthOptimizerOutputPaths.nativeDriveDirectory();
+        if (!Files.isDirectory(outputRoot) || outputRoot.normalize().equals(primaryDrive.normalize())) {
+            return;
+        }
+        cleanupLegacyRootNativeFiles(outputRoot);
+        cleanupLegacyRootEmbeddedLibs(outputRoot.resolve(EMBEDDED_LIBS_DIRECTORY));
+    }
+
+    // 根目录只保留极少数最新 native 文件，避免误删当前异常回退仍可能占用的旧文件。
+    private static void cleanupLegacyRootNativeFiles(Path outputRoot) {
+        try (java.util.stream.Stream<Path> paths = Files.list(outputRoot)) {
+            java.util.List<Path> nativeFiles = paths
+                    .filter(Files::isRegularFile)
+                    .filter(ZstdRuntimeBridge::isZstdNativeDriverFile)
+                    .sorted((left, right) -> compareLastModifiedDescending(left, right))
+                    .toList();
+            for (int index = MAX_LEGACY_ROOT_NATIVE_DRIVER_FILES; index < nativeFiles.size(); index++) {
+                try {
+                    Files.deleteIfExists(nativeFiles.get(index));
+                } catch (IOException ignored) {
+                }
+            }
+        } catch (IOException ignored) {
+        }
+    }
+
+    // 旧根目录 embedded-libs 只删除确定属于 zstd-jni 的 jar；目录非空则保留。
+    private static void cleanupLegacyRootEmbeddedLibs(Path embeddedLibsDirectory) {
+        if (!Files.isDirectory(embeddedLibsDirectory)) {
+            return;
+        }
+        try (java.util.stream.Stream<Path> paths = Files.list(embeddedLibsDirectory)) {
+            paths.filter(Files::isRegularFile)
+                    .filter(ZstdRuntimeBridge::isEmbeddedZstdJarFile)
+                    .forEach(path -> {
+                        try {
+                            Files.deleteIfExists(path);
+                        } catch (IOException ignored) {
+                        }
+                    });
+        } catch (IOException ignored) {
+            return;
+        }
+        try (java.util.stream.Stream<Path> remaining = Files.list(embeddedLibsDirectory)) {
+            if (remaining.findAny().isEmpty()) {
+                Files.deleteIfExists(embeddedLibsDirectory);
+            }
+        } catch (IOException ignored) {
+        }
+    }
+
+    private static int compareLastModifiedDescending(Path left, Path right) {
+        try {
+            return Files.getLastModifiedTime(right).compareTo(Files.getLastModifiedTime(left));
+        } catch (IOException ignored) {
+            return right.getFileName().toString().compareTo(left.getFileName().toString());
+        }
+    }
+
+    private static void cleanupBackupDriversAfterPrimarySuccess() {
+        Path backupRoot = BandwidthOptimizerOutputPaths.nativeDriveDirectory().resolve(DRIVER_BACKUP_DIRECTORY);
+        if (!Files.isDirectory(backupRoot)) {
+            return;
+        }
+
+        try (java.util.stream.Stream<Path> paths = Files.list(backupRoot)) {
+            java.util.List<Path> backupDirectories = paths
+                    .filter(Files::isDirectory)
+                    .sorted(java.util.Comparator.reverseOrder())
+                    .toList();
+            for (int index = MAX_BACKUP_DRIVER_DIRECTORIES; index < backupDirectories.size(); index++) {
+                deleteDirectoryIfPossible(backupDirectories.get(index));
+            }
+        } catch (IOException ignored) {
+        }
+    }
+
+    // 尝试删除单个 backup 目录，遇到 Windows 文件占用时保持原样。
+    private static void deleteDirectoryIfPossible(Path directory) {
+        if (directory == null || !Files.isDirectory(directory)) {
+            return;
+        }
+        try (java.util.stream.Stream<Path> paths = Files.walk(directory)) {
+            java.util.List<Path> entries = paths
+                    .sorted(java.util.Comparator.reverseOrder())
+                    .toList();
+            for (Path entry : entries) {
+                try {
+                    Files.deleteIfExists(entry);
+                } catch (IOException ignored) {
+                    return;
+                }
+            }
+        } catch (IOException ignored) {
+        }
     }
 
     static final class Context {
