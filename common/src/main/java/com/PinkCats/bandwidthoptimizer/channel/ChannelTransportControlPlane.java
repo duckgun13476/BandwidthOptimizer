@@ -9,9 +9,12 @@ import io.netty.util.AttributeKey;
 import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 public final class ChannelTransportControlPlane {
 
@@ -21,6 +24,18 @@ public final class ChannelTransportControlPlane {
     private static final int LISTENER_DIRECT_PACKETS = 1;
     private static final long LISTENER_DIRECT_NANOS = 0L;
     private static final int MAX_TRACKED_LISTENER_PACKETS = 256;
+    private static final Set<String> DIRECT_CUSTOM_PAYLOAD_CHANNELS = Set.of(
+            "minecraft:register",
+            "minecraft:unregister",
+            "minecraft:brand",
+            "forge:handshake",
+            "forge:tier_sorting",
+            "fml:handshake",
+            "neoforge:network",
+            "neoforge:modded_network_setup",
+            "neoforge:register",
+            "neoforge:unregister"
+    );
 
     private ChannelTransportControlPlane() {}
 
@@ -141,10 +156,12 @@ public final class ChannelTransportControlPlane {
         }
         if (packetClassName.endsWith("ClientboundSetChunkCacheCenterPacket")
                 || packetClassName.endsWith("ClientboundSetChunkCacheRadiusPacket")
-                || packetClassName.endsWith("ClientboundForgetLevelChunkPacket")
-                || packetClassName.endsWith("ClientboundCustomPayloadPacket")
-                || packetClassName.endsWith("ServerboundCustomPayloadPacket")) {
+                || packetClassName.endsWith("ClientboundForgetLevelChunkPacket")) {
             return BoundaryProfile.small(packetClassName);
+        }
+        BoundaryProfile customPayloadBoundary = classifyCustomPayloadBoundary(packet, packetClassName);
+        if (customPayloadBoundary != BoundaryProfile.NONE) {
+            return customPayloadBoundary;
         }
         if (packetClassName.endsWith("ServerboundAcceptTeleportationPacket")
                 || packetClassName.endsWith("ServerboundCommandSuggestionPacket")
@@ -156,6 +173,59 @@ public final class ChannelTransportControlPlane {
             return BoundaryProfile.small(packetClassName);
         }
         return BoundaryProfile.NONE;
+    }
+
+    private static BoundaryProfile classifyCustomPayloadBoundary(Packet<?> packet, String packetClassName) {
+        if (!isCustomPayloadPacketClass(packetClassName)) {
+            return BoundaryProfile.NONE;
+        }
+        String payloadChannel = normalizePayloadChannel(readCustomPayloadChannel(packet));
+        if (payloadChannel.isBlank()) {
+            return BoundaryProfile.customPayload("unknown_channel", packetClassName, "<unknown>");
+        }
+        if (payloadChannel.startsWith(Bandwidthoptimizer.MODID + ":")) {
+            return BoundaryProfile.customPayload("internal_channel", packetClassName, payloadChannel);
+        }
+        if (DIRECT_CUSTOM_PAYLOAD_CHANNELS.contains(payloadChannel)) {
+            return BoundaryProfile.customPayload("protocol_channel", packetClassName, payloadChannel);
+        }
+        if (packetClassName.endsWith("ServerboundCustomPayloadPacket")) {
+            return BoundaryProfile.customPayload("serverbound_channel", packetClassName, payloadChannel);
+        }
+        return BoundaryProfile.NONE;
+    }
+
+    private static boolean isCustomPayloadPacketClass(String packetClassName) {
+        return packetClassName != null
+                && (packetClassName.endsWith("ClientboundCustomPayloadPacket")
+                || packetClassName.endsWith("ServerboundCustomPayloadPacket"));
+    }
+
+    private static String readCustomPayloadChannel(Packet<?> packet) {
+        Object identifier = invokeNoArg(packet, "getIdentifier");
+        if (identifier != null) {
+            return identifier.toString();
+        }
+        Object payload = invokeNoArg(packet, "payload");
+        Object type = invokeNoArg(payload, "type");
+        Object id = invokeNoArg(type, "id");
+        return id == null ? "" : id.toString();
+    }
+
+    private static String normalizePayloadChannel(String payloadChannel) {
+        return payloadChannel == null ? "" : payloadChannel.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static Object invokeNoArg(Object target, String methodName) {
+        if (target == null || methodName == null || methodName.isBlank()) {
+            return null;
+        }
+        try {
+            Method method = target.getClass().getMethod(methodName);
+            return method.invoke(target);
+        } catch (ReflectiveOperationException | RuntimeException exception) {
+            return null;
+        }
     }
 
     private static ControlState getOrCreateControlState(Channel channel) {
@@ -200,6 +270,10 @@ public final class ChannelTransportControlPlane {
 
         private static BoundaryProfile small(String packetClassName) {
             return new BoundaryProfile("connection_interaction_boundary:" + packetClassName);
+        }
+
+        private static BoundaryProfile customPayload(String reason, String packetClassName, String payloadChannel) {
+            return new BoundaryProfile("custom_payload_boundary:" + reason + ":" + payloadChannel + ":" + packetClassName);
         }
     }
 

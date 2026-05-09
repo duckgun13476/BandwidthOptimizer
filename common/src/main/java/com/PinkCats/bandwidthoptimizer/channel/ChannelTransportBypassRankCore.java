@@ -5,10 +5,12 @@ import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -23,8 +25,11 @@ public final class ChannelTransportBypassRankCore {
     private static final Object LOCK = new Object();
     private static final Map<BypassKey, BypassCounter> COUNTERS = new LinkedHashMap<>();
     private static final DateTimeFormatter REPORT_DISPLAY_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.ROOT);
+    private static final DateTimeFormatter REPORT_ARCHIVE_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss", Locale.ROOT);
     private static final String LATEST_REPORT_FILE_NAME = "latest-bypass-report.md";
     private static final String REPORT_PROTOCOL = "PLAY";
+    private static final int REPORT_SCHEMA_VERSION = 2;
+    private static final int REPORT_HEADER_SCAN_LINES = 40;
 
     private static long windowBypassCount;
     private static long windowBypassBytes;
@@ -201,6 +206,8 @@ public final class ChannelTransportBypassRankCore {
         StringBuilder builder = new StringBuilder(4096);
         builder.append("# BandwidthOptimizer Transport Bypass Report").append(System.lineSeparator());
         builder.append(System.lineSeparator());
+        builder.append("- Report schema version: `").append(REPORT_SCHEMA_VERSION).append('`').append(System.lineSeparator());
+        builder.append("- Mod/network version: `").append(markdownCell(Bandwidthoptimizer.networkProtocolVersion())).append('`').append(System.lineSeparator());
         builder.append("- Generated at: `").append(reportTimestamp).append('`').append(System.lineSeparator());
         builder.append("- Flush reason: `").append(markdownCell(reason)).append('`').append(System.lineSeparator());
         builder.append("- Protocol filter: `").append(REPORT_PROTOCOL).append('`').append(System.lineSeparator());
@@ -241,10 +248,63 @@ public final class ChannelTransportBypassRankCore {
 
         try {
             Files.createDirectories(reportDirectory);
+            archiveOutdatedLatestReport(latestReport);
             Files.writeString(latestReport, builder.toString(), StandardCharsets.UTF_8);
         } catch (IOException exception) {
             logReportFailureThrottled(exception);
         }
+    }
+
+    private static void archiveOutdatedLatestReport(Path latestReport) throws IOException {
+        if (!Files.isRegularFile(latestReport) || isCurrentReportVersion(latestReport)) {
+            return;
+        }
+        Files.move(latestReport, resolveArchiveReportPath(latestReport), StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private static boolean isCurrentReportVersion(Path latestReport) throws IOException {
+        String expectedSchema = String.valueOf(REPORT_SCHEMA_VERSION);
+        String expectedModVersion = Bandwidthoptimizer.networkProtocolVersion();
+        String schemaVersion = "";
+        String modVersion = "";
+        try (BufferedReader reader = Files.newBufferedReader(latestReport, StandardCharsets.UTF_8)) {
+            for (int lineIndex = 0; lineIndex < REPORT_HEADER_SCAN_LINES; lineIndex++) {
+                String line = reader.readLine();
+                if (line == null) {
+                    break;
+                }
+                if (line.startsWith("- Report schema version:")) {
+                    schemaVersion = readBacktickValue(line);
+                } else if (line.startsWith("- Mod/network version:")) {
+                    modVersion = readBacktickValue(line);
+                }
+            }
+        }
+        return expectedSchema.equals(schemaVersion) && expectedModVersion.equals(modVersion);
+    }
+
+    private static String readBacktickValue(String line) {
+        if (line == null) {
+            return "";
+        }
+        int start = line.indexOf('`');
+        if (start < 0) {
+            return "";
+        }
+        int end = line.indexOf('`', start + 1);
+        return end <= start ? "" : line.substring(start + 1, end);
+    }
+
+    private static Path resolveArchiveReportPath(Path latestReport) {
+        Path parent = latestReport.getParent();
+        String timestamp = REPORT_ARCHIVE_TIMESTAMP.format(LocalDateTime.now());
+        Path candidate = parent.resolve("latest-bypass-report.archived-" + timestamp + ".md");
+        int attempt = 1;
+        while (Files.exists(candidate)) {
+            candidate = parent.resolve("latest-bypass-report.archived-" + timestamp + "-" + attempt + ".md");
+            attempt++;
+        }
+        return candidate;
     }
 
     private static void appendReportEntry(StringBuilder builder, int rank, BypassKey key, BypassCounter counter) {
@@ -338,6 +398,9 @@ public final class ChannelTransportBypassRankCore {
         if (reason.startsWith("connection_interaction_boundary:")) {
             return "forced_interaction_boundary";
         }
+        if (reason.startsWith("custom_payload_boundary:")) {
+            return "forced_custom_payload_boundary";
+        }
         if (reason.contains("bundle")) {
             return "forced_bundle_boundary";
         }
@@ -406,6 +469,9 @@ public final class ChannelTransportBypassRankCore {
         if (reason.contains("heavy_chunk_protocol_bypass")) {
             return true;
         }
+        if (reason.startsWith("custom_payload_boundary:internal_channel:")) {
+            return true;
+        }
         return isTinyChunkSemiBypassPacket(key, counter);
     }
 
@@ -448,6 +514,9 @@ public final class ChannelTransportBypassRankCore {
         if (value.startsWith("connection_interaction_boundary:")) {
             return "IB";
         }
+        if (value.startsWith("custom_payload_boundary:")) {
+            return "CP";
+        }
         if (value.contains("bundle")) {
             return "BD";
         }
@@ -489,6 +558,9 @@ public final class ChannelTransportBypassRankCore {
         if (value.startsWith("connection_interaction_boundary:")) {
             return "connection_interaction_boundary";
         }
+        if (value.startsWith("custom_payload_boundary:")) {
+            return "custom_payload_boundary";
+        }
         if (value.contains("bundle")) {
             return "bundle_boundary";
         }
@@ -526,6 +598,7 @@ public final class ChannelTransportBypassRankCore {
         return switch (category) {
             case "forced_strong_boundary" -> "SB";
             case "forced_interaction_boundary" -> "IB";
+            case "forced_custom_payload_boundary" -> "CP";
             case "forced_bundle_boundary" -> "BD";
             case "forced_keep_alive_boundary" -> "KA";
             case "forced_protocol_boundary" -> "PB";
