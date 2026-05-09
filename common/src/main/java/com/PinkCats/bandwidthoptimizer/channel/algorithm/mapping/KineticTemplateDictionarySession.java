@@ -16,6 +16,8 @@ import java.util.Map;
 final class KineticTemplateDictionarySession {
 
     private static final int MAX_RECENT_SEEDS_PER_LENGTH = 48;
+    private static final int MAX_RECENT_SEEDS = 2048;
+    private static final int MAX_UNSYNCED_EXACT_SEEDS = 4096;
     private static final int MAX_CANDIDATE_SEEDS_PER_LOOKUP = 24;
     private static final int MIN_TEMPLATE_LITERAL_BYTES = 8;
 
@@ -30,6 +32,9 @@ final class KineticTemplateDictionarySession {
     private int nextId;
     private long touchCounter;
     private int totalStoredBytes;
+    private int unsyncedExactSeedBytes;
+    private int recentSeedCount;
+    private int recentSeedBytes;
 
     void reset() {
         this.exactIdByHash.clear();
@@ -43,6 +48,9 @@ final class KineticTemplateDictionarySession {
         this.nextId = 0;
         this.touchCounter = 0L;
         this.totalStoredBytes = 0;
+        this.unsyncedExactSeedBytes = 0;
+        this.recentSeedCount = 0;
+        this.recentSeedBytes = 0;
     }
 
     KineticMapTableLayer.LayerResult encodeWithTelemetry(byte[] packetBytes) {
@@ -107,7 +115,7 @@ final class KineticTemplateDictionarySession {
             this.exactIdByHash.put(new HashKey(storedPayload), mappingId);
             this.exactEntriesById.put(mappingId, new ExactEntry(storedPayload, nextTouch()));
             this.totalStoredBytes += storedPayload.length;
-            this.unsyncedExactSeeds.remove(payloadKey);
+            removeUnsyncedExactSeed(payloadKey);
             additions.add(KineticTemplateMappingCodec.MappingAddition.exact(mappingId, storedPayload));
             protectedIds.add(mappingId);
             return KineticTemplateMappingCodec.MappingEntry.exactReference(mappingId);
@@ -141,7 +149,7 @@ final class KineticTemplateDictionarySession {
             }
         }
 
-        this.unsyncedExactSeeds.put(payloadKey, new UnsyncedExactSeed(copyBytes(payload), nextTouch()));
+        rememberUnsyncedExactSeed(payloadKey, payload);
         return KineticTemplateMappingCodec.MappingEntry.literal(payload);
     }
 
@@ -635,11 +643,118 @@ final class KineticTemplateDictionarySession {
     }
 
     private void rememberSeed(byte[] payload) {
-        SeedEntry seedEntry = new SeedEntry(copyBytes(payload), nextTouch());
+        if (!isSeedPayloadEligible(payload)) {
+            return;
+        }
+
+        byte[] storedPayload = copyBytes(payload);
+        SeedEntry seedEntry = new SeedEntry(storedPayload, nextTouch());
         List<SeedEntry> seeds = this.recentSeedsByLength.computeIfAbsent(payload.length, ignored -> new ArrayList<>());
         seeds.add(seedEntry);
-        if (seeds.size() > MAX_RECENT_SEEDS_PER_LENGTH)
-            seeds.remove(0);
+        this.recentSeedCount++;
+        this.recentSeedBytes += storedPayload.length;
+        if (seeds.size() > MAX_RECENT_SEEDS_PER_LENGTH) {
+            removeRecentSeedAt(payload.length, seeds, 0);
+        }
+        trimRecentSeeds();
+    }
+
+    private void rememberUnsyncedExactSeed(HashKey payloadKey, byte[] payload) {
+        if (!isSeedPayloadEligible(payload)) {
+            return;
+        }
+
+        byte[] storedPayload = copyBytes(payload);
+        UnsyncedExactSeed previousSeed = this.unsyncedExactSeeds.put(
+                payloadKey,
+                new UnsyncedExactSeed(storedPayload, nextTouch())
+        );
+        if (previousSeed != null) {
+            this.unsyncedExactSeedBytes -= previousSeed.payload().length;
+        }
+        this.unsyncedExactSeedBytes += storedPayload.length;
+        trimUnsyncedExactSeeds();
+    }
+
+    private void removeUnsyncedExactSeed(HashKey payloadKey) {
+        UnsyncedExactSeed removedSeed = this.unsyncedExactSeeds.remove(payloadKey);
+        if (removedSeed != null) {
+            this.unsyncedExactSeedBytes -= removedSeed.payload().length;
+        }
+    }
+
+    private void trimUnsyncedExactSeeds() {
+        while (this.unsyncedExactSeeds.size() > maxUnsyncedExactSeeds()
+                || this.unsyncedExactSeedBytes > maxUnsyncedExactSeedBytes()) {
+            HashKey oldestKey = null;
+            long oldestTouch = Long.MAX_VALUE;
+            for (Map.Entry<HashKey, UnsyncedExactSeed> entry : this.unsyncedExactSeeds.entrySet()) {
+                if (entry.getValue().lastTouched() < oldestTouch) {
+                    oldestTouch = entry.getValue().lastTouched();
+                    oldestKey = entry.getKey();
+                }
+            }
+            if (oldestKey == null) {
+                break;
+            }
+            removeUnsyncedExactSeed(oldestKey);
+        }
+    }
+
+    private void trimRecentSeeds() {
+        while (this.recentSeedCount > maxRecentSeeds() || this.recentSeedBytes > maxRecentSeedBytes()) {
+            Integer oldestLength = null;
+            int oldestIndex = -1;
+            long oldestTouch = Long.MAX_VALUE;
+            for (Map.Entry<Integer, List<SeedEntry>> entry : this.recentSeedsByLength.entrySet()) {
+                List<SeedEntry> seeds = entry.getValue();
+                for (int index = 0; index < seeds.size(); index++) {
+                    SeedEntry seed = seeds.get(index);
+                    if (seed.lastTouched() < oldestTouch) {
+                        oldestTouch = seed.lastTouched();
+                        oldestLength = entry.getKey();
+                        oldestIndex = index;
+                    }
+                }
+            }
+            if (oldestLength == null) {
+                break;
+            }
+            List<SeedEntry> seeds = this.recentSeedsByLength.get(oldestLength);
+            if (seeds == null || oldestIndex < 0 || oldestIndex >= seeds.size()) {
+                break;
+            }
+            removeRecentSeedAt(oldestLength, seeds, oldestIndex);
+        }
+    }
+
+    private void removeRecentSeedAt(int payloadLength, List<SeedEntry> seeds, int index) {
+        SeedEntry removedSeed = seeds.remove(index);
+        this.recentSeedCount--;
+        this.recentSeedBytes -= removedSeed.payload().length;
+        if (seeds.isEmpty()) {
+            this.recentSeedsByLength.remove(payloadLength);
+        }
+    }
+
+    private static boolean isSeedPayloadEligible(byte[] payload) {
+        return payload != null && payload.length > 0 && payload.length <= maxPacketBytes();
+    }
+
+    private static int maxRecentSeeds() {
+        return Math.min(Math.max(maxEntries(), 1), MAX_RECENT_SEEDS);
+    }
+
+    private static int maxRecentSeedBytes() {
+        return Math.max(Math.min(maxPayloadBytes(), 2097152), 1);
+    }
+
+    private static int maxUnsyncedExactSeeds() {
+        return Math.min(Math.max(maxEntries(), 1), MAX_UNSYNCED_EXACT_SEEDS);
+    }
+
+    private static int maxUnsyncedExactSeedBytes() {
+        return Math.max(Math.min(maxPayloadBytes(), 2097152), 1);
     }
 
 

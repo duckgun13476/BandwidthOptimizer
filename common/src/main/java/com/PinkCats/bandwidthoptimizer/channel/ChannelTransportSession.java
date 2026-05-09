@@ -25,6 +25,12 @@ public final class ChannelTransportSession {
     }
 
 
+    public synchronized void reset() {
+        this.outboundSession.reset();
+        this.inboundSession.reset();
+    }
+
+
     // Telemetry
     public synchronized PacketResult encodeSinglePacketWithTelemetry(byte[] encodedPacketBytes) {
         byte[] safeBytes = copyBytesOrEmpty(encodedPacketBytes);
