@@ -39,6 +39,8 @@ public final class ServerBandwidthStatsCommand {
     private static int total(CommandSourceStack source) {
         ServerBandwidthStatsRegistry.TotalsSnapshot totals =
                 ServerBandwidthStatsPersistence.snapshotTotals(source.getServer());
+        ServerBandwidthStatsRegistry.TotalsSnapshot sessionTotals =
+                ServerBandwidthStatsRegistry.snapshotSessionTotals();
         CommandSourceCompat.sendSuccess(source, Component.literal(
                 "BO stats total: channels=" + totals.activeChannels()
                         + ", players=" + totals.boundPlayers()
@@ -51,6 +53,9 @@ public final class ServerBandwidthStatsCommand {
                         + ", outWire=" + formatBytes(totals.outboundWireBytes())
                         + ", inWire=" + formatBytes(totals.inboundWireBytes())
                         + ", estSaved=" + formatBytes(totals.outboundSavedBytes())
+                        + ", sessionOfflineReuse=" + formatBytes(sessionTotals.serverOfflineReuseConfirmedSavedBytes())
+                        + "/" + sessionTotals.serverOfflineReuseConfirmedFrames() + " frames"
+                        + ", sessionTemporaryReuse=" + formatBytes(sessionTotals.serverTemporaryReuseSavedBytes())
                         + ", estRatio=" + ratioText(
                                 totals.outboundTransportFrameBytes() + totals.outboundBypassBytes(),
                                 totals.outboundRawEncodedBytes()

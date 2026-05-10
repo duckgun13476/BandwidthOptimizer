@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatchBuilder;
+import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkLocalCacheReuseStats;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
@@ -138,7 +139,7 @@ public final class ChunkTransportPlanner {
                 && costEstimate.refTransportBytes() < costEstimate.fullTransportBytes()) {
             return buildDecision(
                     ChunkPlanDecisionKind.PUBLISH_REF,
-                    "reuse_acknowledged_full_snapshot",
+                    resolveReferenceReuseReason(chunkSnapshot),
                     descriptor,
                     snapshotFingerprint,
                     chunkSnapshot,
@@ -159,6 +160,19 @@ public final class ChunkTransportPlanner {
                     chunkSnapshot,
                     storeObservation,
                     Math.max(chunkSnapshot == null ? 0L : chunkSnapshot.fullSnapshotVersion(), 0L),
+                    costEstimate
+            );
+        }
+
+        if (shouldUsePersistentManifestPatch(chunkSnapshot, snapshotFingerprint, patchBuildResult, costEstimate)) {
+            return buildDecision(
+                    ChunkPlanDecisionKind.PUBLISH_PATCH,
+                    ChunkLocalCacheReuseStats.PERSISTENT_MANIFEST_PATCH_REASON,
+                    descriptor,
+                    snapshotFingerprint,
+                    chunkSnapshot,
+                    storeObservation,
+                    nextFullSnapshotVersion,
                     costEstimate
             );
         }
@@ -366,6 +380,13 @@ public final class ChunkTransportPlanner {
                 && snapshotFingerprint.hashHex().equals(chunkSnapshot.knownSnapshotHash());
     }
 
+    private static String resolveReferenceReuseReason(ChunkPeerChunkStateSnapshot chunkSnapshot) {
+        if (chunkSnapshot != null && chunkSnapshot.persistentClientManifestAcknowledged()) {
+            return ChunkLocalCacheReuseStats.PERSISTENT_MANIFEST_REF_REASON;
+        }
+        return "reuse_acknowledged_full_snapshot";
+    }
+
     private static boolean shouldUseWatchBoundaryReuseProbe(
             ChunkPeerChunkStateSnapshot chunkSnapshot,
             ChunkSnapshotFingerprint snapshotFingerprint,
@@ -389,6 +410,25 @@ public final class ChunkTransportPlanner {
         return requiresFullReplayBeforeDelta(chunkSnapshot)
                 && !sameSnapshotHash(chunkSnapshot, snapshotFingerprint)
                 && isWatchBoundaryRefreshPatchWithinBudget(chunkSnapshot, patchBuildResult)
+                && costEstimate != null
+                && costEstimate.patchTransportBytes() > 0
+                && (costEstimate.fullTransportBytes() <= 0
+                || costEstimate.patchTransportBytes() < costEstimate.fullTransportBytes());
+    }
+
+    private static boolean shouldUsePersistentManifestPatch(
+            ChunkPeerChunkStateSnapshot chunkSnapshot,
+            ChunkSnapshotFingerprint snapshotFingerprint,
+            ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult,
+            ChunkPlanCostEstimate costEstimate
+    ) {
+        return chunkSnapshot != null
+                && chunkSnapshot.persistentClientManifestAcknowledged()
+                && hasAcknowledgedCurrentFullSnapshot(chunkSnapshot)
+                && !sameSnapshotHash(chunkSnapshot, snapshotFingerprint)
+                && patchBuildResult != null
+                && patchBuildResult.patch() != null
+                && patchBuildResult.beneficial()
                 && costEstimate != null
                 && costEstimate.patchTransportBytes() > 0
                 && (costEstimate.fullTransportBytes() <= 0

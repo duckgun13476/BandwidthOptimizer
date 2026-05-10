@@ -2,6 +2,10 @@ package com.PinkCats.bandwidthoptimizer.server.stat;
 
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ConnectionAccessor;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ServerGamePacketListenerImplAccessor;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
+import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotReport;
+import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
+import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkServerOfflineReuseStats;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
@@ -95,6 +99,8 @@ public final class ServerBandwidthStatsRegistry {
                 stats.resetCounters();
             }
         }
+        ChunkHotspotStats.reset();
+        ChunkServerOfflineReuseStats.reset();
     }
 
     public static List<ChannelBandwidthStats.Snapshot> snapshotChannels() {
@@ -132,6 +138,14 @@ public final class ServerBandwidthStatsRegistry {
         long outboundWireBytes = 0L;
         long inboundWireBytes = 0L;
         int boundPlayers = 0;
+        ChunkServerOfflineReuseStats.Snapshot offlineReuseSnapshot = ChunkServerOfflineReuseStats.snapshot();
+        ChunkServerOfflineReuseStats.Totals offlineReuseConfirmedTotals =
+                offlineReuseSnapshot == null ? ChunkServerOfflineReuseStats.Totals.empty() : offlineReuseSnapshot.confirmedTotals();
+        ChunkServerOfflineReuseStats.Totals safeOfflineReuseConfirmedTotals =
+                offlineReuseConfirmedTotals == null ? ChunkServerOfflineReuseStats.Totals.empty() : offlineReuseConfirmedTotals;
+        long serverChunkReuseSavedBytes = computeServerChunkReuseSavedBytes();
+        long serverTemporaryReuseSavedBytes =
+                Math.max(serverChunkReuseSavedBytes - safeOfflineReuseConfirmedTotals.savedVsLogicalBytes(), 0L);
 
         for (ChannelBandwidthStats.Snapshot snapshot : channelSnapshots) {
             outboundRawPackets += snapshot.outboundRawEncodedPackets();
@@ -169,7 +183,11 @@ public final class ServerBandwidthStatsRegistry {
                 inboundBypassPackets,
                 inboundBypassBytes,
                 outboundWireBytes,
-                inboundWireBytes
+                inboundWireBytes,
+                safeOfflineReuseConfirmedTotals.frames(),
+                safeOfflineReuseConfirmedTotals.savedVsLogicalBytes(),
+                safeOfflineReuseConfirmedTotals.wireFrameBytes(),
+                serverTemporaryReuseSavedBytes
         );
     }
 
@@ -227,6 +245,28 @@ public final class ServerBandwidthStatsRegistry {
         return ((ConnectionAccessor) connection).bandwidthoptimizer$getChannel();
     }
 
+    private static long computeServerChunkReuseSavedBytes() {
+        ChunkHotspotReport report = ChunkHotspotStats.snapshotReport();
+        ChunkHotspotReport.DirectionTotals outboundTotals =
+                report == null || report.outboundTotals() == null
+                        ? ChunkHotspotReport.DirectionTotals.empty()
+                        : report.outboundTotals();
+        return operationSavedBytes(outboundTotals, ChunkHotspotFrameOp.PUBLISH_REF)
+                + operationSavedBytes(outboundTotals, ChunkHotspotFrameOp.PUBLISH_PATCH);
+    }
+
+    private static long operationSavedBytes(
+            ChunkHotspotReport.DirectionTotals directionTotals,
+            ChunkHotspotFrameOp operation
+    ) {
+        if (directionTotals == null || directionTotals.operationTotals() == null || operation == null) {
+            return 0L;
+        }
+        ChunkHotspotReport.OperationTotals operationTotals =
+                directionTotals.operationTotals().getOrDefault(operation, ChunkHotspotReport.OperationTotals.empty());
+        return Math.max(operationTotals.logicalPacketBytes() - operationTotals.wireFrameBytes(), 0L);
+    }
+
     public record TotalsSnapshot(
             int activeChannels,
             int boundPlayers,
@@ -243,7 +283,11 @@ public final class ServerBandwidthStatsRegistry {
             long inboundBypassPackets,
             long inboundBypassBytes,
             long outboundWireBytes,
-            long inboundWireBytes
+            long inboundWireBytes,
+            long serverOfflineReuseConfirmedFrames,
+            long serverOfflineReuseConfirmedSavedBytes,
+            long serverOfflineReuseConfirmedWireBytes,
+            long serverTemporaryReuseSavedBytes
     ) {
         public long outboundSavedBytes() {
             if (outboundTransportFrameBytes <= 0L && outboundBypassBytes <= 0L) {

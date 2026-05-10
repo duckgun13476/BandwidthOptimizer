@@ -13,7 +13,11 @@ public record ServerBandwidthStatsPayload(
         long outboundBypassBytes,
         long outboundWireBytes,
         long inboundWireBytes,
-        long outboundSavedBytes
+        long outboundSavedBytes,
+        long serverOfflineReuseConfirmedFrames,
+        long serverOfflineReuseConfirmedSavedBytes,
+        long serverOfflineReuseConfirmedWireBytes,
+        long serverTemporaryReuseSavedBytes
 ) {
 
     public static ServerBandwidthStatsPayload fromTotals(ServerBandwidthStatsRegistry.TotalsSnapshot totals) {
@@ -29,13 +33,17 @@ public record ServerBandwidthStatsPayload(
                 totals.outboundBypassBytes(),
                 totals.outboundWireBytes(),
                 totals.inboundWireBytes(),
-                totals.outboundSavedBytes()
+                totals.outboundSavedBytes(),
+                totals.serverOfflineReuseConfirmedFrames(),
+                totals.serverOfflineReuseConfirmedSavedBytes(),
+                totals.serverOfflineReuseConfirmedWireBytes(),
+                totals.serverTemporaryReuseSavedBytes()
         );
     }
 
 
     public static ServerBandwidthStatsPayload empty() {
-        return new ServerBandwidthStatsPayload(System.currentTimeMillis(), 0, 0, 0L, 0L, 0L, 0L, 0L, 0L);
+        return new ServerBandwidthStatsPayload(System.currentTimeMillis(), 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
     }
 
     public static void encode(ServerBandwidthStatsPayload payload, FriendlyByteBuf buffer) {
@@ -49,19 +57,40 @@ public record ServerBandwidthStatsPayload(
         buffer.writeVarLong(Math.max(safePayload.outboundWireBytes(), 0L));
         buffer.writeVarLong(Math.max(safePayload.inboundWireBytes(), 0L));
         buffer.writeVarLong(safePayload.outboundSavedBytes());
+        buffer.writeVarLong(Math.max(safePayload.serverOfflineReuseConfirmedFrames(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.serverOfflineReuseConfirmedSavedBytes(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.serverOfflineReuseConfirmedWireBytes(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.serverTemporaryReuseSavedBytes(), 0L));
     }
 
     public static ServerBandwidthStatsPayload decode(FriendlyByteBuf buffer) {
+        long capturedAtMillis = buffer.readLong();
+        int activeChannels = buffer.readVarInt();
+        int boundPlayers = buffer.readVarInt();
+        long outboundRawEncodedBytes = buffer.readVarLong();
+        long outboundTransportFrameBytes = buffer.readVarLong();
+        long outboundBypassBytes = buffer.readVarLong();
+        long outboundWireBytes = buffer.readVarLong();
+        long inboundWireBytes = buffer.readVarLong();
+        long outboundSavedBytes = buffer.readVarLong();
+        long serverOfflineReuseConfirmedFrames = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long serverOfflineReuseConfirmedSavedBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long serverOfflineReuseConfirmedWireBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long serverTemporaryReuseSavedBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         return new ServerBandwidthStatsPayload(
-                buffer.readLong(),
-                buffer.readVarInt(),
-                buffer.readVarInt(),
-                buffer.readVarLong(),
-                buffer.readVarLong(),
-                buffer.readVarLong(),
-                buffer.readVarLong(),
-                buffer.readVarLong(),
-                buffer.readVarLong()
+                capturedAtMillis,
+                activeChannels,
+                boundPlayers,
+                outboundRawEncodedBytes,
+                outboundTransportFrameBytes,
+                outboundBypassBytes,
+                outboundWireBytes,
+                inboundWireBytes,
+                outboundSavedBytes,
+                serverOfflineReuseConfirmedFrames,
+                serverOfflineReuseConfirmedSavedBytes,
+                serverOfflineReuseConfirmedWireBytes,
+                serverTemporaryReuseSavedBytes
         );
     }
 

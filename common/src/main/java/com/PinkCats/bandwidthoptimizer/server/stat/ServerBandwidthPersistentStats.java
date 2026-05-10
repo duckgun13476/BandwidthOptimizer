@@ -295,7 +295,11 @@ public final class ServerBandwidthPersistentStats extends SavedData {
                     this.inboundBypassPackets,
                     this.inboundBypassBytes,
                     this.outboundWireBytes,
-                    this.inboundWireBytes
+                    this.inboundWireBytes,
+                    0L,
+                    0L,
+                    0L,
+                    0L
             );
         }
     }

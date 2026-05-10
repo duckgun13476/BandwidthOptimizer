@@ -26,7 +26,11 @@ public final class ClientServerBandwidthHudStats {
                 payload.outboundBypassBytes(),
                 payload.outboundWireBytes(),
                 payload.inboundWireBytes(),
-                payload.outboundSavedBytes()
+                payload.outboundSavedBytes(),
+                payload.serverOfflineReuseConfirmedFrames(),
+                payload.serverOfflineReuseConfirmedSavedBytes(),
+                payload.serverOfflineReuseConfirmedWireBytes(),
+                payload.serverTemporaryReuseSavedBytes()
         );
     }
 
@@ -50,11 +54,15 @@ public final class ClientServerBandwidthHudStats {
             long outboundBypassBytes,
             long outboundWireBytes,
             long inboundWireBytes,
-            long outboundSavedBytes
+            long outboundSavedBytes,
+            long serverOfflineReuseConfirmedFrames,
+            long serverOfflineReuseConfirmedSavedBytes,
+            long serverOfflineReuseConfirmedWireBytes,
+            long serverTemporaryReuseSavedBytes
     ) {
 
         private static Snapshot empty() {
-            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L);
+            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
         }
 
         public boolean fresh() {
