@@ -156,6 +156,14 @@ public final class ChunkTransportControlFrameSender {
         ));
     }
 
+    // server chunk invoke reuse
+    public static boolean sendPersistentClientCacheManifest(Channel channel, ChunkHotspotFrame manifestFrame) {
+        if (manifestFrame == null || manifestFrame.operation() != ChunkHotspotFrameOp.CLIENT_CACHE_MANIFEST) {
+            return false;
+        }
+        return sendControlFrame(channel, manifestFrame);
+    }
+
     public static boolean sendReplayFullFrame(
             Channel channel,
             ChunkHotspotFrame sourceFrame,

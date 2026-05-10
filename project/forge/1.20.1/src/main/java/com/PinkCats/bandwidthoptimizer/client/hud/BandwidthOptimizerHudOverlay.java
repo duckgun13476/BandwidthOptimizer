@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.client.hud;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -32,6 +33,12 @@ public final class BandwidthOptimizerHudOverlay {
         enabled = false;
         resetHudCache();
         BandwidthOptimizerHudStats.reset();
+    }
+
+    // logout write
+    @SubscribeEvent
+    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+        ChunkPersistentClientCache.flushNow("forge_client_logging_out");
     }
 
     @SubscribeEvent

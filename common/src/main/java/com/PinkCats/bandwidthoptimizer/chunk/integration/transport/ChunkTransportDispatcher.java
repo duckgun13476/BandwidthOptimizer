@@ -18,6 +18,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkPlanDecisionKind;
 import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkTransportPlanner;
 import com.PinkCats.bandwidthoptimizer.chunk.packet.ClientboundPlayPacketCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.packet.ChunkHeavyProtocolBypassPacketList;
+import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
@@ -69,6 +70,7 @@ public final class ChunkTransportDispatcher {
     private static final AtomicLong INBOUND_ACK_FRAME_COUNT = new AtomicLong();
     private static final AtomicLong INBOUND_NACK_FRAME_COUNT = new AtomicLong();
     private static final AtomicLong INBOUND_INVALIDATE_FRAME_COUNT = new AtomicLong();
+    private static final AtomicLong INBOUND_CLIENT_CACHE_MANIFEST_FRAME_COUNT = new AtomicLong();
 
     private ChunkTransportDispatcher() {
     }
@@ -264,6 +266,7 @@ public final class ChunkTransportDispatcher {
         if (envelope.frame().operation() == ChunkHotspotFrameOp.PUBLISH_FULL) {
             byte[] restoredPacketBytes = envelope.copyOriginalPacketBytes();
             observeInboundSnapshot(context, envelope.frame(), restoredPacketBytes);
+            ChunkPersistentClientCache.storeFullSnapshot(envelope.frame(), restoredPacketBytes);
             ChunkRuntimeReferenceStore.storePacketBytes(
                     readChannelId(context),
                     envelope.frame().payloadHash(),
@@ -296,6 +299,17 @@ public final class ChunkTransportDispatcher {
                         channelId,
                         envelope.frame().baseSnapshotHash()
                 );
+                if (restoredPacketBytes == null) {
+                    restoredPacketBytes = ChunkPersistentClientCache.findPacketBytes(envelope.frame());
+                    if (restoredPacketBytes != null) {
+                        ChunkRuntimeReferenceStore.storePacketBytes(
+                                channelId,
+                                envelope.frame().baseSnapshotHash(),
+                                restoredPacketBytes
+                        );
+                        ChunkRuntimeReferenceStore.storeFullSnapshot(channelId, envelope.frame());
+                    }
+                }
             }
             if (restoredPacketBytes == null
                     || (!restoredFromSnapshot
@@ -315,6 +329,7 @@ public final class ChunkTransportDispatcher {
                 return ChunkInboundDecodeResult.consumeControlFrame();
             }
             observeInboundSnapshot(context, envelope.frame(), restoredPacketBytes);
+            ChunkPersistentClientCache.storeFullSnapshot(envelope.frame(), restoredPacketBytes);
             ChunkRuntimeReferenceStore.storePacketBytes(
                     channelId,
                     envelope.frame().payloadHash(),
@@ -334,6 +349,7 @@ public final class ChunkTransportDispatcher {
                 return ChunkInboundDecodeResult.consumeControlFrame();
             }
             observeInboundSnapshot(context, envelope.frame(), restoredPacketBytes);
+            ChunkPersistentClientCache.storeFullSnapshot(envelope.frame(), restoredPacketBytes);
             acknowledgeWatchBoundaryRefreshPatchIfNeeded(context, envelope.frame(), restoredPacketBytes);
             logInboundFrame(context, packetBytes, envelope, restoredPacketBytes, INBOUND_PATCH_FRAME_COUNT);
             return ChunkInboundDecodeResult.passthrough(restoredPacketBytes);
@@ -407,7 +423,40 @@ public final class ChunkTransportDispatcher {
             return ChunkInboundDecodeResult.consumeControlFrame();
         }
 
+        if (envelope.frame().operation() == ChunkHotspotFrameOp.CLIENT_CACHE_MANIFEST) {
+            handlePersistentClientCacheManifest(context, envelope.frame());
+            logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_CLIENT_CACHE_MANIFEST_FRAME_COUNT);
+            return ChunkInboundDecodeResult.consumeControlFrame();
+        }
+
         throw new IllegalStateException("Unsupported chunk transport operation in runtime MVP: " + envelope.frame().operation().logName());
+    }
+
+    private static void handlePersistentClientCacheManifest(
+            ChannelHandlerContext context,
+            ChunkHotspotFrame frame
+    ) {
+        if (context == null
+                || frame == null
+                || frame.operation() != ChunkHotspotFrameOp.CLIENT_CACHE_MANIFEST
+                || frame.coordinate() == null
+                || !frame.coordinate().present()
+                || frame.payloadHash() == null
+                || frame.payloadHash().isBlank()) {
+            return;
+        }
+
+        ChunkPeerChunkStateSnapshot chunkSnapshot =
+                ChunkPeerStateManager.recordPersistentClientManifest(context, frame);
+        if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ChunkPersistentCache][Manifest][Recv] channel={}, chunk={}, hash={}, state={}",
+                    readChannelId(context),
+                    frame.coordinate().logText(),
+                    shortenHash(frame.payloadHash()),
+                    chunkSnapshot == null ? "<ignored>" : chunkSnapshot.summaryText()
+            );
+        }
     }
 
     private static ChunkPatchBuilder.ChunkPatchBuildResult buildOutboundPatchCandidate(

@@ -135,6 +135,31 @@ final class ChunkPeerState {
         return chunkState == null ? null : chunkState.recordInvalidate();
     }
 
+    synchronized ChunkPeerChunkStateSnapshot recordPersistentClientManifest(
+            long scopeId,
+            ChunkPacketCoordinate coordinate,
+            long fullSnapshotVersion,
+            String payloadHash,
+            int encodedBytes
+    ) {
+        if (coordinate == null || !coordinate.present()) {
+            return null;
+        }
+
+        long resolvedScopeId = Math.max(scopeId, 0L);
+        ChunkPeerChunkKey chunkKey = ChunkPeerChunkKey.fromCoordinate(coordinate);
+        ChunkPeerChunkState chunkState = this.chunkStates.computeIfAbsent(
+                scopedChunkKeyText(resolvedScopeId, coordinate),
+                ignored -> new ChunkPeerChunkState(chunkKey)
+        );
+        return chunkState.recordPersistentClientManifest(
+                resolvedScopeId,
+                fullSnapshotVersion,
+                payloadHash,
+                encodedBytes
+        );
+    }
+
     synchronized ChunkPeerChunkStateSnapshot markChunkAwaitingFullReplay(long scopeId, ChunkPacketCoordinate coordinate) {
         ChunkPeerChunkState chunkState = getChunkStateForControl(scopeId, coordinate);
         return chunkState == null ? null : chunkState.recordWatchBoundaryRetainCache();

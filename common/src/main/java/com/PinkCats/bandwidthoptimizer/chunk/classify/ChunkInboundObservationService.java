@@ -9,6 +9,12 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketClassifi
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportBoundaryController;
 import com.PinkCats.bandwidthoptimizer.chunk.packet.ClientboundPlayPacketCodec;
+import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameCodec;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprintService;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateSnapshot;
@@ -59,6 +65,7 @@ public final class ChunkInboundObservationService {
                     packet,
                     encodedPacketBytes
             );
+            persistInboundFullChunkIfNeeded(protocolName, epoch, descriptor, encodedPacketBytes);
             observedChunkPacket = true;
         }
 
@@ -67,7 +74,7 @@ public final class ChunkInboundObservationService {
         }
     }
 
-    // 在客户端收到新的 JoinGame 时清理只属于当前后端的活跃状态，保留可按 hash 校验的 chunk 缓存内容。
+    // clear and save hash chunk
     private static void resetVelocityServerSwitchStateIfNeeded(
             ChannelHandlerContext context,
             String protocolName,
@@ -81,6 +88,7 @@ public final class ChunkInboundObservationService {
         ChannelTransportBatchManager.clearChannelState(context.channel(), reason);
         ChannelTransportStateManager.clearSession(context.channel(), reason);
         ChunkTransportBoundaryController.resetChannelState(context, reason);
+        ChunkPersistentClientCache.sendManifestOnce(context.channel(), "persistent_client_cache_after_login");
         if (DebugRuntimeConfig.isDiagnoseEnabled()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkTransport][VelocitySwitch][Reset] channel={}, protocol={}, packetClass={}, reason={}",
@@ -90,6 +98,48 @@ public final class ChunkInboundObservationService {
                     reason
             );
         }
+    }
+
+    private static void persistInboundFullChunkIfNeeded(
+            String protocolName,
+            long epoch,
+            ChunkPacketDescriptor descriptor,
+            byte[] encodedPacketBytes
+    ) {
+        if (descriptor == null
+                || descriptor.hotspotKind() != ChunkHotspotKind.FULL_CHUNK
+                || encodedPacketBytes == null
+                || encodedPacketBytes.length == 0) {
+            return;
+        }
+
+        ChunkSnapshotFingerprint fingerprint =
+                ChunkSnapshotFingerprintService.fingerprintOutboundPacket(encodedPacketBytes);
+        if (fingerprint == null || fingerprint.hashHex() == null || fingerprint.hashHex().isBlank()) {
+            return;
+        }
+
+        ChunkPersistentClientCache.storeFullSnapshot(
+                new ChunkHotspotFrame(
+                        ChunkHotspotFrameCodec.PROTOCOL_VERSION,
+                        ChunkHotspotFrameOp.PUBLISH_FULL,
+                        Math.max(epoch, 0L),
+                        0L,
+                        protocolName == null ? "PLAY" : protocolName,
+                        descriptor.packetClassName(),
+                        descriptor.hotspotKind(),
+                        descriptor.laneKind(),
+                        descriptor.coordinate(),
+                        encodedPacketBytes.length,
+                        1L,
+                        0L,
+                        fingerprint.hashHex(),
+                        fingerprint.hashHex(),
+                        0L,
+                        "persistent_cache_from_direct_inbound_full"
+                ),
+                encodedPacketBytes
+        );
     }
 
     private static long readCurrentEpoch(ChannelHandlerContext context) {

@@ -7,12 +7,14 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureRuntimeConf
 import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
 import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
 import com.PinkCats.bandwidthoptimizer.chunk.lifecycle.ChunkLifecycleCoordinator;
+import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.command.BandwidthOptimizerCommand;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.ForgeModLoadingContextCompat;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsNetworkChannel;
 import com.mojang.logging.LogUtils;
 import com.pinkcats.torque.layer.TorqueLayer;
+import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -23,6 +25,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 import org.slf4j.Logger;
 
 @Mod(Bandwidthoptimizer.MODID)
@@ -55,6 +58,9 @@ public class Bandwidthoptimizer {
         ChunkHotspotVerifyHooks.initializeOutputFiles();
         ChannelTransportRuntimeGuard.initialize();
         BandwidthOptimizerLifecycle.register(TorqueLayer.platform());
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            ChunkPersistentClientCache.startAsyncPreload("forge_client_startup");
+        }
 
         FMLJavaModLoadingContext modContext = modLoadingContext.extension();
         IEventBus modEventBus = modContext.getModEventBus();

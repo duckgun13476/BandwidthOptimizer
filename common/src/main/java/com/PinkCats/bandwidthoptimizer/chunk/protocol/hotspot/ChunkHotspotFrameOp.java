@@ -8,6 +8,7 @@ public enum ChunkHotspotFrameOp {
     ACK("ack"),
     NACK("nack"),
     INVALIDATE("invalidate"),
+    CLIENT_CACHE_MANIFEST("client_cache_manifest"),
     BARRIER("barrier"),
     BARRIER_ACK("barrier_ack");
 

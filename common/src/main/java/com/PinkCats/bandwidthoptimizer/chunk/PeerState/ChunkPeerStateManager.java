@@ -229,6 +229,33 @@ public final class ChunkPeerStateManager {
         return chunkSnapshot;
     }
 
+    public static ChunkPeerChunkStateSnapshot recordPersistentClientManifest(ChannelHandlerContext context, ChunkHotspotFrame frame) {
+        if (context == null
+                || frame == null
+                || frame.coordinate() == null
+                || !frame.coordinate().present()
+                || frame.payloadHash() == null
+                || frame.payloadHash().isBlank()) {
+            return null;
+        }
+
+        ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
+        ChunkPeerStateSnapshot channelSnapshot = state == null ? null : state.snapshot();
+        if (channelSnapshot == null || channelSnapshot.epoch() <= 0L) {
+            return null;
+        }
+
+        ChunkPeerChunkStateSnapshot chunkSnapshot = state.recordPersistentClientManifest(
+                channelSnapshot.epoch(),
+                frame.coordinate(),
+                frame.fullSnapshotVersion(),
+                frame.payloadHash(),
+                frame.originalEncodedBytes()
+        );
+        logControlUpdate("PersistentManifest", context, frame, chunkSnapshot);
+        return chunkSnapshot;
+    }
+
 
     public static ChunkPeerChunkStateSnapshot invalidatePlayerChunk(
             ServerPlayer player,

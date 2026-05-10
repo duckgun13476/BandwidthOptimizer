@@ -7,6 +7,7 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureRuntimeConf
 import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
 import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
 import com.PinkCats.bandwidthoptimizer.chunk.lifecycle.ChunkLifecycleCoordinator;
+import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.command.BandwidthOptimizerCommand;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportCompressionCaptureManager;
@@ -14,12 +15,14 @@ import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCaptureM
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsNetworkChannel;
 import com.mojang.logging.LogUtils;
 import com.pinkcats.torque.layer.TorqueLayer;
+import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
@@ -53,6 +56,9 @@ public class Bandwidthoptimizer {
         ChunkHotspotVerifyHooks.initializeOutputFiles();
         ChannelTransportRuntimeGuard.initialize();
         BandwidthOptimizerLifecycle.register(TorqueLayer.platform());
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            ChunkPersistentClientCache.startAsyncPreload("neoforge_client_startup");
+        }
 
         ChannelTransportNetworkChannel.setModEventBus(modEventBus);
         ChannelTransportNetworkChannel.register();

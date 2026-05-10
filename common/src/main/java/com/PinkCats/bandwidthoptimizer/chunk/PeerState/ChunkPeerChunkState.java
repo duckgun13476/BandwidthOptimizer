@@ -143,6 +143,48 @@ final class ChunkPeerChunkState {
         return snapshot();
     }
 
+    ChunkPeerChunkStateSnapshot recordPersistentClientManifest(
+            long epoch,
+            long fullSnapshotVersion,
+            String payloadHash,
+            int encodedBytes
+    ) {
+        this.lastAcknowledgedAtMillis = System.currentTimeMillis();
+        if (payloadHash == null || payloadHash.isBlank()) {
+            return snapshot();
+        }
+        if (this.knownSnapshotPublished
+                && this.knownSnapshotHash != null
+                && !this.knownSnapshotHash.isBlank()
+                && !this.knownSnapshotHash.equals(payloadHash)) {
+            return snapshot();
+        }
+
+        this.epoch = Math.max(epoch, 0L);
+        this.knownSnapshotPublished = true;
+        this.receiverSnapshotAcknowledged = true;
+        this.fullReplayRequiredBeforeDelta = false;
+        this.fullSnapshotVersion = Math.max(Math.max(this.fullSnapshotVersion, fullSnapshotVersion), 1L);
+        this.acknowledgedSnapshotVersion = this.fullSnapshotVersion;
+        this.knownSnapshotHash = payloadHash;
+        this.knownSnapshotShortHash = shortenHash(payloadHash);
+        this.acknowledgedSnapshotHash = payloadHash;
+        this.lastPayloadHash = payloadHash;
+        this.lastPayloadShortHash = this.knownSnapshotShortHash;
+        this.lastHotspotKind = ChunkHotspotKind.FULL_CHUNK.logName();
+        this.lastLaneKind = "full";
+        this.lastEncodedBytes = Math.max(encodedBytes, 0);
+        this.lastFullSnapshotEncodedBytes = Math.max(encodedBytes, 0);
+        this.lastObservedAtMillis = this.lastAcknowledgedAtMillis;
+        this.lightLaneVersion = 0L;
+        this.sectionBlocksLaneVersion = 0L;
+        this.blockLaneVersion = 0L;
+        this.blockEntityLaneVersion = 0L;
+        this.deltaPacketCountSinceFullSnapshot = 0L;
+        this.deltaBytesSinceFullSnapshot = 0L;
+        return snapshot();
+    }
+
     ChunkPeerChunkStateSnapshot recordWatchBoundaryRetainCache() {
         this.lastInvalidatedAtMillis = System.currentTimeMillis();
         if (!this.knownSnapshotPublished) {
@@ -165,6 +207,13 @@ final class ChunkPeerChunkState {
         this.receiverSnapshotAcknowledged = false;
         this.acknowledgedSnapshotVersion = 0L;
         this.acknowledgedSnapshotHash = "";
+    }
+
+    private static String shortenHash(String hashHex) {
+        if (hashHex == null || hashHex.isBlank()) {
+            return "";
+        }
+        return hashHex.length() <= 12 ? hashHex : hashHex.substring(0, 12);
     }
 
 
