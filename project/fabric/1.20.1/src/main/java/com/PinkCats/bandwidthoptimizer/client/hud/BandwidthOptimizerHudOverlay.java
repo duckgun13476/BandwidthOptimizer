@@ -14,6 +14,13 @@ import java.util.Locale;
 public final class BandwidthOptimizerHudOverlay {
 
     private static final long HUD_REFRESH_INTERVAL_MILLIS = 100L;
+    private static final int HUD_DEFAULT_COLOR = 0xF2F2F2;
+    private static final int HUD_MUTED_COLOR = 0xAAB2C0;
+    private static final int HUD_BYPASS_COLOR = 0xFFD166;
+    private static final int HUD_SERVER_TITLE_COLOR = 0x8BD5FF;
+    private static final int HUD_SERVER_TOTAL_COLOR = 0xB8DFFF;
+    private static final int HUD_SERVER_CACHE_COLOR = 0xA6E3A1;
+    private static final int HUD_SERVER_FLOW_COLOR = 0xC6D3E1;
 
     private static boolean enabled;
     private static long nextHudRefreshAtMillis;
@@ -45,7 +52,8 @@ public final class BandwidthOptimizerHudOverlay {
         guiGraphics.fill(x, y, x + hud.boxWidth(), y + hud.boxHeight(), 0xA0101018);
         guiGraphics.fill(x, y, x + hud.boxWidth(), y + 1, 0xFF66D9EF);
         for (int index = 0; index < hud.lines().size(); index++) {
-            guiGraphics.drawString(minecraft.font, hud.lines().get(index), x + 5, y + 4 + index * hud.lineHeight(), 0xF2F2F2, false);
+            String line = hud.lines().get(index);
+            guiGraphics.drawString(minecraft.font, line, x + 5, y + 4 + index * hud.lineHeight(), hudLineColor(line), false);
         }
     }
 
@@ -201,6 +209,36 @@ public final class BandwidthOptimizerHudOverlay {
     }
 
     // Hud
+    private static int hudLineColor(String line) {
+        if (line == null) {
+            return HUD_DEFAULT_COLOR;
+        }
+        String trimmedLine = line.trim();
+        if (trimmedLine.equals(text("hud.bandwidthoptimizer.server"))) {
+            return HUD_SERVER_TITLE_COLOR;
+        }
+        if (lineStartsWithText(trimmedLine, "hud.bandwidthoptimizer.metric.raw_flow")) {
+            return HUD_SERVER_TOTAL_COLOR;
+        }
+        if (lineStartsWithText(trimmedLine, "hud.bandwidthoptimizer.metric.offline_cache")) {
+            return HUD_SERVER_CACHE_COLOR;
+        }
+        if (lineStartsWithText(trimmedLine, "hud.bandwidthoptimizer.metric.optimized_flow")) {
+            return HUD_SERVER_FLOW_COLOR;
+        }
+        if (lineStartsWithText(trimmedLine, "hud.bandwidthoptimizer.bypass")) {
+            return HUD_BYPASS_COLOR;
+        }
+        if (lineStartsWithText(trimmedLine, "hud.bandwidthoptimizer.server.waiting")) {
+            return HUD_MUTED_COLOR;
+        }
+        return HUD_DEFAULT_COLOR;
+    }
+
+    private static boolean lineStartsWithText(String trimmedLine, String key) {
+        return trimmedLine != null && trimmedLine.startsWith(text(key));
+    }
+
     private static String text(String key) {
         return I18n.get(key);
     }
@@ -320,4 +358,3 @@ public final class BandwidthOptimizerHudOverlay {
         }
     }
 }
-
