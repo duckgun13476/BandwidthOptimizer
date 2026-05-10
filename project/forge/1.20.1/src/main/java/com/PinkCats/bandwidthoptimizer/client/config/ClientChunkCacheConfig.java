@@ -16,15 +16,23 @@ public final class ClientChunkCacheConfig {
             Config.RuntimeProperty.Client.CHUNK_CACHE_MAX_MEMORY_MB;
     private static final String RECYCLE_TRIGGER_OVERRIDE_PROPERTY =
             Config.RuntimeProperty.Client.CHUNK_CACHE_RECYCLE_TRIGGER_FREE_MB;
+    private static final String PERSISTENT_CACHE_BACKUP_ENABLED_PROPERTY =
+            "bandwidthoptimizer.clientPersistentChunkCacheBackupEnabled";
+    private static final String PERSISTENT_CACHE_BACKUP_INTERVAL_MILLIS_PROPERTY =
+            "bandwidthoptimizer.clientPersistentChunkCacheBackupMillis";
     private static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
 
     public static final ForgeConfigSpec.IntValue CHUNK_CACHE_MAX_MEMORY_MB;
     public static final ForgeConfigSpec.IntValue CHUNK_CACHE_RECYCLE_TRIGGER_FREE_MB;
+    public static final ForgeConfigSpec.BooleanValue PERSISTENT_CACHE_BACKUP_ENABLED;
+    public static final ForgeConfigSpec.IntValue PERSISTENT_CACHE_BACKUP_INTERVAL_SECONDS;
     public static final ForgeConfigSpec SPEC;
 
     private static volatile int chunkCacheMaxMemoryMb = Config.RuntimeProperty.Client.DEFAULT_CHUNK_CACHE_MAX_MEMORY_MB;
     private static volatile int chunkCacheRecycleTriggerFreeMb =
             Config.RuntimeProperty.Client.DEFAULT_CHUNK_CACHE_RECYCLE_TRIGGER_FREE_MB;
+    private static volatile boolean persistentCacheBackupEnabled = true;
+    private static volatile int persistentCacheBackupIntervalSeconds = 600;
 
     static {
         BUILDER.comment("Client Chunk Cache Settings").push("client-chunk-cache");
@@ -40,6 +48,18 @@ public final class ClientChunkCacheConfig {
                 .comment("--------------------------------------------------------------------------")
                 .comment("Start recycling old chunk cache entries when the remaining cache budget drops below this MiB threshold.")
                 .defineInRange("chunk_cache_recycle_trigger_free_mb", 10, 1, 128);
+
+        PERSISTENT_CACHE_BACKUP_ENABLED = BUILDER
+                .comment("")
+                .comment("--------------------------------------------------------------------------")
+                .comment("Enable client-only periodic backup for the persistent chunk cache zip.")
+                .define("persistent_cache_backup_enabled", true);
+
+        PERSISTENT_CACHE_BACKUP_INTERVAL_SECONDS = BUILDER
+                .comment("")
+                .comment("--------------------------------------------------------------------------")
+                .comment("Interval in seconds for copying the persistent chunk cache zip to a backup zip.")
+                .defineInRange("persistent_cache_backup_interval_seconds", 600, 1, 3600);
 
         BUILDER.pop();
         SPEC = BUILDER.build();
@@ -60,7 +80,9 @@ public final class ClientChunkCacheConfig {
     public static RuntimeConfig currentRuntimeConfig() {
         return new RuntimeConfig(
                 readIntOverride(MAX_MEMORY_OVERRIDE_PROPERTY, CHUNK_CACHE_MAX_MEMORY_MB.get()),
-                readIntOverride(RECYCLE_TRIGGER_OVERRIDE_PROPERTY, CHUNK_CACHE_RECYCLE_TRIGGER_FREE_MB.get())
+                readIntOverride(RECYCLE_TRIGGER_OVERRIDE_PROPERTY, CHUNK_CACHE_RECYCLE_TRIGGER_FREE_MB.get()),
+                PERSISTENT_CACHE_BACKUP_ENABLED.get(),
+                PERSISTENT_CACHE_BACKUP_INTERVAL_SECONDS.get()
         );
     }
 
@@ -76,13 +98,26 @@ public final class ClientChunkCacheConfig {
         int safeRecycleTriggerFreeMb = runtimeConfig == null ? 10 : runtimeConfig.chunkCacheRecycleTriggerFreeMb();
         safeRecycleTriggerFreeMb = Math.max(1, Math.min(safeMaxMemoryMb - 1, safeRecycleTriggerFreeMb));
 
+        boolean safePersistentBackupEnabled = runtimeConfig == null || runtimeConfig.persistentCacheBackupEnabled();
+        int safePersistentBackupIntervalSeconds = runtimeConfig == null ? 600 : runtimeConfig.persistentCacheBackupIntervalSeconds();
+        safePersistentBackupIntervalSeconds = Math.max(1, Math.min(3600, safePersistentBackupIntervalSeconds));
+
         chunkCacheMaxMemoryMb = safeMaxMemoryMb;
         chunkCacheRecycleTriggerFreeMb = safeRecycleTriggerFreeMb;
+        persistentCacheBackupEnabled = safePersistentBackupEnabled;
+        persistentCacheBackupIntervalSeconds = safePersistentBackupIntervalSeconds;
+        System.setProperty(PERSISTENT_CACHE_BACKUP_ENABLED_PROPERTY, Boolean.toString(persistentCacheBackupEnabled));
+        System.setProperty(
+                PERSISTENT_CACHE_BACKUP_INTERVAL_MILLIS_PROPERTY,
+                Long.toString((long) persistentCacheBackupIntervalSeconds * 1000L)
+        );
 
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkCache][Config] maxMemoryMb={}, recycleTriggerFreeMb={}, maxOverride={}, recycleOverride={}",
+                "[ChunkCache][Config] maxMemoryMb={}, recycleTriggerFreeMb={}, persistentBackupEnabled={}, persistentBackupIntervalSeconds={}, maxOverride={}, recycleOverride={}",
                 chunkCacheMaxMemoryMb,
                 chunkCacheRecycleTriggerFreeMb,
+                persistentCacheBackupEnabled,
+                persistentCacheBackupIntervalSeconds,
                 hasMaxMemoryOverride,
                 hasRecycleTriggerOverride
         );
@@ -108,7 +143,9 @@ public final class ClientChunkCacheConfig {
 
     public record RuntimeConfig(
             int chunkCacheMaxMemoryMb,
-            int chunkCacheRecycleTriggerFreeMb
+            int chunkCacheRecycleTriggerFreeMb,
+            boolean persistentCacheBackupEnabled,
+            int persistentCacheBackupIntervalSeconds
     ) {
     }
 
