@@ -45,6 +45,7 @@ import net.minecraft.network.protocol.game.ClientboundLoginPacket;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 public final class ChannelTransportHooks {
@@ -54,6 +55,8 @@ public final class ChannelTransportHooks {
     private static final int CLIENTBOUND_CUSTOM_PAYLOAD_MAX_BYTES = 1_048_576;
     private static final int SERVERBOUND_CUSTOM_PAYLOAD_MAX_BYTES = 32767;
     private static final int SERVERBOUND_CUSTOM_PAYLOAD_SAFE_INPUT_BYTES = 24000;
+    private static final int SERVER_CACHE_SCOPE_MAX_RETRY_ATTEMPTS = 3;
+    private static final long SERVER_CACHE_SCOPE_RETRY_DELAY_MILLIS = 50L;
     private static final AtomicLong OUTBOUND_TRANSPORT_TRACE_COUNTER = new AtomicLong();
     private static final AtomicLong OUTBOUND_CARRIER_TRACE_COUNTER = new AtomicLong();
     private static final AtomicLong INBOUND_CARRIER_TRACE_COUNTER = new AtomicLong();
@@ -477,7 +480,25 @@ public final class ChannelTransportHooks {
         if (context == null || !(packet instanceof ClientboundLoginPacket)) {
             return;
         }
-        ChunkTransportControlFrameSender.sendServerCacheScope(context.channel(), "server_cache_scope_after_login_boundary");
+        sendServerCacheScopeWithRetry(context, "server_cache_scope_after_login_boundary", 0);
+    }
+
+    private static void sendServerCacheScopeWithRetry(ChannelHandlerContext context, String reason, int attempt) {
+        if (context == null || context.channel() == null || !context.channel().isOpen() || !context.channel().isActive()) {
+            return;
+        }
+        String resolvedReason = attempt <= 0 ? reason : reason + "_retry_" + attempt;
+        if (ChunkTransportControlFrameSender.sendServerCacheScope(context.channel(), resolvedReason)) {
+            return;
+        }
+        if (attempt >= SERVER_CACHE_SCOPE_MAX_RETRY_ATTEMPTS) {
+            return;
+        }
+        context.channel().eventLoop().schedule(
+                () -> sendServerCacheScopeWithRetry(context, reason, attempt + 1),
+                SERVER_CACHE_SCOPE_RETRY_DELAY_MILLIS,
+                TimeUnit.MILLISECONDS
+        );
     }
 
 

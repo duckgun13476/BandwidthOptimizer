@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.batch.ChannelTransportBatchRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkLocalCacheReuseStats;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotReport;
@@ -29,6 +30,8 @@ public final class BandwidthOptimizerHudStats {
             lastSampleAtMillis = 0L;
         }
         ChannelTransportTelemetry.reset();
+        ChunkHotspotStats.reset();
+        ChunkLocalCacheReuseStats.reset();
         ClientServerBandwidthHudStats.reset();
     }
 
@@ -37,9 +40,10 @@ public final class BandwidthOptimizerHudStats {
         ChannelTransportTelemetry.Snapshot transportSnapshot = ChannelTransportTelemetry.snapshot();
         ChunkHotspotReport hotspotReport = ChunkHotspotStats.snapshotReport();
         ChunkShadowSnapshotManager.Snapshot shadowCacheSnapshot = ChunkShadowSnapshotManager.snapshot();
+        ChunkLocalCacheReuseStats.Snapshot localReuseSnapshot = ChunkLocalCacheReuseStats.snapshot();
         long now = System.currentTimeMillis();
 
-        Totals totals = buildTotals(transportSnapshot, hotspotReport, shadowCacheSnapshot);
+        Totals totals = buildTotals(transportSnapshot, hotspotReport, shadowCacheSnapshot, localReuseSnapshot);
         Totals recentTotals = computeRecentTotals(now, totals);
         String algorithmDisplayName = resolveAlgorithmDisplayName(
                 transportSnapshot.mappingEnabled(),
@@ -58,6 +62,14 @@ public final class BandwidthOptimizerHudStats {
                 recentTotals.optimizeSentBytes(),
                 totals.chunkCacheSavedBytes(),
                 recentTotals.chunkCacheSavedBytes(),
+                totals.temporaryCacheSavedBytes(),
+                totals.offlineCacheSavedBytes(),
+                totals.temporaryCacheReusePackets(),
+                totals.offlineCacheReusePackets(),
+                totals.serverTemporaryCacheReusePackets(),
+                totals.serverTemporaryCacheSavedBytes(),
+                totals.serverOfflineCacheReusePackets(),
+                totals.serverOfflineCacheSavedBytes(),
                 totals.chunkCacheReusePackets(),
                 totals.chunkCacheFullPackets(),
                 totals.chunkCacheReuseWireBytes(),
@@ -96,6 +108,10 @@ public final class BandwidthOptimizerHudStats {
                 serverSnapshot.outboundWireBytes(),
                 serverSnapshot.inboundWireBytes(),
                 serverSnapshot.outboundSavedBytes(),
+                serverSnapshot.serverOfflineReuseConfirmedFrames(),
+                serverSnapshot.serverOfflineReuseConfirmedSavedBytes(),
+                serverSnapshot.serverOfflineReuseConfirmedWireBytes(),
+                serverSnapshot.serverTemporaryReuseSavedBytes(),
                 serverSnapshot.outboundWireRatioPercent()
         );
     }
@@ -104,7 +120,8 @@ public final class BandwidthOptimizerHudStats {
     private static Totals buildTotals(
             ChannelTransportTelemetry.Snapshot transportSnapshot,
             ChunkHotspotReport hotspotReport,
-            ChunkShadowSnapshotManager.Snapshot shadowCacheSnapshot
+            ChunkShadowSnapshotManager.Snapshot shadowCacheSnapshot,
+            ChunkLocalCacheReuseStats.Snapshot localReuseSnapshot
     ) {
         ChannelTransportTelemetry.DirectionSnapshot outboundTransport =
                 transportSnapshot == null ? null : transportSnapshot.outbound();
@@ -125,6 +142,8 @@ public final class BandwidthOptimizerHudStats {
                 inboundChunk.totalLogicalPacketBytes(),
                 inboundChunk.totalWireFrameBytes()
         );
+        ChunkLocalCacheReuseStats.Snapshot safeLocalReuseSnapshot =
+                localReuseSnapshot == null ? ChunkLocalCacheReuseStats.Snapshot.empty() : localReuseSnapshot;
         long totalBatchCount = inboundTransport == null ? 0L : inboundTransport.frameCount();
         long totalPacketCount = inboundTransport == null ? 0L : inboundTransport.packetCount();
         long outboundBypassPacketCount = outboundTransport == null ? 0L : outboundTransport.bypassPacketCount();
@@ -163,6 +182,14 @@ public final class BandwidthOptimizerHudStats {
                 optimizeRawBytes,
                 optimizeSentBytes,
                 chunkCacheSavedBytes,
+                safeLocalReuseSnapshot.temporaryReuseSavedBytes(),
+                safeLocalReuseSnapshot.offlineReuseSavedBytes(),
+                safeLocalReuseSnapshot.temporaryReusePackets(),
+                safeLocalReuseSnapshot.offlineReusePackets(),
+                safeLocalReuseSnapshot.serverTemporaryReusePackets(),
+                safeLocalReuseSnapshot.serverTemporaryReuseSavedBytes(),
+                safeLocalReuseSnapshot.serverOfflineReusePackets(),
+                safeLocalReuseSnapshot.serverOfflineReuseSavedBytes(),
                 Math.max(refTotals.frameCount() + patchTotals.frameCount(), 0L),
                 Math.max(fullTotals.frameCount(), 0L),
                 Math.max(refTotals.wireFrameBytes() + patchTotals.wireFrameBytes(), 0L),
@@ -217,6 +244,14 @@ public final class BandwidthOptimizerHudStats {
                     positiveDelta(totals.optimizeRawBytes(), firstSample.optimizeRawBytes()),
                     positiveDelta(totals.optimizeSentBytes(), firstSample.optimizeSentBytes()),
                     positiveDelta(totals.chunkCacheSavedBytes(), firstSample.chunkCacheSavedBytes()),
+                    totals.temporaryCacheSavedBytes(),
+                    totals.offlineCacheSavedBytes(),
+                    totals.temporaryCacheReusePackets(),
+                    totals.offlineCacheReusePackets(),
+                    totals.serverTemporaryCacheReusePackets(),
+                    totals.serverTemporaryCacheSavedBytes(),
+                    totals.serverOfflineCacheReusePackets(),
+                    totals.serverOfflineCacheSavedBytes(),
                     0L,
                     0L,
                     0L,
@@ -312,6 +347,14 @@ public final class BandwidthOptimizerHudStats {
             long optimizeRawBytes,
             long optimizeSentBytes,
             long chunkCacheSavedBytes,
+            long temporaryCacheSavedBytes,
+            long offlineCacheSavedBytes,
+            long temporaryCacheReusePackets,
+            long offlineCacheReusePackets,
+            long serverTemporaryCacheReusePackets,
+            long serverTemporaryCacheSavedBytes,
+            long serverOfflineCacheReusePackets,
+            long serverOfflineCacheSavedBytes,
             long chunkCacheReusePackets,
             long chunkCacheFullPackets,
             long chunkCacheReuseWireBytes,
@@ -334,7 +377,7 @@ public final class BandwidthOptimizerHudStats {
             long totalMapTemplateAdditions
     ) {
         private static Totals empty() {
-            return new Totals(0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+            return new Totals(0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
         }
     }
 
@@ -349,6 +392,14 @@ public final class BandwidthOptimizerHudStats {
             long optimizeRecentSentBytes,
             long chunkCacheSavedTotalBytes,
             long chunkCacheSavedRecentBytes,
+            long temporaryCacheSavedTotalBytes,
+            long offlineCacheSavedTotalBytes,
+            long temporaryCacheReuseTotalPackets,
+            long offlineCacheReuseTotalPackets,
+            long serverTemporaryCacheReuseTotalPackets,
+            long serverTemporaryCacheSavedTotalBytes,
+            long serverOfflineCacheReuseTotalPackets,
+            long serverOfflineCacheSavedTotalBytes,
             long chunkCacheReuseTotalPackets,
             long chunkCacheFullTotalPackets,
             long chunkCacheReuseWireTotalBytes,
@@ -387,6 +438,10 @@ public final class BandwidthOptimizerHudStats {
             long serverOutboundWireBytes,
             long serverInboundWireBytes,
             long serverOutboundSavedBytes,
+            long serverOfflineReuseConfirmedFrames,
+            long serverOfflineReuseConfirmedSavedBytes,
+            long serverOfflineReuseConfirmedWireBytes,
+            long serverTemporaryReuseSavedBytes,
             double serverOutboundWireRatioPercent
     ) {
 

@@ -8,6 +8,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalStoreObservation;
+import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkServerOfflineReuseStats;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ConnectionAccessor;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ServerGamePacketListenerImplAccessor;
@@ -126,6 +127,7 @@ public final class ChunkPeerStateManager {
             CHANNEL_STATES.remove(channelId);
             ChunkRuntimeReferenceStore.clearChannel(channelId);
             ChunkShadowSnapshotManager.clearChannel(channelId);
+            ChunkServerOfflineReuseStats.clearChannel(channelId);
         }
         if (shouldLogDiagnose()) {
             Bandwidthoptimizer.LOGGER.info(

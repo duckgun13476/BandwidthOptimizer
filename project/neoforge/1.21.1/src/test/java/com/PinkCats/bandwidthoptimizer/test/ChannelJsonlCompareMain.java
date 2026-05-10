@@ -24,7 +24,10 @@ public final class ChannelJsonlCompareMain {
             Path.of("run", "client", "bandwidthoptimizer-native", "chunk-hotspot-stats.properties");
     private static final Path DEFAULT_RUNALL_PATH_COMPLETED_MARKER =
             Path.of("run", "server", "bandwidthoptimizer-native", "bo-runall-chunk-hotspot-path-completed.marker");
-    private static final List<String> CHUNK_FRAME_OPS = List.of("publish_full", "publish_ref", "publish_patch", "ack", "nack");
+    private static final List<String> SERVER_TO_CLIENT_MIRRORED_CHUNK_FRAME_OPS =
+            List.of("publish_full", "publish_ref", "publish_patch");
+    private static final List<String> CLIENT_TO_SERVER_MIRRORED_CHUNK_FRAME_OPS =
+            List.of("ack", "nack");
 
     private ChannelJsonlCompareMain() {
     }
@@ -237,8 +240,24 @@ public final class ChannelJsonlCompareMain {
             return ChunkHotspotVerificationReport.skipped(serverStats, clientStats);
         }
         List<String> mismatches = new ArrayList<>();
-        compareChunkDirection("server[outbound] -> client[inbound]", serverStats, "outbound", clientStats, "inbound", mismatches);
-        compareChunkDirection("client[outbound] -> server[inbound]", clientStats, "outbound", serverStats, "inbound", mismatches);
+        compareChunkDirection(
+                "server[outbound] -> client[inbound]",
+                serverStats,
+                "outbound",
+                clientStats,
+                "inbound",
+                SERVER_TO_CLIENT_MIRRORED_CHUNK_FRAME_OPS,
+                mismatches
+        );
+        compareChunkDirection(
+                "client[outbound] -> server[inbound]",
+                clientStats,
+                "outbound",
+                serverStats,
+                "inbound",
+                CLIENT_TO_SERVER_MIRRORED_CHUNK_FRAME_OPS,
+                mismatches
+        );
         return new ChunkHotspotVerificationReport(serverStats, clientStats, mismatches);
     }
 
@@ -267,16 +286,47 @@ public final class ChannelJsonlCompareMain {
             String leftPrefix,
             ChunkHotspotStatsFile rightReport,
             String rightPrefix,
+            List<String> mirroredOperationNames,
             List<String> mismatches
     ) {
-        compareChunkStatField(label, leftReport, leftPrefix + "_total_frames", rightReport, rightPrefix + "_total_frames", mismatches);
-        compareChunkStatField(label, leftReport, leftPrefix + "_total_logical_packet_bytes", rightReport, rightPrefix + "_total_logical_packet_bytes", mismatches);
-        compareChunkStatField(label, leftReport, leftPrefix + "_total_wire_frame_bytes", rightReport, rightPrefix + "_total_wire_frame_bytes", mismatches);
-        for (String operationName : CHUNK_FRAME_OPS) {
+        compareChunkOperationSum(label, "frames", leftReport, leftPrefix, rightReport, rightPrefix, mirroredOperationNames, mismatches);
+        compareChunkOperationSum(label, "logical_packet_bytes", leftReport, leftPrefix, rightReport, rightPrefix, mirroredOperationNames, mismatches);
+        compareChunkOperationSum(label, "wire_frame_bytes", leftReport, leftPrefix, rightReport, rightPrefix, mirroredOperationNames, mismatches);
+        for (String operationName : mirroredOperationNames) {
             compareChunkStatField(label, leftReport, leftPrefix + "_" + operationName + "_frames", rightReport, rightPrefix + "_" + operationName + "_frames", mismatches);
             compareChunkStatField(label, leftReport, leftPrefix + "_" + operationName + "_logical_packet_bytes", rightReport, rightPrefix + "_" + operationName + "_logical_packet_bytes", mismatches);
             compareChunkStatField(label, leftReport, leftPrefix + "_" + operationName + "_wire_frame_bytes", rightReport, rightPrefix + "_" + operationName + "_wire_frame_bytes", mismatches);
         }
+    }
+
+    private static void compareChunkOperationSum(
+            String label,
+            String suffix,
+            ChunkHotspotStatsFile leftReport,
+            String leftPrefix,
+            ChunkHotspotStatsFile rightReport,
+            String rightPrefix,
+            List<String> mirroredOperationNames,
+            List<String> mismatches
+    ) {
+        long leftValue = readChunkOperationSum(leftReport, leftPrefix, mirroredOperationNames, suffix);
+        long rightValue = readChunkOperationSum(rightReport, rightPrefix, mirroredOperationNames, suffix);
+        if (leftValue != rightValue) {
+            mismatches.add(label + ": mirrored_" + suffix + "=" + leftValue + " != " + rightValue);
+        }
+    }
+
+    private static long readChunkOperationSum(
+            ChunkHotspotStatsFile report,
+            String prefix,
+            List<String> operationNames,
+            String suffix
+    ) {
+        long total = 0L;
+        for (String operationName : operationNames) {
+            total += readChunkStatLong(report, prefix + "_" + operationName + "_" + suffix);
+        }
+        return total;
     }
 
     private static void compareChunkStatField(

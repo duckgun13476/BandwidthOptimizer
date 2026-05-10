@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -186,6 +187,8 @@ public final class ChunkPersistentClientCache {
                 String blobEntryName = blobEntryName(fingerprint.hashHex());
                 if (fingerprint.hashHex().equals(cacheSnapshot.index().getProperty(keyPrefix + "hash", ""))
                         && cacheSnapshot.blobs().containsKey(blobEntryName)) {
+                    cacheSnapshot.index().setProperty(keyPrefix + "lastUsedAtMillis", Long.toString(System.currentTimeMillis()));
+                    markDirty(0);
                     logStore(frame, restoredPacketBytes.length, cacheFile());
                     return;
                 }
@@ -197,6 +200,7 @@ public final class ChunkPersistentClientCache {
                 cacheSnapshot.index().setProperty(keyPrefix + "lastUsedAtMillis", Long.toString(System.currentTimeMillis()));
                 cacheSnapshot.index().setProperty(keyPrefix + "serverScopeHash", serverScopeHash);
                 cacheSnapshot.blobs().putIfAbsent(blobEntryName, restoredPacketBytes.clone());
+                pruneUnreferencedBlobs(cacheSnapshot);
                 markDirty(restoredPacketBytes.length);
                 logStore(frame, restoredPacketBytes.length, cacheFile());
             } catch (IOException exception) {
@@ -233,6 +237,8 @@ public final class ChunkPersistentClientCache {
                     return null;
                 }
 
+                cacheSnapshot.index().setProperty(keyPrefix + "lastUsedAtMillis", Long.toString(System.currentTimeMillis()));
+                markDirty(0);
                 logLoad(frame, packetBytes.length);
                 return packetBytes.clone();
             } catch (IOException exception) {
@@ -241,6 +247,48 @@ public final class ChunkPersistentClientCache {
                             "[ChunkPersistentCache][Load][Fail] chunk={}, hash={}, reason={}",
                             frame.coordinate().logText(),
                             shortenHash(frame.payloadHash()),
+                            exception.toString()
+                    );
+                }
+                return null;
+            }
+        }
+    }
+
+    public static byte[] findBasePacketBytes(ChunkHotspotFrame frame) {
+        String serverScopeHash = currentServerScopeHash();
+        if (!isEnabled()
+                || !isSafeScopeHash(serverScopeHash)
+                || !isStorableFullSnapshot(frame)
+                || frame.baseSnapshotHash() == null
+                || !isSafeHash(frame.baseSnapshotHash())) {
+            return null;
+        }
+
+        synchronized (LOCK) {
+            try {
+                ZipCacheSnapshot cacheSnapshot = cachedZipCacheSnapshot();
+                String keyPrefix = entryPrefix(serverScopeHash, frame.coordinate());
+                String cachedHash = cacheSnapshot.index().getProperty(keyPrefix + "hash", "");
+                if (!frame.baseSnapshotHash().equals(cachedHash)) {
+                    return null;
+                }
+
+                byte[] packetBytes = cacheSnapshot.blobs().get(blobEntryName(cachedHash));
+                if (packetBytes == null || packetBytes.length == 0 || !matchesHash(packetBytes, cachedHash)) {
+                    return null;
+                }
+
+                cacheSnapshot.index().setProperty(keyPrefix + "lastUsedAtMillis", Long.toString(System.currentTimeMillis()));
+                markDirty(0);
+                logLoad(frame, packetBytes.length);
+                return packetBytes.clone();
+            } catch (IOException exception) {
+                if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                    Bandwidthoptimizer.LOGGER.warn(
+                            "[ChunkPersistentCache][LoadBase][Fail] chunk={}, hash={}, reason={}",
+                            frame.coordinate().logText(),
+                            shortenHash(frame.baseSnapshotHash()),
                             exception.toString()
                     );
                 }
@@ -262,11 +310,17 @@ public final class ChunkPersistentClientCache {
         if (channel == null) {
             return;
         }
+        boolean cleared = false;
+        if (!hasManifestForChannel(channel)) {
+            clearActiveServerScope(channel);
+            cleared = true;
+        }
         if (DebugRuntimeConfig.isDiagnoseEnabled()) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkPersistentCache][Scope][Reset] channel={}, reason={}",
+                    "[ChunkPersistentCache][Scope][Reset] channel={}, reason={}, cleared={}",
                     channel.id().asLongText(),
-                    safeText(reason, "server_switch")
+                    safeText(reason, "server_switch"),
+                    cleared
             );
         }
     }
@@ -595,6 +649,7 @@ public final class ChunkPersistentClientCache {
     }
 
     private static void writeZipCacheSnapshot(ZipCacheSnapshot cacheSnapshot) throws IOException {
+        pruneUnreferencedBlobs(cacheSnapshot);
         Files.createDirectories(cacheFile().getParent());
         Path tempPath = cacheFile().resolveSibling(ZIP_FILE_NAME + ".tmp");
         try (ZipOutputStream zipOutputStream = new ZipOutputStream(Files.newOutputStream(tempPath))) {
@@ -645,6 +700,28 @@ public final class ChunkPersistentClientCache {
         synchronized (LOCK) {
             return activeServerScopeHash == null ? "" : activeServerScopeHash;
         }
+    }
+
+    private static void clearActiveServerScope(Channel channel) {
+        synchronized (LOCK) {
+            activeServerScopeHash = "";
+        }
+        if (channel != null) {
+            MANIFEST_SENT_CHANNELS.removeIf(key -> key.startsWith(channel.id().asLongText() + "|"));
+        }
+    }
+
+    private static boolean hasManifestForChannel(Channel channel) {
+        if (channel == null) {
+            return false;
+        }
+        String channelPrefix = channel.id().asLongText() + "|";
+        for (String manifestKey : MANIFEST_SENT_CHANNELS) {
+            if (manifestKey != null && manifestKey.startsWith(channelPrefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void setActiveServerScopeHash(Channel channel, String serverScopeHash, String reason) {
@@ -725,6 +802,57 @@ public final class ChunkPersistentClientCache {
 
     private static String blobEntryName(String hash) {
         return BLOBS_ENTRY_DIRECTORY + hash.toLowerCase(Locale.ROOT) + ".bin";
+    }
+
+    private static int pruneUnreferencedBlobs(ZipCacheSnapshot cacheSnapshot) {
+        if (cacheSnapshot == null || cacheSnapshot.index() == null || cacheSnapshot.blobs() == null) {
+            return 0;
+        }
+        pruneLegacyUnscopedIndexEntries(cacheSnapshot.index());
+        Set<String> referencedBlobEntries = referencedBlobEntries(cacheSnapshot.index());
+        int before = cacheSnapshot.blobs().size();
+        cacheSnapshot.blobs().keySet().removeIf(blobEntryName -> !referencedBlobEntries.contains(blobEntryName));
+        return Math.max(before - cacheSnapshot.blobs().size(), 0);
+    }
+
+    private static Set<String> referencedBlobEntries(Properties index) {
+        Set<String> referencedBlobEntries = new HashSet<>();
+        if (index == null) {
+            return referencedBlobEntries;
+        }
+        for (String key : index.stringPropertyNames()) {
+            if (!key.endsWith(".hash")) {
+                continue;
+            }
+            String coordinateKey = key.substring(0, key.length() - ".hash".length());
+            ScopedCoordinateKey scopedCoordinateKey = parseScopedCoordinateKey(coordinateKey);
+            if (scopedCoordinateKey == null
+                    || scopedCoordinateKey.coordinate() == null
+                    || !scopedCoordinateKey.coordinate().present()) {
+                continue;
+            }
+            String hash = index.getProperty(key, "");
+            if (isSafeHash(hash)) {
+                referencedBlobEntries.add(blobEntryName(hash));
+            }
+        }
+        return referencedBlobEntries;
+    }
+
+    private static int pruneLegacyUnscopedIndexEntries(Properties index) {
+        if (index == null) {
+            return 0;
+        }
+        ArrayList<String> staleKeys = new ArrayList<>();
+        for (String key : index.stringPropertyNames()) {
+            if (key != null && key.startsWith("chunk.")) {
+                staleKeys.add(key);
+            }
+        }
+        for (String staleKey : staleKeys) {
+            index.remove(staleKey);
+        }
+        return staleKeys.size();
     }
 
     private static String entryPrefix(String serverScopeHash, ChunkPacketCoordinate coordinate) {

@@ -27,12 +27,12 @@ public final class ChunkTransportBoundaryController {
     private static final AttributeKey<ChannelBoundaryState> CHANNEL_BOUNDARY_STATE_KEY =
             AttributeKey.valueOf("bandwidthoptimizer:chunk_transport_boundary_state");
 
-    private static final int LOGIN_WARMUP_CHUNK_PACKETS = 24;
-    private static final int RESPAWN_WARMUP_CHUNK_PACKETS = 24;
-    private static final int PLAYER_POSITION_WARMUP_CHUNK_PACKETS = 24;
-    private static final long LOGIN_WARMUP_MIN_BYPASS_NANOS = TimeUnit.SECONDS.toNanos(1L);
-    private static final long RESPAWN_WARMUP_MIN_BYPASS_NANOS = TimeUnit.SECONDS.toNanos(1L);
-    private static final long PLAYER_POSITION_WARMUP_MIN_BYPASS_NANOS = TimeUnit.SECONDS.toNanos(1L);
+    private static final int LOGIN_WARMUP_CHUNK_PACKETS = 0;
+    private static final int RESPAWN_WARMUP_CHUNK_PACKETS = 0;
+    private static final int PLAYER_POSITION_WARMUP_CHUNK_PACKETS = 0;
+    private static final long LOGIN_WARMUP_MIN_BYPASS_NANOS = 0L;
+    private static final long RESPAWN_WARMUP_MIN_BYPASS_NANOS = 0L;
+    private static final long PLAYER_POSITION_WARMUP_MIN_BYPASS_NANOS = 0L;
     private static final int CHUNK_CACHE_CONTROL_WARMUP_CHUNK_PACKETS = 0;
     private static final long CHUNK_CACHE_CONTROL_MIN_BYPASS_NANOS = 0L;
     private static final int FORGET_CHUNK_WARMUP_CHUNK_PACKETS = 0;
@@ -304,6 +304,7 @@ public final class ChunkTransportBoundaryController {
         if (!ChunkTransportControlFrameSender.sendBoundaryBarrier(channel, pendingBarrier.barrierId(), pendingBarrier.reason())
                 && channel.isOpen()
                 && channel.isActive()) {
+            getOrCreateBoundaryState(channel).cancelOutboundBarrier(pendingBarrier.barrierId(), "barrier_send_skipped");
             if (DebugRuntimeConfig.isDiagnoseEnabled()) {
                 Bandwidthoptimizer.LOGGER.info(
                         "[ChunkTransport][Barrier][SendSkipped] channel={}, barrierId={}, reason={}",
@@ -465,6 +466,22 @@ public final class ChunkTransportBoundaryController {
             if (DebugRuntimeConfig.isDiagnoseEnabled()) {
                 Bandwidthoptimizer.LOGGER.info(
                         "[ChunkTransport][Barrier][Ack] barrierId={}, reason={}",
+                        barrierId,
+                        reason == null ? "" : reason
+                );
+            }
+        }
+
+        private synchronized void cancelOutboundBarrier(long barrierId, String reason) {
+            if (barrierId <= 0L || this.pendingOutboundBarrierId != barrierId) {
+                return;
+            }
+            this.pendingOutboundBarrierId = 0L;
+            this.pendingOutboundBarrierDeadlineNanos = 0L;
+            this.pendingOutboundBarrierReason = "";
+            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[ChunkTransport][Barrier][Cancel] barrierId={}, reason={}",
                         barrierId,
                         reason == null ? "" : reason
                 );

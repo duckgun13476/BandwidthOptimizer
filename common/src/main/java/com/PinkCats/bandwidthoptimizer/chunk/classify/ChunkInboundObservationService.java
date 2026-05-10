@@ -7,6 +7,7 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.budget.ChunkClientCacheBudgetManager;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketClassifier;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
+import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceStore;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportBoundaryController;
 import com.PinkCats.bandwidthoptimizer.chunk.packet.ClientboundPlayPacketCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
@@ -24,8 +25,12 @@ import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundLoginPacket;
 
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class ChunkInboundObservationService {
+
+    private static final Set<String> CHANNEL_CLOSE_CLEANUP_REGISTERED = ConcurrentHashMap.newKeySet();
 
     private ChunkInboundObservationService() {}
 
@@ -40,6 +45,7 @@ public final class ChunkInboundObservationService {
             return;
         }
 
+        registerChannelCloseCleanup(context);
         String protocolName = pendingFrame.protocolName();
         String channelId = context.channel().id().asLongText();
         boolean observedChunkPacket = false;
@@ -72,6 +78,27 @@ public final class ChunkInboundObservationService {
         if (observedChunkPacket) {
             ChunkClientCacheBudgetManager.enforceInboundBudget(context, "client_chunk_cache_budget");
         }
+    }
+
+    private static void registerChannelCloseCleanup(ChannelHandlerContext context) {
+        if (context == null || context.channel() == null) {
+            return;
+        }
+        String channelId = context.channel().id().asLongText();
+        if (channelId == null || channelId.isBlank() || !CHANNEL_CLOSE_CLEANUP_REGISTERED.add(channelId)) {
+            return;
+        }
+        context.channel().closeFuture().addListener(future -> {
+            CHANNEL_CLOSE_CLEANUP_REGISTERED.remove(channelId);
+            ChunkRuntimeReferenceStore.clearChannel(channelId);
+            ChunkShadowSnapshotManager.clearChannel(channelId);
+            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[ChunkInbound][ChannelClose] channel={}, reason=runtime_cache_cleanup",
+                        channelId
+                );
+            }
+        });
     }
 
     // clear and save hash chunk

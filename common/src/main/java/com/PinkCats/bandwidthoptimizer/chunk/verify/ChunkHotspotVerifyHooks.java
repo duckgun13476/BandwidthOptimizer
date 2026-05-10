@@ -25,6 +25,7 @@ public final class ChunkHotspotVerifyHooks {
     public static void initializeOutputFiles() {
         synchronized (LOCK) {
             ChunkHotspotStats.reset();
+            ChunkServerOfflineReuseStats.reset();
             if (ChunkDiagnosticRuntimeConfig.isEnabled()) {
                 writeCurrentReportUnsafe();
             }
@@ -34,6 +35,7 @@ public final class ChunkHotspotVerifyHooks {
     public static void resetOutputFiles() {
         synchronized (LOCK) {
             ChunkHotspotStats.reset();
+            ChunkServerOfflineReuseStats.reset();
             if (ChunkDiagnosticRuntimeConfig.isEnabled()) {
                 writeCurrentReportUnsafe();
             }
@@ -62,7 +64,8 @@ public final class ChunkHotspotVerifyHooks {
             Path temporaryOutputPath = resolveTemporaryOutputPath();
             Files.writeString(
                     temporaryOutputPath,
-                    ChunkHotspotStats.snapshotReport().toPropertiesText(),
+                    ChunkHotspotStats.snapshotReport().toPropertiesText()
+                            + ChunkServerOfflineReuseStats.toPropertiesText(),
                     StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE,
                     StandardOpenOption.TRUNCATE_EXISTING,

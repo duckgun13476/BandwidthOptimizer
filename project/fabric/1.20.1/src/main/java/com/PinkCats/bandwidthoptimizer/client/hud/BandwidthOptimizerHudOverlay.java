@@ -90,7 +90,7 @@ public final class BandwidthOptimizerHudOverlay {
         if (!snapshot.hasData()) {
             addIdleHintLines(lines, snapshot);
             lines.add(text("hud.bandwidthoptimizer.server"));
-            lines.add(buildServerStatsLine(snapshot));
+            addServerStatsLines(lines, snapshot);
             return lines;
         }
 
@@ -101,6 +101,7 @@ public final class BandwidthOptimizerHudOverlay {
                 + " | 2 min " + formatTrafficRatioPercent(snapshot.optimizeRecentRawBytes(), snapshot.optimizeRecentSentBytes())
                 + "  (" + formatFlow(snapshot.optimizeTotalRawBytes(), snapshot.optimizeTotalSentBytes()) + ")");
         lines.add(buildChunkCacheLine(snapshot));
+        lines.add(buildChunkCacheSourceLine(snapshot));
         lines.add("  " + text("hud.bandwidthoptimizer.local_cache") + " " + formatBytes(snapshot.localCacheBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.pkt") + " " + formatCount(snapshot.localCachePacketCount())
                 + " | " + text("hud.bandwidthoptimizer.metric.chunk") + " " + formatCount(snapshot.localCacheChunkCount()));
@@ -118,21 +119,29 @@ public final class BandwidthOptimizerHudOverlay {
                 + " | " + text("hud.bandwidthoptimizer.metric.algo") + " " + safeText(snapshot.algorithmDisplayName())
                 + " | " + text("hud.bandwidthoptimizer.metric.win") + " " + snapshot.batchWindowMillis() + "ms");
         lines.add(text("hud.bandwidthoptimizer.server"));
-        lines.add(buildServerStatsLine(snapshot));
+        addServerStatsLines(lines, snapshot);
         return lines;
     }
 
     // server hud
-    private static String buildServerStatsLine(BandwidthOptimizerHudStats.Snapshot snapshot) {
+    private static void addServerStatsLines(List<String> lines, BandwidthOptimizerHudStats.Snapshot snapshot) {
         if (snapshot == null || !snapshot.serverStatsFresh()) {
-            return "  " + text("hud.bandwidthoptimizer.server.waiting");
+            lines.add("  " + text("hud.bandwidthoptimizer.server.waiting"));
+            return;
         }
-        return "  " + text("hud.bandwidthoptimizer.metric.total") + " " + text("hud.bandwidthoptimizer.metric.raw") + " " + formatBytes(snapshot.serverOutboundRawEncodedBytes())
-                + " | " + text("hud.bandwidthoptimizer.metric.wire") + " " + formatBytes(snapshot.serverOutboundWireBytes())
-                + " | " + text("hud.bandwidthoptimizer.metric.in") + " " + formatBytes(snapshot.serverInboundWireBytes())
+        lines.add("  " + text("hud.bandwidthoptimizer.metric.raw_flow") + " " + formatBytes(snapshot.serverOutboundRawEncodedBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.actual_flow") + " " + formatBytes(snapshot.serverOutboundWireBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.save") + " " + formatBytes(snapshot.serverOutboundSavedBytes())
-                + " | " + text("hud.bandwidthoptimizer.metric.ratio") + " " + formatRatioPercent(snapshot.serverOutboundWireRatioPercent())
-                + " | " + text("hud.bandwidthoptimizer.metric.players") + " " + formatCount(snapshot.serverBoundPlayers());
+                + " | " + text("hud.bandwidthoptimizer.metric.total_ratio") + " " + formatTrafficRatioPercent(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverOutboundWireBytes()));
+        lines.add("  " + text("hud.bandwidthoptimizer.metric.offline_cache") + " "
+                + formatSavedShare(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverOfflineReuseConfirmedSavedBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.temporary_cache") + " "
+                + formatSavedShare(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverTemporaryReuseSavedBytes()));
+        lines.add("  " + text("hud.bandwidthoptimizer.metric.optimized_flow") + " "
+                + formatByteShare(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverOutboundTransportFrameBytes())
+                + " | " + text("hud.bandwidthoptimizer.bypass") + " "
+                + formatByteShare(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverOutboundBypassBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.players") + " " + formatCount(snapshot.serverBoundPlayers()));
     }
 
     private static String buildChunkCacheLine(BandwidthOptimizerHudStats.Snapshot snapshot) {
@@ -161,6 +170,17 @@ public final class BandwidthOptimizerHudOverlay {
                 + " | " + text("hud.bandwidthoptimizer.metric.full") + " " + formatCount(snapshot.chunkCacheFullTotalPackets())
                 + " | " + text("hud.bandwidthoptimizer.metric.reuse_wire") + " " + formatBytes(snapshot.chunkCacheReuseWireTotalBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.avg") + " " + formatBytes(averageReuseWireBytes);
+    }
+
+    private static String buildChunkCacheSourceLine(BandwidthOptimizerHudStats.Snapshot snapshot) {
+        if (snapshot == null) {
+            return "  " + text("hud.bandwidthoptimizer.cache_source")
+                    + " " + text("hud.bandwidthoptimizer.metric.temp") + " 0B/0"
+                    + " | " + text("hud.bandwidthoptimizer.metric.offline") + " 0B/0";
+        }
+        return "  " + text("hud.bandwidthoptimizer.cache_source")
+                + " " + text("hud.bandwidthoptimizer.metric.temp") + " " + formatBytes(snapshot.temporaryCacheSavedTotalBytes()) + "/" + formatCount(snapshot.temporaryCacheReuseTotalPackets())
+                + " | " + text("hud.bandwidthoptimizer.metric.offline") + " " + formatBytes(snapshot.offlineCacheSavedTotalBytes()) + "/" + formatCount(snapshot.offlineCacheReuseTotalPackets());
     }
 
     private static void addIdleHintLines(List<String> lines, BandwidthOptimizerHudStats.Snapshot snapshot) {
@@ -196,6 +216,24 @@ public final class BandwidthOptimizerHudOverlay {
 
     private static String formatFlow(long rawBytes, long sentBytes) {
         return formatBytes(rawBytes) + " → " + formatBytes(sentBytes);
+    }
+
+    private static String formatByteShare(long rawBytes, long bytes) {
+        long safeBytes = Math.max(bytes, 0L);
+        return formatBytes(safeBytes) + "/" + formatSharePercent(rawBytes, safeBytes);
+    }
+
+    private static String formatSavedShare(long rawBytes, long savedBytes) {
+        long safeSavedBytes = Math.max(savedBytes, 0L);
+        return formatBytes(safeSavedBytes) + "/" + formatSharePercent(rawBytes, safeSavedBytes);
+    }
+
+    private static String formatSharePercent(long rawBytes, long bytes) {
+        if (rawBytes <= 0L) {
+            return "0.0%";
+        }
+        double ratioPercent = (double) Math.max(bytes, 0L) * 100.0D / (double) rawBytes;
+        return String.format(Locale.ROOT, "%.1f%%", Math.max(ratioPercent, 0.0D));
     }
 
     private static String formatRatioPercent(double ratioPercent) {

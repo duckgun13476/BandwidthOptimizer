@@ -29,7 +29,8 @@ public record ChunkPeerChunkStateSnapshot(
         long lastObservedAtMillis,
         long lastAcknowledgedAtMillis,
         long lastNegativeAckAtMillis,
-        long lastInvalidatedAtMillis
+        long lastInvalidatedAtMillis,
+        boolean persistentClientManifestAcknowledged
 ) {
 
     public String summaryText() {
@@ -52,7 +53,8 @@ public record ChunkPeerChunkStateSnapshot(
                 + ", acknowledgedSnapshotHash=" + shortenHash(this.acknowledgedSnapshotHash)
                 + ", lastPayloadHash=" + this.lastPayloadShortHash
                 + ", lastEncodedBytes=" + this.lastEncodedBytes
-                + ", lastFullSnapshotBytes=" + this.lastFullSnapshotEncodedBytes;
+                + ", lastFullSnapshotBytes=" + this.lastFullSnapshotEncodedBytes
+                + ", persistentManifestAcked=" + this.persistentClientManifestAcknowledged;
     }
 
     private static String shortenHash(String hashHex) {

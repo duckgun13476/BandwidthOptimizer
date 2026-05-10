@@ -27,6 +27,7 @@ final class ChunkPeerChunkState {
     private String acknowledgedSnapshotHash = "";
     private String lastPayloadHash = "";
     private String lastPayloadShortHash = "";
+    private boolean persistentClientManifestAcknowledged;
     private int lastEncodedBytes;
     private int lastFullSnapshotEncodedBytes;
     private long lastObservedChannelPacketCount;
@@ -115,6 +116,7 @@ final class ChunkPeerChunkState {
         }
 
         this.receiverSnapshotAcknowledged = true;
+        this.persistentClientManifestAcknowledged = false;
         this.acknowledgedSnapshotVersion = fullSnapshotVersion;
         this.acknowledgedSnapshotHash = acknowledgedSnapshotHash;
         this.fullReplayRequiredBeforeDelta = false;
@@ -163,6 +165,7 @@ final class ChunkPeerChunkState {
         this.epoch = Math.max(epoch, 0L);
         this.knownSnapshotPublished = true;
         this.receiverSnapshotAcknowledged = true;
+        this.persistentClientManifestAcknowledged = true;
         this.fullReplayRequiredBeforeDelta = false;
         this.fullSnapshotVersion = Math.max(Math.max(this.fullSnapshotVersion, fullSnapshotVersion), 1L);
         this.acknowledgedSnapshotVersion = this.fullSnapshotVersion;
@@ -205,6 +208,7 @@ final class ChunkPeerChunkState {
 
     private void clearReceiverAcknowledgement() {
         this.receiverSnapshotAcknowledged = false;
+        this.persistentClientManifestAcknowledged = false;
         this.acknowledgedSnapshotVersion = 0L;
         this.acknowledgedSnapshotHash = "";
     }
@@ -247,7 +251,8 @@ final class ChunkPeerChunkState {
                 this.lastObservedAtMillis,
                 this.lastAcknowledgedAtMillis,
                 this.lastNegativeAckAtMillis,
-                this.lastInvalidatedAtMillis
+                this.lastInvalidatedAtMillis,
+                this.persistentClientManifestAcknowledged
         );
     }
 }
