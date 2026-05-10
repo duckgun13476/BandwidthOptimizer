@@ -46,7 +46,6 @@ def applyBooleanNeoForgeRunProperty = { Project projectRef, def runConfig, Strin
 
 def applySharedBandwidthOptimizerNeoForgeRunProperties = { Project projectRef, def runConfig ->
     [
-            ['boExperimentalTransport', 'bandwidthoptimizer.experimentalTransport'],
             ['boExperimentalChunkHotspotTransport', 'bandwidthoptimizer.experimentalChunkHotspotTransport'],
             ['boExperientChunkHotspotPathRangeStartX', 'bandwidthoptimizer.experient.chunkHotspotPathRangeStartX'],
             ['boExperientChunkHotspotPathRangeStartY', 'bandwidthoptimizer.experient.chunkHotspotPathRangeStartY'],
@@ -281,7 +280,6 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     [
             'boExperientServerCommand',
             'boExperientServerCommandDelayTicks',
-            'boExperimentalTransport',
             'boExperimentalChunkHotspotTransport',
             'boExperientChunkHotspotPathEnabled',
             'boExperientChunkHotspotPathStopAfterSection',

@@ -1,7 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
-import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
 
 import java.nio.charset.StandardCharsets;
@@ -11,10 +10,6 @@ import static com.PinkCats.bandwidthoptimizer.channel.math.format.ratioText;
 
 
 public final class ChannelTransportRuntimeGuard {
-
-    private static final String EXPERIMENTAL_TRANSPORT_PROPERTY =
-            Config.RuntimeProperty.Transport.EXPERIMENTAL_ENABLED;
-    private static final String ENABLED_BY_DEFAULT_REASON = "disabled by runtime property";
 
     private static volatile boolean initialized;
     private static volatile boolean transportAvailable;
@@ -30,16 +25,6 @@ public final class ChannelTransportRuntimeGuard {
         }
 
         initialized = true;
-        if (!isExperimentalTransportEnabled()) {
-            transportAvailable = false;
-            unavailableReason = ENABLED_BY_DEFAULT_REASON;
-            Bandwidthoptimizer.LOGGER.info(
-                    "[Transport] Transparent transport disabled by runtime property. Remove -D{}=false or set it to true to enable it again.",
-                    EXPERIMENTAL_TRANSPORT_PROPERTY
-            );
-            return;
-        }
-
         try {
             byte[] probeBytes = "bandwidthoptimizer-zstd-probe".getBytes(StandardCharsets.US_ASCII);
             ChannelTransportSession probeSession = new ChannelTransportSession();
@@ -70,16 +55,6 @@ public final class ChannelTransportRuntimeGuard {
                     throwable
             );
         }
-    }
-
-
-    public static boolean isExperimentalTransportEnabled() {
-        return Boolean.parseBoolean(
-                System.getProperty(
-                        EXPERIMENTAL_TRANSPORT_PROPERTY,
-                        Boolean.toString(Config.RuntimeProperty.Transport.DEFAULT_EXPERIMENTAL_ENABLED)
-                )
-        );
     }
 
 

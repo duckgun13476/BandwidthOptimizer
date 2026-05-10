@@ -50,7 +50,6 @@ def applyExperientServerRunProperties = { Project projectRef, def runConfig ->
 
 def applySharedBandwidthOptimizerRunProperties = { Project projectRef, def runConfig ->
     [
-            ['boExperimentalTransport', 'bandwidthoptimizer.experimentalTransport'],
             ['boExperimentalChunkHotspotTransport', 'bandwidthoptimizer.experimentalChunkHotspotTransport'],
             ['boExperientChunkHotspotPathRangeStartX', 'bandwidthoptimizer.experient.chunkHotspotPathRangeStartX'],
             ['boExperientChunkHotspotPathRangeStartY', 'bandwidthoptimizer.experient.chunkHotspotPathRangeStartY'],
@@ -229,7 +228,6 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     args.addAll(buildExperientEnabledGradleArgs())
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientServerCommand')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientServerCommandDelayTicks')
-    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperimentalTransport')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperimentalChunkHotspotTransport')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathEnabled')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathStopAfterSection')
@@ -272,17 +270,8 @@ def buildWatchBoundaryRefreshPatchRegressionGradleArgs(Project projectRef) {
     List<String> args = buildRunAllSharedGradleArgs(projectRef)
     removeRunAllPropertiesByPrefix(args, 'boExperientChunkHotspotPath')
     removeRunAllPropertiesByPrefix(args, 'boExperientWatchBoundaryRefreshPatchEnabled')
-    upsertRunAllProperty(args, 'boExperimentalTransport', 'true')
     upsertRunAllProperty(args, 'boExperientWatchBoundaryRefreshPatchEnabled', 'true')
     return args
-}
-
-def isRunAllTransportEnabledByDefault(Project projectRef) {
-
-    if (!projectRef.hasProperty('boExperimentalTransport')) {
-        return true
-    }
-    return projectRef.property('boExperimentalTransport').toString().toBoolean()
 }
 
 def resolveRunAllTransportTelemetryDumpPath(Project projectRef, File runtimeDir) {
@@ -542,7 +531,7 @@ def forceStopRunAllProcesses(Project projectRef, File projectDirFile, boolean is
 
 def buildTransportReportScenarioGradleArgs(Project projectRef, Map<String, String> scenarioProperties) {
 
-    List<String> args = ['--console=plain', '-PboExperimentalTransport=true', '-PboTransportZstdEnabled=true']
+    List<String> args = ['--console=plain', '-PboTransportZstdEnabled=true']
     String observeSeconds = projectRef.findProperty('boRunAllObserveSeconds')?.toString()?.trim()
     args.add("-PboRunAllObserveSeconds=${(observeSeconds == null || observeSeconds.isEmpty()) ? '15' : observeSeconds}")
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boRunAllSettleMillis')
@@ -785,7 +774,6 @@ tasks.register('runAll') {
         File captureResetRequest = new File(sharedOutputDir, 'bo-runall-capture-reset.request')
         File serverProperties = project.file('run/server/server.properties')
         File serverOpsFile = project.file('run/server/ops.json')
-        boolean transportEnabled = isRunAllTransportEnabledByDefault(project)
 
         stopExistingRunAllProcesses(project, projectDirFile, isWindows)
         sleep(3000)
@@ -808,11 +796,6 @@ tasks.register('runAll') {
 
         configureRunAllServerProperties(serverProperties)
         configureRunAllServerOperators(serverOpsFile)
-
-        if (!transportEnabled) {
-            println 'runAll: 当前显式传入 boExperimentalTransport=false，本轮仍会分别启动客户端和服务端，但透明 transport 会保持关闭。'
-            println 'runAll: 如果要恢复默认开启，请移除该参数，或显式传 -PboExperimentalTransport=true'
-        }
 
         println 'runAll: 正在启动本地测试服务端。'
         Process serverProcess = startExistingRunTaskProcess(projectDirFile, isWindows, wrapperPath, 'runServer', buildRunAllSharedGradleArgs(project), null, serverTaskLog, 'runServer')
@@ -943,7 +926,6 @@ tasks.register('runAllAutoExitCompare') {
         File serverLoginMarker = new File(serverOutputDir, 'bo-runall-player-logged-in.marker')
         File serverProperties = project.file('run/server/server.properties')
         File serverOpsFile = project.file('run/server/ops.json')
-        boolean transportEnabled = isRunAllTransportEnabledByDefault(project)
 
         stopExistingRunAllProcesses(project, projectDirFile, isWindows)
         sleep(3000)
@@ -971,11 +953,6 @@ tasks.register('runAllAutoExitCompare') {
 
         try {
             println "runAllAutoExitCompare: exitTrigger=${exitTrigger}, exitDelaySeconds=${exitDelaySeconds}, settleMillis=${settleMillis}"
-            if (!transportEnabled) {
-                println 'runAllAutoExitCompare: 当前显式传入 boExperimentalTransport=false，这一轮仍会做 jsonl 抓包和 compare，但透明 transport 会保持关闭。'
-                println 'runAllAutoExitCompare: 如果要恢复默认开启，请移除该参数，或显式传 -PboExperimentalTransport=true'
-            }
-
             println 'runAllAutoExitCompare: 正在启动本地测试服务端。'
             serverProcess = startExistingRunTaskProcess(projectDirFile, isWindows, wrapperPath, 'runServer', buildRunAllSharedGradleArgs(project), null, serverTaskLog, 'runServer')
             project.ext.boWaitForLogMarker.call(

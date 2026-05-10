@@ -298,8 +298,6 @@ public class Config {
 
         public static final class Transport {
 
-            public static final String EXPERIMENTAL_ENABLED = "bandwidthoptimizer.experimentalTransport";
-            public static final boolean DEFAULT_EXPERIMENTAL_ENABLED = true;
             public static final String CHUNK_HOTSPOT_TRANSPORT_ENABLED =
                     "bandwidthoptimizer.experimentalChunkHotspotTransport";
             public static final boolean DEFAULT_CHUNK_HOTSPOT_TRANSPORT_ENABLED = true;

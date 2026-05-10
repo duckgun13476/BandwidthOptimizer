@@ -207,13 +207,6 @@ public final class BandwidthOptimizerHudOverlay {
     }
 
     private static void addIdleHintLines(List<String> lines, BandwidthOptimizerHudStats.Snapshot snapshot) {
-        if (snapshot != null && !snapshot.transportEnabledByProperty()) {
-            lines.add("  " + text("hud.bandwidthoptimizer.transport.unavailable"));
-            lines.add("  " + text("hud.bandwidthoptimizer.transport.disabled"));
-            lines.add("  " + text("hud.bandwidthoptimizer.transport.remove_disable_flag"));
-            return;
-        }
-
         if (snapshot != null && !snapshot.transportAvailable()) {
             lines.add("  " + text("hud.bandwidthoptimizer.transport.unavailable"));
             lines.add("  " + shortenUnavailableReason(snapshot.transportUnavailableReason()));
