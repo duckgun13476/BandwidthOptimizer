@@ -18,6 +18,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationSer
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkOutboundObservationService;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkInboundDecodeResult;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportBoundaryController;
+import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportControlFrameSender;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher.OutboundChunkEncodeResult;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
@@ -39,6 +40,7 @@ import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
 import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
+import net.minecraft.network.protocol.game.ClientboundLoginPacket;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -163,6 +165,7 @@ public final class ChannelTransportHooks {
                     false,
                     1
             );
+            sendServerCacheScopeAfterLoginBoundary(context, packet);
             return;
         }
         if (forceImmediateTransport) {
@@ -468,6 +471,13 @@ public final class ChannelTransportHooks {
             }
             ChannelTransportRuntimeGuard.disableTransport("outbound-wrap", throwable);
         }
+    }
+
+    private static void sendServerCacheScopeAfterLoginBoundary(ChannelHandlerContext context, Packet<?> packet) {
+        if (context == null || !(packet instanceof ClientboundLoginPacket)) {
+            return;
+        }
+        ChunkTransportControlFrameSender.sendServerCacheScope(context.channel(), "server_cache_scope_after_login_boundary");
     }
 
 

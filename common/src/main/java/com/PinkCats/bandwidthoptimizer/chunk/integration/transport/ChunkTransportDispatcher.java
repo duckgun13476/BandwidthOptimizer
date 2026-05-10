@@ -70,6 +70,7 @@ public final class ChunkTransportDispatcher {
     private static final AtomicLong INBOUND_ACK_FRAME_COUNT = new AtomicLong();
     private static final AtomicLong INBOUND_NACK_FRAME_COUNT = new AtomicLong();
     private static final AtomicLong INBOUND_INVALIDATE_FRAME_COUNT = new AtomicLong();
+    private static final AtomicLong INBOUND_SERVER_CACHE_SCOPE_FRAME_COUNT = new AtomicLong();
     private static final AtomicLong INBOUND_CLIENT_CACHE_MANIFEST_FRAME_COUNT = new AtomicLong();
 
     private ChunkTransportDispatcher() {
@@ -364,6 +365,16 @@ public final class ChunkTransportDispatcher {
         if (envelope.frame().operation() == ChunkHotspotFrameOp.BARRIER_ACK) {
             ChunkTransportBoundaryController.acknowledgeOutboundBarrier(context, envelope.frame());
             logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_BARRIER_ACK_FRAME_COUNT);
+            return ChunkInboundDecodeResult.consumeControlFrame();
+        }
+
+        if (envelope.frame().operation() == ChunkHotspotFrameOp.SERVER_CACHE_SCOPE) {
+            ChunkPersistentClientCache.applyServerCacheScope(context == null ? null : context.channel(), envelope.frame());
+            ChunkPersistentClientCache.sendManifestOnce(
+                    context == null ? null : context.channel(),
+                    "persistent_client_cache_after_server_scope"
+            );
+            logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_SERVER_CACHE_SCOPE_FRAME_COUNT);
             return ChunkInboundDecodeResult.consumeControlFrame();
         }
 

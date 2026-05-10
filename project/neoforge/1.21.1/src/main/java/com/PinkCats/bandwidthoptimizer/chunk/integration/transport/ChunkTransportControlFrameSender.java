@@ -14,6 +14,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkLaneKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelope;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelopeCodec;
+import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentServerScope;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
@@ -162,6 +163,31 @@ public final class ChunkTransportControlFrameSender {
             return false;
         }
         return sendControlFrame(channel, manifestFrame);
+    }
+
+    public static boolean sendServerCacheScope(Channel channel, String reason) {
+        String scopeHash = ChunkPersistentServerScope.currentScopeHash();
+        if (!ChunkPersistentServerScope.isSafeScopeHash(scopeHash)) {
+            return false;
+        }
+        return sendControlFrame(channel, new ChunkHotspotFrame(
+                ChunkHotspotFrameCodec.PROTOCOL_VERSION,
+                ChunkHotspotFrameOp.SERVER_CACHE_SCOPE,
+                0L,
+                0L,
+                "PLAY",
+                "bandwidthoptimizer.chunk.transport.ServerCacheScope",
+                ChunkHotspotKind.FULL_CHUNK,
+                ChunkLaneKind.FULL,
+                ChunkPacketCoordinate.unknown(),
+                0,
+                0L,
+                0L,
+                scopeHash,
+                scopeHash,
+                0L,
+                reason == null || reason.isBlank() ? "server_cache_scope" : reason
+        ));
     }
 
     public static boolean sendReplayFullFrame(

@@ -64,6 +64,7 @@ public final class ChunkPersistentClientCache {
     private static final String LEGACY_DIRECTORY_NAME = "client-persistent-chunk-cache";
     private static final ScheduledExecutorService IO_EXECUTOR = Executors.newSingleThreadScheduledExecutor(new CacheThreadFactory());
     private static ZipCacheSnapshot cachedSnapshot;
+    private static String activeServerScopeHash = "";
     private static boolean preloadStarted;
     private static boolean checkpointLoopStarted;
     private static boolean backupLoopStarted;
@@ -162,7 +163,12 @@ public final class ChunkPersistentClientCache {
 
 
     public static void storeFullSnapshot(ChunkHotspotFrame frame, byte[] restoredPacketBytes) {
-        if (!isEnabled() || !isStorableFullSnapshot(frame) || restoredPacketBytes == null || restoredPacketBytes.length == 0) {
+        String serverScopeHash = currentServerScopeHash();
+        if (!isEnabled()
+                || !isSafeScopeHash(serverScopeHash)
+                || !isStorableFullSnapshot(frame)
+                || restoredPacketBytes == null
+                || restoredPacketBytes.length == 0) {
             return;
         }
 
@@ -176,7 +182,7 @@ public final class ChunkPersistentClientCache {
         synchronized (LOCK) {
             try {
                 ZipCacheSnapshot cacheSnapshot = cachedZipCacheSnapshot();
-                String keyPrefix = entryPrefix(frame.coordinate());
+                String keyPrefix = entryPrefix(serverScopeHash, frame.coordinate());
                 String blobEntryName = blobEntryName(fingerprint.hashHex());
                 if (fingerprint.hashHex().equals(cacheSnapshot.index().getProperty(keyPrefix + "hash", ""))
                         && cacheSnapshot.blobs().containsKey(blobEntryName)) {
@@ -189,6 +195,7 @@ public final class ChunkPersistentClientCache {
                 cacheSnapshot.index().setProperty(keyPrefix + "fullSnapshotVersion", Long.toString(Math.max(frame.fullSnapshotVersion(), 1L)));
                 cacheSnapshot.index().setProperty(keyPrefix + "encodedBytes", Integer.toString(restoredPacketBytes.length));
                 cacheSnapshot.index().setProperty(keyPrefix + "lastUsedAtMillis", Long.toString(System.currentTimeMillis()));
+                cacheSnapshot.index().setProperty(keyPrefix + "serverScopeHash", serverScopeHash);
                 cacheSnapshot.blobs().putIfAbsent(blobEntryName, restoredPacketBytes.clone());
                 markDirty(restoredPacketBytes.length);
                 logStore(frame, restoredPacketBytes.length, cacheFile());
@@ -207,14 +214,15 @@ public final class ChunkPersistentClientCache {
 
 
     public static byte[] findPacketBytes(ChunkHotspotFrame frame) {
-        if (!isEnabled() || !isStorableFullSnapshot(frame)) {
+        String serverScopeHash = currentServerScopeHash();
+        if (!isEnabled() || !isSafeScopeHash(serverScopeHash) || !isStorableFullSnapshot(frame)) {
             return null;
         }
 
         synchronized (LOCK) {
             try {
                 ZipCacheSnapshot cacheSnapshot = cachedZipCacheSnapshot();
-                String keyPrefix = entryPrefix(frame.coordinate());
+                String keyPrefix = entryPrefix(serverScopeHash, frame.coordinate());
                 String cachedHash = cacheSnapshot.index().getProperty(keyPrefix + "hash", "");
                 if (!frame.payloadHash().equals(cachedHash)) {
                     return null;
@@ -241,17 +249,45 @@ public final class ChunkPersistentClientCache {
         }
     }
 
+    public static void applyServerCacheScope(Channel channel, ChunkHotspotFrame frame) {
+        if (frame == null
+                || frame.operation() != com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp.SERVER_CACHE_SCOPE
+                || !isSafeScopeHash(frame.payloadHash())) {
+            return;
+        }
+        setActiveServerScopeHash(channel, frame.payloadHash().toLowerCase(Locale.ROOT), frame.reason());
+    }
+
+    public static void prepareForServerSwitch(Channel channel, String reason) {
+        if (channel == null) {
+            return;
+        }
+        if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ChunkPersistentCache][Scope][Reset] channel={}, reason={}",
+                    channel.id().asLongText(),
+                    safeText(reason, "server_switch")
+            );
+        }
+    }
+
     public static int sendManifestOnce(Channel channel, String reason) {
         if (!isEnabled() || channel == null) {
             return 0;
         }
 
         String channelId = channel.id().asLongText();
-        if (!MANIFEST_SENT_CHANNELS.add(channelId)) {
+        String serverScopeHash = currentServerScopeHash();
+        if (!isSafeScopeHash(serverScopeHash)) {
             return 0;
         }
 
-        List<ManifestEntry> entries = loadManifestEntries();
+        String manifestKey = channelId + "|" + serverScopeHash;
+        if (!MANIFEST_SENT_CHANNELS.add(manifestKey)) {
+            return 0;
+        }
+
+        List<ManifestEntry> entries = loadManifestEntries(serverScopeHash);
         int sentCount = 0;
         for (ManifestEntry entry : entries) {
             if (ChunkTransportControlFrameSender.sendPersistentClientCacheManifest(channel, entry.toFrame(reason))) {
@@ -261,7 +297,7 @@ public final class ChunkPersistentClientCache {
         if (DebugRuntimeConfig.isDiagnoseEnabled()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkPersistentCache][Manifest] channel={}, entries={}, sent={}, cacheFile={}, reason={}",
-                    channelId,
+                    manifestKey,
                     entries.size(),
                     sentCount,
                     cacheFile(),
@@ -271,7 +307,10 @@ public final class ChunkPersistentClientCache {
         return sentCount;
     }
 
-    private static List<ManifestEntry> loadManifestEntries() {
+    private static List<ManifestEntry> loadManifestEntries(String serverScopeHash) {
+        if (!isSafeScopeHash(serverScopeHash)) {
+            return List.of();
+        }
         synchronized (LOCK) {
             ZipCacheSnapshot cacheSnapshot;
             try {
@@ -288,14 +327,18 @@ public final class ChunkPersistentClientCache {
                 }
 
                 String coordinateKey = key.substring(0, key.length() - ".hash".length());
-                ChunkPacketCoordinate coordinate = parseCoordinateKey(coordinateKey);
+                ScopedCoordinateKey scopedCoordinateKey = parseScopedCoordinateKey(coordinateKey);
                 String hash = index.getProperty(key, "");
-                if (coordinate == null || !coordinate.present() || !isSafeHash(hash)) {
+                if (scopedCoordinateKey == null
+                        || !serverScopeHash.equals(scopedCoordinateKey.serverScopeHash())
+                        || scopedCoordinateKey.coordinate() == null
+                        || !scopedCoordinateKey.coordinate().present()
+                        || !isSafeHash(hash)) {
                     continue;
                 }
 
                 entries.add(new ManifestEntry(
-                        coordinate,
+                        scopedCoordinateKey.coordinate(),
                         hash,
                         index.getProperty(coordinateKey + ".protocolName", "PLAY"),
                         index.getProperty(coordinateKey + ".packetClassName", ""),
@@ -598,6 +641,32 @@ public final class ChunkPersistentClientCache {
         return Math.max(readLongProperty(BACKUP_INTERVAL_MILLIS_PROPERTY, DEFAULT_BACKUP_INTERVAL_MILLIS), 1_000L);
     }
 
+    private static String currentServerScopeHash() {
+        synchronized (LOCK) {
+            return activeServerScopeHash == null ? "" : activeServerScopeHash;
+        }
+    }
+
+    private static void setActiveServerScopeHash(Channel channel, String serverScopeHash, String reason) {
+        if (!isSafeScopeHash(serverScopeHash)) {
+            return;
+        }
+        synchronized (LOCK) {
+            activeServerScopeHash = serverScopeHash.toLowerCase(Locale.ROOT);
+        }
+        if (channel != null) {
+            MANIFEST_SENT_CHANNELS.removeIf(key -> key.startsWith(channel.id().asLongText() + "|"));
+        }
+        if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ChunkPersistentCache][Scope] channel={}, scope={}, reason={}",
+                    channel == null ? "<none>" : channel.id().asLongText(),
+                    shortenHash(serverScopeHash),
+                    safeText(reason, "server_cache_scope")
+            );
+        }
+    }
+
     private static void writeZipEntry(ZipOutputStream zipOutputStream, String entryName, byte[] entryBytes) throws IOException {
         ZipEntry zipEntry = new ZipEntry(entryName);
         zipOutputStream.putNextEntry(zipEntry);
@@ -658,25 +727,33 @@ public final class ChunkPersistentClientCache {
         return BLOBS_ENTRY_DIRECTORY + hash.toLowerCase(Locale.ROOT) + ".bin";
     }
 
-    private static String entryPrefix(ChunkPacketCoordinate coordinate) {
-        return "chunk." + coordinate.chunkX() + "." + coordinate.chunkZ() + ".";
+    private static String entryPrefix(String serverScopeHash, ChunkPacketCoordinate coordinate) {
+        return "scope." + serverScopeHash.toLowerCase(Locale.ROOT)
+                + ".chunk." + coordinate.chunkX() + "." + coordinate.chunkZ() + ".";
     }
 
-    private static ChunkPacketCoordinate parseCoordinateKey(String coordinateKey) {
-        if (coordinateKey == null || !coordinateKey.startsWith("chunk.")) {
+    private static ScopedCoordinateKey parseScopedCoordinateKey(String coordinateKey) {
+        if (coordinateKey == null || !coordinateKey.startsWith("scope.")) {
             return null;
         }
 
         String[] parts = coordinateKey.split("\\.");
-        if (parts.length != 3) {
+        if (parts.length != 5 || !"chunk".equals(parts[2]) || !isSafeScopeHash(parts[1])) {
             return null;
         }
 
         try {
-            return ChunkPacketCoordinate.ofChunk(Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
+            return new ScopedCoordinateKey(
+                    parts[1].toLowerCase(Locale.ROOT),
+                    ChunkPacketCoordinate.ofChunk(Integer.parseInt(parts[3]), Integer.parseInt(parts[4]))
+            );
         } catch (NumberFormatException ignored) {
             return null;
         }
+    }
+
+    private static boolean isSafeScopeHash(String scopeHash) {
+        return ChunkPersistentServerScope.isSafeScopeHash(scopeHash);
     }
 
     private static boolean isSafeHash(String hash) {
@@ -776,6 +853,12 @@ public final class ChunkPersistentClientCache {
             thread.setDaemon(true);
             return thread;
         }
+    }
+
+    private record ScopedCoordinateKey(
+            String serverScopeHash,
+            ChunkPacketCoordinate coordinate
+    ) {
     }
 
     private record ZipCacheSnapshot(

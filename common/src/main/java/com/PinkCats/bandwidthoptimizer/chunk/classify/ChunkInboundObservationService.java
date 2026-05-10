@@ -88,6 +88,7 @@ public final class ChunkInboundObservationService {
         ChannelTransportBatchManager.clearChannelState(context.channel(), reason);
         ChannelTransportStateManager.clearSession(context.channel(), reason);
         ChunkTransportBoundaryController.resetChannelState(context, reason);
+        ChunkPersistentClientCache.prepareForServerSwitch(context.channel(), reason);
         ChunkPersistentClientCache.sendManifestOnce(context.channel(), "persistent_client_cache_after_login");
         if (DebugRuntimeConfig.isDiagnoseEnabled()) {
             Bandwidthoptimizer.LOGGER.info(
