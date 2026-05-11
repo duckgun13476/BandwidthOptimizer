@@ -33,6 +33,7 @@ public final class ChannelTransportPacketRankReportWriter {
     ) throws IOException {
         List<EnrichedObservation> enrichedObservations = enrichStandaloneReplay(observations);
         List<PacketClassAggregate> aggregates = aggregateByPacketClass(enrichedObservations);
+        List<SourceAggregate> sourceAggregates = aggregateBySource(enrichedObservations);
         Summary summary = summarize(enrichedObservations, aggregates);
 
         Path reportDirectory = BandwidthOptimizerOutputPaths.resolve("transport-packet-rank");
@@ -41,7 +42,7 @@ public final class ChannelTransportPacketRankReportWriter {
                 "packet-rank-" + REPORT_FILE_TIMESTAMP.format(LocalDateTime.now()) + ".txt"
         );
         Path latestReportPath = reportDirectory.resolve("latest-packet-rank.txt");
-        String reportText = buildReportText(captureDurationTicks, summary, aggregates, enrichedObservations);
+        String reportText = buildReportText(captureDurationTicks, summary, aggregates, sourceAggregates, enrichedObservations);
         Files.writeString(timestampedReportPath, reportText, StandardCharsets.UTF_8);
         Files.writeString(latestReportPath, reportText, StandardCharsets.UTF_8);
 
@@ -100,6 +101,22 @@ public final class ChannelTransportPacketRankReportWriter {
         return List.copyOf(aggregates);
     }
 
+    private static List<SourceAggregate> aggregateBySource(List<EnrichedObservation> enrichedObservations) {
+        Map<String, SourceAggregateBuilder> builders = new LinkedHashMap<>();
+        for (EnrichedObservation enrichedObservation : enrichedObservations) {
+            builders.computeIfAbsent(
+                    enrichedObservation.observation().sourceKey(),
+                    SourceAggregateBuilder::new
+            ).record(enrichedObservation);
+        }
+
+        List<SourceAggregate> aggregates = new ArrayList<>(builders.size());
+        for (SourceAggregateBuilder builder : builders.values()) {
+            aggregates.add(builder.build());
+        }
+        return List.copyOf(aggregates);
+    }
+
     private static Summary summarize(
             List<EnrichedObservation> enrichedObservations,
             List<PacketClassAggregate> aggregates
@@ -154,6 +171,7 @@ public final class ChannelTransportPacketRankReportWriter {
             int captureDurationTicks,
             Summary summary,
             List<PacketClassAggregate> aggregates,
+            List<SourceAggregate> sourceAggregates,
             List<EnrichedObservation> enrichedObservations
     ) {
         StringBuilder builder = new StringBuilder(8192);
@@ -209,6 +227,28 @@ public final class ChannelTransportPacketRankReportWriter {
                 "== Full Ranking By Actual SavedVsRaw ==",
                 aggregates
         );
+        appendSourceAggregateSection(
+                builder,
+                "== Full Ranking By Source Raw Bytes ==",
+                sourceAggregates.stream()
+                        .sorted(Comparator
+                                .comparingLong(SourceAggregate::rawPacketBytes)
+                                .reversed()
+                                .thenComparing(SourceAggregate::sourceKey))
+                        .limit(80)
+                        .toList()
+        );
+        appendSourceAggregateSection(
+                builder,
+                "== Full Ranking By Source Actual Bytes ==",
+                sourceAggregates.stream()
+                        .sorted(Comparator
+                                .comparingLong(SourceAggregate::actualFrameBytes)
+                                .reversed()
+                                .thenComparing(SourceAggregate::sourceKey))
+                        .limit(80)
+                        .toList()
+        );
         appendWorstSampleSection(builder, enrichedObservations);
         return builder.toString();
     }
@@ -246,6 +286,36 @@ public final class ChannelTransportPacketRankReportWriter {
         builder.append('\n');
     }
 
+    private static void appendSourceAggregateSection(
+            StringBuilder builder,
+            String title,
+            List<SourceAggregate> aggregates
+    ) {
+        builder.append(title).append('\n');
+        if (aggregates.isEmpty()) {
+            builder.append("none").append('\n').append('\n');
+            return;
+        }
+
+        for (SourceAggregate aggregate : aggregates) {
+            builder.append("- ").append(aggregate.sourceKey())
+                    .append(": count=").append(aggregate.packetCount())
+                    .append(", raw=").append(formatBytes(aggregate.rawPacketBytes()))
+                    .append(", chunkInput=").append(formatBytes(aggregate.transportInputBytes()))
+                    .append(", chunkSavedVsRaw=").append(signed(aggregate.rawPacketBytes() - aggregate.transportInputBytes()))
+                    .append(", actualFrame=").append(formatBytes(aggregate.actualFrameBytes()))
+                    .append(", actualRatio=").append(ratioText(aggregate.actualFrameBytes(), aggregate.rawPacketBytes()))
+                    .append(", actualSavedVsRaw=").append(signed(aggregate.actualSavedVsRawBytes()))
+                    .append(", standaloneFrame=").append(formatBytes(aggregate.standaloneFrameBytes()))
+                    .append(", standaloneRatio=").append(ratioText(aggregate.standaloneFrameBytes(), aggregate.rawPacketBytes()))
+                    .append(", standaloneSavedVsRaw=").append(signed(aggregate.standaloneSavedVsRawBytes()))
+                    .append(", classes=").append(aggregate.packetClassCount())
+                    .append(", topClass=").append(simpleClassName(aggregate.topPacketClassName()))
+                    .append('\n');
+        }
+        builder.append('\n');
+    }
+
     private static void appendWorstSampleSection(
             StringBuilder builder,
             List<EnrichedObservation> enrichedObservations
@@ -268,6 +338,7 @@ public final class ChannelTransportPacketRankReportWriter {
             builder.append("- ").append(simpleClassName(observation.packetClassName()))
                     .append('#').append(observation.captureIndex())
                     .append(": raw=").append(observation.rawPacketBytes())
+                    .append(", source=").append(observation.sourceKey())
                     .append(", chunkInput=").append(observation.transportInputBytes())
                     .append(", actualFrame=").append(observation.actualFrameBytes())
                     .append(", actualSavedVsRaw=").append(signed(enrichedObservation.actualSavedVsRawBytes()))
@@ -356,6 +427,25 @@ public final class ChannelTransportPacketRankReportWriter {
         }
     }
 
+    private record SourceAggregate(
+            String sourceKey,
+            long packetCount,
+            long rawPacketBytes,
+            long transportInputBytes,
+            long actualFrameBytes,
+            long standaloneFrameBytes,
+            int packetClassCount,
+            String topPacketClassName
+    ) {
+        private long actualSavedVsRawBytes() {
+            return this.rawPacketBytes - this.actualFrameBytes;
+        }
+
+        private long standaloneSavedVsRawBytes() {
+            return this.rawPacketBytes - this.standaloneFrameBytes;
+        }
+    }
+
     private static final class PacketClassAggregateBuilder {
         private final String packetClassName;
         private long packetCount;
@@ -410,6 +500,47 @@ public final class ChannelTransportPacketRankReportWriter {
                     this.estimatedActualCount,
                     this.actualNegativeCount,
                     this.standaloneNegativeCount
+            );
+        }
+    }
+
+    private static final class SourceAggregateBuilder {
+        private final String sourceKey;
+        private final Map<String, Long> classBytes = new LinkedHashMap<>();
+        private long packetCount;
+        private long rawPacketBytes;
+        private long transportInputBytes;
+        private long actualFrameBytes;
+        private long standaloneFrameBytes;
+
+        private SourceAggregateBuilder(String sourceKey) {
+            this.sourceKey = sourceKey;
+        }
+
+        private void record(EnrichedObservation enrichedObservation) {
+            ChannelTransportPacketRankObservation observation = enrichedObservation.observation();
+            this.packetCount++;
+            this.rawPacketBytes += observation.rawPacketBytes();
+            this.transportInputBytes += observation.transportInputBytes();
+            this.actualFrameBytes += observation.actualFrameBytes();
+            this.standaloneFrameBytes += enrichedObservation.standaloneFrameBytes();
+            this.classBytes.merge(observation.packetClassName(), (long) observation.rawPacketBytes(), Long::sum);
+        }
+
+        private SourceAggregate build() {
+            String topPacketClassName = this.classBytes.entrySet().stream()
+                    .max(Map.Entry.comparingByValue())
+                    .map(Map.Entry::getKey)
+                    .orElse("<unknown>");
+            return new SourceAggregate(
+                    this.sourceKey,
+                    this.packetCount,
+                    this.rawPacketBytes,
+                    this.transportInputBytes,
+                    this.actualFrameBytes,
+                    this.standaloneFrameBytes,
+                    this.classBytes.size(),
+                    topPacketClassName
             );
         }
     }
