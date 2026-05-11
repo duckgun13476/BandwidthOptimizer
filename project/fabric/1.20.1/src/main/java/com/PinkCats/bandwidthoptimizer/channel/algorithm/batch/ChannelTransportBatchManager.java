@@ -407,6 +407,7 @@ public final class ChannelTransportBatchManager {
                     outputSizeBeforeDecode
             );
             ChannelCaptureHooks.finishInboundDecode(
+                    context,
                     pendingInboundFrame,
                     decodedPackets,
                     outputSizeBeforeDecode

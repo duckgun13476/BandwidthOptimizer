@@ -641,7 +641,7 @@ public final class ChannelTransportHooks {
                     out,
                     outputSizeBeforeDecode
             );
-            ChannelCaptureHooks.finishInboundDecode(pendingInboundFrame, out, outputSizeBeforeDecode);
+            ChannelCaptureHooks.finishInboundDecode(context, pendingInboundFrame, out, outputSizeBeforeDecode);
         }
     }
 

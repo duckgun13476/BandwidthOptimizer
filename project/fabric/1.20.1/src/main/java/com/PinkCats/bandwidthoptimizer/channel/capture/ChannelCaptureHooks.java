@@ -6,6 +6,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
+import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.Packet;
 
 import java.util.List;
@@ -96,7 +97,6 @@ public final class ChannelCaptureHooks {
         ChannelFrameJsonlLogger.appendInboundFrame(completedFrame);
     }
 
-
     public static ChannelCapturedFrame lastInboundDecodeCandidate(Channel channel) {
         return channel == null ? null : channel.attr(LAST_INBOUND_DECODE_CANDIDATE_KEY).get();
     }
@@ -107,16 +107,13 @@ public final class ChannelCaptureHooks {
         }
     }
 
-
     public static ChannelCapturedFrame lastOutboundFrame() {
         return LAST_OUTBOUND_FRAME.get();
     }
 
-
     public static ChannelCapturedFrame lastInboundFrame() {
         return LAST_INBOUND_FRAME.get();
     }
-
 
     public static void clearCapturedFrames() {
         LAST_OUTBOUND_FRAME.set(null);
@@ -143,7 +140,8 @@ public final class ChannelCaptureHooks {
     }
 
     private static String readProtocolName(ChannelHandlerContext context) {
-        return "PLAY";
+        Object protocol = context.channel().attr(Connection.ATTRIBUTE_PROTOCOL).get();
+        return protocol == null ? "null" : String.valueOf(protocol);
     }
 
 

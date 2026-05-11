@@ -45,17 +45,15 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
 
     @Inject(method = "decode", at = @At("HEAD"), cancellable = true)
     private void bandwidthoptimizer$unwrapAndCapture(ChannelHandlerContext context, ByteBuf in, List<Object> out, CallbackInfo ci) throws Exception {
+        this.bandwidthoptimizer$outputSizeBeforeDecode = out.size();
+        this.bandwidthoptimizer$pendingInboundFrame = ChannelCaptureHooks.beginInboundPreDecode(context, in);
         if (ChannelTransportHooks.tryDecodeInboundTransportFrame(context, in, out, this)) {
-            this.bandwidthoptimizer$outputSizeBeforeDecode = out.size();
+            ChannelCaptureHooks.clearInboundDecodeCandidate(context.channel());
             this.bandwidthoptimizer$pendingInboundFrame = null;
             ci.cancel();
             return;
         }
-
-
         // Save use
-        this.bandwidthoptimizer$outputSizeBeforeDecode = out.size();
-        this.bandwidthoptimizer$pendingInboundFrame = ChannelCaptureHooks.beginInboundPreDecode(context, in);
         bandwidthoptimizer$recordInboundRawEncoded(context, in);
     }
 
@@ -67,6 +65,7 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
                 this.bandwidthoptimizer$outputSizeBeforeDecode,
                 this
         )) {
+            ChannelCaptureHooks.clearInboundDecodeCandidate(context.channel());
             this.bandwidthoptimizer$pendingInboundFrame = null;
             return;
         }
@@ -79,7 +78,7 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
         );
 
         //Log
-        ChannelCaptureHooks.finishInboundDecode(this.bandwidthoptimizer$pendingInboundFrame, out, this.bandwidthoptimizer$outputSizeBeforeDecode);
+        ChannelCaptureHooks.finishInboundDecode(context, this.bandwidthoptimizer$pendingInboundFrame, out, this.bandwidthoptimizer$outputSizeBeforeDecode);
         bandwidthoptimizer$recordInboundBypass(context, out);
         this.bandwidthoptimizer$pendingInboundFrame = null;
     }

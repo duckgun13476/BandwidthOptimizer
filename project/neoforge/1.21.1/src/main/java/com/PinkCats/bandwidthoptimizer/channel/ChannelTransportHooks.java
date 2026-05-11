@@ -665,7 +665,7 @@ public final class ChannelTransportHooks {
                     out,
                     outputSizeBeforeDecode
             );
-            ChannelCaptureHooks.finishInboundDecode(pendingInboundFrame, out, outputSizeBeforeDecode);
+            ChannelCaptureHooks.finishInboundDecode(context, pendingInboundFrame, out, outputSizeBeforeDecode);
         }
     }
 
@@ -679,7 +679,6 @@ public final class ChannelTransportHooks {
     }
 
 
-    // 给没有 PacketEncoder 访问器的后台发送路径使用，统一转到 NeoForge 专用的协议感知编码实现。
     public static boolean writeTransportCarrierPacket(
             ChannelHandlerContext context,
             PacketFlow packetFlow,

@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTranspor
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportBypassRankLogger;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportControlPlane;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportTraceJournal;
+import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelDecoderExceptionDumper;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.Connection;
@@ -40,6 +41,7 @@ public abstract class ConnectionSendBoundaryMixin {
             Throwable throwable,
             CallbackInfo ci
     ) {
+        ChannelDecoderExceptionDumper.dumpIfDecoderException(context, this.channel, throwable);
         ChannelTransportBypassRankLogger.dumpNow("exceptionCaught");
         ChannelTransportTraceJournal.dumpAndClear(this.channel, "exceptionCaught", throwable);
     }

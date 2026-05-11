@@ -1,5 +1,11 @@
+#### v2.6.5.2-beta
+1. Add decode error analyzer.
+
 #### v2.6.5.1-beta
-1. Add client reuse logic.
+1. Added offline chunk cache reuse.
+2. Split cache by server.
+3. Added compressed local cache backup.
+4. Improved server/client HUD stats.
 
 #### v2.6.4.1-release
 1. Fixed severe memory growth in template dictionary and chunk snapshot caches.

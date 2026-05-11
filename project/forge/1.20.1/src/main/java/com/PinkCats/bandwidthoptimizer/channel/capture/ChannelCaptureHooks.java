@@ -3,7 +3,9 @@ package com.PinkCats.bandwidthoptimizer.channel.capture;
 import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportCompressionCaptureManager;
 import io.netty.buffer.ByteBuf;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.util.AttributeKey;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.Packet;
 
@@ -17,6 +19,9 @@ public final class ChannelCaptureHooks {
     private static final AtomicReference<ChannelCapturedFrame> LAST_OUTBOUND_FRAME = new AtomicReference<>();
 
     private static final AtomicReference<ChannelCapturedFrame> LAST_INBOUND_FRAME = new AtomicReference<>();
+
+    private static final AttributeKey<ChannelCapturedFrame> LAST_INBOUND_DECODE_CANDIDATE_KEY =
+            AttributeKey.valueOf("bandwidthoptimizer:last_inbound_decode_candidate");
 
 
     private ChannelCaptureHooks() {}
@@ -47,38 +52,32 @@ public final class ChannelCaptureHooks {
         ChannelFrameJsonlLogger.appendOutboundFrame(frame);
     }
 
+
     public static ChannelCapturedFrame beginInboundPreDecode(ChannelHandlerContext context, ByteBuf encodedBuffer) {
         if (context == null || encodedBuffer == null || !encodedBuffer.isReadable()) {
             return null;
         }
 
-        if (!shouldCaptureFramePayload()) {
-            return new ChannelCapturedFrame(
-                    readChannelId(context),
-                    "INBOUND",
-                    readProtocolName(context),
-                    "<pre-decode>",
-                    -1,
-                    encodedBuffer.readableBytes(),
-                    new byte[0],
-                    System.currentTimeMillis()
-            );
-        }
-
-        byte[] encodedBytes = copyBytes(encodedBuffer, encodedBuffer.readerIndex(), encodedBuffer.writerIndex());
-        return new ChannelCapturedFrame(
+        int readableBytes = encodedBuffer.readableBytes();
+        byte[] encodedBytes = shouldCaptureInboundPreDecodePayload()
+                ? copyInboundCandidateBytes(encodedBuffer)
+                : new byte[0];
+        ChannelCapturedFrame frame = new ChannelCapturedFrame(
                 readChannelId(context),
                 "INBOUND",
                 readProtocolName(context),
                 "<pre-decode>",
                 tryReadLeadingVarInt(encodedBytes),
-                encodedBytes.length,
+                readableBytes,
                 encodedBytes,
                 System.currentTimeMillis()
         );
+        context.channel().attr(LAST_INBOUND_DECODE_CANDIDATE_KEY).set(frame);
+        return frame;
     }
 
-    public static void finishInboundDecode(ChannelCapturedFrame pendingFrame, List<Object> out, int outputSizeBeforeDecode) {
+    public static void finishInboundDecode(ChannelHandlerContext context, ChannelCapturedFrame pendingFrame, List<Object> out, int outputSizeBeforeDecode) {
+        clearInboundDecodeCandidate(context == null ? null : context.channel());
         if (pendingFrame == null || !shouldCaptureFramePayload()) {
             return;
         }
@@ -99,16 +98,23 @@ public final class ChannelCaptureHooks {
         ChannelFrameJsonlLogger.appendInboundFrame(completedFrame);
     }
 
+    public static ChannelCapturedFrame lastInboundDecodeCandidate(Channel channel) {
+        return channel == null ? null : channel.attr(LAST_INBOUND_DECODE_CANDIDATE_KEY).get();
+    }
+    
+    public static void clearInboundDecodeCandidate(Channel channel) {
+        if (channel != null) {
+            channel.attr(LAST_INBOUND_DECODE_CANDIDATE_KEY).set(null);
+        }
+    }
 
     public static ChannelCapturedFrame lastOutboundFrame() {
         return LAST_OUTBOUND_FRAME.get();
     }
 
-
     public static ChannelCapturedFrame lastInboundFrame() {
         return LAST_INBOUND_FRAME.get();
     }
-
 
     public static void clearCapturedFrames() {
         LAST_OUTBOUND_FRAME.set(null);
@@ -122,6 +128,16 @@ public final class ChannelCaptureHooks {
             buffer.getBytes(startIndexInclusive, bytes);
         }
         return bytes;
+    }
+
+    private static byte[] copyInboundCandidateBytes(ByteBuf buffer) {
+        int maxPayloadBytes = ChannelDecoderExceptionDumpConfig.maxPayloadBytes();
+        if (maxPayloadBytes <= 0) {
+            return new byte[0];
+        }
+        int startIndex = buffer.readerIndex();
+        int endIndex = Math.min(buffer.writerIndex(), startIndex + maxPayloadBytes);
+        return copyBytes(buffer, startIndex, endIndex);
     }
 
     private static String readProtocolName(ChannelHandlerContext context) {
@@ -151,5 +167,9 @@ public final class ChannelCaptureHooks {
     private static boolean shouldCaptureFramePayload() {
         return ChannelCaptureRuntimeConfig.isJsonlCaptureEnabled()
                 || ChannelTransportCompressionCaptureManager.isCaptureActive();
+    }
+
+    private static boolean shouldCaptureInboundPreDecodePayload() {
+        return shouldCaptureFramePayload() || ChannelDecoderExceptionDumpConfig.isEnabled();
     }
 }

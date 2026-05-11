@@ -317,6 +317,12 @@ public class Config {
             public static final String CHANNEL_JSONL_CAPTURE_ENABLED =
                     "bandwidthoptimizer.channelJsonlCaptureEnabled";
             public static final boolean DEFAULT_CHANNEL_JSONL_CAPTURE_ENABLED = false;
+            public static final String DECODER_EXCEPTION_DUMP_ENABLED =
+                    "bandwidthoptimizer.decoderExceptionDumpEnabled";
+            public static final boolean DEFAULT_DECODER_EXCEPTION_DUMP_ENABLED = true;
+            public static final String DECODER_EXCEPTION_DUMP_MAX_BYTES =
+                    "bandwidthoptimizer.decoderExceptionDumpMaxBytes";
+            public static final int DEFAULT_DECODER_EXCEPTION_DUMP_MAX_BYTES = 8 * 1024 * 1024;
             public static final String PROXY_SAFE_CONTROL_ENABLED =
                     "bandwidthoptimizer.transport.proxySafeControlEnabled";
             public static final boolean DEFAULT_PROXY_SAFE_CONTROL_ENABLED = true;
