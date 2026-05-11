@@ -105,6 +105,18 @@ ext.boReadPublishArtifactFile = {
     return artifactTask.archiveFile.get().asFile
 }
 
+// 发布前强制检查最终 jar 是否真实生成，避免平台产物缺失时继续上传其他版本。
+ext.boVerifyPublishArtifactFile = {
+    File artifactFile = boReadPublishArtifactFile()
+    if (!artifactFile.isFile()) {
+        throw new GradleException("Publish artifact does not exist for '${project.path}': ${artifactFile.absolutePath}")
+    }
+    if (artifactFile.length() <= 0L) {
+        throw new GradleException("Publish artifact is empty for '${project.path}': ${artifactFile.absolutePath}")
+    }
+    return artifactFile
+}
+
 def curseForgeTaskClass = [
         this.class.classLoader,
         Thread.currentThread().contextClassLoader,
@@ -133,8 +145,8 @@ tasks.register('PublishInfo') {
                 "    displayName = \"${boReadPublishDisplayName()}\""
         def properties = boReadPublishingProperties()
         if (properties != null) {
-            println "CF_TOKEN: ${properties.getProperty('CF_TOKEN')}"
-            println "MODRINTH_TOKEN: ${properties.getProperty('MODRINTH_TOKEN')}"
+            println "CF_TOKEN: ${properties.getProperty('CF_TOKEN') == null ? 'missing' : 'present'}"
+            println "MODRINTH_TOKEN: ${properties.getProperty('MODRINTH_TOKEN') == null ? 'missing' : 'present'}"
         } else {
             println "api.properties not exist"
         }
@@ -150,6 +162,7 @@ tasks.register('publishInfo') {
 tasks.register('publishAll') {
     dependsOn 'publishCurseForge'
     dependsOn 'publishMods'
+    dependsOn 'verifyPublishArtifact'
     group = 'Publishing'
 }
 
@@ -171,8 +184,20 @@ tasks.register('allworkJarJar') {
     dependsOn boReadPublishArtifactTaskName()
 }
 
+tasks.register('verifyPublishArtifact') {
+    group = 'Publishing'
+    description = 'Verify that the configured final publish artifact exists before uploading.'
+    dependsOn boReadPublishArtifactTaskName()
+
+    doLast {
+        File artifactFile = boVerifyPublishArtifactFile()
+        println "Verified publish artifact for ${project.path}: ${artifactFile.absolutePath} (${artifactFile.length()} bytes)"
+    }
+}
+
 tasks.register('publishCurseForge', curseForgeTaskClass) {
     dependsOn boReadPublishArtifactTaskName()
+    dependsOn 'verifyPublishArtifact'
 
     def properties = boReadPublishingProperties()
     apiToken = properties?.getProperty('CF_TOKEN')
@@ -226,4 +251,5 @@ publishMods {
 
 tasks.matching { it.name in ['publishMods', 'publishModrinth'] }.configureEach {
     dependsOn boReadPublishArtifactTaskName()
+    dependsOn 'verifyPublishArtifact'
 }

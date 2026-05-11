@@ -63,12 +63,14 @@ tasks.register('publishInfoAllVersions') {
 tasks.register('allworkPublishAllVersions') {
     group = 'Allwork'
     description = 'Publish Forge 1.20.1 and NeoForge 1.21.1.'
+    dependsOn 'packageAllVersions'
     dependsOn boPublishableProjectPaths.collect { "${it}:allworkPublishAll" }
 }
 
 tasks.register('publishAllVersions') {
     group = 'Publishing'
     description = 'Publish Forge 1.20.1 and NeoForge 1.21.1.'
+    dependsOn 'packageAllVersions'
     dependsOn 'allworkPublishAllVersions'
 }
 
