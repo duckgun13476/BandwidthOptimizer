@@ -1,3 +1,9 @@
+#### v2.6.6.3-beta
+1. Improved Sable compatibility.
+2. Fixed persistent server bandwidth stats.
+3. Added source traffic reports for finding high-traffic mods.
+4. Moved bypass report writing to a background thread.
+
 #### v2.6.5.2-beta
 1. Add decode error analyzer.
 
