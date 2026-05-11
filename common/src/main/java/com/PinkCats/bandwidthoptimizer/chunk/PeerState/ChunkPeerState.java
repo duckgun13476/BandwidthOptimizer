@@ -6,6 +6,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalStoreObservation;
 
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 
 final class ChunkPeerState {
@@ -133,6 +134,30 @@ final class ChunkPeerState {
 
         ChunkPeerChunkState chunkState = this.chunkStates.remove(scopedChunkKeyText(scopeId, coordinate));
         return chunkState == null ? null : chunkState.recordInvalidate();
+    }
+
+    synchronized int invalidateChunkAcrossScopes(ChunkPacketCoordinate coordinate) {
+        if (coordinate == null || !coordinate.present()) {
+            return 0;
+        }
+
+        int removedCount = 0;
+        Iterator<Map.Entry<String, ChunkPeerChunkState>> iterator = this.chunkStates.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<String, ChunkPeerChunkState> entry = iterator.next();
+            ChunkPeerChunkState chunkState = entry.getValue();
+            ChunkPeerChunkStateSnapshot snapshot = chunkState == null ? null : chunkState.snapshotForQuery();
+            if (snapshot == null
+                    || snapshot.chunkKey() == null
+                    || snapshot.chunkKey().chunkX() != coordinate.chunkX()
+                    || snapshot.chunkKey().chunkZ() != coordinate.chunkZ()) {
+                continue;
+            }
+            iterator.remove();
+            chunkState.recordInvalidate();
+            removedCount++;
+        }
+        return removedCount;
     }
 
     synchronized ChunkPeerChunkStateSnapshot recordPersistentClientManifest(

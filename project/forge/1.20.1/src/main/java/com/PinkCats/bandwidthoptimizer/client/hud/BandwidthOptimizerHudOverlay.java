@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.client.hud;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
@@ -127,6 +128,7 @@ public final class BandwidthOptimizerHudOverlay {
         lines.add(buildChunkCacheLine(snapshot));
         lines.add(buildChunkCacheSourceLine(snapshot));
         lines.add("  " + text("hud.bandwidthoptimizer.local_cache") + " " + formatBytes(snapshot.localCacheBytes())
+                + "/" + formatBytes(ClientChunkCacheConfig.chunkCacheMaxMemoryBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.pkt") + " " + formatCount(snapshot.localCachePacketCount())
                 + " | " + text("hud.bandwidthoptimizer.metric.chunk") + " " + formatCount(snapshot.localCacheChunkCount()));
         lines.add("  " + text("hud.bandwidthoptimizer.bypass")

@@ -82,6 +82,17 @@ public final class ChunkRuntimeReferenceStore {
         invalidateFullSnapshot(channelId, 0L, coordinate);
     }
 
+    public static void invalidateFullSnapshotAcrossScopes(String channelId, ChunkPacketCoordinate coordinate) {
+        if (channelId == null || channelId.isBlank() || coordinate == null || !coordinate.present()) {
+            return;
+        }
+
+        ChannelReferenceCache cache = CHANNEL_CACHES.get(channelId);
+        if (cache != null) {
+            cache.removeFullSnapshotsByCoordinate(coordinate);
+        }
+    }
+
     public static void clearChannel(String channelId) {
         if (channelId == null || channelId.isBlank()) {
             return;
@@ -219,6 +230,29 @@ public final class ChunkRuntimeReferenceStore {
             RuntimeFullSnapshot removedSnapshot = this.fullSnapshots.remove(scopedChunkKeyText(scopeId, coordinate));
             if (removedSnapshot != null) {
                 releaseOrphanedPacketEntry(removedSnapshot.payloadHash());
+            }
+        }
+
+        synchronized void removeFullSnapshotsByCoordinate(ChunkPacketCoordinate coordinate) {
+            if (coordinate == null || !coordinate.present()) {
+                return;
+            }
+
+            ArrayList<String> removedPayloadHashes = new ArrayList<>();
+            this.fullSnapshots.entrySet().removeIf(entry -> {
+                RuntimeFullSnapshot snapshot = entry.getValue();
+                if (snapshot == null
+                        || snapshot.coordinate() == null
+                        || !snapshot.coordinate().present()
+                        || snapshot.coordinate().chunkX() != coordinate.chunkX()
+                        || snapshot.coordinate().chunkZ() != coordinate.chunkZ()) {
+                    return false;
+                }
+                removedPayloadHashes.add(snapshot.payloadHash());
+                return true;
+            });
+            for (String payloadHash : removedPayloadHashes) {
+                releaseOrphanedPacketEntry(payloadHash);
             }
         }
 

@@ -7,6 +7,7 @@ public record ChannelTransportPacketRankObservation(
         long capturedAtMillis,
         String channelId,
         String packetClassName,
+        String sourceKey,
         int packetId,
         int rawPacketBytes,
         byte[] transportInputPacketBytes,
@@ -19,6 +20,7 @@ public record ChannelTransportPacketRankObservation(
 ) {
 
     public ChannelTransportPacketRankObservation {
+        sourceKey = sourceKey == null || sourceKey.isBlank() ? "packet:<unknown>" : sourceKey;
         transportInputPacketBytes = transportInputPacketBytes == null
                 ? new byte[0]
                 : Arrays.copyOf(transportInputPacketBytes, transportInputPacketBytes.length);

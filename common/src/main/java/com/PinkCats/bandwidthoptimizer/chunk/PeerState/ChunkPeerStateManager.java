@@ -287,6 +287,32 @@ public final class ChunkPeerStateManager {
         return chunkSnapshot;
     }
 
+    public static int invalidateChannelChunkAcrossScopes(
+            ChannelHandlerContext context,
+            ChunkPacketCoordinate coordinate,
+            String reason
+    ) {
+        if (context == null || coordinate == null || !coordinate.present()) {
+            return 0;
+        }
+
+        String channelId = context.channel().id().asLongText();
+        ChunkPeerState state = CHANNEL_STATES.get(channelId);
+        int removedPeerStates = state == null ? 0 : state.invalidateChunkAcrossScopes(coordinate);
+        ChunkRuntimeReferenceStore.invalidateFullSnapshotAcrossScopes(channelId, coordinate);
+        ChunkShadowSnapshotManager.invalidateChunk(channelId, coordinate);
+        if (shouldLogDiagnose()) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ChunkPeer][LifecycleInvalidate] channel={}, reason={}, chunk={}, removedPeerStates={}",
+                    channelId,
+                    reason == null ? "" : reason,
+                    coordinate.logText(),
+                    removedPeerStates
+            );
+        }
+        return removedPeerStates;
+    }
+
     public static ChunkPeerChunkStateSnapshot retainPlayerChunkForWatchBoundary(
             ServerPlayer player,
             ChunkPacketCoordinate coordinate,

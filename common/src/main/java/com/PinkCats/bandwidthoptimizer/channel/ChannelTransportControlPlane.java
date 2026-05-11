@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.channel;
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.CustomPayloadPacketCompat;
+import com.PinkCats.bandwidthoptimizer.compat.sable.SableChunkSyncCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -71,6 +72,13 @@ public final class ChannelTransportControlPlane {
         }
         if (protocolName == null || !"PLAY".equalsIgnoreCase(protocolName)) {
             return TransportControlDecision.forceDirect("protocol_boundary_non_play");
+        }
+
+        //Sable compat
+        SableChunkSyncCompat.PayloadDecision sablePayloadDecision =
+                SableChunkSyncCompat.observeOutboundPayload(context, packet);
+        if (sablePayloadDecision.forceDirectTransport()) {
+            return TransportControlDecision.forceDirect(sablePayloadDecision.reason());
         }
 
         ImmediateTransportProfile immediateTransportProfile = classifyImmediateTransport(packet);

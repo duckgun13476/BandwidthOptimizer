@@ -37,6 +37,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalSnapshotSto
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkServerOfflineReuseStats;
+import com.PinkCats.bandwidthoptimizer.compat.sable.SableChunkSyncCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
@@ -186,6 +187,9 @@ public final class ChunkTransportDispatcher {
         if (!chunkPacketCandidate)
             return OutboundChunkEncodeResult.bypass(false, "descriptor_not_chunk_candidate");
 
+        boolean forceSableInitialSyncFull =
+                SableChunkSyncCompat.shouldForceFullChunkTransport(context, descriptor);
+
         ChunkTransportBoundaryController.ChunkTransportPermit transportPermit =
                 ChunkTransportBoundaryController.permitChunkTransport(context, descriptor);
         if (!transportPermit.allowed()) {
@@ -203,17 +207,20 @@ public final class ChunkTransportDispatcher {
         }
 
         long scopeId = peerSnapshot.epoch();
-        ChunkPeerChunkStateSnapshot knownChunkSnapshot =
-                resolvePlanningChunkSnapshot(context, scopeId, descriptor, fingerprint);
-        ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult = buildOutboundPatchCandidate(
-                context,
-                scopeId,
-                descriptor,
-                packet,
-                originalPacketBytes,
-                fingerprint,
-                knownChunkSnapshot
-        );
+        ChunkPeerChunkStateSnapshot knownChunkSnapshot = forceSableInitialSyncFull
+                ? null
+                : resolvePlanningChunkSnapshot(context, scopeId, descriptor, fingerprint);
+        ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult = forceSableInitialSyncFull
+                ? ChunkPatchBuilder.ChunkPatchBuildResult.unavailable("sable_initial_sync_force_full")
+                : buildOutboundPatchCandidate(
+                        context,
+                        scopeId,
+                        descriptor,
+                        packet,
+                        originalPacketBytes,
+                        fingerprint,
+                        knownChunkSnapshot
+                );
         RuntimeChunkPlanningResult planningResult =
                 planRuntimeTransportWithTrace(
                         descriptor,

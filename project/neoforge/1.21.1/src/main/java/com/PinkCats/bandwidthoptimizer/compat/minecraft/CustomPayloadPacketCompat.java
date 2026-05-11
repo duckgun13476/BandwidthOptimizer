@@ -14,6 +14,16 @@ public final class CustomPayloadPacketCompat {
         ResourceLocation identifier = payloadIdentifier(packet);
         return identifier == null ? "" : identifier.toString();
     }
+
+    public static Object payloadObject(Packet<?> packet) {
+        if (packet instanceof ClientboundCustomPayloadPacket customPayloadPacket) {
+            return customPayloadPacket.payload();
+        } else if (packet instanceof ServerboundCustomPayloadPacket customPayloadPacket) {
+            return customPayloadPacket.payload();
+        }
+        return null;
+    }
+
     private static ResourceLocation payloadIdentifier(Packet<?> packet) {
         CustomPacketPayload payload = null;
         if (packet instanceof ClientboundCustomPayloadPacket customPayloadPacket) {

@@ -21,6 +21,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTranspor
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportControlFrameSender;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher.OutboundChunkEncodeResult;
+import com.PinkCats.bandwidthoptimizer.compat.sable.SableChunkSyncCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.report.ChunkBoundaryBandwidthRecorder;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCaptureManager;
@@ -1295,6 +1296,11 @@ public final class ChannelTransportHooks {
             return true;
         }
         if (shouldBypassServerboundTransparentTransport(packetFlow)) {
+            ChannelTransportBatchManager.flushOutboundBatchNow(context);
+            return true;
+        }
+        //Sable compat
+        if (SableChunkSyncCompat.shouldBypassTransparentTransport(context, protocolName, packet)) {
             ChannelTransportBatchManager.flushOutboundBatchNow(context);
             return true;
         }
