@@ -19,6 +19,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public final class ChannelTransportBypassRankCore {
 
@@ -30,6 +32,12 @@ public final class ChannelTransportBypassRankCore {
     private static final String REPORT_PROTOCOL = "PLAY";
     private static final int REPORT_SCHEMA_VERSION = 2;
     private static final int REPORT_HEADER_SCAN_LINES = 40;
+    private static final ExecutorService REPORT_EXECUTOR = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "bo-transport-bypass-rank");
+        thread.setDaemon(true);
+        thread.setContextClassLoader(ChannelTransportBypassRankCore.class.getClassLoader());
+        return thread;
+    });
 
     private static long windowBypassCount;
     private static long windowBypassBytes;
@@ -110,16 +118,17 @@ public final class ChannelTransportBypassRankCore {
         return packetBytes == null ? 0 : packetBytes.length;
     }
 
+    // 周期性收口 bypass 窗口计数，并把报告任务交给后台线程处理。
     private static void dumpLocked(String reason) {
         List<Map.Entry<BypassKey, BypassCounter>> entries = new ArrayList<>(COUNTERS.entrySet());
-        entries.sort(Comparator
-                .<Map.Entry<BypassKey, BypassCounter>>comparingLong(entry -> entry.getValue().windowBytes())
-                .reversed()
-                .thenComparing(entry -> entry.getKey().packetClassName())
-                .thenComparing(entry -> entry.getKey().reason()));
 
         int topN = Math.max(readTopN(), 1);
         if (isLogEnabled()) {
+            entries.sort(Comparator
+                    .<Map.Entry<BypassKey, BypassCounter>>comparingLong(entry -> entry.getValue().windowBytes())
+                    .reversed()
+                    .thenComparing(entry -> entry.getKey().packetClassName())
+                    .thenComparing(entry -> entry.getKey().reason()));
             Bandwidthoptimizer.LOGGER.info(
                     "[Transport][BypassRank] reason={}, windowCount={}, windowBytes={}({}), totalCount={}, totalBytes={}({}), keys={}, topN={}",
                     reason,
@@ -135,7 +144,7 @@ public final class ChannelTransportBypassRankCore {
             logEntries(entries, topN);
         }
         if (isReportEnabled()) {
-            writeReportLocked(reason, entries, topN);
+            writeReportAsync(reason, snapshotEntries(entries), topN);
         }
 
         for (BypassCounter counter : COUNTERS.values()) {
@@ -195,7 +204,28 @@ public final class ChannelTransportBypassRankCore {
         );
     }
 
-    private static void writeReportLocked(String reason, List<Map.Entry<BypassKey, BypassCounter>> entries, int topN) {
+    // 复制当前 bypass 计数快照，避免后台报告线程读取正在变化的窗口计数。
+    private static List<Map.Entry<BypassKey, BypassCounter>> snapshotEntries(List<Map.Entry<BypassKey, BypassCounter>> entries) {
+        List<Map.Entry<BypassKey, BypassCounter>> snapshots = new ArrayList<>(entries.size());
+        for (Map.Entry<BypassKey, BypassCounter> entry : entries) {
+            snapshots.add(new java.util.AbstractMap.SimpleImmutableEntry<>(entry.getKey(), entry.getValue().snapshot()));
+        }
+        return snapshots;
+    }
+
+    // 将 bypass 报告生成和文件写入放到单独线程，降低网络包线程上的 IO 开销。
+    private static void writeReportAsync(String reason, List<Map.Entry<BypassKey, BypassCounter>> entries, int topN) {
+        REPORT_EXECUTOR.execute(() -> writeReport(reason, entries, topN));
+    }
+
+    // 根据快照生成 bypass Markdown 报告，只在后台报告线程中执行。
+    private static void writeReport(String reason, List<Map.Entry<BypassKey, BypassCounter>> entries, int topN) {
+        entries = new ArrayList<>(entries);
+        entries.sort(Comparator
+                .<Map.Entry<BypassKey, BypassCounter>>comparingLong(entry -> entry.getValue().windowBytes())
+                .reversed()
+                .thenComparing(entry -> entry.getKey().packetClassName())
+                .thenComparing(entry -> entry.getKey().reason()));
         Path reportDirectory = resolveReportDirectory();
         LocalDateTime now = LocalDateTime.now();
         String reportTimestamp = REPORT_DISPLAY_TIMESTAMP.format(now);
@@ -753,6 +783,17 @@ public final class ChannelTransportBypassRankCore {
         private long totalBytes;
         private String lastChannelId = "<no-channel>";
 
+        private BypassCounter() {
+        }
+
+        private BypassCounter(long windowCount, long windowBytes, long totalCount, long totalBytes, String lastChannelId) {
+            this.windowCount = windowCount;
+            this.windowBytes = windowBytes;
+            this.totalCount = totalCount;
+            this.totalBytes = totalBytes;
+            this.lastChannelId = lastChannelId;
+        }
+
         private void record(int packetBytes, String channelId) {
             int safePacketBytes = Math.max(packetBytes, 0);
             this.windowCount++;
@@ -765,6 +806,17 @@ public final class ChannelTransportBypassRankCore {
         private void resetWindow() {
             this.windowCount = 0L;
             this.windowBytes = 0L;
+        }
+
+        // 生成不可变使用语义的计数副本，供后台线程安全读取。
+        private BypassCounter snapshot() {
+            return new BypassCounter(
+                    this.windowCount,
+                    this.windowBytes,
+                    this.totalCount,
+                    this.totalBytes,
+                    this.lastChannelId
+            );
         }
 
         private long averageBytes() {
