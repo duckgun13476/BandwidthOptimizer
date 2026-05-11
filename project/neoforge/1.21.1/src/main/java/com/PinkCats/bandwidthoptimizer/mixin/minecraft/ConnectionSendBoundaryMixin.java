@@ -5,6 +5,7 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportBypassRankLogger;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportControlPlane;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportTraceJournal;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelDecoderExceptionDumper;
+import com.PinkCats.bandwidthoptimizer.report.ChannelTransportSourceRankCore;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.Connection;
@@ -32,6 +33,7 @@ public abstract class ConnectionSendBoundaryMixin {
     @Inject(method = "channelInactive", at = @At("HEAD"))
     private void bandwidthoptimizer$dumpTransportTraceOnInactive(ChannelHandlerContext context, CallbackInfo ci) {
         ChannelTransportBypassRankLogger.dumpNow("channelInactive");
+        ChannelTransportSourceRankCore.dumpNow("channelInactive");
         ChannelTransportTraceJournal.dumpAndClear(this.channel, "channelInactive", null);
     }
 
@@ -43,6 +45,7 @@ public abstract class ConnectionSendBoundaryMixin {
     ) {
         ChannelDecoderExceptionDumper.dumpIfDecoderException(context, this.channel, throwable);
         ChannelTransportBypassRankLogger.dumpNow("exceptionCaught");
+        ChannelTransportSourceRankCore.dumpNow("exceptionCaught");
         ChannelTransportTraceJournal.dumpAndClear(this.channel, "exceptionCaught", throwable);
     }
 }

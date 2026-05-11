@@ -64,8 +64,7 @@ public final class ChannelTransportPacketRankCaptureManager {
             boolean chunkProtocolApplied
     ) {
         ActiveCaptureSession activeCaptureSession = ACTIVE_CAPTURE_SESSION.get();
-        if (activeCaptureSession == null
-                || context == null
+        if (context == null
                 || packet == null
                 || rawPacketBytes == null
                 || transportInputPacketBytes == null
@@ -73,16 +72,18 @@ public final class ChannelTransportPacketRankCaptureManager {
             return null;
         }
 
+        boolean packetRankActive = activeCaptureSession != null;
         return new OutboundPacketCapture(
-                activeCaptureSession.sessionId(),
-                activeCaptureSession.nextCaptureIndex().incrementAndGet(),
+                packetRankActive ? activeCaptureSession.sessionId() : -1L,
+                packetRankActive ? activeCaptureSession.nextCaptureIndex().incrementAndGet() : 0L,
                 System.currentTimeMillis(),
                 context.channel().id().asLongText(),
                 packet.getClass().getName(),
                 ChannelTransportPacketRankSourceResolver.resolveSourceKey(packet),
                 tryReadLeadingVarInt(rawPacketBytes),
                 rawPacketBytes.length,
-                transportInputPacketBytes,
+                transportInputPacketBytes.length,
+                packetRankActive ? transportInputPacketBytes : null,
                 chunkProtocolApplied
         );
     }
@@ -155,7 +156,7 @@ public final class ChannelTransportPacketRankCaptureManager {
 
         long totalWeight = 0L;
         for (OutboundPacketCapture capture : captures) {
-            totalWeight += Math.max(capture.transportInputBytes().length, 1);
+            totalWeight += Math.max(capture.transportInputBytes(), 1);
         }
 
         long remainingFrameBytes = wrappedFrame.transportFrameLength();
@@ -166,7 +167,7 @@ public final class ChannelTransportPacketRankCaptureManager {
             if (index == captures.size() - 1) {
                 allocatedFrameBytes = (int) Math.max(remainingFrameBytes, 0L);
             } else {
-                long weight = Math.max(capture.transportInputBytes().length, 1);
+                long weight = Math.max(capture.transportInputBytes(), 1);
                 allocatedFrameBytes = (int) Math.max((remainingFrameBytes * weight) / Math.max(remainingWeight, 1L), 0L);
                 remainingFrameBytes -= allocatedFrameBytes;
                 remainingWeight -= weight;
@@ -208,7 +209,7 @@ public final class ChannelTransportPacketRankCaptureManager {
                     capture,
                     "BATCH_DIRECT_FALLBACK",
                     "DIRECT",
-                    capture.transportInputBytes().length,
+                    capture.transportInputBytes(),
                     false,
                     1
             );
@@ -312,6 +313,21 @@ public final class ChannelTransportPacketRankCaptureManager {
             return;
         }
 
+        ChannelTransportSourceRankCore.recordOutboundPacket(
+                capture.sourceKey(),
+                capture.packetClassName(),
+                capture.packetId(),
+                capture.rawPacketBytes(),
+                capture.transportInputBytes(),
+                actualFrameBytes,
+                capture.chunkProtocolApplied(),
+                actualFrameBytesEstimated,
+                actualPath,
+                actualFrameKind,
+                batchPacketCount,
+                capture.channelId()
+        );
+
         ActiveCaptureSession activeCaptureSession = ACTIVE_CAPTURE_SESSION.get();
         if (activeCaptureSession == null || activeCaptureSession.sessionId() != capture.sessionId()) {
             return;
@@ -325,7 +341,7 @@ public final class ChannelTransportPacketRankCaptureManager {
                 capture.sourceKey(),
                 capture.packetId(),
                 capture.rawPacketBytes(),
-                capture.transportInputBytes(),
+                capture.copyTransportInputBytes(),
                 capture.chunkProtocolApplied(),
                 actualPath,
                 actualFrameKind,
@@ -374,11 +390,19 @@ public final class ChannelTransportPacketRankCaptureManager {
             String sourceKey,
             int packetId,
             int rawPacketBytes,
-            byte[] transportInputBytes,
+            int transportInputBytes,
+            byte[] retainedTransportInputBytes,
             boolean chunkProtocolApplied
     ) {
         public OutboundPacketCapture {
-            transportInputBytes = transportInputBytes == null ? new byte[0] : Arrays.copyOf(transportInputBytes, transportInputBytes.length);
+            retainedTransportInputBytes = retainedTransportInputBytes == null
+                    ? new byte[0]
+                    : Arrays.copyOf(retainedTransportInputBytes, retainedTransportInputBytes.length);
+            transportInputBytes = Math.max(transportInputBytes, retainedTransportInputBytes.length);
+        }
+
+        private byte[] copyTransportInputBytes() {
+            return Arrays.copyOf(this.retainedTransportInputBytes, this.retainedTransportInputBytes.length);
         }
     }
 
