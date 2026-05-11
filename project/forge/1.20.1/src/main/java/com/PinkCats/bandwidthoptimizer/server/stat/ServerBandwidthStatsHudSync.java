@@ -35,7 +35,7 @@ public final class ServerBandwidthStatsHudSync {
         }
 
         ServerBandwidthStatsPayload payload =
-                ServerBandwidthStatsPayload.fromTotals(ServerBandwidthStatsRegistry.snapshotSessionTotals());
+                ServerBandwidthStatsPayload.fromTotals(ServerBandwidthStatsPersistence.snapshotTotals(server));
         for (ServerPlayer player : players) {
             ServerBandwidthStatsNetworkChannel.sendToPlayer(player, payload);
         }

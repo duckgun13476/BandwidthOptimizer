@@ -138,14 +138,7 @@ public final class ServerBandwidthStatsRegistry {
         long outboundWireBytes = 0L;
         long inboundWireBytes = 0L;
         int boundPlayers = 0;
-        ChunkServerOfflineReuseStats.Snapshot offlineReuseSnapshot = ChunkServerOfflineReuseStats.snapshot();
-        ChunkServerOfflineReuseStats.Totals offlineReuseConfirmedTotals =
-                offlineReuseSnapshot == null ? ChunkServerOfflineReuseStats.Totals.empty() : offlineReuseSnapshot.confirmedTotals();
-        ChunkServerOfflineReuseStats.Totals safeOfflineReuseConfirmedTotals =
-                offlineReuseConfirmedTotals == null ? ChunkServerOfflineReuseStats.Totals.empty() : offlineReuseConfirmedTotals;
-        long serverChunkReuseSavedBytes = computeServerChunkReuseSavedBytes();
-        long serverTemporaryReuseSavedBytes =
-                Math.max(serverChunkReuseSavedBytes - safeOfflineReuseConfirmedTotals.savedVsLogicalBytes(), 0L);
+        ServerCacheReuseSnapshot serverCacheReuseSnapshot = snapshotServerCacheReuse();
 
         for (ChannelBandwidthStats.Snapshot snapshot : channelSnapshots) {
             outboundRawPackets += snapshot.outboundRawEncodedPackets();
@@ -184,10 +177,10 @@ public final class ServerBandwidthStatsRegistry {
                 inboundBypassBytes,
                 outboundWireBytes,
                 inboundWireBytes,
-                safeOfflineReuseConfirmedTotals.frames(),
-                safeOfflineReuseConfirmedTotals.savedVsLogicalBytes(),
-                safeOfflineReuseConfirmedTotals.wireFrameBytes(),
-                serverTemporaryReuseSavedBytes
+                serverCacheReuseSnapshot.offlineReuseConfirmedFrames(),
+                serverCacheReuseSnapshot.offlineReuseConfirmedSavedBytes(),
+                serverCacheReuseSnapshot.offlineReuseConfirmedWireBytes(),
+                serverCacheReuseSnapshot.temporaryReuseSavedBytes()
         );
     }
 
@@ -267,6 +260,23 @@ public final class ServerBandwidthStatsRegistry {
         return Math.max(operationTotals.logicalPacketBytes() - operationTotals.wireFrameBytes(), 0L);
     }
 
+    public static ServerCacheReuseSnapshot snapshotServerCacheReuse() {
+        ChunkServerOfflineReuseStats.Snapshot offlineReuseSnapshot = ChunkServerOfflineReuseStats.snapshot();
+        ChunkServerOfflineReuseStats.Totals offlineReuseConfirmedTotals =
+                offlineReuseSnapshot == null ? ChunkServerOfflineReuseStats.Totals.empty() : offlineReuseSnapshot.confirmedTotals();
+        ChunkServerOfflineReuseStats.Totals safeOfflineReuseConfirmedTotals =
+                offlineReuseConfirmedTotals == null ? ChunkServerOfflineReuseStats.Totals.empty() : offlineReuseConfirmedTotals;
+        long serverChunkReuseSavedBytes = computeServerChunkReuseSavedBytes();
+        long serverTemporaryReuseSavedBytes =
+                Math.max(serverChunkReuseSavedBytes - safeOfflineReuseConfirmedTotals.savedVsLogicalBytes(), 0L);
+        return new ServerCacheReuseSnapshot(
+                safeOfflineReuseConfirmedTotals.frames(),
+                safeOfflineReuseConfirmedTotals.savedVsLogicalBytes(),
+                safeOfflineReuseConfirmedTotals.wireFrameBytes(),
+                serverTemporaryReuseSavedBytes
+        );
+    }
+
     public record TotalsSnapshot(
             int activeChannels,
             int boundPlayers,
@@ -294,6 +304,17 @@ public final class ServerBandwidthStatsRegistry {
                 return 0L;
             }
             return outboundRawEncodedBytes - outboundTransportFrameBytes - outboundBypassBytes;
+        }
+    }
+
+    public record ServerCacheReuseSnapshot(
+            long offlineReuseConfirmedFrames,
+            long offlineReuseConfirmedSavedBytes,
+            long offlineReuseConfirmedWireBytes,
+            long temporaryReuseSavedBytes
+    ) {
+        public static ServerCacheReuseSnapshot empty() {
+            return new ServerCacheReuseSnapshot(0L, 0L, 0L, 0L);
         }
     }
 }

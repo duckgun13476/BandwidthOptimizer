@@ -77,6 +77,15 @@ public final class ServerBandwidthPersistentStats extends SavedData {
         setDirty();
     }
 
+    public void addServerCacheReuseDelta(ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot delta) {
+        if (delta == null || !hasServerCacheReuse(delta)) {
+            return;
+        }
+
+        this.totals.add(delta);
+        setDirty();
+    }
+
 
     public void resetAll() {
         this.totals.reset();
@@ -88,7 +97,8 @@ public final class ServerBandwidthPersistentStats extends SavedData {
     public ServerBandwidthStatsRegistry.TotalsSnapshot snapshotTotals(
             int activeChannels,
             int boundPlayers,
-            List<ChannelBandwidthStats.Snapshot> pendingDeltas
+            List<ChannelBandwidthStats.Snapshot> pendingDeltas,
+            ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot pendingCacheReuseDelta
     ) {
         MutableCounters snapshot = this.totals.copy();
         if (pendingDeltas != null) {
@@ -96,6 +106,7 @@ public final class ServerBandwidthPersistentStats extends SavedData {
                 snapshot.add(delta);
             }
         }
+        snapshot.add(pendingCacheReuseDelta);
         return snapshot.toTotalsSnapshot(activeChannels, boundPlayers);
     }
 
@@ -130,6 +141,14 @@ public final class ServerBandwidthPersistentStats extends SavedData {
                 || snapshot.inboundBypassBytes() != 0L
                 || snapshot.outboundWireBytes() != 0L
                 || snapshot.inboundWireBytes() != 0L;
+    }
+
+    private static boolean hasServerCacheReuse(ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot snapshot) {
+        return snapshot != null
+                && (snapshot.offlineReuseConfirmedFrames() != 0L
+                || snapshot.offlineReuseConfirmedSavedBytes() != 0L
+                || snapshot.offlineReuseConfirmedWireBytes() != 0L
+                || snapshot.temporaryReuseSavedBytes() != 0L);
     }
 
     private static class PlayerCounters extends MutableCounters {
@@ -181,6 +200,10 @@ public final class ServerBandwidthPersistentStats extends SavedData {
         protected long inboundBypassBytes;
         protected long outboundWireBytes;
         protected long inboundWireBytes;
+        protected long serverOfflineReuseConfirmedFrames;
+        protected long serverOfflineReuseConfirmedSavedBytes;
+        protected long serverOfflineReuseConfirmedWireBytes;
+        protected long serverTemporaryReuseSavedBytes;
 
         protected void add(ChannelBandwidthStats.Snapshot delta) {
             if (delta == null) {
@@ -202,6 +225,16 @@ public final class ServerBandwidthPersistentStats extends SavedData {
             this.inboundWireBytes += delta.inboundWireBytes();
         }
 
+        protected void add(ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot delta) {
+            if (delta == null) {
+                return;
+            }
+            this.serverOfflineReuseConfirmedFrames += delta.offlineReuseConfirmedFrames();
+            this.serverOfflineReuseConfirmedSavedBytes += delta.offlineReuseConfirmedSavedBytes();
+            this.serverOfflineReuseConfirmedWireBytes += delta.offlineReuseConfirmedWireBytes();
+            this.serverTemporaryReuseSavedBytes += delta.temporaryReuseSavedBytes();
+        }
+
         protected void read(CompoundTag tag) {
             if (tag == null) {
                 return;
@@ -220,6 +253,10 @@ public final class ServerBandwidthPersistentStats extends SavedData {
             this.inboundBypassBytes = tag.getLong("inboundBypassBytes");
             this.outboundWireBytes = tag.getLong("outboundWireBytes");
             this.inboundWireBytes = tag.getLong("inboundWireBytes");
+            this.serverOfflineReuseConfirmedFrames = tag.getLong("serverOfflineReuseConfirmedFrames");
+            this.serverOfflineReuseConfirmedSavedBytes = tag.getLong("serverOfflineReuseConfirmedSavedBytes");
+            this.serverOfflineReuseConfirmedWireBytes = tag.getLong("serverOfflineReuseConfirmedWireBytes");
+            this.serverTemporaryReuseSavedBytes = tag.getLong("serverTemporaryReuseSavedBytes");
         }
 
 
@@ -239,6 +276,10 @@ public final class ServerBandwidthPersistentStats extends SavedData {
             tag.putLong("inboundBypassBytes", this.inboundBypassBytes);
             tag.putLong("outboundWireBytes", this.outboundWireBytes);
             tag.putLong("inboundWireBytes", this.inboundWireBytes);
+            tag.putLong("serverOfflineReuseConfirmedFrames", this.serverOfflineReuseConfirmedFrames);
+            tag.putLong("serverOfflineReuseConfirmedSavedBytes", this.serverOfflineReuseConfirmedSavedBytes);
+            tag.putLong("serverOfflineReuseConfirmedWireBytes", this.serverOfflineReuseConfirmedWireBytes);
+            tag.putLong("serverTemporaryReuseSavedBytes", this.serverTemporaryReuseSavedBytes);
             return tag;
         }
 
@@ -258,6 +299,10 @@ public final class ServerBandwidthPersistentStats extends SavedData {
             copy.inboundBypassBytes = this.inboundBypassBytes;
             copy.outboundWireBytes = this.outboundWireBytes;
             copy.inboundWireBytes = this.inboundWireBytes;
+            copy.serverOfflineReuseConfirmedFrames = this.serverOfflineReuseConfirmedFrames;
+            copy.serverOfflineReuseConfirmedSavedBytes = this.serverOfflineReuseConfirmedSavedBytes;
+            copy.serverOfflineReuseConfirmedWireBytes = this.serverOfflineReuseConfirmedWireBytes;
+            copy.serverTemporaryReuseSavedBytes = this.serverTemporaryReuseSavedBytes;
             return copy;
         }
 
@@ -276,6 +321,10 @@ public final class ServerBandwidthPersistentStats extends SavedData {
             this.inboundBypassBytes = 0L;
             this.outboundWireBytes = 0L;
             this.inboundWireBytes = 0L;
+            this.serverOfflineReuseConfirmedFrames = 0L;
+            this.serverOfflineReuseConfirmedSavedBytes = 0L;
+            this.serverOfflineReuseConfirmedWireBytes = 0L;
+            this.serverTemporaryReuseSavedBytes = 0L;
         }
 
         private ServerBandwidthStatsRegistry.TotalsSnapshot toTotalsSnapshot(int activeChannels, int boundPlayers) {
@@ -296,10 +345,10 @@ public final class ServerBandwidthPersistentStats extends SavedData {
                     this.inboundBypassBytes,
                     this.outboundWireBytes,
                     this.inboundWireBytes,
-                    0L,
-                    0L,
-                    0L,
-                    0L
+                    this.serverOfflineReuseConfirmedFrames,
+                    this.serverOfflineReuseConfirmedSavedBytes,
+                    this.serverOfflineReuseConfirmedWireBytes,
+                    this.serverTemporaryReuseSavedBytes
             );
         }
     }

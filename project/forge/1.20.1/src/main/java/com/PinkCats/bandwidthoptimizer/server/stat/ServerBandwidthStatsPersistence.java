@@ -12,6 +12,8 @@ public final class ServerBandwidthStatsPersistence {
     private static final int FLUSH_INTERVAL_TICKS = 20 * 60 * 2;
     private static final ConcurrentHashMap<String, ChannelBandwidthStats.Snapshot> LAST_FLUSHED =
             new ConcurrentHashMap<>();
+    private static volatile ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot lastFlushedCacheReuse =
+            ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot.empty();
     private static volatile MinecraftServer lastServer;
 
     private ServerBandwidthStatsPersistence() {}
@@ -64,11 +66,13 @@ public final class ServerBandwidthStatsPersistence {
     public static void resetAll(MinecraftServer server) {
         if (server == null) {
             LAST_FLUSHED.clear();
+            lastFlushedCacheReuse = ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot.empty();
             return;
         }
         rememberServer(server);
         get(server).resetAll();
         LAST_FLUSHED.clear();
+        lastFlushedCacheReuse = ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot.empty();
     }
 
 
@@ -79,7 +83,8 @@ public final class ServerBandwidthStatsPersistence {
         return get(server).snapshotTotals(
                 ServerBandwidthStatsRegistry.activeChannelCount(),
                 ServerBandwidthStatsRegistry.boundPlayerCount(),
-                pendingDeltas()
+                pendingDeltas(),
+                pendingCacheReuseDelta()
         );
     }
 
@@ -107,6 +112,7 @@ public final class ServerBandwidthStatsPersistence {
             if (delta != null)
                 persistentStats.addDelta(delta);
         }
+        persistentStats.addServerCacheReuseDelta(cacheReuseDeltaSinceLastFlush());
     }
 
     private static void flushSnapshot(MinecraftServer server, ChannelBandwidthStats.Snapshot snapshot) {
@@ -115,6 +121,7 @@ public final class ServerBandwidthStatsPersistence {
         ChannelBandwidthStats.Snapshot delta = deltaSinceLastFlush(snapshot);
         if (delta != null)
             get(server).addDelta(delta);
+        get(server).addServerCacheReuseDelta(cacheReuseDeltaSinceLastFlush());
     }
 
     private static List<ChannelBandwidthStats.Snapshot> pendingDeltas() {
@@ -125,6 +132,38 @@ public final class ServerBandwidthStatsPersistence {
                 deltas.add(delta);
         }
         return deltas;
+    }
+
+    private static ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot cacheReuseDeltaSinceLastFlush() {
+        ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot current =
+                ServerBandwidthStatsRegistry.snapshotServerCacheReuse();
+        ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot delta = cacheReuseDelta(current, lastFlushedCacheReuse);
+        lastFlushedCacheReuse = current == null
+                ? ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot.empty()
+                : current;
+        return hasCacheReuse(delta) ? delta : null;
+    }
+
+    private static ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot pendingCacheReuseDelta() {
+        ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot delta =
+                cacheReuseDelta(ServerBandwidthStatsRegistry.snapshotServerCacheReuse(), lastFlushedCacheReuse);
+        return hasCacheReuse(delta) ? delta : null;
+    }
+
+    private static ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot cacheReuseDelta(
+            ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot current,
+            ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot previous
+    ) {
+        ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot safeCurrent =
+                current == null ? ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot.empty() : current;
+        ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot safePrevious =
+                previous == null ? ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot.empty() : previous;
+        return new ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot(
+                positiveDelta(safeCurrent.offlineReuseConfirmedFrames(), safePrevious.offlineReuseConfirmedFrames()),
+                positiveDelta(safeCurrent.offlineReuseConfirmedSavedBytes(), safePrevious.offlineReuseConfirmedSavedBytes()),
+                positiveDelta(safeCurrent.offlineReuseConfirmedWireBytes(), safePrevious.offlineReuseConfirmedWireBytes()),
+                positiveDelta(safeCurrent.temporaryReuseSavedBytes(), safePrevious.temporaryReuseSavedBytes())
+        );
     }
 
     private static ChannelBandwidthStats.Snapshot deltaSinceLastFlush(ChannelBandwidthStats.Snapshot snapshot) {
@@ -197,5 +236,13 @@ public final class ServerBandwidthStatsPersistence {
                 || snapshot.inboundBypassBytes() != 0L
                 || snapshot.outboundWireBytes() != 0L
                 || snapshot.inboundWireBytes() != 0L);
+    }
+
+    private static boolean hasCacheReuse(ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot snapshot) {
+        return snapshot != null
+                && (snapshot.offlineReuseConfirmedFrames() != 0L
+                || snapshot.offlineReuseConfirmedSavedBytes() != 0L
+                || snapshot.offlineReuseConfirmedWireBytes() != 0L
+                || snapshot.temporaryReuseSavedBytes() != 0L);
     }
 }
