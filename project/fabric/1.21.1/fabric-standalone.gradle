@@ -81,8 +81,8 @@ sourceSets {
         resources.exclude 'META-INF/mods.toml'
     }
     test {
-        java.srcDir '../../../project/neoforge/1.21.1/src/test/java'
-        resources.srcDir '../../../project/neoforge/1.21.1/src/test/resources'
+        java.srcDir 'src/test/java'
+        resources.srcDir 'src/test/resources'
     }
 }
 
