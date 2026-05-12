@@ -21,6 +21,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameO
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerChunkStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
+import com.PinkCats.bandwidthoptimizer.compat.minecraft.ConnectionProtocolNameCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -165,6 +166,7 @@ public final class ChunkTransportControlFrameSender {
         return sendControlFrame(channel, manifestFrame);
     }
 
+    // server send scope
     public static boolean sendServerCacheScope(Channel channel, String reason) {
         String scopeHash = ChunkPersistentServerScope.currentScopeHash();
         if (!ChunkPersistentServerScope.isSafeScopeHash(scopeHash)) {
@@ -368,8 +370,8 @@ public final class ChunkTransportControlFrameSender {
     }
 
     private static String readProtocolName(Channel channel) {
-        Object protocol = net.minecraft.network.ConnectionProtocol.PLAY;
-        return protocol == null ? "null" : String.valueOf(protocol);
+        // 通过版本兼容层读取协议名，控制帧发送逻辑本身保持跨版本一致。
+        return ConnectionProtocolNameCompat.readProtocolName(channel);
     }
 
     private static boolean isRuntimeFailureReason(String reason) {

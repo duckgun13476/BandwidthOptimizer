@@ -10,6 +10,7 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
+import com.PinkCats.bandwidthoptimizer.compat.minecraft.ConnectionProtocolNameCompat;
 import com.PinkCats.bandwidthoptimizer.report.ChunkBoundaryBandwidthRecorder;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCaptureManager;
 import com.PinkCats.bandwidthoptimizer.server.stat.ChannelBandwidthStats;
@@ -418,8 +419,8 @@ public final class ChannelTransportBatchManager {
     }
 
     private static String readProtocolName(ChannelHandlerContext context) {
-        Object protocol = context.channel().attr(net.minecraft.network.Connection.ATTRIBUTE_PROTOCOL).get();
-        return protocol == null ? "null" : String.valueOf(protocol);
+        // 通过版本兼容层读取协议名，避免 batch 主逻辑因为 MC 字段差异拆回各版本。
+        return ConnectionProtocolNameCompat.readProtocolName(context == null ? null : context.channel());
     }
 
     private static ChannelHandlerContext readDecoderContext(ChannelHandlerContext context) {
