@@ -1,0 +1,73 @@
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+import org.gradle.jvm.toolchain.JavaToolchainService
+
+boolean standaloneFabricBuild = rootProject.projectDir.canonicalFile == project.projectDir.canonicalFile
+
+if (standaloneFabricBuild) {
+    apply from: file('fabric-standalone.gradle')
+} else {
+    plugins.apply('base')
+    plugins.apply('java-base')
+
+    group = 'verification'
+
+    File repositoryRootDir = rootProject.projectDir
+    File wrapperFile = new File(repositoryRootDir, System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows') ? 'gradlew.bat' : 'gradlew')
+
+    def buildStandaloneFabricCommand = { String taskName ->
+        List<String> command = []
+        if (System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')) {
+            command.addAll(['cmd', '/c', wrapperFile.absolutePath])
+        } else {
+            command.add(wrapperFile.absolutePath)
+        }
+        command.addAll(['-p', project.projectDir.absolutePath, '--console=plain'])
+        gradle.startParameter.projectProperties.each { String key, String value ->
+            command.add("-P${key}=${value}")
+        }
+        command.add(taskName)
+        return command
+    }
+
+    def resolveFabricJavaHome = {
+        JavaToolchainService toolchainService = extensions.getByType(JavaToolchainService)
+        return toolchainService.launcherFor {
+            languageVersion = JavaLanguageVersion.of(21)
+        }.get().metadata.installationPath.asFile
+    }
+
+    def registerFabricProxyTask = { String taskName, String taskGroup, String taskDescription ->
+        tasks.register(taskName) {
+            group = taskGroup
+            description = taskDescription
+            doLast {
+                File javaHome = resolveFabricJavaHome.call()
+                exec {
+                    workingDir repositoryRootDir
+                    environment 'JAVA_HOME', javaHome.absolutePath
+                    environment 'Path', new File(javaHome, 'bin').absolutePath + File.pathSeparator + System.getenv('Path')
+                    commandLine buildStandaloneFabricCommand.call(taskName)
+                }
+            }
+        }
+    }
+
+    [
+            ['compileJava', 'build', 'Compiles the Fabric 1.21.1 standalone source set.'],
+            ['compileTestJava', 'build', 'Compiles the Fabric 1.21.1 standalone test source set.'],
+            ['classes', 'build', 'Builds the Fabric 1.21.1 standalone main classes.'],
+            ['testClasses', 'build', 'Builds the Fabric 1.21.1 standalone test classes.'],
+            ['runClient', 'application', 'Starts the Fabric 1.21.1 client run.'],
+            ['runServer', 'application', 'Starts the Fabric 1.21.1 server run.'],
+            ['runAll', 'application', 'Starts the Fabric 1.21.1 server/client runAll verification.'],
+            ['runAllAutoExitCompare', 'verification', 'Runs Fabric 1.21.1 runAll and compares final jsonl files.'],
+            ['runChannelJsonlCompare', 'verification', 'Compares Fabric 1.21.1 four-way jsonl captures.'],
+            ['runChannelSimulate', 'verification', 'Runs the Fabric 1.21.1 channel simulation.'],
+            ['runChannelTransportReport', 'verification', 'Runs Fabric 1.21.1 transport report scenarios.'],
+            ['runChannelTransportRoundTrip', 'verification', 'Verifies Fabric 1.21.1 transport codec round trips.'],
+            ['runChunkBranchCoverageVerify', 'verification', 'Verifies Fabric 1.21.1 chunk branch coverage.'],
+            ['runWatchBoundaryRefreshPatchRegression', 'verification', 'Runs Fabric 1.21.1 watch-boundary refresh-patch regression.']
+    ].each { List<String> taskSpec ->
+        registerFabricProxyTask.call(taskSpec[0], taskSpec[1], taskSpec[2])
+    }
+}
