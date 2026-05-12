@@ -37,10 +37,10 @@ if (standaloneFabricBuild) {
     }
 
     def registerFabricProxyTask = { String taskName, String taskGroup, String taskDescription ->
-        tasks.register(taskName) {
-            group = taskGroup
-            description = taskDescription
-            doLast {
+        def configureProxyTask = { Task task ->
+            task.group = taskGroup
+            task.description = taskDescription
+            task.doLast {
                 File javaHome = resolveFabricJavaHome.call()
                 exec {
                     workingDir repositoryRootDir
@@ -50,6 +50,15 @@ if (standaloneFabricBuild) {
                 }
             }
         }
+
+        Task existingTask = tasks.findByName(taskName)
+        if (existingTask != null) {
+            configureProxyTask.call(existingTask)
+        } else {
+            tasks.register(taskName) {
+                configureProxyTask.call(delegate as Task)
+            }
+        }
     }
 
     [
@@ -57,6 +66,10 @@ if (standaloneFabricBuild) {
             ['compileTestJava', 'build', 'Compiles the Fabric 1.20.1 standalone test source set.'],
             ['classes', 'build', 'Builds the Fabric 1.20.1 standalone main classes.'],
             ['testClasses', 'build', 'Builds the Fabric 1.20.1 standalone test classes.'],
+            ['jar', 'build', 'Builds the Fabric 1.20.1 development jar.'],
+            ['remapJar', 'build', 'Builds the final Fabric 1.20.1 publish jar.'],
+            ['sourcesJar', 'build', 'Builds the Fabric 1.20.1 sources jar.'],
+            ['build', 'build', 'Builds the Fabric 1.20.1 standalone project.'],
             ['runClient', 'application', 'Starts the Fabric 1.20.1 client run.'],
             ['runServer', 'application', 'Starts the Fabric 1.20.1 server run.'],
             ['runAll', 'application', 'Starts the Fabric 1.20.1 server/client runAll verification.'],
@@ -66,7 +79,16 @@ if (standaloneFabricBuild) {
             ['runChannelTransportReport', 'verification', 'Runs Fabric 1.20.1 transport report scenarios.'],
             ['runChannelTransportRoundTrip', 'verification', 'Verifies Fabric 1.20.1 transport codec round trips.'],
             ['runChunkBranchCoverageVerify', 'verification', 'Verifies Fabric 1.20.1 chunk branch coverage.'],
-            ['runWatchBoundaryRefreshPatchRegression', 'verification', 'Runs Fabric 1.20.1 watch-boundary refresh-patch regression.']
+            ['runWatchBoundaryRefreshPatchRegression', 'verification', 'Runs Fabric 1.20.1 watch-boundary refresh-patch regression.'],
+            ['verifyPublishArtifact', 'Publishing', 'Verifies the Fabric 1.20.1 publish artifact.'],
+            ['PublishInfo', 'Publishing', 'Prints Fabric 1.20.1 publishing metadata.'],
+            ['publishInfo', 'Publishing', 'Alias for Fabric 1.20.1 PublishInfo.'],
+            ['allworkPublishInfo', 'Allwork', 'Allwork alias for Fabric 1.20.1 PublishInfo.'],
+            ['allworkJarJar', 'Allwork', 'Allwork alias for the Fabric 1.20.1 publish jar.'],
+            ['publishCurseForge', 'Publishing', 'Publishes the Fabric 1.20.1 jar to CurseForge.'],
+            ['publishMods', 'Publishing', 'Publishes the Fabric 1.20.1 jar through mod-publish-plugin.'],
+            ['publishAll', 'Publishing', 'Publishes the Fabric 1.20.1 jar to configured platforms.'],
+            ['allworkPublishAll', 'Allwork', 'Allwork alias for Fabric 1.20.1 publishAll.']
     ].each { List<String> taskSpec ->
         registerFabricProxyTask.call(taskSpec[0], taskSpec[1], taskSpec[2])
     }

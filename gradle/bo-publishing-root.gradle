@@ -1,7 +1,9 @@
-// publish root only Forge 1.20.1 and NeoForge 1.21.1。
+// publish root
 
 def boPublishableProjectPaths = [
         ':forge-1.20.1',
+        ':fabric-1.20.1',
+        ':fabric-1.21.1',
         ':neoforge-1.21.1'
 ]
 
@@ -50,13 +52,13 @@ gradle.projectsEvaluated {
 
 tasks.register('allworkPublishInfoAllVersions') {
     group = 'Allwork'
-    description = 'Print publish info for Forge 1.20.1 and NeoForge 1.21.1.'
+    description = 'Print publish info for all publishable BandwidthOptimizer versions.'
     dependsOn boPublishableProjectPaths.collect { "${it}:allworkPublishInfo" }
 }
 
 tasks.register('publishInfoAllVersions') {
     group = 'Publishing'
-    description = 'Print publish info for Forge 1.20.1 and NeoForge 1.21.1.'
+    description = 'Print publish info for all publishable BandwidthOptimizer versions.'
     dependsOn 'allworkPublishInfoAllVersions'
 }
 
@@ -76,8 +78,9 @@ tasks.register('publishAllVersions') {
 
 tasks.register('allworkPackageAllVersions') {
     group = 'Allwork'
-    description = 'Build final jars for Forge 1.20.1 and NeoForge 1.21.1.'
+    description = 'Build final jars for all publishable BandwidthOptimizer versions.'
     dependsOn boPublishableProjectPaths.collect { "${it}:allworkJarJar" }
+    dependsOn boPublishableProjectPaths.collect { "${it}:verifyPublishArtifact" }
 }
 
 tasks.register('allworkJarJarAllVersions') {
@@ -88,6 +91,6 @@ tasks.register('allworkJarJarAllVersions') {
 
 tasks.register('packageAllVersions') {
     group = 'Publishing'
-    description = 'Build final jars for Forge 1.20.1 and NeoForge 1.21.1.'
+    description = 'Build final jars for all publishable BandwidthOptimizer versions.'
     dependsOn 'allworkPackageAllVersions'
 }

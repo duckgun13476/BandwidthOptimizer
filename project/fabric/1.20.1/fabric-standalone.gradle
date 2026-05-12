@@ -1,7 +1,13 @@
 import net.fabricmc.loom.LoomGradlePlugin
+import net.darkhax.curseforgegradle.CurseForgeGradlePlugin
+import me.modmuss50.mpp.MppPlugin
 
 buildscript {
     repositories {
+        maven {
+            name = 'GradlePluginPortal'
+            url = 'https://plugins.gradle.org/m2/'
+        }
         maven {
             name = 'Fabric'
             url = 'https://maven.fabricmc.net/'
@@ -10,17 +16,29 @@ buildscript {
     }
     dependencies {
         classpath 'net.fabricmc:fabric-loom:1.10.5'
+        classpath 'net.darkhax.curseforgegradle:CurseForgeGradle:1.1.28'
+        classpath 'me.modmuss50:mod-publish-plugin:1.0.0'
     }
 }
 
 apply plugin: 'idea'
 apply plugin: LoomGradlePlugin
+apply plugin: CurseForgeGradlePlugin
+apply plugin: MppPlugin
 
 apply from: file('../../../gradle/bo-property-loader.gradle')
 apply from: file('../../../test.gradle')
 
 group = mod_group_id
 version = mod_version
+
+ext.bo_publish_artifact_task_name = 'remapJar'
+ext.bo_publish_artifact_relative_path = "build/libs/${package_name}-${mod_version}-fabric-1.20.1.jar"
+ext.bo_publish_loader_id = 'fabric'
+ext.bo_publish_curseforge_loaders = ['Fabric']
+ext.bo_publish_modrinth_loaders = ['fabric']
+ext.bo_publish_required_dependencies = ['fabric-api']
+ext.minecraft_version = '1.20.1'
 
 base {
     archivesName = "${package_name}-fabric-1.20.1"
@@ -117,7 +135,6 @@ processResources {
 }
 
 tasks.named('jar', Jar).configure {
-    archiveFileName = "${package_name}-${mod_version}-fabric-1.20.1.jar"
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
         attributes([
@@ -131,6 +148,10 @@ tasks.named('jar', Jar).configure {
     }
 }
 
+tasks.named('remapJar').configure {
+    archiveFileName = "${package_name}-${mod_version}-fabric-1.20.1.jar"
+}
+
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.release = 17
@@ -140,3 +161,6 @@ java {
     toolchain.languageVersion = JavaLanguageVersion.of(17)
     withSourcesJar()
 }
+
+apply from: file('../../../gradle/bo-publishing.gradle')
+apply from: file('../../../gradle/bo-fabric-publishing-verify.gradle')

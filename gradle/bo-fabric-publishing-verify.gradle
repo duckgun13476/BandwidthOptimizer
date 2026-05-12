@@ -1,0 +1,54 @@
+
+tasks.register('verifyFabricPublishJarContents') {
+    group = 'Publishing'
+    description = 'Verify Fabric publish jar contains metadata, mixin config, entrypoint class, TorqueAPI and zstd-jni.'
+    dependsOn tasks.named(boReadPublishArtifactTaskName())
+
+    doLast {
+        File artifactFile = boReadPublishArtifactFile()
+        if (!artifactFile.isFile()) {
+            throw new GradleException("Fabric publish artifact does not exist: ${artifactFile.absolutePath}")
+        }
+
+        def zipFile = new java.util.zip.ZipFile(artifactFile)
+        try {
+            Set<String> entries = zipFile.entries().collect { entry -> entry.name } as Set
+            List<String> missing = []
+            [
+                    'fabric.mod.json',
+                    'bandwidthoptimizer.mixins.json',
+                    'com/PinkCats/bandwidthoptimizer/Bandwidthoptimizer.class'
+            ].each { requiredEntry ->
+                if (!entries.contains(requiredEntry)) {
+                    missing.add(requiredEntry)
+                }
+            }
+
+            boolean hasTorqueApiJar = entries.any { entryName ->
+                entryName.startsWith('META-INF/jars/TorqueAPI-') && entryName.endsWith('.jar')
+            }
+            if (!hasTorqueApiJar) {
+                missing.add('META-INF/jars/TorqueAPI-*.jar')
+            }
+
+            boolean hasZstdJar = entries.any { entryName ->
+                entryName.startsWith('META-INF/jars/zstd-jni-') && entryName.endsWith('.jar')
+            }
+            if (!hasZstdJar) {
+                missing.add('META-INF/jars/zstd-jni-*.jar')
+            }
+
+            if (!missing.isEmpty()) {
+                throw new GradleException("Fabric publish artifact is missing required entries: ${missing.join(', ')}")
+            }
+
+            println "Verified Fabric publish jar contents for ${project.path}: ${artifactFile.absolutePath}"
+        } finally {
+            zipFile.close()
+        }
+    }
+}
+
+tasks.named('verifyPublishArtifact').configure {
+    dependsOn tasks.named('verifyFabricPublishJarContents')
+}

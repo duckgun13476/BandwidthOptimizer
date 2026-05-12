@@ -1,7 +1,20 @@
 // BandwidthOptimizer publish mission
 
+def boResolvePublishingRepositoryRoot = {
+    File current = project.projectDir
+    while (current != null) {
+        if (new File(current, 'gradle/bo-common.properties').exists()) {
+            return current
+        }
+        current = current.parentFile
+    }
+    return rootProject.projectDir
+}
+
+def boPublishingRepositoryRootDir = boResolvePublishingRepositoryRoot()
+
 ext.boReadPublishingProperties = {
-    def propertiesFile = rootProject.file('api.properties')
+    def propertiesFile = new File(boPublishingRepositoryRootDir, 'api.properties')
     if (!propertiesFile.exists()) {
         return null
     }
@@ -12,7 +25,7 @@ ext.boReadPublishingProperties = {
 }
 
 ext.boReadPrimaryChangelog = {
-    def changelogFile = rootProject.file('update/changelog.md')
+    def changelogFile = new File(boPublishingRepositoryRootDir, 'update/changelog.md')
     if (!changelogFile.exists()) {
         return ''
     }
@@ -22,7 +35,7 @@ ext.boReadPrimaryChangelog = {
 }
 
 ext.boReadFullChangelog = {
-    def changelogFile = rootProject.file('update/changelog.md')
+    def changelogFile = new File(boPublishingRepositoryRootDir, 'update/changelog.md')
     return changelogFile.exists() ? changelogFile.getText('UTF-8') : ''
 }
 
@@ -117,7 +130,12 @@ ext.boVerifyPublishArtifactFile = {
     return artifactFile
 }
 
+def appliedCurseForgePlugin = project.plugins.find { plugin ->
+    plugin != null && plugin.getClass().getName() == 'net.darkhax.curseforgegradle.CurseForgeGradlePlugin'
+}
+
 def curseForgeTaskClass = [
+        appliedCurseForgePlugin?.getClass()?.getClassLoader(),
         this.class.classLoader,
         Thread.currentThread().contextClassLoader,
         project.buildscript.classLoader
