@@ -2,6 +2,8 @@ plugins {
     id 'eclipse'
     id 'idea'
     id 'net.minecraftforge.gradle' version '[6.0.16,6.2)'
+    id 'net.darkhax.curseforgegradle' version '1.1.28'
+    id 'me.modmuss50.mod-publish-plugin' version '1.0.0'
 }
 
 apply plugin: 'org.spongepowered.mixin'
@@ -10,6 +12,12 @@ apply from: rootProject.file('test.gradle')
 
 group = mod_group_id
 version = mod_version
+
+ext.bo_publish_artifact_task_name = 'reobfJar'
+ext.bo_publish_artifact_relative_path = "build/libs/${package_name}-${mod_version}-forge-${minecraft_version}.jar"
+ext.bo_publish_loader_id = 'forge'
+ext.bo_publish_curseforge_loaders = ['Forge']
+ext.bo_publish_modrinth_loaders = ['forge']
 
 base {
     archivesName = mod_id
@@ -117,6 +125,9 @@ configurations.configureEach {
     resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
 }
 
+ext.bo_torque_embed_notation = "com.pinkcats.torque:TorqueAPI-${minecraft_version}-forge:${torque_api_version}"
+apply from: rootProject.file('gradle/torque-embed-modern.gradle')
+
 dependencies {
     String zstdJniVersion = '1.5.7-7'
 
@@ -179,3 +190,5 @@ tasks.named('jar', Jar).configure {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
+
+apply from: rootProject.file('gradle/bo-publishing.gradle')

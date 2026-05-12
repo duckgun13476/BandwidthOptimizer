@@ -1,6 +1,7 @@
 // publish root
 
 def boPublishableProjectPaths = [
+        ':forge-1.19.2',
         ':forge-1.20.1',
         ':fabric-1.20.1',
         ':fabric-1.21.1',
