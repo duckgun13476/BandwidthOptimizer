@@ -565,6 +565,23 @@ public final class ChannelTransportHooks {
         }
 
         byte[] inboundPacketBytes = ByteBufUtil.getBytes(in, in.readerIndex(), in.readableBytes(), false);
+        if (ChunkTransportDispatcher.looksLikeChunkTransportEnvelope(inboundPacketBytes)) {
+            ChannelTransportPacketCodec.UnwrappedTransportFrame directEnvelopeFrame =
+                    new ChannelTransportPacketCodec.UnwrappedTransportFrame(
+                            ChannelTransportPacketCodec.FrameKind.SINGLE,
+                            List.of(inboundPacketBytes),
+                            inboundPacketBytes.length,
+                            1,
+                            inboundPacketBytes.length,
+                            inboundPacketBytes.length,
+                            null
+                    );
+            decodeInboundPacketsIntoOutput(context, directEnvelopeFrame, out, packetDecoderFlowAccess);
+            in.readerIndex(in.writerIndex());
+            recordInboundTransportStats(context, readProtocolName(context), directEnvelopeFrame);
+            return true;
+        }
+
         ChannelTransportSession transportSession = ChannelTransportStateManager.getOrCreateSession(context.channel());
         ChannelTransportPacketCodec.UnwrappedTransportFrame unwrappedFrame =
                 KineticChannel.tryUnpackInboundPacket(transportSession, inboundPacketBytes);

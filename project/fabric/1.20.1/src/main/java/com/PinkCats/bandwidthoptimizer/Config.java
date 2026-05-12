@@ -406,6 +406,15 @@ public class Config {
             public static final String AUTO_CONNECT_RETRY_DELAY_TICKS =
                     "bandwidthoptimizer.experient.autoConnectRetryDelayTicks";
             public static final int DEFAULT_AUTO_CONNECT_RETRY_DELAY_TICKS = 40;
+            public static final String AUTO_CONNECT_REJOIN_CYCLES =
+                    "bandwidthoptimizer.experient.autoConnectRejoinCycles";
+            public static final int DEFAULT_AUTO_CONNECT_REJOIN_CYCLES = 0;
+            public static final String AUTO_CONNECT_REJOIN_CONNECTED_TICKS =
+                    "bandwidthoptimizer.experient.autoConnectRejoinConnectedTicks";
+            public static final int DEFAULT_AUTO_CONNECT_REJOIN_CONNECTED_TICKS = 120;
+            public static final String AUTO_CONNECT_REJOIN_DELAY_TICKS =
+                    "bandwidthoptimizer.experient.autoConnectRejoinDelayTicks";
+            public static final int DEFAULT_AUTO_CONNECT_REJOIN_DELAY_TICKS = 80;
             public static final String SERVER_COMMAND =
                     "bandwidthoptimizer.experient.serverCommand";
             public static final String DEFAULT_SERVER_COMMAND = "";

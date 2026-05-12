@@ -488,6 +488,10 @@ public final class ChunkTransportDispatcher {
         throw new IllegalStateException("Unsupported chunk transport operation in runtime MVP: " + envelope.frame().operation().logName());
     }
 
+    public static boolean looksLikeChunkTransportEnvelope(byte[] packetBytes) {
+        return ChunkTransportEnvelopeCodec.looksLikeEnvelope(packetBytes);
+    }
+
     private static void handlePersistentClientCacheManifest(
             ChannelHandlerContext context,
             ChunkHotspotFrame frame

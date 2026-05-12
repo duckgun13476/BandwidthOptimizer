@@ -99,6 +99,9 @@ def configureBandwidthOptimizerNeoForgeClientRun = { Project projectRef, def run
             applyOptionalNeoForgeRunProperty(projectRef, runConfig, 'boExperientAutoConnectDelayTicks', 'bandwidthoptimizer.experient.autoConnectDelayTicks')
             applyOptionalNeoForgeRunProperty(projectRef, runConfig, 'boExperientAutoConnectMaxAttempts', 'bandwidthoptimizer.experient.autoConnectMaxAttempts')
             applyOptionalNeoForgeRunProperty(projectRef, runConfig, 'boExperientAutoConnectRetryDelayTicks', 'bandwidthoptimizer.experient.autoConnectRetryDelayTicks')
+            applyOptionalNeoForgeRunProperty(projectRef, runConfig, 'boExperientAutoConnectRejoinCycles', 'bandwidthoptimizer.experient.autoConnectRejoinCycles')
+            applyOptionalNeoForgeRunProperty(projectRef, runConfig, 'boExperientAutoConnectRejoinConnectedTicks', 'bandwidthoptimizer.experient.autoConnectRejoinConnectedTicks')
+            applyOptionalNeoForgeRunProperty(projectRef, runConfig, 'boExperientAutoConnectRejoinDelayTicks', 'bandwidthoptimizer.experient.autoConnectRejoinDelayTicks')
         }
         applyOptionalNeoForgeRunProperty(projectRef, runConfig, 'boExperientServerCommand', 'bandwidthoptimizer.experient.serverCommand')
         applyOptionalNeoForgeRunProperty(projectRef, runConfig, 'boExperientServerCommandDelayTicks', 'bandwidthoptimizer.experient.serverCommandDelayTicks')
@@ -310,7 +313,10 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
             'boChunkWatchBoundaryReuseMaxDeltaPackets',
             'boChunkWatchBoundaryReuseMaxDeltaBytesRatio',
             'boClientChunkCacheMaxMemoryMb',
-            'boClientChunkCacheRecycleTriggerFreeMb'
+            'boClientChunkCacheRecycleTriggerFreeMb',
+            'boExperientAutoConnectRejoinCycles',
+            'boExperientAutoConnectRejoinConnectedTicks',
+            'boExperientAutoConnectRejoinDelayTicks'
     ].each { String propertyName ->
         project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, propertyName)
     }
@@ -333,7 +339,23 @@ def buildExperientAutoConnectGradleArgs(Project projectRef, String address, Stri
     args.add("-PboExperientAutoConnectDelayTicks=${delayTicks}")
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientAutoConnectMaxAttempts')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientAutoConnectRetryDelayTicks')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientAutoConnectRejoinCycles')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientAutoConnectRejoinConnectedTicks')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientAutoConnectRejoinDelayTicks')
     return args
+}
+
+// auto login multi times
+def shouldRunNeoForgeRunAllCompare(Project projectRef) {
+    if (projectRef.hasProperty('boRunAllCompareEnabled')) {
+        return projectRef.property('boRunAllCompareEnabled').toString().toBoolean()
+    }
+    String rejoinCycles = (projectRef.findProperty('boExperientAutoConnectRejoinCycles') ?: '0').toString().trim()
+    try {
+        return Integer.parseInt(rejoinCycles.isEmpty() ? '0' : rejoinCycles) <= 0
+    } catch (NumberFormatException ignored) {
+        return true
+    }
 }
 
 // runAll divide by version
@@ -567,9 +589,13 @@ tasks.register('runAll') {
                         settleMillis,
                         settleTimeoutMillis
                 )
-                javaexec {
-                    classpath = sourceSets.test.runtimeClasspath
-                    mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
+                if (shouldRunNeoForgeRunAllCompare(project)) {
+                    javaexec {
+                        classpath = sourceSets.test.runtimeClasspath
+                        mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
+                    }
+                } else {
+                    println 'runAll: 跳过 NeoForge jsonl compare，因为当前是多次退出重进场景。'
                 }
                 println 'runAll: NeoForge 1.21.1 runAll completed.'
                 return
@@ -592,9 +618,13 @@ tasks.register('runAll') {
                     settleMillis,
                     settleTimeoutMillis
             )
-            javaexec {
-                classpath = sourceSets.test.runtimeClasspath
-                mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
+            if (shouldRunNeoForgeRunAllCompare(project)) {
+                javaexec {
+                    classpath = sourceSets.test.runtimeClasspath
+                    mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
+                }
+            } else {
+                println 'runAll: 跳过 NeoForge jsonl compare，因为当前是多次退出重进场景。'
             }
             println 'runAll: NeoForge 1.21.1 runAll completed.'
         } finally {

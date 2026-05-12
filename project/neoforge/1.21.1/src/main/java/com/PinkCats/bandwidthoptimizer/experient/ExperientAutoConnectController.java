@@ -9,6 +9,7 @@ import net.minecraft.client.gui.screens.ConnectScreen;
 import net.minecraft.client.gui.screens.DisconnectedScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.gui.screens.multiplayer.JoinMultiplayerScreen;
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.multiplayer.resolver.ServerAddress;
 import net.neoforged.api.distmarker.Dist;
@@ -31,9 +32,12 @@ public final class ExperientAutoConnectController {
     private static int lastRetryScheduledAttemptCount;
     private static int delayTicksRemaining = -1;
     private static int retryDelayTicksRemaining;
+    private static int rejoinDelayTicksRemaining;
     private static int serverReadyRetryTicksRemaining;
     private static AutoConnectPhase phase = AutoConnectPhase.IDLE;
     private static boolean shutdownAfterDisconnectLogged;
+    private static int connectedTicks;
+    private static int completedRejoinCycles;
 
     private ExperientAutoConnectController() {
     }
@@ -54,13 +58,16 @@ public final class ExperientAutoConnectController {
             return;
         }
 
-        if (connectedOnce) {
-            return;
-        }
-
         if (minecraft.level != null || minecraft.player != null) {
             connectedOnce = true;
             phase = AutoConnectPhase.CONNECTED;
+            if (maybeDisconnectForRejoinCycle(minecraft)) {
+                return;
+            }
+            return;
+        }
+
+        if (connectedOnce) {
             return;
         }
 
@@ -114,6 +121,19 @@ public final class ExperientAutoConnectController {
         if (!connectedOnce || minecraft == null || !(minecraft.screen instanceof DisconnectedScreen)) {
             return false;
         }
+        if (completedRejoinCycles < readRejoinCycles()) {
+            connectedOnce = false;
+            phase = AutoConnectPhase.IDLE;
+            connectedTicks = 0;
+            rejoinDelayTicksRemaining = readRejoinDelayTicks();
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ExperientAutoConnect][RejoinTest] Connection returned to disconnect screen, preparing rejoin {}/{} in {} ticks.",
+                    completedRejoinCycles + 1,
+                    readRejoinCycles(),
+                    rejoinDelayTicksRemaining
+            );
+            return true;
+        }
 
         if (!shutdownAfterDisconnectLogged) {
             shutdownAfterDisconnectLogged = true;
@@ -123,6 +143,32 @@ public final class ExperientAutoConnectController {
         return true;
     }
 
+    private static boolean maybeDisconnectForRejoinCycle(Minecraft minecraft) {
+        int targetRejoinCycles = readRejoinCycles();
+        if (targetRejoinCycles <= 0 || completedRejoinCycles >= targetRejoinCycles) {
+            return false;
+        }
+
+        connectedTicks++;
+        int requiredConnectedTicks = readRejoinConnectedTicks();
+        if (connectedTicks < requiredConnectedTicks) {
+            return false;
+        }
+
+        completedRejoinCycles++;
+        connectedOnce = false;
+        connectedTicks = 0;
+        phase = AutoConnectPhase.IDLE;
+        rejoinDelayTicksRemaining = readRejoinDelayTicks();
+        Bandwidthoptimizer.LOGGER.info(
+                "[ExperientAutoConnect][RejoinTest] Disconnecting to multiplayer screen for rejoin cycle {}/{}; reconnectDelayTicks={}.",
+                completedRejoinCycles,
+                targetRejoinCycles,
+                rejoinDelayTicksRemaining
+        );
+        minecraft.disconnect(new JoinMultiplayerScreen(new TitleScreen()));
+        return true;
+    }
 
     private static void updatePhaseAfterScreenReturn(Screen currentScreen) {
         if (phase == AutoConnectPhase.CONNECTING && startedAttemptCount > lastRetryScheduledAttemptCount) {
@@ -154,6 +200,10 @@ public final class ExperientAutoConnectController {
             retryDelayTicksRemaining--;
             return false;
         }
+        if (rejoinDelayTicksRemaining > 0) {
+            rejoinDelayTicksRemaining--;
+            return false;
+        }
         if (serverReadyRetryTicksRemaining > 0) {
             serverReadyRetryTicksRemaining--;
             return false;
@@ -162,7 +212,9 @@ public final class ExperientAutoConnectController {
     }
 
     private static boolean isRetryEligibleScreen(Screen currentScreen) {
-        return currentScreen instanceof TitleScreen || currentScreen instanceof DisconnectedScreen;
+        return currentScreen instanceof TitleScreen
+                || currentScreen instanceof DisconnectedScreen
+                || currentScreen instanceof JoinMultiplayerScreen;
     }
 
     private static ConnectOnceResult connectOnceWhenServerReady(
@@ -257,6 +309,33 @@ public final class ExperientAutoConnectController {
                 Config.RuntimeProperty.Experient.AUTO_CONNECT_RETRY_DELAY_TICKS,
                 Config.RuntimeProperty.Experient.DEFAULT_AUTO_CONNECT_RETRY_DELAY_TICKS,
                 "retry delay ticks"
+        );
+    }
+
+    private static int readRejoinCycles() {
+        return readNonNegativeIntProperty(
+                Config.RuntimeProperty.Experient.AUTO_CONNECT_REJOIN_CYCLES,
+                Config.RuntimeProperty.Experient.DEFAULT_AUTO_CONNECT_REJOIN_CYCLES,
+                "rejoin cycles"
+        );
+    }
+
+    private static int readRejoinConnectedTicks() {
+        return Math.max(
+                readNonNegativeIntProperty(
+                        Config.RuntimeProperty.Experient.AUTO_CONNECT_REJOIN_CONNECTED_TICKS,
+                        Config.RuntimeProperty.Experient.DEFAULT_AUTO_CONNECT_REJOIN_CONNECTED_TICKS,
+                        "rejoin connected ticks"
+                ),
+                1
+        );
+    }
+
+    private static int readRejoinDelayTicks() {
+        return readNonNegativeIntProperty(
+                Config.RuntimeProperty.Experient.AUTO_CONNECT_REJOIN_DELAY_TICKS,
+                Config.RuntimeProperty.Experient.DEFAULT_AUTO_CONNECT_REJOIN_DELAY_TICKS,
+                "rejoin delay ticks"
         );
     }
 

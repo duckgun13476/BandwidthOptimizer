@@ -47,6 +47,9 @@ def applyExperientClientRunProperties = { Project projectRef, def runConfig ->
             applyOptionalRunProperty(projectRef, runConfig, 'boExperientAutoConnectDelayTicks', 'bandwidthoptimizer.experient.autoConnectDelayTicks')
             applyOptionalRunProperty(projectRef, runConfig, 'boExperientAutoConnectMaxAttempts', 'bandwidthoptimizer.experient.autoConnectMaxAttempts')
             applyOptionalRunProperty(projectRef, runConfig, 'boExperientAutoConnectRetryDelayTicks', 'bandwidthoptimizer.experient.autoConnectRetryDelayTicks')
+            applyOptionalRunProperty(projectRef, runConfig, 'boExperientAutoConnectRejoinCycles', 'bandwidthoptimizer.experient.autoConnectRejoinCycles')
+            applyOptionalRunProperty(projectRef, runConfig, 'boExperientAutoConnectRejoinConnectedTicks', 'bandwidthoptimizer.experient.autoConnectRejoinConnectedTicks')
+            applyOptionalRunProperty(projectRef, runConfig, 'boExperientAutoConnectRejoinDelayTicks', 'bandwidthoptimizer.experient.autoConnectRejoinDelayTicks')
         }
 
         applyOptionalRunProperty(projectRef, runConfig, 'boExperientServerCommand', 'bandwidthoptimizer.experient.serverCommand')
@@ -317,6 +320,9 @@ def buildExperientAutoConnectGradleArgs(Project projectRef, String address, Stri
     ])
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientAutoConnectMaxAttempts')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientAutoConnectRetryDelayTicks')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientAutoConnectRejoinCycles')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientAutoConnectRejoinConnectedTicks')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientAutoConnectRejoinDelayTicks')
     return args
 }
 
