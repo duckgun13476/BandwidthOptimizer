@@ -1,0 +1,155 @@
+import net.fabricmc.loom.LoomGradlePlugin
+
+buildscript {
+    repositories {
+        maven {
+            name = 'Fabric'
+            url = 'https://maven.fabricmc.net/'
+        }
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'net.fabricmc:fabric-loom:1.10.5'
+    }
+}
+
+apply plugin: 'idea'
+apply plugin: LoomGradlePlugin
+
+apply from: file('../../../gradle/bo-property-loader.gradle')
+apply from: file('../../../test.gradle')
+
+group = mod_group_id
+version = mod_version
+
+base {
+    archivesName = "${package_name}-fabric-1.21.1"
+}
+
+repositories {
+    maven {
+        name = 'PinkCatsLocal'
+        url = uri('C:/F/Maven')
+    }
+    mavenCentral()
+    maven {
+        name = 'Fabric'
+        url = 'https://maven.fabricmc.net/'
+    }
+    maven {
+        url = 'https://repo.spongepowered.org/repository/maven-public/'
+    }
+}
+
+configurations {
+    bundledLibs
+}
+
+configurations.configureEach {
+    resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+}
+
+dependencies {
+    String zstdJniVersion = '1.5.7-7'
+
+    minecraft 'com.mojang:minecraft:1.21.1'
+    mappings loom.officialMojangMappings()
+    modImplementation 'net.fabricmc:fabric-loader:0.17.2'
+    modImplementation 'net.fabricmc.fabric-api:fabric-api:0.116.11+1.21.1'
+    modImplementation("com.pinkcats.torque:TorqueAPI-1.21.1-fabric:${torque_api_version}") {
+        changing = true
+    }
+    include("com.pinkcats.torque:TorqueAPI-1.21.1-fabric:${torque_api_version}")
+    compileOnly("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}") {
+        changing = true
+    }
+    implementation "com.github.luben:zstd-jni:${zstdJniVersion}"
+    include "com.github.luben:zstd-jni:${zstdJniVersion}"
+    bundledLibs "com.github.luben:zstd-jni:${zstdJniVersion}"
+}
+
+def fabricExcludedCommonJava = [
+        'com/PinkCats/bandwidthoptimizer/chunk/packet/ClientboundPlayPacketCodec.java'
+]
+
+sourceSets {
+    main {
+        java.srcDir '../../../common/src/main/java'
+        java.srcDir 'src/main/java'
+        resources.srcDir '../../../common/src/main/resources'
+        resources.srcDir 'src/main/resources'
+        resources.exclude 'META-INF/mods.toml'
+    }
+    test {
+        java.srcDir '../../../project/neoforge/1.21.1/src/test/java'
+        resources.srcDir '../../../project/neoforge/1.21.1/src/test/resources'
+    }
+}
+
+tasks.named('compileJava', JavaCompile).configure {
+    setSource(files(
+            project.fileTree('src/main/java'),
+            project.fileTree('../../../common/src/main/java') {
+                exclude fabricExcludedCommonJava
+            }
+    ))
+}
+
+loom {
+    runs {
+        client {
+            client()
+            runDir = 'run/client'
+            configureBandwidthOptimizerClientRun(project, delegate)
+        }
+        server {
+            server()
+            runDir = 'run/server'
+            configureBandwidthOptimizerServerRun(project, delegate)
+        }
+    }
+}
+
+processResources {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    var replaceProperties = [
+            mod_id            : mod_id,
+            mod_name          : mod_name,
+            mod_version       : mod_version,
+            mod_authors       : mod_authors,
+            mod_description   : mod_description,
+            mod_license       : mod_license,
+            loader_version    : '0.17.2',
+            minecraft_version : '1.21.1',
+            fabric_api_version: '0.116.11+1.21.1'
+    ]
+    inputs.properties replaceProperties
+    filesMatching(['fabric.mod.json', 'pack.mcmeta']) {
+        expand replaceProperties + [project: project]
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    archiveFileName = "${package_name}-${mod_version}-fabric-1.21.1.jar"
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes([
+                "MixinConfigs": "bandwidthoptimizer.mixins.json"
+        ])
+    }
+    from {
+        configurations.bundledLibs.collect { dependency -> zipTree(dependency) }
+    } {
+        exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 21
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+    withSourcesJar()
+}
