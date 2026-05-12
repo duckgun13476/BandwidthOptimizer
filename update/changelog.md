@@ -1,3 +1,8 @@
+#### v2.7.6.6-beta
+1. Added Forge 1.19.2, Fabric 1.20.1, and Fabric 1.21.1 support.
+2. Fixed chunk cache reuse after returning to the multiplayer screen and reconnecting.
+3. Fixed client disconnects caused by direct chunk transport envelopes being decoded as vanilla packets.
+
 #### v2.6.6.3-beta
 1. Improved Sable compatibility.
 2. Fixed persistent server bandwidth stats.
