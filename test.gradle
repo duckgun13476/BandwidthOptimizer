@@ -8,7 +8,21 @@ import java.util.Properties
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-apply from: rootProject.file('gradle/bo-runall-common.gradle')
+File resolveBandwidthOptimizerRepositoryRoot() {
+    File currentDir = project.projectDir
+    while (currentDir != null) {
+        File commonGradleFile = new File(currentDir, 'gradle/bo-runall-common.gradle')
+        File wrapperFile = new File(currentDir, System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows') ? 'gradlew.bat' : 'gradlew')
+        if (commonGradleFile.exists() && wrapperFile.exists()) {
+            return currentDir
+        }
+        currentDir = currentDir.parentFile
+    }
+    return rootProject.projectDir
+}
+
+File boRepositoryRootDir = resolveBandwidthOptimizerRepositoryRoot()
+apply from: new File(boRepositoryRootDir, 'gradle/bo-runall-common.gradle')
 
 def boRunAllTasksEnabled = project.ext.boIsRunAllTasksEnabled.call(project)
 def applyOptionalRunProperty = { Project projectRef, def runConfig, String gradlePropertyName, String runtimePropertyName ->
@@ -451,7 +465,7 @@ def stopExistingRunAllProcesses(Project projectRef, File projectDirFile, boolean
     String escapedProjectDir = projectDirFile.absolutePath.replace("'", "''")
     projectRef.exec {
         commandLine 'powershell', '-NoProfile', '-Command',
-                "\$targets = Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -and \$_.CommandLine -like '*${escapedProjectDir}*' -and (\$_.CommandLine -like '*forgeclientuserdev*' -or \$_.CommandLine -like '*forgeserveruserdev*' -or \$_.CommandLine -like '*gradlew.bat*runClient*' -or \$_.CommandLine -like '*gradlew.bat*runServer*') }; \$targets | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }"
+                "\$targets = Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -and \$_.CommandLine -like '*${escapedProjectDir}*' -and (\$_.CommandLine -like '*forgeclientuserdev*' -or \$_.CommandLine -like '*forgeserveruserdev*' -or \$_.CommandLine -like '*gradlew.bat*runClient*' -or \$_.CommandLine -like '*gradlew.bat*runServer*' -or \$_.CommandLine -like '*gradle-wrapper.jar*runClient*' -or \$_.CommandLine -like '*gradle-wrapper.jar*runServer*' -or \$_.CommandLine -like '*fabric.dli.env=client*' -or \$_.CommandLine -like '*fabric.dli.env=server*') }; \$targets | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }"
         ignoreExitValue = true
     }
 }
@@ -465,7 +479,7 @@ def stopRunAllServerProcesses(Project projectRef, File projectDirFile, boolean i
     String escapedProjectDir = projectDirFile.absolutePath.replace("'", "''")
     projectRef.exec {
         commandLine 'powershell', '-NoProfile', '-Command',
-                "\$targets = Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -and \$_.CommandLine -like '*${escapedProjectDir}*' -and (\$_.CommandLine -like '*forgeserveruserdev*' -or \$_.CommandLine -like '*gradlew.bat*runServer*') }; \$targets | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }"
+                "\$targets = Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -and \$_.CommandLine -like '*${escapedProjectDir}*' -and (\$_.CommandLine -like '*forgeserveruserdev*' -or \$_.CommandLine -like '*gradlew.bat*runServer*' -or \$_.CommandLine -like '*gradle-wrapper.jar*runServer*' -or \$_.CommandLine -like '*fabric.dli.env=server*') }; \$targets | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }"
         ignoreExitValue = true
     }
 }
@@ -650,7 +664,7 @@ tasks.register('runChannelTransportReport') {
         String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
         boolean isWindows = osName.contains('windows')
         File projectDirFile = project.projectDir
-        String wrapperPath = new File(rootProject.projectDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        String wrapperPath = new File(boRepositoryRootDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
         long scenarioTimeoutMillis = project.ext.boReadRunAllLongProperty.call(project, 'boTransportReportScenarioTimeoutMillis', 480000L)
         long scenarioRetryCount = project.ext.boReadRunAllLongProperty.call(project, 'boTransportReportScenarioRetries', 1L)
         File serverOutputDir = project.ext.boServerOutputRoot.call(project)
@@ -765,7 +779,7 @@ tasks.register('runAll') {
         String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
         boolean isWindows = osName.contains('windows')
         File projectDirFile = project.projectDir
-        String wrapperPath = new File(rootProject.projectDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        String wrapperPath = new File(boRepositoryRootDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
         long observeSeconds = project.ext.boReadRunAllLongProperty.call(project, 'boRunAllObserveSeconds', 0L)
         long settleMillis = project.ext.boReadRunAllLongProperty.call(project, 'boRunAllSettleMillis', 3000L)
         long settleTimeoutMillis = project.ext.boReadRunAllLongProperty.call(project, 'boRunAllSettleTimeoutMillis', 15000L)
@@ -919,7 +933,7 @@ tasks.register('runAllAutoExitCompare') {
         String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
         boolean isWindows = osName.contains('windows')
         File projectDirFile = project.projectDir
-        String wrapperPath = new File(rootProject.projectDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        String wrapperPath = new File(boRepositoryRootDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
         String exitTrigger = readRunAllAutoExitTrigger(project)
         long exitDelaySeconds = project.ext.boReadRunAllLongProperty.call(project, 'boRunAllExitDelaySeconds', 3L)
         long triggerTimeoutMillis = project.ext.boReadRunAllLongProperty.call(project, 'boRunAllTriggerTimeoutMillis', 180000L)
@@ -1048,7 +1062,7 @@ tasks.register('runWatchBoundaryRefreshPatchRegression') {
         String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
         boolean isWindows = osName.contains('windows')
         File projectDirFile = project.projectDir
-        String wrapperPath = new File(rootProject.projectDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        String wrapperPath = new File(boRepositoryRootDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
         long exitDelaySeconds = project.ext.boReadRunAllLongProperty.call(project, 'boRunAllExitDelaySeconds', 3L)
         long triggerTimeoutMillis = project.ext.boReadRunAllLongProperty.call(project, 'boRunAllTriggerTimeoutMillis', 240000L)
         long settleMillis = project.ext.boReadRunAllLongProperty.call(project, 'boRunAllSettleMillis', 3000L)

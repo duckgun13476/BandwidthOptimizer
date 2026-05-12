@@ -1,134 +1,73 @@
-plugins {
-    id 'fabric-loom' version '1.10.5'
-    id 'idea'
-}
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+import org.gradle.jvm.toolchain.JavaToolchainService
 
-def sharedProperties = new Properties()
-def sharedPropertiesFile = file('../../../gradle.properties')
-if (sharedPropertiesFile.isFile()) {
-    sharedPropertiesFile.withInputStream { sharedProperties.load(it) }
-    sharedProperties.each { key, value ->
-        if (!project.hasProperty(key.toString())) {
-            ext.set(key.toString(), value.toString())
+boolean standaloneFabricBuild = rootProject.projectDir.canonicalFile == project.projectDir.canonicalFile
+
+if (standaloneFabricBuild) {
+    apply from: file('fabric-standalone.gradle')
+} else {
+    plugins.apply('base')
+    plugins.apply('java-base')
+
+    group = 'verification'
+
+    File repositoryRootDir = rootProject.projectDir
+    File wrapperFile = new File(repositoryRootDir, System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows') ? 'gradlew.bat' : 'gradlew')
+
+    def buildStandaloneFabricCommand = { String taskName ->
+        List<String> command = []
+        if (System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')) {
+            command.addAll(['cmd', '/c', wrapperFile.absolutePath])
+        } else {
+            command.add(wrapperFile.absolutePath)
+        }
+        command.addAll(['-p', project.projectDir.absolutePath, '--console=plain'])
+        gradle.startParameter.projectProperties.each { String key, String value ->
+            command.add("-P${key}=${value}")
+        }
+        command.add(taskName)
+        return command
+    }
+
+    def resolveFabricJavaHome = {
+        JavaToolchainService toolchainService = extensions.getByType(JavaToolchainService)
+        return toolchainService.launcherFor {
+            languageVersion = JavaLanguageVersion.of(17)
+        }.get().metadata.installationPath.asFile
+    }
+
+    def registerFabricProxyTask = { String taskName, String taskGroup, String taskDescription ->
+        tasks.register(taskName) {
+            group = taskGroup
+            description = taskDescription
+            doLast {
+                File javaHome = resolveFabricJavaHome.call()
+                exec {
+                    workingDir repositoryRootDir
+                    environment 'JAVA_HOME', javaHome.absolutePath
+                    environment 'Path', new File(javaHome, 'bin').absolutePath + File.pathSeparator + System.getenv('Path')
+                    commandLine buildStandaloneFabricCommand.call(taskName)
+                }
+            }
         }
     }
-}
 
-group = mod_group_id
-version = mod_version
-
-base {
-    archivesName = "${package_name}-fabric-1.20.1"
-}
-
-repositories {
-    maven {
-        name = 'PinkCatsLocal'
-        url = uri('C:/F/Maven')
+    [
+            ['compileJava', 'build', 'Compiles the Fabric 1.20.1 standalone source set.'],
+            ['compileTestJava', 'build', 'Compiles the Fabric 1.20.1 standalone test source set.'],
+            ['classes', 'build', 'Builds the Fabric 1.20.1 standalone main classes.'],
+            ['testClasses', 'build', 'Builds the Fabric 1.20.1 standalone test classes.'],
+            ['runClient', 'application', 'Starts the Fabric 1.20.1 client run.'],
+            ['runServer', 'application', 'Starts the Fabric 1.20.1 server run.'],
+            ['runAll', 'application', 'Starts the Fabric 1.20.1 server/client runAll verification.'],
+            ['runAllAutoExitCompare', 'verification', 'Runs Fabric 1.20.1 runAll and compares final jsonl files.'],
+            ['runChannelJsonlCompare', 'verification', 'Compares Fabric 1.20.1 four-way jsonl captures.'],
+            ['runChannelSimulate', 'verification', 'Runs the Fabric 1.20.1 channel simulation.'],
+            ['runChannelTransportReport', 'verification', 'Runs Fabric 1.20.1 transport report scenarios.'],
+            ['runChannelTransportRoundTrip', 'verification', 'Verifies Fabric 1.20.1 transport codec round trips.'],
+            ['runChunkBranchCoverageVerify', 'verification', 'Verifies Fabric 1.20.1 chunk branch coverage.'],
+            ['runWatchBoundaryRefreshPatchRegression', 'verification', 'Runs Fabric 1.20.1 watch-boundary refresh-patch regression.']
+    ].each { List<String> taskSpec ->
+        registerFabricProxyTask.call(taskSpec[0], taskSpec[1], taskSpec[2])
     }
-    mavenCentral()
-    maven {
-        name = 'Fabric'
-        url = 'https://maven.fabricmc.net/'
-    }
-    maven {
-        url = 'https://repo.spongepowered.org/repository/maven-public/'
-    }
-}
-
-configurations {
-    bundledLibs
-}
-
-configurations.configureEach {
-    resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
-}
-
-dependencies {
-    String zstdJniVersion = '1.5.7-7'
-
-    minecraft 'com.mojang:minecraft:1.20.1'
-    mappings loom.officialMojangMappings()
-    modImplementation 'net.fabricmc:fabric-loader:0.17.2'
-    modImplementation 'net.fabricmc.fabric-api:fabric-api:0.92.6+1.20.1'
-    modImplementation("com.pinkcats.torque:TorqueAPI-1.20.1-fabric:${torque_api_version}") {
-        changing = true
-    }
-    include("com.pinkcats.torque:TorqueAPI-1.20.1-fabric:${torque_api_version}")
-    compileOnly("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}") {
-        changing = true
-    }
-    implementation "com.github.luben:zstd-jni:${zstdJniVersion}"
-    include "com.github.luben:zstd-jni:${zstdJniVersion}"
-    bundledLibs "com.github.luben:zstd-jni:${zstdJniVersion}"
-}
-
-sourceSets {
-    main {
-        java.srcDir '../../../common/src/main/java'
-        java.srcDir 'src/main/java'
-        resources.srcDir '../../../common/src/main/resources'
-        resources.srcDir 'src/main/resources'
-        resources.exclude 'META-INF/mods.toml'
-    }
-    test {
-        java.srcDir '../../../project/forge/1.20.1/src/test/java'
-    }
-}
-
-loom {
-    runs {
-        client {
-            client()
-            runDir = 'run/client'
-        }
-        server {
-            server()
-            runDir = 'run/server'
-        }
-    }
-}
-
-processResources {
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    var replaceProperties = [
-            mod_id          : mod_id,
-            mod_name        : mod_name,
-            mod_version     : mod_version,
-            mod_authors     : mod_authors,
-            mod_description : mod_description,
-            mod_license     : mod_license,
-            loader_version  : '0.17.2',
-            minecraft_version: '1.20.1',
-            fabric_api_version: '0.92.6+1.20.1'
-    ]
-    inputs.properties replaceProperties
-    filesMatching(['fabric.mod.json', 'pack.mcmeta']) {
-        expand replaceProperties + [project: project]
-    }
-}
-
-tasks.named('jar', Jar).configure {
-    archiveFileName = "${package_name}-${mod_version}-fabric-1.20.1.jar"
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    manifest {
-        attributes([
-                "MixinConfigs": "bandwidthoptimizer.mixins.json"
-        ])
-    }
-    from {
-        configurations.bundledLibs.collect { dependency -> zipTree(dependency) }
-    } {
-        exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
-    }
-}
-
-tasks.withType(JavaCompile).configureEach {
-    options.encoding = 'UTF-8'
-    options.release = 17
-}
-
-java {
-    toolchain.languageVersion = JavaLanguageVersion.of(17)
-    withSourcesJar()
 }

@@ -67,7 +67,7 @@ public final class ExperientAutoConnectController {
             return;
         }
 
-        if (!isRetryEligibleScreen(currentScreen)) {
+        if (!isRetryEligibleScreen(minecraft, currentScreen)) {
             return;
         }
 
@@ -122,10 +122,11 @@ public final class ExperientAutoConnectController {
             retryDelayTicksRemaining = readRetryDelayTicks();
             lastRetryScheduledAttemptCount = startedAttemptCount;
             phase = AutoConnectPhase.IDLE;
+            String screenName = currentScreen == null ? "<no-screen>" : currentScreen.getClass().getSimpleName();
             Bandwidthoptimizer.LOGGER.warn(
                     "[ExperientAutoConnect] Attempt {} returned to {} before login completed, preparing attempt {} in {} ticks.",
                     startedAttemptCount,
-                    currentScreen.getClass().getSimpleName(),
+                    screenName,
                     nextAttemptCount,
                     retryDelayTicksRemaining
             );
@@ -152,8 +153,14 @@ public final class ExperientAutoConnectController {
         return true;
     }
 
-    private static boolean isRetryEligibleScreen(Screen currentScreen) {
-        return currentScreen instanceof TitleScreen || currentScreen instanceof DisconnectedScreen;
+
+    private static boolean isRetryEligibleScreen(Minecraft minecraft, Screen currentScreen) {
+        if (minecraft.getOverlay() != null)
+            return false;
+
+        if (currentScreen instanceof ConnectScreen)
+            return false;
+        return true;
     }
 
     private static ConnectOnceResult connectOnceWhenServerReady(
@@ -179,6 +186,7 @@ public final class ExperientAutoConnectController {
         waitingForServerLogged = false;
         String serverName = readAutoConnectName();
         ServerData serverData = new ServerData(serverName, autoConnectAddress, false);
+        Screen parentScreen = currentScreen == null ? new TitleScreen() : currentScreen;
         startedAttemptCount++;
         phase = AutoConnectPhase.CONNECTING;
         Bandwidthoptimizer.LOGGER.info(
@@ -187,7 +195,7 @@ public final class ExperientAutoConnectController {
                 maxAttempts,
                 autoConnectAddress
         );
-        ConnectScreen.startConnecting(currentScreen, minecraft, serverAddress, serverData, false);
+        ConnectScreen.startConnecting(parentScreen, minecraft, serverAddress, serverData, false);
         return ConnectOnceResult.STARTED;
     }
 
