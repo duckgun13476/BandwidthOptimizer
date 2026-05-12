@@ -60,6 +60,9 @@ public final class ServerBandwidthStatsPersistence {
     public static void flushOnServerStopping(MinecraftServer server) {
         if (server == null)
             return;
+        if (server.overworld() == null)
+            return;
+
         rememberServer(server);
         flushAll(server);
     }

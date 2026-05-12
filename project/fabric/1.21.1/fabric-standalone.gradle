@@ -54,7 +54,7 @@ dependencies {
 
     minecraft 'com.mojang:minecraft:1.21.1'
     mappings loom.officialMojangMappings()
-    modImplementation 'net.fabricmc:fabric-loader:0.17.2'
+    modImplementation 'net.fabricmc:fabric-loader:0.19.1'
     modImplementation 'net.fabricmc.fabric-api:fabric-api:0.116.11+1.21.1'
     modImplementation("com.pinkcats.torque:TorqueAPI-1.21.1-fabric:${torque_api_version}") {
         changing = true
@@ -119,7 +119,7 @@ processResources {
             mod_authors       : mod_authors,
             mod_description   : mod_description,
             mod_license       : mod_license,
-            loader_version    : '0.17.2',
+            loader_version    : '0.19.1',
             minecraft_version : '1.21.1',
             fabric_api_version: '0.116.11+1.21.1'
     ]

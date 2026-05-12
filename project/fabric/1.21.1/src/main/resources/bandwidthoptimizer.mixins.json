@@ -11,6 +11,7 @@
     "minecraft.ConnectionSendBoundaryMixin",
     "minecraft.PacketOutPipeMixin",
     "minecraft.PacketInPipeMixin",
+    "minecraft.ServerCommonPacketListenerChunkWatchMixin",
     "minecraft.ServerGamePacketListenerImplAccessor"
   ],
   "client": [],

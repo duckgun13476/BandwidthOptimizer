@@ -885,6 +885,13 @@ tasks.register('runAll') {
         if (observeSeconds > 0L) {
             println "runAll: 正在观察 transport ${observeSeconds} 秒，到时后会强制结束客户端和服务端。"
             sleep(observeSeconds * 1000L)
+            stopRunAllServerProcesses(project, projectDirFile, isWindows)
+            if (serverProcess.isAlive()) {
+                serverProcess.waitFor(30L, TimeUnit.SECONDS)
+            }
+            if (clientProcess.isAlive()) {
+                clientProcess.waitFor(15L, TimeUnit.SECONDS)
+            }
             forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
             project.ext.boWaitForFilesToSettle.call(
                     [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
@@ -1037,6 +1044,14 @@ tasks.register('runAllAutoExitCompare') {
                 println 'runAllAutoExitCompare: 已命中退出条件，正在强制结束客户端和服务端。'
             }
 
+            // 自动退出后同样先停服务端，让客户端完成最后的入站抓包，再统一兜底清理残留进程。
+            stopRunAllServerProcesses(project, projectDirFile, isWindows)
+            if (serverProcess.isAlive()) {
+                serverProcess.waitFor(30L, TimeUnit.SECONDS)
+            }
+            if (clientProcess.isAlive()) {
+                clientProcess.waitFor(15L, TimeUnit.SECONDS)
+            }
             forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
             project.ext.boWaitForFilesToSettle.call(
                     [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],

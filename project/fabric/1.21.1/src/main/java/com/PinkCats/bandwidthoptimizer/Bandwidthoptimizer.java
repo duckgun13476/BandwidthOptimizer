@@ -18,7 +18,6 @@ import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsHudSync;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsLifecycleHooks;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsNetworkChannel;
 import com.mojang.logging.LogUtils;
-import com.pinkcats.torque.layer.TorqueLayer;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -55,7 +54,7 @@ public class Bandwidthoptimizer implements ModInitializer {
         ChunkHotspotVerifyHooks.initializeOutputFiles();
         ChannelTransportRuntimeGuard.initialize();
         Config.applyRuntimeConfig(Config.currentLocalRuntimeConfig());
-        BandwidthOptimizerLifecycle.register(TorqueLayer.platform());
+        FabricBandwidthOptimizerLifecycle.register();
         ChannelTransportNetworkChannel.register();
         ServerBandwidthStatsNetworkChannel.register();
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
@@ -71,12 +70,14 @@ public class Bandwidthoptimizer implements ModInitializer {
             ExperientChunkHotspotPathController.onServerTick(server);
         });
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            FabricBandwidthOptimizerLifecycle.onPlayerLogin(handler.player);
             ExperientWatchBoundaryRefreshPatchController.onPlayerLoggedIn(handler.player);
             ExperientServerCommandController.onPlayerLoggedIn(handler.player);
             ExperientRunAllProbeHooks.onPlayerLoggedIn(handler.player);
             ExperientChunkHotspotPathController.onPlayerLoggedIn(handler.player);
         });
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            FabricBandwidthOptimizerLifecycle.onPlayerLogout(handler.player);
             ExperientWatchBoundaryRefreshPatchController.onPlayerLoggedOut(handler.player);
             ExperientServerCommandController.onPlayerLoggedOut(handler.player);
             ExperientChunkHotspotPathController.onPlayerLoggedOut(handler.player);
