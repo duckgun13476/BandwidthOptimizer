@@ -62,10 +62,21 @@ mixin {
     config "${mod_id}.mixins.json"
 }
 
+def forge1192ExcludedForge1201Java = [
+        'com/PinkCats/bandwidthoptimizer/client/hud/BandwidthOptimizerHudOverlay.java',
+        'com/PinkCats/bandwidthoptimizer/compat/minecraft/BlockEntityTypeKeyCompat.java',
+        'com/PinkCats/bandwidthoptimizer/compat/minecraft/ServerPlayerLevelCompat.java'
+]
+
+def forge1192ExcludedCommonJava = [
+        'com/PinkCats/bandwidthoptimizer/compat/minecraft/CommandSourceCompat.java'
+]
+
 sourceSets {
     main {
         java.srcDir rootProject.file('common/src/main/java')
         java.srcDir rootProject.file('project/forge/1.20.1/src/main/java')
+        java.srcDir project.file('src/main/java')
         resources.srcDir rootProject.file('common/src/main/resources')
         resources.srcDir rootProject.file('project/forge/1.20.1/src/main/resources')
         resources.srcDir rootProject.file('src/generated/resources')
@@ -74,6 +85,18 @@ sourceSets {
         java.setSrcDirs([])
         resources.setSrcDirs([])
     }
+}
+
+tasks.named('compileJava', JavaCompile).configure {
+    setSource(files(
+            rootProject.fileTree('common/src/main/java') {
+                exclude forge1192ExcludedCommonJava
+            },
+            rootProject.fileTree('project/forge/1.20.1/src/main/java') {
+                exclude forge1192ExcludedForge1201Java
+            },
+            project.fileTree('src/main/java')
+    ))
 }
 
 repositories {

@@ -2,15 +2,16 @@ package com.PinkCats.bandwidthoptimizer.client.hud;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
-import net.neoforged.neoforge.client.event.RenderGuiEvent;
+import net.minecraft.client.gui.GuiComponent;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
+import net.minecraftforge.client.event.RenderGuiOverlayEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
 
-@EventBusSubscriber(modid = Bandwidthoptimizer.MODID, value = Dist.CLIENT)
+@Mod.EventBusSubscriber(modid = Bandwidthoptimizer.MODID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class BandwidthOptimizerHudOverlay {
 
     private BandwidthOptimizerHudOverlay() {}
@@ -20,14 +21,13 @@ public final class BandwidthOptimizerHudOverlay {
         BandwidthOptimizerHudOverlayCore.onLoggingIn();
     }
 
-    // logout write
     @SubscribeEvent
     public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
-        BandwidthOptimizerHudOverlayCore.onLoggingOut("neoforge_client_logging_out");
+        BandwidthOptimizerHudOverlayCore.onLoggingOut("forge_1192_client_logging_out");
     }
 
     @SubscribeEvent
-    public static void render(RenderGuiEvent.Post event) {
+    public static void render(RenderGuiOverlayEvent.Post event) {
         Minecraft minecraft = Minecraft.getInstance();
         if (!BandwidthOptimizerHudOverlayCore.shouldRender(minecraft)) {
             return;
@@ -40,14 +40,14 @@ public final class BandwidthOptimizerHudOverlay {
 
         int x = 6;
         int y = 6;
+        PoseStack poseStack = event.getPoseStack();
 
-        GuiGraphics guiGraphics = event.getGuiGraphics();
         RenderSystem.enableBlend();
-        guiGraphics.fill(x, y, x + hud.boxWidth(), y + hud.boxHeight(), 0xA0101018);
-        guiGraphics.fill(x, y, x + hud.boxWidth(), y + 1, 0xFF66D9EF);
+        GuiComponent.fill(poseStack, x, y, x + hud.boxWidth(), y + hud.boxHeight(), 0xA0101018);
+        GuiComponent.fill(poseStack, x, y, x + hud.boxWidth(), y + 1, 0xFF66D9EF);
         for (int index = 0; index < hud.lines().size(); index++) {
             String line = hud.lines().get(index);
-            guiGraphics.drawString(minecraft.font, line, x + 5, y + 4 + index * hud.lineHeight(), BandwidthOptimizerHudOverlayCore.hudLineColor(line), false);
+            minecraft.font.draw(poseStack, line, x + 5, y + 4 + index * hud.lineHeight(), BandwidthOptimizerHudOverlayCore.hudLineColor(line));
         }
     }
 
