@@ -121,7 +121,10 @@ public final class ChunkPeerStateManager {
         if (player == null)
             return;
 
-        PlayerScopeState removedScopeState = PLAYER_SCOPE_STATES.remove(player.getUUID());
+        boolean retainedPlayerScope = shouldRetainPlayerScope(reason);
+        PlayerScopeState playerScopeState = retainedPlayerScope
+                ? PLAYER_SCOPE_STATES.get(player.getUUID())
+                : PLAYER_SCOPE_STATES.remove(player.getUUID());
         String channelId = readPlayerChannelId(player);
         if (channelId != null && !channelId.isBlank()) {
             CHANNEL_STATES.remove(channelId);
@@ -131,11 +134,12 @@ public final class ChunkPeerStateManager {
         }
         if (shouldLogDiagnose()) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkPeer][Lifecycle] player={}, uuid={}, reason={}, removedEpoch={}, removedChannelState={}",
+                    "[ChunkPeer][Lifecycle] player={}, uuid={}, reason={}, retainedScope={}, scopeState={}, clearedChannelState={}",
                     player.getGameProfile().getName(),
                     player.getUUID(),
                     reason,
-                    removedScopeState == null ? "<none>" : removedScopeState.summaryText(),
+                    retainedPlayerScope,
+                    playerScopeState == null ? "<none>" : playerScopeState.summaryText(),
                     channelId == null || channelId.isBlank() ? "<none>" : channelId
             );
         }
@@ -351,6 +355,10 @@ public final class ChunkPeerStateManager {
 
         PlayerScopeState scopeState = PLAYER_SCOPE_STATES.computeIfAbsent(playerId, ignored -> new PlayerScopeState());
         return scopeState.bindScope(dimensionKey, reason);
+    }
+
+    private static boolean shouldRetainPlayerScope(String reason) {
+        return "logout".equals(reason);
     }
 
     private static String readPlayerChannelId(ServerPlayer player) {
