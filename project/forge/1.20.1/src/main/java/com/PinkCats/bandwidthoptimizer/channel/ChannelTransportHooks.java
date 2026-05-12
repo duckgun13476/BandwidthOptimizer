@@ -202,6 +202,8 @@ public final class ChannelTransportHooks {
             );
         }
         byte[] transportInputPacketBytes = chunkTransportEncodedBytes == null ? originalPacketBytes : chunkTransportEncodedBytes;
+        byte[] directFallbackPacketBytes = chunkTransportEncodedBytes == null ? transportInputPacketBytes : originalPacketBytes;
+        boolean chunkProtocolApplied = chunkTransportEncodedBytes != null;
         ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace =
                 ChunkBoundaryBandwidthRecorder.beginOutboundTrace(
                         context,
@@ -253,7 +255,7 @@ public final class ChannelTransportHooks {
         try {
             if (shouldBypassServerboundCarrierByInputSize(outboundPacketFlow, transportInputPacketBytes.length)) {
                 out.writerIndex(startIndexInclusive);
-                out.writeBytes(transportInputPacketBytes);
+                out.writeBytes(directFallbackPacketBytes);
                 if (forceImmediateTransport && DebugRuntimeConfig.isDiagnoseEnabled()) {
                     Bandwidthoptimizer.LOGGER.info(
                             "[Transport][ImmediatePolicy][Fallback] reason=serverbound_carrier_size, packetClass={}, inputBytes={}, channel={}",
@@ -268,19 +270,19 @@ public final class ChannelTransportHooks {
                         protocolName,
                         packet,
                         outboundPacketFlow,
-                        transportInputPacketBytes
+                        directFallbackPacketBytes
                 );
-                recordOutboundBypassStats(context, protocolName, transportInputPacketBytes.length, 1);
+                recordOutboundBypassStats(context, protocolName, directFallbackPacketBytes.length, 1);
                 ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
                         outboundPacketCapture,
-                        transportInputPacketBytes.length
+                        directFallbackPacketBytes.length
                 );
                 ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
                         boundaryPacketTrace,
                         "DIRECT_PASSTHROUGH",
                         "DIRECT",
-                        transportInputPacketBytes.length,
-                        chunkTransportEncodedBytes != null,
+                        directFallbackPacketBytes.length,
+                        chunkProtocolApplied,
                         1
                 );
                 return;
@@ -306,6 +308,7 @@ public final class ChannelTransportHooks {
                 ChannelTransportBatchManager.enqueueOutboundPacket(
                         context,
                         transportInputPacketBytes,
+                        directFallbackPacketBytes,
                         outboundPacketFlow,
                         outboundPacketCapture,
                         boundaryPacketTrace
@@ -352,18 +355,18 @@ public final class ChannelTransportHooks {
             }
             if (shouldBypassUnprofitableCarrier(wrappedFrame)) {
                 out.writerIndex(startIndexInclusive);
-                out.writeBytes(transportInputPacketBytes);
-                recordOutboundBypassStats(context, protocolName, transportInputPacketBytes.length, 1);
+                out.writeBytes(directFallbackPacketBytes);
+                recordOutboundBypassStats(context, protocolName, directFallbackPacketBytes.length, 1);
                 ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
                         outboundPacketCapture,
-                        transportInputPacketBytes.length
+                        directFallbackPacketBytes.length
                 );
                 ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
                         boundaryPacketTrace,
                         "DIRECT_PASSTHROUGH",
                         "DIRECT",
-                        transportInputPacketBytes.length,
-                        chunkTransportEncodedBytes != null,
+                        directFallbackPacketBytes.length,
+                        chunkProtocolApplied,
                         1
                 );
                 return;
@@ -381,7 +384,7 @@ public final class ChannelTransportHooks {
 
             out.writerIndex(startIndexInclusive);
             if (!writeTransportCarrierPacket(context, outboundPacketFlow, out, wrappedFrame.transportFrameBytes())) {
-                out.writeBytes(transportInputPacketBytes);
+                out.writeBytes(directFallbackPacketBytes);
                 if (forceImmediateTransport && DebugRuntimeConfig.isDiagnoseEnabled()) {
                     Bandwidthoptimizer.LOGGER.info(
                             "[Transport][ImmediatePolicy][Fallback] reason=carrier_write_failed, packetClass={}, inputBytes={}, channel={}",
@@ -396,19 +399,19 @@ public final class ChannelTransportHooks {
                         protocolName,
                         packet,
                         outboundPacketFlow,
-                        transportInputPacketBytes
+                        directFallbackPacketBytes
                 );
-                recordOutboundBypassStats(context, protocolName, transportInputPacketBytes.length, 1);
+                recordOutboundBypassStats(context, protocolName, directFallbackPacketBytes.length, 1);
                 ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
                         outboundPacketCapture,
-                        transportInputPacketBytes.length
+                        directFallbackPacketBytes.length
                 );
                 ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
                         boundaryPacketTrace,
                         "DIRECT_PASSTHROUGH",
                         "DIRECT",
-                        transportInputPacketBytes.length,
-                        chunkTransportEncodedBytes != null,
+                        directFallbackPacketBytes.length,
+                        chunkProtocolApplied,
                         1
                 );
                 return;
@@ -437,6 +440,10 @@ public final class ChannelTransportHooks {
                     Math.max(wrappedFrame.originalPacketCount(), 1)
             );
         } catch (Throwable throwable) {
+            if (out.writerIndex() < endIndexExclusive || chunkProtocolApplied) {
+                out.writerIndex(startIndexInclusive);
+                out.writeBytes(directFallbackPacketBytes);
+            }
             if (forceImmediateTransport) {
                 if (DebugRuntimeConfig.isDiagnoseEnabled()) {
                     Bandwidthoptimizer.LOGGER.info(
@@ -454,19 +461,19 @@ public final class ChannelTransportHooks {
                         protocolName,
                         packet,
                         outboundPacketFlow,
-                        transportInputPacketBytes
+                        directFallbackPacketBytes
                 );
-                recordOutboundBypassStats(context, protocolName, transportInputPacketBytes.length, 1);
+                recordOutboundBypassStats(context, protocolName, directFallbackPacketBytes.length, 1);
                 ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
                         outboundPacketCapture,
-                        transportInputPacketBytes.length
+                        directFallbackPacketBytes.length
                 );
                 ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
                         boundaryPacketTrace,
                         "DIRECT_PASSTHROUGH",
                         "DIRECT",
-                        transportInputPacketBytes.length,
-                        chunkTransportEncodedBytes != null,
+                        directFallbackPacketBytes.length,
+                        chunkProtocolApplied,
                         1
                 );
             }

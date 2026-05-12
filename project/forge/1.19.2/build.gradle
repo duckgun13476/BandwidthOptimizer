@@ -6,6 +6,7 @@ plugins {
 
 apply plugin: 'org.spongepowered.mixin'
 apply from: rootProject.file('gradle/bo-property-loader.gradle')
+apply from: rootProject.file('test.gradle')
 
 group = mod_group_id
 version = mod_version
@@ -24,7 +25,7 @@ minecraft {
 
     runs {
         configureEach {
-            workingDirectory rootProject.file('run')
+            workingDirectory project.file('run')
             property 'mixin.debug', 'true'
             property 'mixin.debug.export', 'true'
             property 'forge.logging.markers', 'REGISTRIES'
@@ -38,11 +39,13 @@ minecraft {
         }
 
         client {
-            workingDirectory rootProject.file('run/client-1.19.2')
+            workingDirectory project.file('run/client')
+            configureBandwidthOptimizerClientRun(project, delegate)
         }
 
         server {
-            workingDirectory rootProject.file('run/server-1.19.2')
+            workingDirectory project.file('run/server')
+            configureBandwidthOptimizerServerRun(project, delegate)
             args '--nogui'
         }
 
@@ -51,7 +54,7 @@ minecraft {
         }
 
         data {
-            workingDirectory rootProject.file('run-data-1.19.2')
+            workingDirectory project.file('run-data')
             args '--mod', mod_id, '--all', '--output', rootProject.file('src/generated/resources/'), '--existing', rootProject.file('project/forge/1.20.1/src/main/resources/')
         }
     }
@@ -82,8 +85,8 @@ sourceSets {
         resources.srcDir rootProject.file('src/generated/resources')
     }
     test {
-        java.setSrcDirs([])
-        resources.setSrcDirs([])
+        java.srcDir rootProject.file('project/forge/1.20.1/src/test/java')
+        resources.srcDir rootProject.file('project/forge/1.20.1/src/test/resources')
     }
 }
 

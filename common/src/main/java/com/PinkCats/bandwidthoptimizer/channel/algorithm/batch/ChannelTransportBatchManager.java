@@ -52,17 +52,25 @@ public final class ChannelTransportBatchManager {
 
     public static boolean enqueueOutboundPacket(
             ChannelHandlerContext context,
-            byte[] originalPacketBytes,
+            byte[] transportPacketBytes,
+            byte[] directFallbackPacketBytes,
             PacketFlow packetFlow,
             ChannelTransportPacketRankCaptureManager.OutboundPacketCapture outboundPacketCapture,
             ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace
     ) {
-        if (context == null || originalPacketBytes == null || !isChannelUsable(context.channel())) {
+        if (context == null || transportPacketBytes == null || !isChannelUsable(context.channel())) {
             return false;
         }
 
         OutboundBatchState batchState = getOrCreateOutboundBatchState(context.channel());
-        batchState.addPacket(context, copyBytesOrEmpty(originalPacketBytes), packetFlow, outboundPacketCapture, boundaryPacketTrace);
+        batchState.addPacket(
+                context,
+                copyBytesOrEmpty(transportPacketBytes),
+                copyBytesOrEmpty(directFallbackPacketBytes),
+                packetFlow,
+                outboundPacketCapture,
+                boundaryPacketTrace
+        );
         batchState.scheduleFlushIfNeeded(context.channel());
         return true;
     }
@@ -75,7 +83,6 @@ public final class ChannelTransportBatchManager {
         flushOutboundBatch(context.channel());
     }
 
-    // 丢弃当前连接上尚未发送或等待回放的 batch，切服时不能把旧后端的延迟包带到新后端。
     public static void clearChannelState(Channel channel, String reason) {
         clearBatchState(channel, false);
     }
@@ -198,7 +205,8 @@ public final class ChannelTransportBatchManager {
         ChannelHandlerContext context = drainedBatch.context();
         String protocolName = readProtocolName(context);
         for (PendingOutboundPacket pendingPacket : drainedBatch.pendingPackets()) {
-            context.write(Unpooled.wrappedBuffer(copyBytesOrEmpty(pendingPacket.packetBytes())));
+            byte[] directPacketBytes = pendingPacket.copyDirectFallbackPacketBytes();
+            context.write(Unpooled.wrappedBuffer(directPacketBytes));
             if (recordRankLog) {
                 ChannelTransportBypassRankLogger.recordEncodedPacket(
                         context,
@@ -208,10 +216,10 @@ public final class ChannelTransportBatchManager {
                         packetClassNameOf(pendingPacket),
                         null,
                         packetIdOf(pendingPacket),
-                        pendingPacket.packetBytes().length
+                        directPacketBytes.length
                 );
             }
-            recordOutboundBatchBypassStats(context, protocolName, pendingPacket.packetBytes().length);
+            recordOutboundBatchBypassStats(context, protocolName, directPacketBytes.length);
         }
         context.flush();
         ChannelTransportPacketRankCaptureManager.completeDirectFallbackCapture(drainedBatch.packetCaptures());
@@ -251,11 +259,12 @@ public final class ChannelTransportBatchManager {
                 ? "BATCH_DIRECT_FALLBACK"
                 : "BATCH_DIRECT_FALLBACK:" + reason;
         for (PendingOutboundPacket pendingPacket : pendingPackets) {
+            byte[] directPacketBytes = pendingPacket.copyDirectFallbackPacketBytes();
             ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
                     pendingPacket.boundaryPacketTrace(),
                     actualPath,
                     "DIRECT",
-                    pendingPacket.packetBytes().length,
+                    directPacketBytes.length,
                     false,
                     1
             );
@@ -524,12 +533,20 @@ public final class ChannelTransportBatchManager {
 
     private record PendingOutboundPacket(
             byte[] packetBytes,
+            byte[] directFallbackPacketBytes,
             PacketFlow packetFlow,
             ChannelTransportPacketRankCaptureManager.OutboundPacketCapture packetCapture,
             ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace
     ) {
         private PendingOutboundPacket {
             packetBytes = copyBytesOrEmpty(packetBytes);
+            directFallbackPacketBytes = directFallbackPacketBytes == null || directFallbackPacketBytes.length == 0
+                    ? copyBytesOrEmpty(packetBytes)
+                    : copyBytesOrEmpty(directFallbackPacketBytes);
+        }
+
+        private byte[] copyDirectFallbackPacketBytes() {
+            return copyBytesOrEmpty(this.directFallbackPacketBytes);
         }
     }
 
@@ -588,13 +605,20 @@ public final class ChannelTransportBatchManager {
         private void addPacket(
                 ChannelHandlerContext context,
                 byte[] packetBytes,
+                byte[] directFallbackPacketBytes,
                 PacketFlow packetFlow,
                 ChannelTransportPacketRankCaptureManager.OutboundPacketCapture outboundPacketCapture,
                 ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace
         ) {
             synchronized (this.pendingPackets) {
                 this.lastContext = context;
-                this.pendingPackets.add(new PendingOutboundPacket(packetBytes, packetFlow, outboundPacketCapture, boundaryPacketTrace));
+                this.pendingPackets.add(new PendingOutboundPacket(
+                        packetBytes,
+                        directFallbackPacketBytes,
+                        packetFlow,
+                        outboundPacketCapture,
+                        boundaryPacketTrace
+                ));
             }
         }
 
