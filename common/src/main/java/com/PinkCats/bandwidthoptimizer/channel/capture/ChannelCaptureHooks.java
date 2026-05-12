@@ -1,12 +1,12 @@
 package com.PinkCats.bandwidthoptimizer.channel.capture;
 
 import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
+import com.PinkCats.bandwidthoptimizer.compat.minecraft.ConnectionProtocolNameCompat;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportCompressionCaptureManager;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
-import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.Packet;
 
 import java.util.List;
@@ -141,8 +141,7 @@ public final class ChannelCaptureHooks {
     }
 
     private static String readProtocolName(ChannelHandlerContext context) {
-        Object protocol = context.channel().attr(Connection.ATTRIBUTE_PROTOCOL).get();
-        return protocol == null ? "null" : String.valueOf(protocol);
+        return ConnectionProtocolNameCompat.readProtocolName(context == null ? null : context.channel());
     }
 
 

@@ -1,8 +1,8 @@
 package com.PinkCats.bandwidthoptimizer.chunk.verify;
 
+import com.PinkCats.bandwidthoptimizer.compat.minecraft.LoaderEnvironmentCompat;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
-import net.minecraftforge.fml.loading.FMLEnvironment;
 
 import java.util.EnumMap;
 import java.util.Map;
@@ -52,7 +52,7 @@ public final class ChunkHotspotStats {
             long now = System.currentTimeMillis();
             return new ChunkHotspotReport(
                     1,
-                    FMLEnvironment.dist.name(),
+                    LoaderEnvironmentCompat.physicalSideName(),
                     now,
                     firstRecordedAtMillis,
                     lastRecordedAtMillis,

@@ -1,10 +1,9 @@
 package com.PinkCats.bandwidthoptimizer.channel;
 
+import com.PinkCats.bandwidthoptimizer.compat.minecraft.CustomPayloadPacketCompat;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
-import net.minecraft.network.protocol.game.ClientboundCustomPayloadPacket;
-import net.minecraft.network.protocol.game.ServerboundCustomPayloadPacket;
 
 public final class ChannelTransportBypassRankLogger {
 
@@ -72,13 +71,8 @@ public final class ChannelTransportBypassRankLogger {
     }
 
     private static String customPayloadChannel(Packet<?> packet) {
-        if (packet instanceof ClientboundCustomPayloadPacket clientboundCustomPayloadPacket) {
-            return clientboundCustomPayloadPacket.getIdentifier().toString();
-        }
-        if (packet instanceof ServerboundCustomPayloadPacket serverboundCustomPayloadPacket) {
-            return serverboundCustomPayloadPacket.getIdentifier().toString();
-        }
-        return null;
+        String payloadChannel = CustomPayloadPacketCompat.payloadChannel(packet);
+        return payloadChannel == null || payloadChannel.isBlank() ? null : payloadChannel;
     }
 
     private static String flowName(PacketFlow packetFlow) {

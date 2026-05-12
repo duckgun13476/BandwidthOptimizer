@@ -161,7 +161,6 @@ neoForge {
 }
 
 def neoforgeExcludedCommonJava = [
-        'com/PinkCats/bandwidthoptimizer/channel/ChannelTransportBypassRankLogger.java',
         'com/PinkCats/bandwidthoptimizer/chunk/packet/ClientboundPlayPacketCodec.java'
 ]
 

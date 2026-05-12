@@ -6,11 +6,10 @@ import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceSt
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportControlFrameSender;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
+import com.PinkCats.bandwidthoptimizer.compat.minecraft.LoaderEnvironmentCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.loader.api.FabricLoader;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -59,7 +58,7 @@ public final class ChunkClientCacheBudgetManager {
 
     private static boolean shouldManageClientBudget(ChannelHandlerContext context) {
         return context != null
-                && FabricLoader.getInstance().getEnvironmentType() == EnvType.CLIENT
+                && LoaderEnvironmentCompat.isClientSide()
                 && context.channel() != null
                 && context.channel().isOpen();
     }
@@ -322,4 +321,3 @@ public final class ChunkClientCacheBudgetManager {
         }
     }
 }
-

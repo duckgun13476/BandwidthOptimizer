@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.compat.minecraft.ZstdNativeTempFolderCompat;
 import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 
 import java.io.IOException;
@@ -14,9 +15,8 @@ public final class ZstdRuntimeSupport {
     private ZstdRuntimeSupport() {}
 
     public static void configureNativeTempFolder() {
-        // archive
         BandwidthOptimizerOutputPaths.LegacyMigrationResult migrationResult =
-                BandwidthOptimizerOutputPaths.migrateLegacyDefaultLayout();
+                ZstdNativeTempFolderCompat.migrateLegacyDefaultLayout();
         if (migrationResult.changed()) {
             Bandwidthoptimizer.LOGGER.info(
                     "Migrated legacy BandwidthOptimizer output layout: movedOutputs={}, deletedLegacyFiles={}, failures={}",
@@ -32,7 +32,7 @@ public final class ZstdRuntimeSupport {
             return;
         }
 
-        Path tempFolder = BandwidthOptimizerOutputPaths.nativeDriveDirectory();
+        Path tempFolder = ZstdNativeTempFolderCompat.nativeTempFolder();
         try {
             Files.createDirectories(tempFolder);
             System.setProperty(TEMP_FOLDER_PROPERTY, tempFolder.toAbsolutePath().toString());

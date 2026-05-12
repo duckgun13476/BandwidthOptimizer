@@ -2,8 +2,8 @@ package com.PinkCats.bandwidthoptimizer.channel.mes;
 
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
+import com.PinkCats.bandwidthoptimizer.compat.minecraft.LoaderEnvironmentCompat;
 import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
-import net.neoforged.fml.loading.FMLEnvironment;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -115,7 +115,7 @@ public final class ChannelFrameJsonlLogger {
     private static String toJsonLine(ChannelCapturedFrame frame, FrameSerializedFields fields) {
         return "{"
                 + "\"captured_at_ms\":" + frame.capturedAtMillis() + ","
-                + "\"physical_side\":\"" + escapeJson(FMLEnvironment.dist.name()) + "\","
+                + "\"physical_side\":\"" + escapeJson(LoaderEnvironmentCompat.physicalSideName()) + "\","
                 + "\"channel_id\":\"" + escapeJson(frame.channelId()) + "\","
                 + "\"direction\":\"" + escapeJson(frame.direction()) + "\","
                 + "\"protocol\":\"" + escapeJson(frame.protocolName()) + "\","
