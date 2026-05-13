@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
 import com.PinkCats.bandwidthoptimizer.channel.access.PacketEncoderFlowAccess;
 import com.PinkCats.bandwidthoptimizer.channel.access.PacketEncoderProtocolInfoAccess;
+import com.PinkCats.bandwidthoptimizer.compat.trueuuid.TrueUuidLateLoginQueryGuard;
 import com.PinkCats.bandwidthoptimizer.server.stat.ChannelBandwidthStats;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
 import io.netty.buffer.ByteBuf;
@@ -53,6 +54,10 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
 
     @Inject(method = "encode*", at = @At("RETURN"))
     private void bandwidthoptimizer$captureAndMaybeWrap(ChannelHandlerContext context, Packet<T> packet, ByteBuf out, CallbackInfo ci) {
+        if (TrueUuidLateLoginQueryGuard.tryDropOutboundLateCustomQueryAck(context, packet, this.protocolInfo.flow(), out, this.bandwidthoptimizer$writerIndexBefore)) {
+            return;
+        }
+
         ChannelBandwidthStats stats = ServerBandwidthStatsRegistry.getOrCreate(context);
         if (stats != null) {
             stats.recordOutboundRawEncoded(out.writerIndex() - this.bandwidthoptimizer$writerIndexBefore);

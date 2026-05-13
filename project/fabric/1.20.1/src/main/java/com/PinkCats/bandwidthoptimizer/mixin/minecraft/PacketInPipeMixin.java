@@ -6,6 +6,7 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
+import com.PinkCats.bandwidthoptimizer.compat.trueuuid.TrueUuidLateLoginQueryGuard;
 import com.PinkCats.bandwidthoptimizer.server.stat.ChannelBandwidthStats;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
 import io.netty.buffer.ByteBuf;
@@ -47,6 +48,12 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
     private void bandwidthoptimizer$unwrapAndCapture(ChannelHandlerContext context, ByteBuf in, List<Object> out, CallbackInfo ci) throws Exception {
         this.bandwidthoptimizer$outputSizeBeforeDecode = out.size();
         this.bandwidthoptimizer$pendingInboundFrame = ChannelCaptureHooks.beginInboundPreDecode(context, in);
+        if (TrueUuidLateLoginQueryGuard.tryDropInboundPlayCustomQueryAck(context, this.flow, in)) {
+            ChannelCaptureHooks.clearInboundDecodeCandidate(context.channel());
+            this.bandwidthoptimizer$pendingInboundFrame = null;
+            ci.cancel();
+            return;
+        }
         if (ChannelTransportHooks.tryDecodeInboundTransportFrame(context, in, out, this)) {
             ChannelCaptureHooks.clearInboundDecodeCandidate(context.channel());
             this.bandwidthoptimizer$pendingInboundFrame = null;
@@ -70,6 +77,7 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
             return;
         }
 
+        TrueUuidLateLoginQueryGuard.observeInboundDecodedPackets(context, out, this.bandwidthoptimizer$outputSizeBeforeDecode);
         ChunkInboundObservationService.observeInboundDecodedPackets(
                 context,
                 this.bandwidthoptimizer$pendingInboundFrame,
