@@ -35,8 +35,8 @@ version = mod_version
 ext.bo_publish_artifact_task_name = 'remapJar'
 ext.bo_publish_artifact_relative_path = "build/libs/${package_name}-${mod_version}-fabric-1.21.1.jar"
 ext.bo_publish_loader_id = 'fabric'
-ext.bo_publish_curseforge_loaders = ['Fabric']
-ext.bo_publish_modrinth_loaders = ['fabric']
+ext.bo_publish_curseforge_loaders = ['Fabric', 'Quilt']
+ext.bo_publish_modrinth_loaders = ['fabric', 'quilt']
 ext.bo_publish_required_dependencies = ['fabric-api']
 ext.minecraft_version = '1.21.1'
 

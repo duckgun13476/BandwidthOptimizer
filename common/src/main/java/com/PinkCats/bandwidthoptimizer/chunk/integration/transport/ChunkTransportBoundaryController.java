@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.chunk.integration.transport;
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
+import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentManifestGate;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import io.netty.channel.Channel;
@@ -93,6 +94,9 @@ public final class ChunkTransportBoundaryController {
         }
         if (boundaryTrigger.requiresOutboundBarrierAck()) {
             barrierId = boundaryState.armOutboundBarrier(boundaryTrigger.reason());
+        }
+        if (packet instanceof ClientboundLoginPacket) {
+            ChunkPersistentManifestGate.arm(context.channel(), boundaryTrigger.reason());
         }
         return forceDirectTransport
                 ? OutboundBoundaryDecision.forceDirect(boundaryTrigger.reason(), barrierId)

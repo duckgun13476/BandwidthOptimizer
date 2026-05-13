@@ -20,6 +20,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.packet.ClientboundPlayPacketCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.packet.ChunkHeavyProtocolBypassPacketList;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkLocalCacheReuseStats;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
+import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentManifestGate;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
@@ -186,6 +187,10 @@ public final class ChunkTransportDispatcher {
         boolean chunkPacketCandidate = shouldUseRuntimeChunkTransport(descriptor);
         if (!chunkPacketCandidate)
             return OutboundChunkEncodeResult.bypass(false, "descriptor_not_chunk_candidate");
+
+        if (ChunkPersistentManifestGate.shouldWaitForManifest(context, descriptor)) {
+            return OutboundChunkEncodeResult.bypass(true, ChunkPersistentManifestGate.WAIT_REASON);
+        }
 
         boolean forceSableInitialSyncFull =
                 SableChunkSyncCompat.shouldForceFullChunkTransport(context, descriptor);
@@ -496,13 +501,17 @@ public final class ChunkTransportDispatcher {
             ChannelHandlerContext context,
             ChunkHotspotFrame frame
     ) {
-        if (context == null
-                || frame == null
-                || frame.operation() != ChunkHotspotFrameOp.CLIENT_CACHE_MANIFEST
-                || frame.coordinate() == null
-                || !frame.coordinate().present()
-                || frame.payloadHash() == null
-                || frame.payloadHash().isBlank()) {
+        if (context == null || frame == null || frame.operation() != ChunkHotspotFrameOp.CLIENT_CACHE_MANIFEST) {
+            return;
+        }
+
+        if (frame.coordinate() == null || !frame.coordinate().present()) {
+            ChunkPersistentManifestGate.complete(context.channel(), frame.reason());
+            logPersistentManifestComplete(context, frame);
+            return;
+        }
+
+        if (frame.payloadHash() == null || frame.payloadHash().isBlank()) {
             return;
         }
 
@@ -517,6 +526,17 @@ public final class ChunkTransportDispatcher {
                     chunkSnapshot == null ? "<ignored>" : chunkSnapshot.summaryText()
             );
         }
+    }
+
+    private static void logPersistentManifestComplete(ChannelHandlerContext context, ChunkHotspotFrame frame) {
+        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+            return;
+        }
+        Bandwidthoptimizer.LOGGER.info(
+                "[ChunkPersistentCache][Manifest][Complete] channel={}, reason={}",
+                readChannelId(context),
+                frame.reason() == null ? "" : frame.reason()
+        );
     }
 
     private static ChunkPatchBuilder.ChunkPatchBuildResult buildOutboundPatchCandidate(

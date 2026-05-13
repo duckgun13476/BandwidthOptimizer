@@ -5,6 +5,7 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStateManager;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.batch.ChannelTransportBatchManager;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.budget.ChunkClientCacheBudgetManager;
+import com.PinkCats.bandwidthoptimizer.chunk.budget.ChunkClientTrimmedFullBaseStore;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketClassifier;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceStore;
@@ -92,6 +93,7 @@ public final class ChunkInboundObservationService {
             CHANNEL_CLOSE_CLEANUP_REGISTERED.remove(channelId);
             ChunkRuntimeReferenceStore.clearChannel(channelId);
             ChunkShadowSnapshotManager.clearChannel(channelId);
+            ChunkClientTrimmedFullBaseStore.clearChannel(channelId);
             if (DebugRuntimeConfig.isDiagnoseEnabled()) {
                 Bandwidthoptimizer.LOGGER.info(
                         "[ChunkInbound][ChannelClose] channel={}, reason=runtime_cache_cleanup",
@@ -112,9 +114,13 @@ public final class ChunkInboundObservationService {
         }
 
         String reason = "clientbound_login_server_switch_boundary";
+        String channelId = context.channel().id().asLongText();
         ChannelTransportBatchManager.clearChannelState(context.channel(), reason);
         ChannelTransportStateManager.clearSession(context.channel(), reason);
         ChunkTransportBoundaryController.resetChannelState(context, reason);
+        ChunkRuntimeReferenceStore.clearChannel(channelId);
+        ChunkShadowSnapshotManager.clearChannel(channelId);
+        ChunkClientTrimmedFullBaseStore.clearChannel(channelId);
         ChunkPersistentClientCache.prepareForServerSwitch(context.channel(), reason);
         ChunkPersistentClientCache.sendManifestOnce(context.channel(), "persistent_client_cache_after_login");
         if (DebugRuntimeConfig.isDiagnoseEnabled()) {

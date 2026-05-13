@@ -80,6 +80,14 @@ public final class ChunkClientTrimmedFullBaseStore {
         return tombstone;
     }
 
+    // clear channel prevent transport mistake
+    public static void clearChannel(String channelId) {
+        if (channelId == null || channelId.isBlank()) {
+            return;
+        }
+        CHANNEL_STATES.remove(channelId);
+    }
+
     private static String resolveFrameFullBaseHash(ChunkHotspotFrame frame) {
         if (frame == null) {
             return "";

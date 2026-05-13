@@ -166,6 +166,28 @@ public final class ChunkTransportControlFrameSender {
         return sendControlFrame(channel, manifestFrame);
     }
 
+    // ensure server know is complete
+    public static boolean sendPersistentClientCacheManifestComplete(Channel channel, String reason) {
+        return sendControlFrame(channel, new ChunkHotspotFrame(
+                ChunkHotspotFrameCodec.PROTOCOL_VERSION,
+                ChunkHotspotFrameOp.CLIENT_CACHE_MANIFEST,
+                0L,
+                0L,
+                "PLAY",
+                "bandwidthoptimizer.chunk.transport.ClientCacheManifestComplete",
+                ChunkHotspotKind.FULL_CHUNK,
+                ChunkLaneKind.FULL,
+                ChunkPacketCoordinate.unknown(),
+                0,
+                0L,
+                0L,
+                "",
+                "",
+                0L,
+                reason == null || reason.isBlank() ? "persistent_client_cache_manifest_complete" : reason
+        ));
+    }
+
     // server send scope
     public static boolean sendServerCacheScope(Channel channel, String reason) {
         String scopeHash = ChunkPersistentServerScope.currentScopeHash();

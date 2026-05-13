@@ -19,6 +19,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTranspor
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportControlFrameSender;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher.OutboundChunkEncodeResult;
+import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentManifestGate;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ClientboundCustomPayloadPacketAccessor;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ServerboundCustomPayloadPacketAccessor;
@@ -190,6 +191,10 @@ public final class ChannelTransportHooks {
                 packet,
                 originalPacketBytes
         );
+        if (ChunkPersistentManifestGate.tryQueueWaitingPacket(context, packet, chunkEncodeResult.traceReason())) {
+            out.writerIndex(startIndexInclusive);
+            return;
+        }
         byte[] chunkTransportEncodedBytes = chunkEncodeResult.copyEncodedPacketBytes();
         if (chunkEncodeResult.chunkProtocolApplied()) {
 
@@ -484,7 +489,10 @@ public final class ChannelTransportHooks {
         if (context == null || !(packet instanceof ClientboundLoginPacket)) {
             return;
         }
-        sendServerCacheScopeWithRetry(context, "server_cache_scope_after_login_boundary", 0);
+        //  ensure server scope after login barrier
+        context.channel().eventLoop().execute(
+                () -> sendServerCacheScopeWithRetry(context, "server_cache_scope_after_login_boundary", 0)
+        );
     }
 
     private static void sendServerCacheScopeWithRetry(ChannelHandlerContext context, String reason, int attempt) {

@@ -310,15 +310,16 @@ public final class ChunkPersistentClientCache {
         if (channel == null) {
             return;
         }
-        boolean cleared = false;
-        if (!hasManifestForChannel(channel)) {
-            clearActiveServerScope(channel);
-            cleared = true;
-        }
+        String previousScopeHash = currentServerScopeHash();
+        boolean hadManifestForChannel = hasManifestForChannel(channel);
+        clearActiveServerScope(channel);
+        boolean cleared = (previousScopeHash != null && !previousScopeHash.isBlank()) || hadManifestForChannel;
         if (DebugRuntimeConfig.isDiagnoseEnabled()) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkPersistentCache][Scope][Reset] channel={}, reason={}, cleared={}",
+                    "[ChunkPersistentCache][Scope][Reset] channel={}, previousScope={}, hadManifest={}, reason={}, cleared={}",
                     channel.id().asLongText(),
+                    shortenHash(previousScopeHash),
+                    hadManifestForChannel,
                     safeText(reason, "server_switch"),
                     cleared
             );
@@ -326,13 +327,21 @@ public final class ChunkPersistentClientCache {
     }
 
     public static int sendManifestOnce(Channel channel, String reason) {
-        if (!isEnabled() || channel == null) {
+        if (channel == null) {
             return 0;
         }
 
         String channelId = channel.id().asLongText();
         String serverScopeHash = currentServerScopeHash();
         if (!isSafeScopeHash(serverScopeHash)) {
+            return 0;
+        }
+
+        if (!isEnabled()) {
+            ChunkTransportControlFrameSender.sendPersistentClientCacheManifestComplete(
+                    channel,
+                    safeText(reason, "persistent_client_cache_manifest") + "_disabled_complete"
+            );
             return 0;
         }
 
@@ -348,6 +357,10 @@ public final class ChunkPersistentClientCache {
                 sentCount++;
             }
         }
+        ChunkTransportControlFrameSender.sendPersistentClientCacheManifestComplete(
+                channel,
+                safeText(reason, "persistent_client_cache_manifest") + "_complete"
+        );
         if (DebugRuntimeConfig.isDiagnoseEnabled()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkPersistentCache][Manifest] channel={}, entries={}, sent={}, cacheFile={}, reason={}",
