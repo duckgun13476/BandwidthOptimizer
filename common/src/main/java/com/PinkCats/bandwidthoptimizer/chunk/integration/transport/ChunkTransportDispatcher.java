@@ -107,6 +107,9 @@ public final class ChunkTransportDispatcher {
 
         ChunkPeerStateSnapshot peerSnapshot = ChunkPeerStateManager.snapshotOutboundChannel(context);
         if (!hasActiveRuntimeScope(peerSnapshot)) {
+            peerSnapshot = ChunkPeerStateManager.ensureOutboundChannelScope(context, "runtime_chunk_transport_missing_scope");
+        }
+        if (!hasActiveRuntimeScope(peerSnapshot)) {
             return null;
         }
 
@@ -202,6 +205,9 @@ public final class ChunkTransportDispatcher {
         }
 
         ChunkPeerStateSnapshot peerSnapshot = ChunkPeerStateManager.snapshotOutboundChannel(context);
+        if (!hasActiveRuntimeScope(peerSnapshot)) {
+            peerSnapshot = ChunkPeerStateManager.ensureOutboundChannelScope(context, "runtime_chunk_transport_missing_scope");
+        }
         if (!hasActiveRuntimeScope(peerSnapshot)) {
             return OutboundChunkEncodeResult.bypass(true, "missing_bound_chunk_scope");
         }
@@ -506,6 +512,7 @@ public final class ChunkTransportDispatcher {
         }
 
         if (frame.coordinate() == null || !frame.coordinate().present()) {
+            ChunkPeerStateManager.ensureOutboundChannelScope(context, "persistent_manifest_complete_before_release");
             ChunkPersistentManifestGate.complete(context.channel(), frame.reason());
             logPersistentManifestComplete(context, frame);
             return;

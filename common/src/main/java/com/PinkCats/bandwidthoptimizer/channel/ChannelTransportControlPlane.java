@@ -26,6 +26,7 @@ public final class ChannelTransportControlPlane {
     private static final long LISTENER_DIRECT_NANOS = 0L;
     private static final int MAX_TRACKED_LISTENER_PACKETS = 256;
     private static final Set<String> DIRECT_CUSTOM_PAYLOAD_CHANNELS = Set.of(
+            Bandwidthoptimizer.MODID + ":" + Bandwidthoptimizer.versionedNetworkPath("transport"),
             "minecraft:register",
             "minecraft:unregister",
             "minecraft:brand",

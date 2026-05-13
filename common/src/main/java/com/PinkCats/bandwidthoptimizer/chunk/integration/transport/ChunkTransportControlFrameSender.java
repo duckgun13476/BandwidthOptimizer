@@ -23,8 +23,6 @@ import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.ConnectionProtocolNameCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
@@ -303,8 +301,6 @@ public final class ChunkTransportControlFrameSender {
             return false;
         }
 
-        ByteBuf carrierPacketBytes = null;
-        boolean handedToPipeline = false;
         try {
             byte[] encodedEnvelopeBytes = ChunkTransportEnvelopeCodec.encodeEnvelope(
                     new ChunkTransportEnvelope(frame, payloadBytes)
@@ -321,19 +317,15 @@ public final class ChunkTransportControlFrameSender {
                 return false;
             }
 
-            carrierPacketBytes = Unpooled.buffer();
-            if (!ChannelTransportHooks.writeTransportCarrierPacket(
-                    encoderContext,
+            ChannelFuture writeFuture = ChannelTransportHooks.writeTransportCarrierPacketToPipeline(
+                    channel,
                     outboundPacketFlow,
-                    carrierPacketBytes,
                     wrappedFrame.transportFrameBytes()
-            )) {
-                carrierPacketBytes.release();
+            );
+            if (writeFuture == null) {
                 return false;
             }
 
-            ChannelFuture writeFuture = encoderContext.writeAndFlush(carrierPacketBytes);
-            handedToPipeline = true;
             writeFuture.addListener(future -> {
                 if (!future.isSuccess()) {
                     Throwable failure = future.cause() == null
@@ -364,9 +356,6 @@ public final class ChunkTransportControlFrameSender {
             }
             return true;
         } catch (Throwable throwable) {
-            if (!handedToPipeline) {
-                releaseQuietly(carrierPacketBytes);
-            }
             if (shouldIgnoreControlFrameSendFailure(channel, throwable)) {
                 return false;
             }
@@ -382,17 +371,7 @@ public final class ChunkTransportControlFrameSender {
         return flowAccess.bandwidthoptimizer$getPacketFlow();
     }
 
-    private static void releaseQuietly(ByteBuf byteBuf) {
-        if (byteBuf == null) {
-            return;
-        }
-        try {
-            byteBuf.release();
-        } catch (RuntimeException ignored) {}
-    }
-
     private static String readProtocolName(Channel channel) {
-        // 通过版本兼容层读取协议名，控制帧发送逻辑本身保持跨版本一致。
         return ConnectionProtocolNameCompat.readProtocolName(channel);
     }
 

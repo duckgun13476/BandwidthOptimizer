@@ -30,6 +30,8 @@ import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.network.Connection;
@@ -741,6 +743,37 @@ public final class ChannelTransportHooks {
             return true;
         } finally {
             payloadBuffer.release();
+        }
+    }
+
+
+    public static ChannelFuture writeTransportCarrierPacketToPipeline(
+            Channel channel,
+            PacketFlow packetFlow,
+            byte[] transportFrameBytes
+    ) {
+        if (channel == null || packetFlow == null || transportFrameBytes == null) {
+            return null;
+        }
+        if (packetFlow == PacketFlow.CLIENTBOUND && transportFrameBytes.length > CLIENTBOUND_CUSTOM_PAYLOAD_MAX_BYTES) {
+            return null;
+        }
+        if (packetFlow == PacketFlow.SERVERBOUND && transportFrameBytes.length > SERVERBOUND_CUSTOM_PAYLOAD_MAX_BYTES) {
+            return null;
+        }
+
+        FriendlyByteBuf payloadBuffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(transportFrameBytes));
+        try {
+            Packet<?> carrierPacket = packetFlow == PacketFlow.CLIENTBOUND
+                    ? new ClientboundCustomPayloadPacket(TRANSPORT_PAYLOAD_ID, payloadBuffer)
+                    : new ServerboundCustomPayloadPacket(TRANSPORT_PAYLOAD_ID, payloadBuffer);
+            logOutboundCarrierTrace(channel.pipeline().context("encoder"), packetFlow, -1, transportFrameBytes);
+            ChannelFuture writeFuture = channel.writeAndFlush(carrierPacket);
+            writeFuture.addListener(future -> payloadBuffer.release());
+            return writeFuture;
+        } catch (RuntimeException e) {
+            payloadBuffer.release();
+            return null;
         }
     }
 

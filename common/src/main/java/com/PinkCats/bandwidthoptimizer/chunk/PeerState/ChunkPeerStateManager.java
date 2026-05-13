@@ -153,6 +153,32 @@ public final class ChunkPeerStateManager {
         return state == null ? null : state.snapshot();
     }
 
+    public static ChunkPeerStateSnapshot ensureOutboundChannelScope(ChannelHandlerContext context, String reason) {
+        if (context == null || context.channel() == null) {
+            return null;
+        }
+
+        String channelId = context.channel().id().asLongText();
+        if (channelId == null || channelId.isBlank()) {
+            return null;
+        }
+
+        ChunkPeerState state = CHANNEL_STATES.computeIfAbsent(channelId, ChunkPeerState::new);
+        ChunkPeerStateSnapshot snapshot = state.snapshot();
+        if (snapshot.epoch() <= 0L) {
+            snapshot = state.setEpoch(FIRST_SCOPE_ID);
+            if (shouldLogDiagnose()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[ChunkPeer][Ensure] channel={}, epoch={}, reason={}",
+                        snapshot.channelId(),
+                        snapshot.epoch(),
+                        reason == null ? "" : reason
+                );
+            }
+        }
+        return snapshot;
+    }
+
     public static ChunkPeerChunkStateSnapshot snapshotOutboundChunk(ChannelHandlerContext context, ChunkPacketCoordinate coordinate) {
         if (context == null || coordinate == null || !coordinate.present()) {
             return null;

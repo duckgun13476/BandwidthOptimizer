@@ -155,19 +155,17 @@ public final class ChannelTransportBatchManager {
                 return;
             }
 
-            ByteBuf carrierBuffer = drainedBatch.context().alloc().buffer();
-            if (!ChannelTransportHooks.writeTransportCarrierPacket(
-                    drainedBatch.context(),
+            var writeFuture = ChannelTransportHooks.writeTransportCarrierPacketToPipeline(
+                    channel,
                     packetFlow,
-                    carrierBuffer,
                     wrappedFrame.transportFrameBytes()
-            )) {
-                carrierBuffer.release();
+            );
+            if (writeFuture == null) {
                 writePendingPacketsDirectly(drainedBatch, "batch_carrier_encode_failed");
                 return;
             }
 
-            drainedBatch.context().writeAndFlush(carrierBuffer).addListener(future -> {
+            writeFuture.addListener(future -> {
                 if (!future.isSuccess()) {
                     Throwable failure = future.cause() == null ? new IllegalStateException("Unknown outbound batch flush failure") : future.cause();
                     if (shouldIgnoreBatchFlushFailure(channel, failure)) {
