@@ -1,3 +1,9 @@
+#### v2.7.6.11-beta
+1. Improved Velocity server-switch transport stability.
+2. Fixed TrueUUID login compatibility issues.
+3. Reduced Netty IO cost during sensitive batch flushes.
+4. Improved transport routing for delayed carrier packets.
+
 #### v2.7.6.6-beta
 1. Added Forge 1.19.2, Fabric 1.20.1, and Fabric 1.21.1 support.
 2. Marked Fabric builds as Quilt-compatible on publishing platforms.
