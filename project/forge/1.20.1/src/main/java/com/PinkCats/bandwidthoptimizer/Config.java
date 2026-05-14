@@ -310,7 +310,7 @@ public class Config {
             public static final String BATCH_ENABLED = "bandwidthoptimizer.transport.batchEnabled";
             public static final boolean DEFAULT_BATCH_ENABLED = true;
             public static final String BATCH_WINDOW_MILLIS = "bandwidthoptimizer.transport.batchWindowMillis";
-            public static final long DEFAULT_BATCH_WINDOW_MILLIS = 10L;
+            public static final long DEFAULT_BATCH_WINDOW_MILLIS = 20L;
             public static final long DEFAULT_BATCH_WARMUP_MILLIS = 5_000L;
             public static final String TELEMETRY_DUMP_FILE_NAME =
                     "bandwidthoptimizer.transport.telemetryDumpFileName";

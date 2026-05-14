@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.test;
 
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorithmId;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.KineticChannel;
 
@@ -34,6 +35,7 @@ public final class ChannelTransportRoundTripMain {
             verifyRoundTrip(senderSession, receiverSession, algorithmId, testCase);
         }
 
+        verifyLightBatchRoundTrip();
         verifyNonTransportPassThrough(receiverSession);
         System.out.println("All channel transport round trips passed.");
     }
@@ -89,6 +91,37 @@ public final class ChannelTransportRoundTripMain {
         var result = KineticChannel.tryUnpackInboundPacket(receiverSession, vanillaPacketBytes);
         if (result != null) {
             throw new IllegalStateException("Non-transport bytes should not be unwrapped");
+        }
+    }
+
+    private static void verifyLightBatchRoundTrip() {
+        ChannelTransportSession senderSession = new ChannelTransportSession();
+        ChannelTransportSession receiverSession = new ChannelTransportSession();
+        List<byte[]> packetBytesList = List.of(
+                utf8Bytes("light-batch-a"),
+                templateLikeBytes(0x21, 0x32),
+                patternedBytes()
+        );
+
+        var wrappedFrame = ChannelTransportPacketCodec.wrapBatchPacketsLight(senderSession, packetBytesList);
+        if (wrappedFrame == null || wrappedFrame.frameKind() != ChannelTransportPacketCodec.FrameKind.BATCH) {
+            throw new IllegalStateException("Light batch wrap did not produce a batch transport frame.");
+        }
+        if (wrappedFrame.telemetry() == null
+                || wrappedFrame.telemetry().literalEntryCount() != 1
+                || wrappedFrame.telemetry().exactAdditionCount() != 0
+                || wrappedFrame.telemetry().templateAdditionCount() != 0) {
+            throw new IllegalStateException("Light batch should use one literal mapping entry without dictionary additions.");
+        }
+
+        var unwrappedFrame = KineticChannel.tryUnpackInboundPacket(receiverSession, wrappedFrame.transportFrameBytes());
+        if (unwrappedFrame == null || unwrappedFrame.restoredPacketCount() != packetBytesList.size()) {
+            throw new IllegalStateException("Light batch did not restore the expected packet count.");
+        }
+        for (int index = 0; index < packetBytesList.size(); index++) {
+            if (!Arrays.equals(packetBytesList.get(index), unwrappedFrame.restoredPacketBytesList().get(index))) {
+                throw new IllegalStateException("Light batch payload mismatch at index " + index);
+            }
         }
     }
 

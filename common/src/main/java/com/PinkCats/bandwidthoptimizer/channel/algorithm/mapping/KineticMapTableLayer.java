@@ -23,6 +23,11 @@ public final class KineticMapTableLayer implements TransportLayer {
         return this.dictionarySession.encodeWithTelemetry(safeBytes);
     }
 
+    public LayerResult encodeLiteralWithTelemetry(byte[] inputBytes) {
+        byte[] safeBytes = copyBytesOrEmpty(inputBytes);
+        return this.dictionarySession.encodeLiteralWithTelemetry(safeBytes);
+    }
+
     public LayerResult decodeWithTelemetry(byte[] inputBytes) {
         byte[] safeBytes = copyBytesOrEmpty(inputBytes);
         return this.dictionarySession.decodeWithTelemetry(safeBytes);

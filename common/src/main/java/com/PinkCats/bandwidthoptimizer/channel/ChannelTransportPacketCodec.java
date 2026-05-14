@@ -34,15 +34,29 @@ public final class ChannelTransportPacketCodec {
         );
     }
 
-    // Packet as transport batch frame 10ms，
+    // Packet as transport batch frame.
     public static WrappedTransportFrame wrapBatchPackets(ChannelTransportSession transportSession, List<byte[]> originalPacketBytesList) {
+        return wrapBatchPackets(transportSession, originalPacketBytesList, BatchEncodingProfile.FULL_TEMPLATE);
+    }
+
+    public static WrappedTransportFrame wrapBatchPacketsLight(ChannelTransportSession transportSession, List<byte[]> originalPacketBytesList) {
+        return wrapBatchPackets(transportSession, originalPacketBytesList, BatchEncodingProfile.LITERAL_MAPPING);
+    }
+
+    private static WrappedTransportFrame wrapBatchPackets(
+            ChannelTransportSession transportSession,
+            List<byte[]> originalPacketBytesList,
+            BatchEncodingProfile encodingProfile
+    ) {
         List<byte[]> safePacketBytesList = copyPacketBytesList(originalPacketBytesList);
         if (transportSession == null || safePacketBytesList.isEmpty()) {
             return null;
         }
 
         byte[] batchPayloadBytes = BATCH_LAYER.encodePacketBatch(safePacketBytesList);
-        ChannelTransportSession.PacketResult packetResult = transportSession.encodeSinglePacketWithTelemetry(batchPayloadBytes);
+        ChannelTransportSession.PacketResult packetResult = encodingProfile == BatchEncodingProfile.LITERAL_MAPPING
+                ? transportSession.encodeSinglePacketWithLiteralMappingTelemetry(batchPayloadBytes)
+                : transportSession.encodeSinglePacketWithTelemetry(batchPayloadBytes);
         return wrapTransportBody(
                 FrameKind.BATCH,
                 totalPacketBytes(safePacketBytesList),
@@ -52,7 +66,7 @@ public final class ChannelTransportPacketCodec {
         );
     }
 
-    // Unwarp batch frame 10ms.
+    // Unwarp batch frame.
     public static UnwrappedTransportFrame tryUnwrapPacket(ChannelTransportSession transportSession, byte[] inboundPacketBytes) {
         if (transportSession == null || inboundPacketBytes == null || inboundPacketBytes.length == 0) {
             return null;
@@ -191,5 +205,10 @@ public final class ChannelTransportPacketCodec {
             }
             throw new IllegalStateException("Unsupported transport frame kind: " + id);
         }
+    }
+
+    private enum BatchEncodingProfile {
+        FULL_TEMPLATE,
+        LITERAL_MAPPING
     }
 }

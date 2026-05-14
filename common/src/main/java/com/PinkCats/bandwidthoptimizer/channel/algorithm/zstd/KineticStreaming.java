@@ -60,6 +60,17 @@ public final class KineticStreaming implements TransportAlgorithm {
         }
 
         @Override
+        public ChannelTransportAlgorithmSession.OperationResult encodePacketWithLiteralMappingTelemetry(byte[] packetBytes) {
+            byte[] safePacketBytes = copyBytesOrEmpty(packetBytes);
+            KineticMapTableLayer.LayerResult mappingResult = encodeLiteralMappingStage(safePacketBytes);
+            byte[] transportBodyBytes = encodeZstdStage(mappingResult.bytes());
+            return new ChannelTransportAlgorithmSession.OperationResult(
+                    transportBodyBytes,
+                    toTelemetry(mappingResult, mappingResult.bytes().length)
+            );
+        }
+
+        @Override
         public ChannelTransportAlgorithmSession.OperationResult decodePacketWithTelemetry(byte[] encodedBytes) {
             byte[] safeEncodedBytes = copyBytesOrEmpty(encodedBytes);
             byte[] mappingStageBytes = decodeZstdStage(safeEncodedBytes);
@@ -82,6 +93,13 @@ public final class KineticStreaming implements TransportAlgorithm {
                 return KineticMapTableLayer.LayerResult.passthrough(packetBytes);
             }
             return this.mapTableLayer.encodeWithTelemetry(packetBytes);
+        }
+
+        private KineticMapTableLayer.LayerResult encodeLiteralMappingStage(byte[] packetBytes) {
+            if (!ChannelTransportLayerRuntimeConfig.isMappingEnabled()) {
+                return KineticMapTableLayer.LayerResult.passthrough(packetBytes);
+            }
+            return this.mapTableLayer.encodeLiteralWithTelemetry(packetBytes);
         }
 
         private byte[] encodeZstdStage(byte[] mappedBytes) {

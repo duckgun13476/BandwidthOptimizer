@@ -19,6 +19,10 @@ public interface ChannelTransportAlgorithmSession {
         );
     }
 
+    default OperationResult encodePacketWithLiteralMappingTelemetry(byte[] packetBytes) {
+        return encodePacketWithTelemetry(packetBytes);
+    }
+
 
 
 

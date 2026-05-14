@@ -34,6 +34,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class ChannelTransportBatchManager {
 
+    private static final int LIGHT_BATCH_PACKET_THRESHOLD = 32;
+    private static final int LIGHT_BATCH_BYTES_THRESHOLD = 64 * 1024;
+
     private static final AttributeKey<OutboundBatchState> OUTBOUND_BATCH_STATE_KEY =
             AttributeKey.valueOf("bandwidthoptimizer:channel_transport_outbound_batch_state");
 
@@ -80,7 +83,7 @@ public final class ChannelTransportBatchManager {
         if (context == null || !ChannelTransportBatchRuntimeConfig.isBatchEnabled()) {
             return;
         }
-        flushOutboundBatch(context.channel());
+        flushOutboundBatch(context.channel(), OutboundBatchFlushMode.SENSITIVE_BOUNDARY);
     }
 
     public static void clearChannelState(Channel channel, String reason) {
@@ -119,6 +122,10 @@ public final class ChannelTransportBatchManager {
 
 
     private static void flushOutboundBatch(Channel channel) {
+        flushOutboundBatch(channel, OutboundBatchFlushMode.NORMAL_WINDOW);
+    }
+
+    private static void flushOutboundBatch(Channel channel, OutboundBatchFlushMode flushMode) {
         if (channel == null)
             return;
 
@@ -144,8 +151,9 @@ public final class ChannelTransportBatchManager {
             }
 
             ChannelTransportSession transportSession = ChannelTransportStateManager.getOrCreateSession(channel);
-            ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame =
-                    ChannelTransportPacketCodec.wrapBatchPackets(transportSession, drainedBatch.packetBytesList());
+            ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame = shouldUseLightBatchEncoding(flushMode, drainedBatch)
+                    ? ChannelTransportPacketCodec.wrapBatchPacketsLight(transportSession, drainedBatch.packetBytesList())
+                    : ChannelTransportPacketCodec.wrapBatchPackets(transportSession, drainedBatch.packetBytesList());
             if (wrappedFrame == null) {
                 writePendingPacketsDirectly(drainedBatch, "batch_carrier_unavailable");
                 return;
@@ -188,6 +196,17 @@ public final class ChannelTransportBatchManager {
             writePendingPacketsDirectly(drainedBatch, "batch_flush_exception");
             ChannelTransportRuntimeGuard.disableTransport("outbound-batch-flush", throwable);
         }
+    }
+
+    private static boolean shouldUseLightBatchEncoding(OutboundBatchFlushMode flushMode, OutboundBatchDrain drainedBatch) {
+        if (drainedBatch == null) {
+            return false;
+        }
+        if (flushMode == OutboundBatchFlushMode.SENSITIVE_BOUNDARY) {
+            return true;
+        }
+        return drainedBatch.pendingPackets().size() >= LIGHT_BATCH_PACKET_THRESHOLD
+                || drainedBatch.totalPacketBytes() >= LIGHT_BATCH_BYTES_THRESHOLD;
     }
 
     // Direct when velocity
@@ -628,7 +647,7 @@ public final class ChannelTransportBatchManager {
             long windowMillis = ChannelTransportBatchRuntimeConfig.windowMillis();
             channel.eventLoop().schedule(() -> {
                 try {
-                    flushOutboundBatch(channel);
+                    flushOutboundBatch(channel, OutboundBatchFlushMode.NORMAL_WINDOW);
                 } finally {
                     this.flushScheduled.set(false);
                     synchronized (this.pendingPackets) {
@@ -681,6 +700,11 @@ public final class ChannelTransportBatchManager {
             this.nextReplayAtNanos = replayAtNanos;
             return List.copyOf(scheduledReplayEntries);
         }
+    }
+
+    private enum OutboundBatchFlushMode {
+        NORMAL_WINDOW,
+        SENSITIVE_BOUNDARY
     }
 
     private static final class BatchApplicabilityState {

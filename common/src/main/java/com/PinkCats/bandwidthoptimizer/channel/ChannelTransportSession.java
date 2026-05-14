@@ -38,6 +38,13 @@ public final class ChannelTransportSession {
         return new PacketResult(copyBytesOrEmpty(result.bytes()), fallbackTelemetry(result.telemetry(), safeBytes.length));
     }
 
+    public synchronized PacketResult encodeSinglePacketWithLiteralMappingTelemetry(byte[] encodedPacketBytes) {
+        byte[] safeBytes = copyBytesOrEmpty(encodedPacketBytes);
+        ChannelTransportAlgorithmSession.OperationResult result =
+                this.outboundSession.encodePacketWithLiteralMappingTelemetry(safeBytes);
+        return new PacketResult(copyBytesOrEmpty(result.bytes()), fallbackTelemetry(result.telemetry(), safeBytes.length));
+    }
+
     public synchronized PacketResult decodeSinglePacketWithTelemetry(byte[] transportBytes) {
         byte[] safeBytes = copyBytesOrEmpty(transportBytes);
         ChannelTransportAlgorithmSession.OperationResult result = this.inboundSession.decodePacketWithTelemetry(safeBytes);

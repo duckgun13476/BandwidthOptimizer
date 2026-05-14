@@ -71,6 +71,17 @@ final class KineticTemplateDictionarySession {
         return new KineticMapTableLayer.LayerResult(encodedFrame, toTelemetry(frameData));
     }
 
+    KineticMapTableLayer.LayerResult encodeLiteralWithTelemetry(byte[] packetBytes) {
+        KineticTemplateMappingCodec.FrameData frameData =
+                new KineticTemplateMappingCodec.FrameData(
+                        List.of(),
+                        List.of(),
+                        KineticTemplateMappingCodec.MappingEntry.literal(copyBytes(packetBytes))
+                );
+        byte[] encodedFrame = KineticTemplateMappingCodec.encodeFrame(frameData);
+        return new KineticMapTableLayer.LayerResult(encodedFrame, toTelemetry(frameData));
+    }
+
     KineticMapTableLayer.LayerResult decodeWithTelemetry(byte[] encodedBytes) {
         KineticTemplateMappingCodec.FrameData frameData = KineticTemplateMappingCodec.decodeFrame(copyBytes(encodedBytes));
         applyAdditions(frameData.additions());
