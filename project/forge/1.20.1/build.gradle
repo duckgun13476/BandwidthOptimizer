@@ -89,8 +89,11 @@ sourceSets {
 
 repositories {
     maven {
-        name = "PinkCatsLocal"
-        url = uri("C:/F/Maven")
+        name = "PinkCatsMaven"
+        url = uri("https://logistics.aisaveworld.tech/d/share/maven/torque")
+        content {
+            includeGroup "com.pinkcats.torque"
+        }
     }
 }
 
