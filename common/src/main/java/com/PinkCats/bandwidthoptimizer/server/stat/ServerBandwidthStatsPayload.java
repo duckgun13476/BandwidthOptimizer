@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.server.stat;
 
 import com.PinkCats.bandwidthoptimizer.client.hud.ClientServerBandwidthHudStats;
+import com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
 
@@ -17,13 +18,30 @@ public record ServerBandwidthStatsPayload(
         long serverOfflineReuseConfirmedFrames,
         long serverOfflineReuseConfirmedSavedBytes,
         long serverOfflineReuseConfirmedWireBytes,
-        long serverTemporaryReuseSavedBytes
+        long serverTemporaryReuseSavedBytes,
+        long serverCreateGateObservedBytes,
+        long serverCreateGateSavedBytes,
+        long serverCreateGateSavedPackets,
+        long serverCreateGateReleasedPackets
 ) {
 
     public static ServerBandwidthStatsPayload fromTotals(ServerBandwidthStatsRegistry.TotalsSnapshot totals) {
         if (totals == null) {
             return empty();
         }
+        CreateBlockEntityUpdateGate.Snapshot createGateSnapshot = CreateBlockEntityUpdateGate.snapshotStats();
+        long createGateObservedBytes = totals.serverCreateGateObservedBytes() > 0L
+                ? totals.serverCreateGateObservedBytes()
+                : createGateSnapshot.observedBytes();
+        long createGateSavedBytes = totals.serverCreateGateSavedBytes() > 0L
+                ? totals.serverCreateGateSavedBytes()
+                : createGateSnapshot.savedBytes();
+        long createGateSavedPackets = totals.serverCreateGateSavedPackets() > 0L
+                ? totals.serverCreateGateSavedPackets()
+                : createGateSnapshot.savedPackets();
+        long createGateReleasedPackets = totals.serverCreateGateReleasedPackets() > 0L
+                ? totals.serverCreateGateReleasedPackets()
+                : createGateSnapshot.releasedPackets();
         return new ServerBandwidthStatsPayload(
                 System.currentTimeMillis(),
                 totals.activeChannels(),
@@ -37,13 +55,17 @@ public record ServerBandwidthStatsPayload(
                 totals.serverOfflineReuseConfirmedFrames(),
                 totals.serverOfflineReuseConfirmedSavedBytes(),
                 totals.serverOfflineReuseConfirmedWireBytes(),
-                totals.serverTemporaryReuseSavedBytes()
+                totals.serverTemporaryReuseSavedBytes(),
+                createGateObservedBytes,
+                createGateSavedBytes,
+                createGateSavedPackets,
+                createGateReleasedPackets
         );
     }
 
 
     public static ServerBandwidthStatsPayload empty() {
-        return new ServerBandwidthStatsPayload(System.currentTimeMillis(), 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+        return new ServerBandwidthStatsPayload(System.currentTimeMillis(), 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
     }
 
     public static void encode(ServerBandwidthStatsPayload payload, FriendlyByteBuf buffer) {
@@ -61,6 +83,10 @@ public record ServerBandwidthStatsPayload(
         buffer.writeVarLong(Math.max(safePayload.serverOfflineReuseConfirmedSavedBytes(), 0L));
         buffer.writeVarLong(Math.max(safePayload.serverOfflineReuseConfirmedWireBytes(), 0L));
         buffer.writeVarLong(Math.max(safePayload.serverTemporaryReuseSavedBytes(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.serverCreateGateObservedBytes(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.serverCreateGateSavedBytes(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.serverCreateGateSavedPackets(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.serverCreateGateReleasedPackets(), 0L));
     }
 
     public static ServerBandwidthStatsPayload decode(FriendlyByteBuf buffer) {
@@ -77,6 +103,10 @@ public record ServerBandwidthStatsPayload(
         long serverOfflineReuseConfirmedSavedBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         long serverOfflineReuseConfirmedWireBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         long serverTemporaryReuseSavedBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long serverCreateGateObservedBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long serverCreateGateSavedBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long serverCreateGateSavedPackets = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long serverCreateGateReleasedPackets = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         return new ServerBandwidthStatsPayload(
                 capturedAtMillis,
                 activeChannels,
@@ -90,7 +120,11 @@ public record ServerBandwidthStatsPayload(
                 serverOfflineReuseConfirmedFrames,
                 serverOfflineReuseConfirmedSavedBytes,
                 serverOfflineReuseConfirmedWireBytes,
-                serverTemporaryReuseSavedBytes
+                serverTemporaryReuseSavedBytes,
+                serverCreateGateObservedBytes,
+                serverCreateGateSavedBytes,
+                serverCreateGateSavedPackets,
+                serverCreateGateReleasedPackets
         );
     }
 

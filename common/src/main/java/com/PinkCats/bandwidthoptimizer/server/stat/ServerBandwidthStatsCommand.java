@@ -56,6 +56,11 @@ public final class ServerBandwidthStatsCommand {
                         + ", sessionOfflineReuse=" + formatBytes(sessionTotals.serverOfflineReuseConfirmedSavedBytes())
                         + "/" + sessionTotals.serverOfflineReuseConfirmedFrames() + " frames"
                         + ", sessionTemporaryReuse=" + formatBytes(sessionTotals.serverTemporaryReuseSavedBytes())
+                        + ", sessionCreateGate=" + formatBytes(sessionTotals.serverCreateGateSavedBytes())
+                        + "/" + ratioText(
+                                sessionTotals.serverCreateGateSavedBytes(),
+                                sessionTotals.serverCreateGateObservedBytes()
+                        )
                         + ", estRatio=" + ratioText(
                                 totals.outboundTransportFrameBytes() + totals.outboundBypassBytes(),
                                 totals.outboundRawEncodedBytes()

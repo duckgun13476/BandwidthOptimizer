@@ -8,6 +8,7 @@ import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
@@ -39,6 +40,10 @@ public final class CreateBlockEntityUpdateGate {
     private static final AtomicLong SUPERSEDED_COUNT = new AtomicLong();
     private static final AtomicLong RELEASED_COUNT = new AtomicLong();
     private static final AtomicLong DROPPED_COUNT = new AtomicLong();
+    private static final AtomicLong DELAYED_BYTES = new AtomicLong();
+    private static final AtomicLong SUPERSEDED_SAVED_BYTES = new AtomicLong();
+    private static final AtomicLong RELEASED_BYTES = new AtomicLong();
+    private static final AtomicLong DROPPED_SAVED_BYTES = new AtomicLong();
     private static final Set<String> MECHANICAL_BLOCK_ENTITY_TYPES = Set.of(
             "simple_kinetic",
             "creative_motor",
@@ -103,10 +108,17 @@ public final class CreateBlockEntityUpdateGate {
             "weighted_ejector",
             "flap_display"
     );
+    private static final Set<String> SOUND_CLASSIFIED_BLOCK_ENTITY_TYPES = Set.of(
+            "cuckoo_clock",
+            "deployer",
+            "mechanical_arm",
+            "mechanical_crafter",
+            "mechanical_press",
+            "steam_whistle"
+    );
 
     private CreateBlockEntityUpdateGate() {}
 
-    // Track the player's current channel.
     public static void bindPlayer(ServerPlayer player) {
         if (player == null) {
             return;
@@ -124,7 +136,6 @@ public final class CreateBlockEntityUpdateGate {
         }
     }
 
-    // Drop stale pending updates.
     public static void clearPlayer(ServerPlayer player, String reason) {
         if (player == null) {
             return;
@@ -135,18 +146,17 @@ public final class CreateBlockEntityUpdateGate {
             if (channelId != null && !channelId.isBlank()) {
                 CHANNEL_PLAYERS.remove(channelId, player.getUUID());
             }
-            int dropped = state.clearPending();
-            if (dropped > 0) {
-                DROPPED_COUNT.addAndGet(dropped);
+            PendingDropStats dropped = state.clearPending();
+            if (!dropped.isEmpty()) {
+                recordDropped(dropped);
                 logDiagnose("[CreateUpdateGate][Clear] player={}, reason={}, dropped={}",
                         player.getGameProfile().getName(),
                         reason == null ? "" : reason,
-                        dropped);
+                        dropped.count());
             }
         }
     }
 
-    // Drop updates for unwatched chunks.
     public static void dropPendingChunk(ServerPlayer player, ChunkPos chunkPos, String reason) {
         if (player == null || chunkPos == null) {
             return;
@@ -155,19 +165,18 @@ public final class CreateBlockEntityUpdateGate {
         if (state == null) {
             return;
         }
-        int dropped = state.dropChunk(chunkPos.x, chunkPos.z);
-        if (dropped > 0) {
-            DROPPED_COUNT.addAndGet(dropped);
+        PendingDropStats dropped = state.dropChunk(chunkPos.x, chunkPos.z);
+        if (!dropped.isEmpty()) {
+            recordDropped(dropped);
             logDiagnose("[CreateUpdateGate][DropChunk] player={}, chunk=({}, {}), reason={}, dropped={}",
                     player.getGameProfile().getName(),
                     chunkPos.x,
                     chunkPos.z,
                     reason == null ? "" : reason,
-                    dropped);
+                    dropped.count());
         }
     }
 
-    // Coalesce outbound Create block entity updates.
     public static boolean tryDelayOutboundPacket(
             ChannelHandlerContext context,
             String protocolName,
@@ -199,18 +208,23 @@ public final class CreateBlockEntityUpdateGate {
         if (player == null) {
             return false;
         }
-        if (shouldSendImmediately(player, blockEntityDataPacket.getPos())) {
-            return false;
-        }
-
         PlayerState state = PLAYER_STATES.computeIfAbsent(player.getUUID(), ignored -> new PlayerState());
         state.bind(player, context.channel().id().asLongText());
         PendingKey key = PendingKey.of(blockEntityTypeKey, blockEntityDataPacket.getPos());
-        boolean accepted = state.rememberLatest(key, packet, lengthOf(originalPacketBytes));
+        boolean soundCritical = state.rememberSoundStateAndShouldFlush(key, blockEntityDataPacket.getTag());
+        if (shouldSendImmediately(player, blockEntityDataPacket.getPos())
+                || soundCritical && isWithinSoundSendDistance(player, blockEntityDataPacket.getPos(), blockEntityTypeKey)) {
+            recordDropped(state.forgetPending(key));
+            return false;
+        }
+
+        int originalRawBytes = lengthOf(originalPacketBytes);
+        boolean accepted = state.rememberLatest(key, packet, originalRawBytes);
         if (!accepted) {
             return false;
         }
         long delayed = DELAYED_COUNT.incrementAndGet();
+        DELAYED_BYTES.addAndGet(originalRawBytes);
         if (shouldLogSample(delayed)) {
             logDiagnose("[CreateUpdateGate][Delay] player={}, type={}, pos={}, delayed={}, superseded={}, released={}, dropped={}",
                     player.getGameProfile().getName(),
@@ -224,7 +238,6 @@ public final class CreateBlockEntityUpdateGate {
         return true;
     }
 
-    // Release visible or expired updates.
     public static void onServerTick() {
         if (!isEnabled() || PLAYER_STATES.isEmpty()) {
             return;
@@ -239,6 +252,7 @@ public final class CreateBlockEntityUpdateGate {
             for (PendingUpdate pendingUpdate : readyUpdates) {
                 sendForced(player, pendingUpdate.packet());
                 long released = RELEASED_COUNT.incrementAndGet();
+                RELEASED_BYTES.addAndGet(pendingUpdate.rawBytes());
                 if (shouldLogSample(released)) {
                     logDiagnose("[CreateUpdateGate][Release] player={}, type={}, pos={}, reason={}, rawBytes={}, superseded={}",
                             player.getGameProfile().getName(),
@@ -250,6 +264,45 @@ public final class CreateBlockEntityUpdateGate {
                 }
             }
         }
+    }
+
+    public static void resetStats() {
+        DELAYED_COUNT.set(0L);
+        SUPERSEDED_COUNT.set(0L);
+        RELEASED_COUNT.set(0L);
+        DROPPED_COUNT.set(0L);
+        DELAYED_BYTES.set(0L);
+        SUPERSEDED_SAVED_BYTES.set(0L);
+        RELEASED_BYTES.set(0L);
+        DROPPED_SAVED_BYTES.set(0L);
+    }
+
+    public static Snapshot snapshotStats() {
+        return new Snapshot(
+                DELAYED_COUNT.get(),
+                SUPERSEDED_COUNT.get(),
+                RELEASED_COUNT.get(),
+                DROPPED_COUNT.get(),
+                DELAYED_BYTES.get(),
+                SUPERSEDED_SAVED_BYTES.get(),
+                RELEASED_BYTES.get(),
+                DROPPED_SAVED_BYTES.get());
+    }
+
+    private static void recordDropped(PendingDropStats dropped) {
+        if (dropped == null || dropped.isEmpty()) {
+            return;
+        }
+        DROPPED_COUNT.addAndGet(dropped.count());
+        DROPPED_SAVED_BYTES.addAndGet(dropped.rawBytes());
+    }
+
+    private static void recordSuperseded(PendingUpdate existing) {
+        if (existing == null) {
+            return;
+        }
+        SUPERSEDED_COUNT.incrementAndGet();
+        SUPERSEDED_SAVED_BYTES.addAndGet(existing.rawBytes());
     }
 
     private static ServerPlayer resolvePlayer(ChannelHandlerContext context) {
@@ -288,6 +341,12 @@ public final class CreateBlockEntityUpdateGate {
         return typeKey != null
                 && "create".equals(typeKey.getNamespace())
                 && MECHANICAL_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
+    }
+
+    private static boolean isSoundClassifiedBlockEntity(ResourceLocation typeKey) {
+        return typeKey != null
+                && "create".equals(typeKey.getNamespace())
+                && SOUND_CLASSIFIED_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
     }
 
     private static void sendForced(ServerPlayer player, Packet<?> packet) {
@@ -333,6 +392,25 @@ public final class CreateBlockEntityUpdateGate {
                 Config.RuntimeProperty.Create.DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_ALWAYS_SEND_DISTANCE_BLOCKS,
                 0.0D,
                 128.0D);
+    }
+
+    private static boolean isWithinSoundSendDistance(ServerPlayer player, BlockPos pos, ResourceLocation typeKey) {
+        if (player == null || pos == null || typeKey == null) {
+            return true;
+        }
+        double soundDistance = soundSendDistanceBlocks(typeKey);
+        Vec3 target = new Vec3(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
+        return player.getEyePosition().distanceToSqr(target) <= soundDistance * soundDistance;
+    }
+
+    private static double soundSendDistanceBlocks(ResourceLocation typeKey) {
+        if ("steam_whistle".equals(typeKey.getPath())) {
+            return 64.0D;
+        }
+        if ("cuckoo_clock".equals(typeKey.getPath())) {
+            return 32.0D;
+        }
+        return 16.0D;
     }
 
     private static double lookDotThreshold() {
@@ -389,6 +467,145 @@ public final class CreateBlockEntityUpdateGate {
         }
     }
 
+    public record Snapshot(
+            long delayedPackets,
+            long supersededPackets,
+            long releasedPackets,
+            long droppedPackets,
+            long delayedBytes,
+            long supersededSavedBytes,
+            long releasedBytes,
+            long droppedSavedBytes
+    ) {
+        public long savedBytes() {
+            return Math.max(this.supersededSavedBytes + this.droppedSavedBytes, 0L);
+        }
+
+        public long observedBytes() {
+            return Math.max(this.savedBytes() + this.releasedBytes, 0L);
+        }
+
+        public long savedPackets() {
+            return Math.max(this.supersededPackets + this.droppedPackets, 0L);
+        }
+    }
+
+    private record PendingDropStats(int count, long rawBytes) {
+        private static final PendingDropStats EMPTY = new PendingDropStats(0, 0L);
+
+        private boolean isEmpty() {
+            return this.count <= 0;
+        }
+
+        private PendingDropStats plus(PendingUpdate update) {
+            if (update == null) {
+                return this;
+            }
+            return new PendingDropStats(this.count + 1, this.rawBytes + update.rawBytes());
+        }
+    }
+
+    private record CreateSoundState(
+            String type,
+            String phase,
+            String state,
+            int ticks,
+            int countDown,
+            int pitch,
+            boolean running,
+            boolean fistBump,
+            boolean hasParticle,
+            boolean hasParticleItems,
+            boolean hasAnimation,
+            String heldItem
+    ) {
+        private static CreateSoundState capture(ResourceLocation typeKey, CompoundTag tag) {
+            String type = typeKey == null ? "" : typeKey.getPath();
+            CompoundTag safeTag = tag == null ? new CompoundTag() : tag;
+            return new CreateSoundState(
+                    type,
+                    safeTag.getString("Phase"),
+                    safeTag.getString("State"),
+                    safeTag.getInt("Ticks"),
+                    safeTag.getInt("CountDown"),
+                    safeTag.getInt("Pitch"),
+                    safeTag.getBoolean("Running"),
+                    safeTag.getBoolean("Fistbump"),
+                    safeTag.contains("Particle"),
+                    safeTag.contains("ParticleItems") && !safeTag.getList("ParticleItems", 10).isEmpty(),
+                    safeTag.contains("Animation") && !"NONE".equals(safeTag.getString("Animation")),
+                    itemFingerprint(safeTag));
+        }
+
+        private static String itemFingerprint(CompoundTag tag) {
+            if (tag == null || !tag.contains("HeldItem")) {
+                return "";
+            }
+            CompoundTag itemTag = tag.getCompound("HeldItem");
+            if (itemTag.isEmpty()) {
+                return "";
+            }
+            return itemTag.getString("id") + "#" + itemTag.getInt("count") + "#" + itemTag.getInt("Count");
+        }
+    }
+
+    private static boolean shouldFlushSoundState(PendingKey key, CreateSoundState previous, CreateSoundState current) {
+        if (key == null || current == null || !isSoundClassifiedBlockEntity(key.typeKey())) {
+            return false;
+        }
+        return switch (current.type()) {
+            case "mechanical_press" -> shouldFlushMechanicalPress(previous, current);
+            case "deployer" -> shouldFlushDeployer(previous, current);
+            case "mechanical_crafter" -> shouldFlushMechanicalCrafter(previous, current);
+            case "mechanical_arm" -> shouldFlushMechanicalArm(previous, current);
+            case "cuckoo_clock" -> current.hasAnimation();
+            case "steam_whistle" -> previous != null && previous.pitch() != current.pitch();
+            default -> false;
+        };
+    }
+
+    private static boolean shouldFlushMechanicalPress(CreateSoundState previous, CreateSoundState current) {
+        if (current.hasParticleItems()) {
+            return true;
+        }
+        if (!current.running() || current.ticks() < 120) {
+            return false;
+        }
+        return previous == null || !previous.running() || previous.ticks() < 120 || previous.ticks() > current.ticks();
+    }
+
+    private static boolean shouldFlushDeployer(CreateSoundState previous, CreateSoundState current) {
+        if (current.hasParticle()) {
+            return true;
+        }
+        if (previous == null) {
+            return false;
+        }
+        if (previous.fistBump() != current.fistBump()) {
+            return true;
+        }
+        return !previous.heldItem().equals(current.heldItem()) && !current.heldItem().isBlank();
+    }
+
+    private static boolean shouldFlushMechanicalCrafter(CreateSoundState previous, CreateSoundState current) {
+        if (previous == null) {
+            return false;
+        }
+        if ("EXPORTING".equals(previous.phase()) && "WAITING".equals(current.phase())) {
+            return true;
+        }
+        return "CRAFTING".equals(current.phase())
+                && current.countDown() <= 1000
+                && previous.countDown() > 1000;
+    }
+
+    private static boolean shouldFlushMechanicalArm(CreateSoundState previous, CreateSoundState current) {
+        return previous != null
+                && "SEARCH_OUTPUTS".equals(current.phase())
+                && !previous.heldItem().equals(current.heldItem())
+                && !current.heldItem().isBlank();
+    }
+
     private record PendingUpdate(
             PendingKey key,
             Packet<?> packet,
@@ -423,6 +640,7 @@ public final class CreateBlockEntityUpdateGate {
 
     private static final class PlayerState {
         private final Map<PendingKey, PendingUpdate> pendingUpdates = new LinkedHashMap<>();
+        private final Map<PendingKey, CreateSoundState> soundStates = new LinkedHashMap<>();
         private volatile ServerPlayer player;
         private volatile String channelId = "";
 
@@ -437,6 +655,23 @@ public final class CreateBlockEntityUpdateGate {
 
         private String channelId() {
             return this.channelId;
+        }
+
+        private synchronized boolean rememberSoundStateAndShouldFlush(PendingKey key, CompoundTag tag) {
+            if (key == null || !isSoundClassifiedBlockEntity(key.typeKey())) {
+                return false;
+            }
+            if (!this.soundStates.containsKey(key) && this.soundStates.size() >= maxPendingPerPlayer()) {
+                Iterator<PendingKey> iterator = this.soundStates.keySet().iterator();
+                if (iterator.hasNext()) {
+                    iterator.next();
+                    iterator.remove();
+                }
+            }
+            CreateSoundState previous = this.soundStates.get(key);
+            CreateSoundState current = CreateSoundState.capture(key.typeKey(), tag);
+            this.soundStates.put(key, current);
+            return shouldFlushSoundState(key, previous, current);
         }
 
         private synchronized boolean rememberLatest(PendingKey key, Packet<?> packet, int rawBytes) {
@@ -455,9 +690,16 @@ public final class CreateBlockEntityUpdateGate {
                         new PendingUpdate(key, packet, rawBytes, nowNanos, nowNanos, 0, ""));
             } else {
                 this.pendingUpdates.put(key, existing.withLatest(packet, rawBytes, nowNanos));
-                SUPERSEDED_COUNT.incrementAndGet();
+                recordSuperseded(existing);
             }
             return true;
+        }
+
+        private synchronized PendingDropStats forgetPending(PendingKey key) {
+            if (key != null) {
+                return PendingDropStats.EMPTY.plus(this.pendingUpdates.remove(key));
+            }
+            return PendingDropStats.EMPTY;
         }
 
         private synchronized List<PendingUpdate> drainReady(ServerPlayer player, long nowNanos) {
@@ -481,26 +723,32 @@ public final class CreateBlockEntityUpdateGate {
             return readyUpdates;
         }
 
-        private synchronized int dropChunk(int chunkX, int chunkZ) {
+        private synchronized PendingDropStats dropChunk(int chunkX, int chunkZ) {
             if (this.pendingUpdates.isEmpty()) {
-                return 0;
+                return PendingDropStats.EMPTY;
             }
-            int dropped = 0;
-            Iterator<PendingKey> iterator = this.pendingUpdates.keySet().iterator();
+            PendingDropStats dropped = PendingDropStats.EMPTY;
+            Iterator<Map.Entry<PendingKey, PendingUpdate>> iterator = this.pendingUpdates.entrySet().iterator();
             while (iterator.hasNext()) {
-                PendingKey key = iterator.next();
+                Map.Entry<PendingKey, PendingUpdate> entry = iterator.next();
+                PendingKey key = entry.getKey();
                 if (key.chunkX() == chunkX && key.chunkZ() == chunkZ) {
+                    dropped = dropped.plus(entry.getValue());
                     iterator.remove();
-                    dropped++;
+                    this.soundStates.remove(key);
                 }
             }
             return dropped;
         }
 
-        private synchronized int clearPending() {
-            int size = this.pendingUpdates.size();
+        private synchronized PendingDropStats clearPending() {
+            PendingDropStats dropped = PendingDropStats.EMPTY;
+            for (PendingUpdate pendingUpdate : this.pendingUpdates.values()) {
+                dropped = dropped.plus(pendingUpdate);
+            }
             this.pendingUpdates.clear();
-            return size;
+            this.soundStates.clear();
+            return dropped;
         }
     }
 }

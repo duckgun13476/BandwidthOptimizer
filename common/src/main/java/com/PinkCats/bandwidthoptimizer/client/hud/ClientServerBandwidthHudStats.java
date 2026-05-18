@@ -30,7 +30,11 @@ public final class ClientServerBandwidthHudStats {
                 payload.serverOfflineReuseConfirmedFrames(),
                 payload.serverOfflineReuseConfirmedSavedBytes(),
                 payload.serverOfflineReuseConfirmedWireBytes(),
-                payload.serverTemporaryReuseSavedBytes()
+                payload.serverTemporaryReuseSavedBytes(),
+                payload.serverCreateGateObservedBytes(),
+                payload.serverCreateGateSavedBytes(),
+                payload.serverCreateGateSavedPackets(),
+                payload.serverCreateGateReleasedPackets()
         );
     }
 
@@ -58,11 +62,15 @@ public final class ClientServerBandwidthHudStats {
             long serverOfflineReuseConfirmedFrames,
             long serverOfflineReuseConfirmedSavedBytes,
             long serverOfflineReuseConfirmedWireBytes,
-            long serverTemporaryReuseSavedBytes
+            long serverTemporaryReuseSavedBytes,
+            long serverCreateGateObservedBytes,
+            long serverCreateGateSavedBytes,
+            long serverCreateGateSavedPackets,
+            long serverCreateGateReleasedPackets
     ) {
 
         private static Snapshot empty() {
-            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
         }
 
         public boolean fresh() {
@@ -74,6 +82,13 @@ public final class ClientServerBandwidthHudStats {
                 return 0.0D;
             }
             return (double) outboundWireBytes * 100.0D / (double) outboundRawEncodedBytes;
+        }
+
+        public double createGateSavedRatioPercent() {
+            if (serverCreateGateObservedBytes <= 0L) {
+                return 0.0D;
+            }
+            return (double) serverCreateGateSavedBytes * 100.0D / (double) serverCreateGateObservedBytes;
         }
     }
 }

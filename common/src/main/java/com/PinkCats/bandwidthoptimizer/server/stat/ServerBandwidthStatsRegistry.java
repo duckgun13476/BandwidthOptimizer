@@ -6,6 +6,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameO
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotReport;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkServerOfflineReuseStats;
+import com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
@@ -101,6 +102,7 @@ public final class ServerBandwidthStatsRegistry {
         }
         ChunkHotspotStats.reset();
         ChunkServerOfflineReuseStats.reset();
+        CreateBlockEntityUpdateGate.resetStats();
     }
 
     public static List<ChannelBandwidthStats.Snapshot> snapshotChannels() {
@@ -139,6 +141,7 @@ public final class ServerBandwidthStatsRegistry {
         long inboundWireBytes = 0L;
         int boundPlayers = 0;
         ServerCacheReuseSnapshot serverCacheReuseSnapshot = snapshotServerCacheReuse();
+        CreateBlockEntityUpdateGate.Snapshot createGateSnapshot = CreateBlockEntityUpdateGate.snapshotStats();
 
         for (ChannelBandwidthStats.Snapshot snapshot : channelSnapshots) {
             outboundRawPackets += snapshot.outboundRawEncodedPackets();
@@ -180,7 +183,11 @@ public final class ServerBandwidthStatsRegistry {
                 serverCacheReuseSnapshot.offlineReuseConfirmedFrames(),
                 serverCacheReuseSnapshot.offlineReuseConfirmedSavedBytes(),
                 serverCacheReuseSnapshot.offlineReuseConfirmedWireBytes(),
-                serverCacheReuseSnapshot.temporaryReuseSavedBytes()
+                serverCacheReuseSnapshot.temporaryReuseSavedBytes(),
+                createGateSnapshot.observedBytes(),
+                createGateSnapshot.savedBytes(),
+                createGateSnapshot.savedPackets(),
+                createGateSnapshot.releasedPackets()
         );
     }
 
@@ -297,8 +304,61 @@ public final class ServerBandwidthStatsRegistry {
             long serverOfflineReuseConfirmedFrames,
             long serverOfflineReuseConfirmedSavedBytes,
             long serverOfflineReuseConfirmedWireBytes,
-            long serverTemporaryReuseSavedBytes
+            long serverTemporaryReuseSavedBytes,
+            long serverCreateGateObservedBytes,
+            long serverCreateGateSavedBytes,
+            long serverCreateGateSavedPackets,
+            long serverCreateGateReleasedPackets
     ) {
+        public TotalsSnapshot(
+                int activeChannels,
+                int boundPlayers,
+                long outboundRawEncodedPackets,
+                long outboundRawEncodedBytes,
+                long inboundRawEncodedPackets,
+                long inboundRawEncodedBytes,
+                long outboundTransportFrames,
+                long outboundTransportFrameBytes,
+                long inboundTransportFrames,
+                long inboundTransportFrameBytes,
+                long outboundBypassPackets,
+                long outboundBypassBytes,
+                long inboundBypassPackets,
+                long inboundBypassBytes,
+                long outboundWireBytes,
+                long inboundWireBytes,
+                long serverOfflineReuseConfirmedFrames,
+                long serverOfflineReuseConfirmedSavedBytes,
+                long serverOfflineReuseConfirmedWireBytes,
+                long serverTemporaryReuseSavedBytes
+        ) {
+            this(
+                    activeChannels,
+                    boundPlayers,
+                    outboundRawEncodedPackets,
+                    outboundRawEncodedBytes,
+                    inboundRawEncodedPackets,
+                    inboundRawEncodedBytes,
+                    outboundTransportFrames,
+                    outboundTransportFrameBytes,
+                    inboundTransportFrames,
+                    inboundTransportFrameBytes,
+                    outboundBypassPackets,
+                    outboundBypassBytes,
+                    inboundBypassPackets,
+                    inboundBypassBytes,
+                    outboundWireBytes,
+                    inboundWireBytes,
+                    serverOfflineReuseConfirmedFrames,
+                    serverOfflineReuseConfirmedSavedBytes,
+                    serverOfflineReuseConfirmedWireBytes,
+                    serverTemporaryReuseSavedBytes,
+                    0L,
+                    0L,
+                    0L,
+                    0L);
+        }
+
         public long outboundSavedBytes() {
             if (outboundTransportFrameBytes <= 0L && outboundBypassBytes <= 0L) {
                 return 0L;
