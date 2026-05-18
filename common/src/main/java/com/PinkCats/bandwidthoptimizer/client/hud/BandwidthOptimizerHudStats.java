@@ -9,6 +9,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameO
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotReport;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
+import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
 
 import java.util.ArrayDeque;
 import java.util.Map;
@@ -21,6 +22,16 @@ public final class BandwidthOptimizerHudStats {
     private static final ArrayDeque<Sample> RECENT_SAMPLES = new ArrayDeque<>();
 
     private static long lastSampleAtMillis;
+    private static long lastClientRateSampleAtMillis;
+    private static long lastClientRateOutboundWireBytes;
+    private static long lastClientRateInboundWireBytes;
+    private static long clientOutboundWireBytesPerSecond;
+    private static long clientInboundWireBytesPerSecond;
+    private static long lastServerRateSampleAtMillis;
+    private static long lastServerRateOutboundWireBytes;
+    private static long lastServerRateInboundWireBytes;
+    private static long serverOutboundWireBytesPerSecond;
+    private static long serverInboundWireBytesPerSecond;
 
     private BandwidthOptimizerHudStats() {}
 
@@ -28,6 +39,16 @@ public final class BandwidthOptimizerHudStats {
         synchronized (LOCK) {
             RECENT_SAMPLES.clear();
             lastSampleAtMillis = 0L;
+            lastClientRateSampleAtMillis = 0L;
+            lastClientRateOutboundWireBytes = 0L;
+            lastClientRateInboundWireBytes = 0L;
+            clientOutboundWireBytesPerSecond = 0L;
+            clientInboundWireBytesPerSecond = 0L;
+            lastServerRateSampleAtMillis = 0L;
+            lastServerRateOutboundWireBytes = 0L;
+            lastServerRateInboundWireBytes = 0L;
+            serverOutboundWireBytesPerSecond = 0L;
+            serverInboundWireBytesPerSecond = 0L;
         }
         ChannelTransportTelemetry.reset();
         ChunkHotspotStats.reset();
@@ -50,6 +71,9 @@ public final class BandwidthOptimizerHudStats {
                 transportSnapshot.zstdEnabled()
         );
         ClientServerBandwidthHudStats.Snapshot serverSnapshot = ClientServerBandwidthHudStats.snapshot();
+        ServerBandwidthStatsRegistry.TotalsSnapshot clientWireSnapshot = ServerBandwidthStatsRegistry.snapshotSessionTotals();
+        WireRate clientWireRate = updateClientWireRate(now, clientWireSnapshot);
+        WireRate serverWireRate = updateServerWireRate(now, serverSnapshot);
 
         return new Snapshot(
                 totals.effectiveRawBytes(),
@@ -111,8 +135,89 @@ public final class BandwidthOptimizerHudStats {
                 serverSnapshot.serverOfflineReuseConfirmedSavedBytes(),
                 serverSnapshot.serverOfflineReuseConfirmedWireBytes(),
                 serverSnapshot.serverTemporaryReuseSavedBytes(),
+                serverSnapshot.serverCreateGateObservedBytes(),
+                serverSnapshot.serverCreateGateSavedBytes(),
+                serverSnapshot.serverCreateGateSavedPackets(),
+                serverSnapshot.serverCreateGateReleasedPackets(),
+                serverSnapshot.createGateSavedRatioPercent(),
+                clientWireRate.outboundBytesPerSecond(),
+                clientWireRate.inboundBytesPerSecond(),
+                serverWireRate.outboundBytesPerSecond(),
+                serverWireRate.inboundBytesPerSecond(),
                 serverSnapshot.outboundWireRatioPercent()
         );
+    }
+
+    private static WireRate updateClientWireRate(long nowMillis, ServerBandwidthStatsRegistry.TotalsSnapshot clientWireSnapshot) {
+        if (clientWireSnapshot == null) {
+            synchronized (LOCK) {
+                lastClientRateSampleAtMillis = 0L;
+                clientOutboundWireBytesPerSecond = 0L;
+                clientInboundWireBytesPerSecond = 0L;
+            }
+            return WireRate.empty();
+        }
+
+        long outboundWireBytes = Math.max(clientWireSnapshot.outboundWireBytes(), 0L);
+        long inboundWireBytes = Math.max(clientWireSnapshot.inboundWireBytes(), 0L);
+        synchronized (LOCK) {
+            if (lastClientRateSampleAtMillis <= 0L
+                    || outboundWireBytes < lastClientRateOutboundWireBytes
+                    || inboundWireBytes < lastClientRateInboundWireBytes) {
+                lastClientRateSampleAtMillis = nowMillis;
+                lastClientRateOutboundWireBytes = outboundWireBytes;
+                lastClientRateInboundWireBytes = inboundWireBytes;
+                clientOutboundWireBytesPerSecond = 0L;
+                clientInboundWireBytesPerSecond = 0L;
+                return new WireRate(clientOutboundWireBytesPerSecond, clientInboundWireBytesPerSecond);
+            }
+
+            long elapsedMillis = nowMillis - lastClientRateSampleAtMillis;
+            if (elapsedMillis >= SAMPLE_INTERVAL_MILLIS) {
+                clientOutboundWireBytesPerSecond = Math.round((double) positiveDelta(outboundWireBytes, lastClientRateOutboundWireBytes) * 1000.0D / elapsedMillis);
+                clientInboundWireBytesPerSecond = Math.round((double) positiveDelta(inboundWireBytes, lastClientRateInboundWireBytes) * 1000.0D / elapsedMillis);
+                lastClientRateSampleAtMillis = nowMillis;
+                lastClientRateOutboundWireBytes = outboundWireBytes;
+                lastClientRateInboundWireBytes = inboundWireBytes;
+            }
+            return new WireRate(clientOutboundWireBytesPerSecond, clientInboundWireBytesPerSecond);
+        }
+    }
+
+    private static WireRate updateServerWireRate(long nowMillis, ClientServerBandwidthHudStats.Snapshot serverSnapshot) {
+        if (serverSnapshot == null || !serverSnapshot.fresh()) {
+            synchronized (LOCK) {
+                lastServerRateSampleAtMillis = 0L;
+                serverOutboundWireBytesPerSecond = 0L;
+                serverInboundWireBytesPerSecond = 0L;
+            }
+            return WireRate.empty();
+        }
+
+        long outboundWireBytes = Math.max(serverSnapshot.outboundWireBytes(), 0L);
+        long inboundWireBytes = Math.max(serverSnapshot.inboundWireBytes(), 0L);
+        synchronized (LOCK) {
+            if (lastServerRateSampleAtMillis <= 0L
+                    || outboundWireBytes < lastServerRateOutboundWireBytes
+                    || inboundWireBytes < lastServerRateInboundWireBytes) {
+                lastServerRateSampleAtMillis = nowMillis;
+                lastServerRateOutboundWireBytes = outboundWireBytes;
+                lastServerRateInboundWireBytes = inboundWireBytes;
+                serverOutboundWireBytesPerSecond = 0L;
+                serverInboundWireBytesPerSecond = 0L;
+                return new WireRate(serverOutboundWireBytesPerSecond, serverInboundWireBytesPerSecond);
+            }
+
+            long elapsedMillis = nowMillis - lastServerRateSampleAtMillis;
+            if (elapsedMillis >= SAMPLE_INTERVAL_MILLIS) {
+                serverOutboundWireBytesPerSecond = Math.round((double) positiveDelta(outboundWireBytes, lastServerRateOutboundWireBytes) * 1000.0D / elapsedMillis);
+                serverInboundWireBytesPerSecond = Math.round((double) positiveDelta(inboundWireBytes, lastServerRateInboundWireBytes) * 1000.0D / elapsedMillis);
+                lastServerRateSampleAtMillis = nowMillis;
+                lastServerRateOutboundWireBytes = outboundWireBytes;
+                lastServerRateInboundWireBytes = inboundWireBytes;
+            }
+            return new WireRate(serverOutboundWireBytesPerSecond, serverInboundWireBytesPerSecond);
+        }
     }
 
 
@@ -285,15 +390,15 @@ public final class BandwidthOptimizerHudStats {
 
     private static String resolveAlgorithmDisplayName(boolean mappingEnabled, boolean zstdEnabled) {
         if (mappingEnabled && zstdEnabled) {
-            return "TD_SZ"; //template_dictionary_streaming_zstd
+            return "TD_SZ";
         }
         if (mappingEnabled) {
-            return "TD"; //template_dictionary
+            return "TD";
         }
         if (zstdEnabled) {
-            return "SZ"; //streaming_zstd
+            return "SZ";
         }
-        return "PASS"; //passthrough
+        return "PASS";
     }
 
 
@@ -338,6 +443,12 @@ public final class BandwidthOptimizerHudStats {
             long totalBypassPacketCount,
             long totalBypassPacketBytes
     ) {
+    }
+
+    private record WireRate(long outboundBytesPerSecond, long inboundBytesPerSecond) {
+        private static WireRate empty() {
+            return new WireRate(0L, 0L);
+        }
     }
 
     private record Totals(
@@ -440,6 +551,15 @@ public final class BandwidthOptimizerHudStats {
             long serverOfflineReuseConfirmedSavedBytes,
             long serverOfflineReuseConfirmedWireBytes,
             long serverTemporaryReuseSavedBytes,
+            long serverCreateGateObservedBytes,
+            long serverCreateGateSavedBytes,
+            long serverCreateGateSavedPackets,
+            long serverCreateGateReleasedPackets,
+            double serverCreateGateSavedRatioPercent,
+            long clientOutboundWireBytesPerSecond,
+            long clientInboundWireBytesPerSecond,
+            long serverOutboundWireBytesPerSecond,
+            long serverInboundWireBytesPerSecond,
             double serverOutboundWireRatioPercent
     ) {
 

@@ -31,6 +31,10 @@
   "hud.bandwidthoptimizer.metric.out_short": "out",
   "hud.bandwidthoptimizer.metric.save": "save",
   "hud.bandwidthoptimizer.metric.ratio": "ratio",
+  "hud.bandwidthoptimizer.metric.global": "global",
+  "hud.bandwidthoptimizer.metric.client_side": "client",
+  "hud.bandwidthoptimizer.metric.server_side": "server",
+  "hud.bandwidthoptimizer.metric.realtime_speed": "realtime",
   "hud.bandwidthoptimizer.metric.optimize_ratio": "opt ratio",
   "hud.bandwidthoptimizer.metric.total_ratio": "total ratio",
   "hud.bandwidthoptimizer.metric.players": "players",
@@ -39,6 +43,7 @@
   "hud.bandwidthoptimizer.metric.offline": "offline",
   "hud.bandwidthoptimizer.metric.temporary_cache": "temp cache",
   "hud.bandwidthoptimizer.metric.offline_cache": "offline cache",
+  "hud.bandwidthoptimizer.metric.create_gate": "Create gate",
   "hud.bandwidthoptimizer.metric.server_temp": "srvTemp",
   "hud.bandwidthoptimizer.metric.server_offline": "srvOffline",
   "hud.bandwidthoptimizer.metric.full": "full",
@@ -52,5 +57,6 @@
   "hud.bandwidthoptimizer.metric.tpl": "tpl",
   "hud.bandwidthoptimizer.metric.add": "add",
   "hud.bandwidthoptimizer.metric.algo": "Algo",
-  "hud.bandwidthoptimizer.metric.win": "Win"
+  "hud.bandwidthoptimizer.metric.win": "Win",
+  "hud.bandwidthoptimizer.metric.sent": "sent"
 }

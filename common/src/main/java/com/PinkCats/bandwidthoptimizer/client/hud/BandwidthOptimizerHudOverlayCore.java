@@ -69,7 +69,13 @@ final class BandwidthOptimizerHudOverlayCore {
         if (lineStartsWithText(trimmedLine, "hud.bandwidthoptimizer.metric.offline_cache")) {
             return HUD_SERVER_CACHE_COLOR;
         }
+        if (lineStartsWithText(trimmedLine, "hud.bandwidthoptimizer.metric.create_gate")) {
+            return HUD_SERVER_CACHE_COLOR;
+        }
         if (lineStartsWithText(trimmedLine, "hud.bandwidthoptimizer.metric.optimized_flow")) {
+            return HUD_SERVER_FLOW_COLOR;
+        }
+        if (lineStartsWithText(trimmedLine, "hud.bandwidthoptimizer.metric.realtime_speed")) {
             return HUD_SERVER_FLOW_COLOR;
         }
         if (lineStartsWithText(trimmedLine, "hud.bandwidthoptimizer.bypass")) {
@@ -162,11 +168,25 @@ final class BandwidthOptimizerHudOverlayCore {
                 + formatSavedShare(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverOfflineReuseConfirmedSavedBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.temporary_cache") + " "
                 + formatSavedShare(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverTemporaryReuseSavedBytes()));
+        lines.add("  " + text("hud.bandwidthoptimizer.metric.create_gate") + " "
+                + text("hud.bandwidthoptimizer.metric.save") + " "
+                + formatSavedShare(snapshot.serverCreateGateObservedBytes(), snapshot.serverCreateGateSavedBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.global") + " "
+                + formatSharePercent(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverCreateGateSavedBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.pkt") + " "
+                + formatCount(snapshot.serverCreateGateSavedPackets())
+                + " | " + text("hud.bandwidthoptimizer.metric.sent") + " "
+                + formatCount(snapshot.serverCreateGateReleasedPackets()));
         lines.add("  " + text("hud.bandwidthoptimizer.metric.optimized_flow") + " "
                 + formatByteShare(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverOutboundTransportFrameBytes())
                 + " | " + text("hud.bandwidthoptimizer.bypass") + " "
                 + formatByteShare(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverOutboundBypassBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.players") + " " + formatCount(snapshot.serverBoundPlayers()));
+        lines.add("  " + text("hud.bandwidthoptimizer.metric.realtime_speed") + " "
+                + text("hud.bandwidthoptimizer.metric.client_side") + " "
+                + formatDirectionalRate(snapshot.clientInboundWireBytesPerSecond(), snapshot.clientOutboundWireBytesPerSecond())
+                + " | " + text("hud.bandwidthoptimizer.metric.server_side") + " "
+                + formatDirectionalRate(snapshot.serverInboundWireBytesPerSecond(), snapshot.serverOutboundWireBytesPerSecond()));
     }
 
     private static String buildChunkCacheLine(BandwidthOptimizerHudStats.Snapshot snapshot) {
@@ -269,6 +289,11 @@ final class BandwidthOptimizerHudOverlayCore {
     private static String formatDirectionalCounts(long inboundCount, long outboundCount) {
         return text("hud.bandwidthoptimizer.metric.in_short") + ": " + formatCount(inboundCount)
                 + " / " + text("hud.bandwidthoptimizer.metric.out_short") + ": " + formatCount(outboundCount);
+    }
+
+    private static String formatDirectionalRate(long inboundBytesPerSecond, long outboundBytesPerSecond) {
+        return text("hud.bandwidthoptimizer.metric.in_short") + ": " + formatBytes(inboundBytesPerSecond) + "/s"
+                + " / " + text("hud.bandwidthoptimizer.metric.out_short") + ": " + formatBytes(outboundBytesPerSecond) + "/s";
     }
 
     private static String formatCount(long count) {
