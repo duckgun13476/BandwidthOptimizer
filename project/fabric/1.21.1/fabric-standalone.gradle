@@ -81,9 +81,10 @@ dependencies {
         changing = true
     }
     include("com.pinkcats.torque:TorqueAPI-1.21.1-fabric:${torque_api_version}")
-    compileOnly("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}") {
+    implementation("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}") {
         changing = true
     }
+    include("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}")
     implementation "com.github.luben:zstd-jni:${zstdJniVersion}"
     include "com.github.luben:zstd-jni:${zstdJniVersion}"
     bundledLibs "com.github.luben:zstd-jni:${zstdJniVersion}"

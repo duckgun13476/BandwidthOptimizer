@@ -20,6 +20,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTranspor
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher.OutboundChunkEncodeResult;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentManifestGate;
+import com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate;
 import com.PinkCats.bandwidthoptimizer.compat.sable.SableChunkSyncCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ClientboundCustomPayloadPacketAccessor;
@@ -87,6 +88,10 @@ public final class ChannelTransportHooks {
         String protocolName = readProtocolName(context);
         byte[] originalPacketBytes = ByteBufUtil.getBytes(out, startIndexInclusive, endIndexExclusive - startIndexInclusive, false);
         PacketFlow outboundPacketFlow = resolvePacketFlow(packetEncoderFlowAccess, readConnectionProtocolOrNull(context), packet);
+        if (CreateBlockEntityUpdateGate.tryDelayOutboundPacket(context, protocolName, outboundPacketFlow, packet, originalPacketBytes)) {
+            out.writerIndex(startIndexInclusive);
+            return;
+        }
 
 
         if (!ChannelTransportRuntimeGuard.isTransportAvailable()

@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer;
 
 import com.PinkCats.bandwidthoptimizer.chunk.lifecycle.ChunkLifecycleCoordinator;
+import com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate;
 import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkWatchEventTracker;
 import com.PinkCats.bandwidthoptimizer.platform.TorqueNative;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
@@ -24,13 +25,23 @@ public final class BandwidthOptimizerLifecycle {
             ServerBandwidthStatsRegistry.bindPlayer(serverPlayer);
             ExperientChunkWatchEventTracker.clearPlayer(serverPlayer);
             ChunkLifecycleCoordinator.onPlayerLogin(serverPlayer);
+            CreateBlockEntityUpdateGate.bindPlayer(serverPlayer);
         });
-        platform.lifecycle().onPlayerRespawn(player ->
-                ChunkLifecycleCoordinator.onPlayerRespawn(TorqueNative.serverPlayer(player)));
-        platform.lifecycle().onPlayerDimensionChange(player ->
-                ChunkLifecycleCoordinator.onPlayerDimensionChange(TorqueNative.serverPlayer(player)));
+        platform.lifecycle().onPlayerRespawn(player -> {
+            ServerPlayer serverPlayer = TorqueNative.serverPlayer(player);
+            CreateBlockEntityUpdateGate.clearPlayer(serverPlayer, "respawn");
+            ChunkLifecycleCoordinator.onPlayerRespawn(serverPlayer);
+            CreateBlockEntityUpdateGate.bindPlayer(serverPlayer);
+        });
+        platform.lifecycle().onPlayerDimensionChange(player -> {
+            ServerPlayer serverPlayer = TorqueNative.serverPlayer(player);
+            CreateBlockEntityUpdateGate.clearPlayer(serverPlayer, "dimension_change");
+            ChunkLifecycleCoordinator.onPlayerDimensionChange(serverPlayer);
+            CreateBlockEntityUpdateGate.bindPlayer(serverPlayer);
+        });
         platform.lifecycle().onPlayerLogout(player -> {
             ServerPlayer serverPlayer = TorqueNative.serverPlayer(player);
+            CreateBlockEntityUpdateGate.clearPlayer(serverPlayer, "logout");
             ChunkLifecycleCoordinator.onPlayerLogout(serverPlayer);
             ExperientChunkWatchEventTracker.clearPlayer(serverPlayer);
             ServerBandwidthStatsRegistry.unbindPlayer(serverPlayer);
@@ -41,12 +52,14 @@ public final class BandwidthOptimizerLifecycle {
             ServerPlayer serverPlayer = TorqueNative.serverPlayer(player);
             net.minecraft.world.level.ChunkPos chunkPos = nativeChunkPos(pos);
             ExperientChunkWatchEventTracker.recordUnwatch(serverPlayer, chunkPos);
+            CreateBlockEntityUpdateGate.dropPendingChunk(serverPlayer, chunkPos, "watch_remove");
             ChunkLifecycleCoordinator.onPlayerStopWatchingChunk(serverPlayer, chunkPos, TorqueNative.serverLevel(level));
         });
         platform.lifecycle().onChunkUnload((level, pos) -> {
             ServerLevel serverLevel = TorqueNative.serverLevel(level);
             ChunkLifecycleCoordinator.onServerChunkUnload(serverLevel, nativeChunkPos(pos));
         });
+        platform.lifecycle().onServerTickEnd(CreateBlockEntityUpdateGate::onServerTick);
     }
 
     private static net.minecraft.world.level.ChunkPos nativeChunkPos(ChunkPos pos) {

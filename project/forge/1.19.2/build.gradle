@@ -129,6 +129,11 @@ configurations.configureEach {
 }
 
 ext.bo_torque_embed_notation = "com.pinkcats.torque:TorqueAPI-${minecraft_version}-forge:${torque_api_version}"
+ext.bo_mapped_create_runtime_mods = [
+        "${System.getProperty('user.home')}/.gradle/caches/forge_gradle/deobf_dependencies/com/simibubi/create/create-1.19.2/0.5.1.c-36_mapped_official_1.19.2/create-1.19.2-0.5.1.c-36_mapped_official_1.19.2-slim.jar",
+        "${System.getProperty('user.home')}/.gradle/caches/forge_gradle/deobf_dependencies/com/jozufozu/flywheel/flywheel-forge-1.19.2/0.6.9-18_mapped_official_1.19.2/flywheel-forge-1.19.2-0.6.9-18_mapped_official_1.19.2.jar",
+        "${System.getProperty('user.home')}/.gradle/caches/forge_gradle/deobf_dependencies/com/tterrag/registrate/Registrate/MC1.19-1.1.5_mapped_official_1.19.2/Registrate-MC1.19-1.1.5_mapped_official_1.19.2.jar",
+]
 apply from: rootProject.file('gradle/torque-embed-modern.gradle')
 
 dependencies {
@@ -147,6 +152,14 @@ dependencies {
     implementation "com.github.luben:zstd-jni:${zstdJniVersion}"
     minecraftLibrary "com.github.luben:zstd-jni:${zstdJniVersion}"
     bundledLibs "com.github.luben:zstd-jni:${zstdJniVersion}"
+
+    // Local Create test runtime.
+    bo_mapped_create_runtime_mods.each { String jarPath ->
+        File jarFile = file(jarPath)
+        if (jarFile.isFile()) {
+            runtimeOnly files(jarFile)
+        }
+    }
 }
 
 tasks.named('processResources', ProcessResources).configure {

@@ -388,6 +388,28 @@ public class Config {
             }
         }
 
+        public static final class Create {
+
+            public static final String CREATE_BLOCK_ENTITY_UPDATE_GATE_ENABLED =
+                    "bandwidthoptimizer.create.blockEntityUpdateGateEnabled";
+            public static final boolean DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_ENABLED = true;
+            public static final String CREATE_BLOCK_ENTITY_UPDATE_GATE_MAX_DELAY_MILLIS =
+                    "bandwidthoptimizer.create.blockEntityUpdateGateMaxDelayMillis";
+            public static final long DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_MAX_DELAY_MILLIS = 5000L;
+            public static final String CREATE_BLOCK_ENTITY_UPDATE_GATE_LOOK_DOT =
+                    "bandwidthoptimizer.create.blockEntityUpdateGateLookDot";
+            public static final double DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_LOOK_DOT = 0.35D;
+            public static final String CREATE_BLOCK_ENTITY_UPDATE_GATE_ALWAYS_SEND_DISTANCE_BLOCKS =
+                    "bandwidthoptimizer.create.blockEntityUpdateGateAlwaysSendDistanceBlocks";
+            public static final double DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_ALWAYS_SEND_DISTANCE_BLOCKS = 8.0D;
+            public static final String CREATE_BLOCK_ENTITY_UPDATE_GATE_MAX_PENDING_PER_PLAYER =
+                    "bandwidthoptimizer.create.blockEntityUpdateGateMaxPendingPerPlayer";
+            public static final int DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_MAX_PENDING_PER_PLAYER = 1024;
+
+            private Create() {
+            }
+        }
+
         public static final class Experient {
 
             public static final String ENABLED = "bandwidthoptimizer.experient.enabled";
