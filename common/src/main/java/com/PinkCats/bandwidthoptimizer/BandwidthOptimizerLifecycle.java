@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.lifecycle.ChunkLifecycleCoordinator
 import com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate;
 import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkWatchEventTracker;
 import com.PinkCats.bandwidthoptimizer.platform.TorqueNative;
+import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthEvaluationProbe;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
 import com.pinkcats.torque.layer.net.minecraft.world.level.ChunkPos;
 import com.pinkcats.torque.layer.platform.Platform;
@@ -59,7 +60,10 @@ public final class BandwidthOptimizerLifecycle {
             ServerLevel serverLevel = TorqueNative.serverLevel(level);
             ChunkLifecycleCoordinator.onServerChunkUnload(serverLevel, nativeChunkPos(pos));
         });
-        platform.lifecycle().onServerTickEnd(CreateBlockEntityUpdateGate::onServerTick);
+        platform.lifecycle().onServerTickEnd(() -> {
+            CreateBlockEntityUpdateGate.onServerTick();
+            ServerBandwidthEvaluationProbe.onServerTick();
+        });
     }
 
     private static net.minecraft.world.level.ChunkPos nativeChunkPos(ChunkPos pos) {

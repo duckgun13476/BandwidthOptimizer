@@ -46,6 +46,7 @@ public final class ServerBandwidthStatsCommand {
                         + ", players=" + totals.boundPlayers()
                         + ", outRaw=" + formatBytes(totals.outboundRawEncodedBytes())
                         + "/" + totals.outboundRawEncodedPackets() + " packets"
+                        + ", outVanilla=" + formatBytes(totals.outboundVanillaCompressedEstimateBytes())
                         + ", outTransport=" + formatBytes(totals.outboundTransportFrameBytes())
                         + "/" + totals.outboundTransportFrames() + " frames"
                         + ", outBypass=" + formatBytes(totals.outboundBypassBytes())
@@ -62,8 +63,8 @@ public final class ServerBandwidthStatsCommand {
                                 sessionTotals.serverCreateGateObservedBytes()
                         )
                         + ", estRatio=" + ratioText(
-                                totals.outboundTransportFrameBytes() + totals.outboundBypassBytes(),
-                                totals.outboundRawEncodedBytes()
+                                totals.outboundWireBytes(),
+                                totals.outboundVanillaCompressedEstimateBytes()
                         )
         ), false);
         return Command.SINGLE_SUCCESS;
@@ -91,11 +92,12 @@ public final class ServerBandwidthStatsCommand {
                     .append(" outWire=").append(formatBytes(snapshot.outboundWireBytes()))
                     .append(", inWire=").append(formatBytes(snapshot.inboundWireBytes()))
                     .append(", outRaw=").append(formatBytes(snapshot.outboundRawEncodedBytes()))
+                    .append(", outVanilla=").append(formatBytes(snapshot.outboundVanillaCompressedEstimateBytes()))
                     .append(", outTransport=").append(formatBytes(snapshot.outboundTransportFrameBytes()))
                     .append(", outBypass=").append(formatBytes(snapshot.outboundBypassBytes()))
                     .append(", estRatio=").append(ratioText(
-                            snapshot.outboundTransportFrameBytes() + snapshot.outboundBypassBytes(),
-                            snapshot.outboundRawEncodedBytes()
+                            snapshot.outboundWireBytes(),
+                            snapshot.outboundVanillaCompressedEstimateBytes()
                     ));
         }
 

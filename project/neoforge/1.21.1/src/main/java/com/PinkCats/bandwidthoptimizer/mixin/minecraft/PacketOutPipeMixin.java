@@ -8,6 +8,7 @@ import com.PinkCats.bandwidthoptimizer.compat.trueuuid.TrueUuidLateLoginQueryGua
 import com.PinkCats.bandwidthoptimizer.server.stat.ChannelBandwidthStats;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.PacketEncoder;
 import net.minecraft.network.PacketListener;
@@ -60,7 +61,11 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
 
         ChannelBandwidthStats stats = ServerBandwidthStatsRegistry.getOrCreate(context);
         if (stats != null) {
-            stats.recordOutboundRawEncoded(out.writerIndex() - this.bandwidthoptimizer$writerIndexBefore);
+            int encodedByteLength = out.writerIndex() - this.bandwidthoptimizer$writerIndexBefore;
+            stats.recordOutboundRawEncoded(
+                    ByteBufUtil.getBytes(out, this.bandwidthoptimizer$writerIndexBefore, encodedByteLength, false),
+                    encodedByteLength
+            );
         }
 
         //Patch

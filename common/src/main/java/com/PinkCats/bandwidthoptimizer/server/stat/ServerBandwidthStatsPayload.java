@@ -10,6 +10,7 @@ public record ServerBandwidthStatsPayload(
         int activeChannels,
         int boundPlayers,
         long outboundRawEncodedBytes,
+        long outboundVanillaCompressedEstimateBytes,
         long outboundTransportFrameBytes,
         long outboundBypassBytes,
         long outboundWireBytes,
@@ -47,6 +48,7 @@ public record ServerBandwidthStatsPayload(
                 totals.activeChannels(),
                 totals.boundPlayers(),
                 totals.outboundRawEncodedBytes(),
+                totals.outboundVanillaCompressedEstimateBytes(),
                 totals.outboundTransportFrameBytes(),
                 totals.outboundBypassBytes(),
                 totals.outboundWireBytes(),
@@ -65,7 +67,7 @@ public record ServerBandwidthStatsPayload(
 
 
     public static ServerBandwidthStatsPayload empty() {
-        return new ServerBandwidthStatsPayload(System.currentTimeMillis(), 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+        return new ServerBandwidthStatsPayload(System.currentTimeMillis(), 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
     }
 
     public static void encode(ServerBandwidthStatsPayload payload, FriendlyByteBuf buffer) {
@@ -87,6 +89,7 @@ public record ServerBandwidthStatsPayload(
         buffer.writeVarLong(Math.max(safePayload.serverCreateGateSavedBytes(), 0L));
         buffer.writeVarLong(Math.max(safePayload.serverCreateGateSavedPackets(), 0L));
         buffer.writeVarLong(Math.max(safePayload.serverCreateGateReleasedPackets(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.outboundVanillaCompressedEstimateBytes(), 0L));
     }
 
     public static ServerBandwidthStatsPayload decode(FriendlyByteBuf buffer) {
@@ -107,11 +110,13 @@ public record ServerBandwidthStatsPayload(
         long serverCreateGateSavedBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         long serverCreateGateSavedPackets = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         long serverCreateGateReleasedPackets = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long outboundVanillaCompressedEstimateBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : outboundRawEncodedBytes;
         return new ServerBandwidthStatsPayload(
                 capturedAtMillis,
                 activeChannels,
                 boundPlayers,
                 outboundRawEncodedBytes,
+                outboundVanillaCompressedEstimateBytes,
                 outboundTransportFrameBytes,
                 outboundBypassBytes,
                 outboundWireBytes,

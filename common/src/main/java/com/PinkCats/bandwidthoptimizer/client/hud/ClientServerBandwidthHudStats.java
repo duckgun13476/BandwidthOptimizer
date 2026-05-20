@@ -22,6 +22,7 @@ public final class ClientServerBandwidthHudStats {
                 payload.activeChannels(),
                 payload.boundPlayers(),
                 payload.outboundRawEncodedBytes(),
+                payload.outboundVanillaCompressedEstimateBytes(),
                 payload.outboundTransportFrameBytes(),
                 payload.outboundBypassBytes(),
                 payload.outboundWireBytes(),
@@ -54,6 +55,7 @@ public final class ClientServerBandwidthHudStats {
             int activeChannels,
             int boundPlayers,
             long outboundRawEncodedBytes,
+            long outboundVanillaCompressedEstimateBytes,
             long outboundTransportFrameBytes,
             long outboundBypassBytes,
             long outboundWireBytes,
@@ -70,7 +72,7 @@ public final class ClientServerBandwidthHudStats {
     ) {
 
         private static Snapshot empty() {
-            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
         }
 
         public boolean fresh() {
@@ -78,10 +80,10 @@ public final class ClientServerBandwidthHudStats {
         }
 
         public double outboundWireRatioPercent() {
-            if (outboundRawEncodedBytes <= 0L) {
+            if (outboundVanillaCompressedEstimateBytes <= 0L) {
                 return 0.0D;
             }
-            return (double) outboundWireBytes * 100.0D / (double) outboundRawEncodedBytes;
+            return (double) outboundWireBytes * 100.0D / (double) outboundVanillaCompressedEstimateBytes;
         }
 
         public double createGateSavedRatioPercent() {

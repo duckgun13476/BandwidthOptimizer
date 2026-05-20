@@ -35,6 +35,7 @@
   "hud.bandwidthoptimizer.metric.client_side": "客户端",
   "hud.bandwidthoptimizer.metric.server_side": "服务端",
   "hud.bandwidthoptimizer.metric.realtime_speed": "实时速度",
+  "hud.bandwidthoptimizer.metric.estimated_save": "估算节省",
   "hud.bandwidthoptimizer.metric.optimize_ratio": "优化占比",
   "hud.bandwidthoptimizer.metric.total_ratio": "总占比",
   "hud.bandwidthoptimizer.metric.players": "玩家",
@@ -43,7 +44,7 @@
   "hud.bandwidthoptimizer.metric.offline": "离线",
   "hud.bandwidthoptimizer.metric.temporary_cache": "临时缓存",
   "hud.bandwidthoptimizer.metric.offline_cache": "离线缓存",
-  "hud.bandwidthoptimizer.metric.create_gate": "机械动力门控",
+  "hud.bandwidthoptimizer.metric.create_gate": "机械动力",
   "hud.bandwidthoptimizer.metric.server_temp": "服临",
   "hud.bandwidthoptimizer.metric.server_offline": "服离",
   "hud.bandwidthoptimizer.metric.full": "完整",
@@ -58,5 +59,6 @@
   "hud.bandwidthoptimizer.metric.add": "新增",
   "hud.bandwidthoptimizer.metric.algo": "算法",
   "hud.bandwidthoptimizer.metric.win": "窗口",
+  "hud.bandwidthoptimizer.metric.packet_raw": "包流",
   "hud.bandwidthoptimizer.metric.sent": "发送"
 }

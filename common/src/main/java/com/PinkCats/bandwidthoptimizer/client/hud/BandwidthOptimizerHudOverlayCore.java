@@ -78,6 +78,9 @@ final class BandwidthOptimizerHudOverlayCore {
         if (lineStartsWithText(trimmedLine, "hud.bandwidthoptimizer.metric.realtime_speed")) {
             return HUD_SERVER_FLOW_COLOR;
         }
+        if (lineStartsWithText(trimmedLine, "hud.bandwidthoptimizer.metric.estimated_save")) {
+            return HUD_SERVER_FLOW_COLOR;
+        }
         if (lineStartsWithText(trimmedLine, "hud.bandwidthoptimizer.bypass")) {
             return HUD_BYPASS_COLOR;
         }
@@ -160,33 +163,41 @@ final class BandwidthOptimizerHudOverlayCore {
             lines.add("  " + text("hud.bandwidthoptimizer.server.waiting"));
             return;
         }
-        lines.add("  " + text("hud.bandwidthoptimizer.metric.raw_flow") + " " + formatBytes(snapshot.serverOutboundRawEncodedBytes())
+        long serverBaselineBytes = serverBaselineBytes(snapshot);
+        long clientBaselineBytes = clientBaselineBytes(snapshot);
+        lines.add("  " + text("hud.bandwidthoptimizer.metric.raw_flow") + " " + formatBytes(serverBaselineBytes)
                 + " | " + text("hud.bandwidthoptimizer.metric.actual_flow") + " " + formatBytes(snapshot.serverOutboundWireBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.save") + " " + formatBytes(snapshot.serverOutboundSavedBytes())
-                + " | " + text("hud.bandwidthoptimizer.metric.total_ratio") + " " + formatTrafficRatioPercent(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverOutboundWireBytes()));
+                + " | " + text("hud.bandwidthoptimizer.metric.total_ratio") + " " + formatTrafficRatioPercent(serverBaselineBytes, snapshot.serverOutboundWireBytes()));
         lines.add("  " + text("hud.bandwidthoptimizer.metric.offline_cache") + " "
-                + formatSavedShare(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverOfflineReuseConfirmedSavedBytes())
+                + formatSavedShare(serverBaselineBytes, snapshot.serverOfflineReuseConfirmedSavedBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.temporary_cache") + " "
-                + formatSavedShare(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverTemporaryReuseSavedBytes()));
+                + formatSavedShare(serverBaselineBytes, snapshot.serverTemporaryReuseSavedBytes()));
         lines.add("  " + text("hud.bandwidthoptimizer.metric.create_gate") + " "
                 + text("hud.bandwidthoptimizer.metric.save") + " "
                 + formatSavedShare(snapshot.serverCreateGateObservedBytes(), snapshot.serverCreateGateSavedBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.global") + " "
-                + formatSharePercent(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverCreateGateSavedBytes())
+                + formatSharePercent(serverBaselineBytes, snapshot.serverCreateGateSavedBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.pkt") + " "
                 + formatCount(snapshot.serverCreateGateSavedPackets())
                 + " | " + text("hud.bandwidthoptimizer.metric.sent") + " "
                 + formatCount(snapshot.serverCreateGateReleasedPackets()));
         lines.add("  " + text("hud.bandwidthoptimizer.metric.optimized_flow") + " "
-                + formatByteShare(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverOutboundTransportFrameBytes())
+                + formatByteShare(serverBaselineBytes, snapshot.serverOutboundTransportFrameBytes())
                 + " | " + text("hud.bandwidthoptimizer.bypass") + " "
-                + formatByteShare(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverOutboundBypassBytes())
+                + formatByteShare(serverBaselineBytes, snapshot.serverOutboundBypassBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.packet_raw") + " " + formatBytes(snapshot.serverOutboundRawEncodedBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.players") + " " + formatCount(snapshot.serverBoundPlayers()));
         lines.add("  " + text("hud.bandwidthoptimizer.metric.realtime_speed") + " "
                 + text("hud.bandwidthoptimizer.metric.client_side") + " "
                 + formatDirectionalRate(snapshot.clientInboundWireBytesPerSecond(), snapshot.clientOutboundWireBytesPerSecond())
                 + " | " + text("hud.bandwidthoptimizer.metric.server_side") + " "
                 + formatDirectionalRate(snapshot.serverInboundWireBytesPerSecond(), snapshot.serverOutboundWireBytesPerSecond()));
+        lines.add("  " + text("hud.bandwidthoptimizer.metric.estimated_save") + " "
+                + text("hud.bandwidthoptimizer.metric.client_side") + " "
+                + formatSavedRatioPercent(clientBaselineBytes, snapshot.effectiveTotalSentBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.server_side") + " "
+                + formatSavedRatioPercent(serverBaselineBytes, snapshot.serverOutboundWireBytes()));
     }
 
     private static String buildChunkCacheLine(BandwidthOptimizerHudStats.Snapshot snapshot) {
@@ -259,6 +270,14 @@ final class BandwidthOptimizerHudOverlayCore {
         return String.format(Locale.ROOT, "%.1f%%", Math.max(sentRatioPercent, 0.0D));
     }
 
+    private static String formatSavedRatioPercent(long rawBytes, long sentBytes) {
+        if (rawBytes <= 0L) {
+            return "0.0%";
+        }
+        double savedRatioPercent = 100.0D - (double) Math.max(sentBytes, 0L) * 100.0D / (double) rawBytes;
+        return String.format(Locale.ROOT, "%.1f%%", Math.max(savedRatioPercent, 0.0D));
+    }
+
     private static String formatFlow(long rawBytes, long sentBytes) {
         return formatBytes(rawBytes) + " → " + formatBytes(sentBytes);
     }
@@ -289,6 +308,22 @@ final class BandwidthOptimizerHudOverlayCore {
     private static String formatDirectionalCounts(long inboundCount, long outboundCount) {
         return text("hud.bandwidthoptimizer.metric.in_short") + ": " + formatCount(inboundCount)
                 + " / " + text("hud.bandwidthoptimizer.metric.out_short") + ": " + formatCount(outboundCount);
+    }
+
+    private static long serverBaselineBytes(BandwidthOptimizerHudStats.Snapshot snapshot) {
+        if (snapshot == null) {
+            return 0L;
+        }
+        long baselineBytes = snapshot.serverOutboundVanillaCompressedEstimateBytes();
+        return baselineBytes > 0L ? baselineBytes : snapshot.serverOutboundRawEncodedBytes();
+    }
+
+    private static long clientBaselineBytes(BandwidthOptimizerHudStats.Snapshot snapshot) {
+        if (snapshot == null) {
+            return 0L;
+        }
+        long baselineBytes = snapshot.effectiveTotalVanillaBaselineBytes();
+        return baselineBytes > 0L ? baselineBytes : snapshot.effectiveTotalRawBytes();
     }
 
     private static String formatDirectionalRate(long inboundBytesPerSecond, long outboundBytesPerSecond) {

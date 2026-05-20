@@ -127,6 +127,7 @@ public final class ServerBandwidthStatsRegistry {
         List<ChannelBandwidthStats.Snapshot> channelSnapshots = snapshotChannels();
         long outboundRawPackets = 0L;
         long outboundRawBytes = 0L;
+        long outboundVanillaCompressedEstimateBytes = 0L;
         long inboundRawPackets = 0L;
         long inboundRawBytes = 0L;
         long outboundTransportFrames = 0L;
@@ -146,6 +147,7 @@ public final class ServerBandwidthStatsRegistry {
         for (ChannelBandwidthStats.Snapshot snapshot : channelSnapshots) {
             outboundRawPackets += snapshot.outboundRawEncodedPackets();
             outboundRawBytes += snapshot.outboundRawEncodedBytes();
+            outboundVanillaCompressedEstimateBytes += snapshot.outboundVanillaCompressedEstimateBytes();
             inboundRawPackets += snapshot.inboundRawEncodedPackets();
             inboundRawBytes += snapshot.inboundRawEncodedBytes();
             outboundTransportFrames += snapshot.outboundTransportFrames();
@@ -168,6 +170,7 @@ public final class ServerBandwidthStatsRegistry {
                 boundPlayers,
                 outboundRawPackets,
                 outboundRawBytes,
+                outboundVanillaCompressedEstimateBytes,
                 inboundRawPackets,
                 inboundRawBytes,
                 outboundTransportFrames,
@@ -289,6 +292,7 @@ public final class ServerBandwidthStatsRegistry {
             int boundPlayers,
             long outboundRawEncodedPackets,
             long outboundRawEncodedBytes,
+            long outboundVanillaCompressedEstimateBytes,
             long inboundRawEncodedPackets,
             long inboundRawEncodedBytes,
             long outboundTransportFrames,
@@ -337,6 +341,54 @@ public final class ServerBandwidthStatsRegistry {
                     boundPlayers,
                     outboundRawEncodedPackets,
                     outboundRawEncodedBytes,
+                    outboundRawEncodedBytes,
+                    inboundRawEncodedPackets,
+                    inboundRawEncodedBytes,
+                    outboundTransportFrames,
+                    outboundTransportFrameBytes,
+                    inboundTransportFrames,
+                    inboundTransportFrameBytes,
+                    outboundBypassPackets,
+                    outboundBypassBytes,
+                    inboundBypassPackets,
+                    inboundBypassBytes,
+                    outboundWireBytes,
+                    inboundWireBytes,
+                    serverOfflineReuseConfirmedFrames,
+                    serverOfflineReuseConfirmedSavedBytes,
+                    serverOfflineReuseConfirmedWireBytes,
+                    serverTemporaryReuseSavedBytes);
+        }
+
+        public TotalsSnapshot(
+                int activeChannels,
+                int boundPlayers,
+                long outboundRawEncodedPackets,
+                long outboundRawEncodedBytes,
+                long outboundVanillaCompressedEstimateBytes,
+                long inboundRawEncodedPackets,
+                long inboundRawEncodedBytes,
+                long outboundTransportFrames,
+                long outboundTransportFrameBytes,
+                long inboundTransportFrames,
+                long inboundTransportFrameBytes,
+                long outboundBypassPackets,
+                long outboundBypassBytes,
+                long inboundBypassPackets,
+                long inboundBypassBytes,
+                long outboundWireBytes,
+                long inboundWireBytes,
+                long serverOfflineReuseConfirmedFrames,
+                long serverOfflineReuseConfirmedSavedBytes,
+                long serverOfflineReuseConfirmedWireBytes,
+                long serverTemporaryReuseSavedBytes
+        ) {
+            this(
+                    activeChannels,
+                    boundPlayers,
+                    outboundRawEncodedPackets,
+                    outboundRawEncodedBytes,
+                    outboundVanillaCompressedEstimateBytes,
                     inboundRawEncodedPackets,
                     inboundRawEncodedBytes,
                     outboundTransportFrames,
@@ -363,7 +415,7 @@ public final class ServerBandwidthStatsRegistry {
             if (outboundTransportFrameBytes <= 0L && outboundBypassBytes <= 0L) {
                 return 0L;
             }
-            return outboundRawEncodedBytes - outboundTransportFrameBytes - outboundBypassBytes;
+            return outboundVanillaCompressedEstimateBytes - outboundWireBytes;
         }
     }
 

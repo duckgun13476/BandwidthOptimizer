@@ -10,6 +10,7 @@ public final class ChannelBandwidthStats {
     private final long createdAtMillis;
     private final LongAdder outboundRawEncodedPackets = new LongAdder();
     private final LongAdder outboundRawEncodedBytes = new LongAdder();
+    private final LongAdder outboundVanillaCompressedEstimateBytes = new LongAdder();
     private final LongAdder inboundRawEncodedPackets = new LongAdder();
     private final LongAdder inboundRawEncodedBytes = new LongAdder();
     private final LongAdder outboundTransportFrames = new LongAdder();
@@ -51,6 +52,14 @@ public final class ChannelBandwidthStats {
         int safeByteLength = Math.max(byteLength, 0);
         this.outboundRawEncodedPackets.increment();
         this.outboundRawEncodedBytes.add(safeByteLength);
+        this.outboundVanillaCompressedEstimateBytes.add(VanillaCompressionEstimator.estimateOutboundFrameBytes(null, safeByteLength));
+    }
+
+    public void recordOutboundRawEncoded(byte[] packetBytes, int fallbackByteLength) {
+        int safeByteLength = packetBytes == null ? Math.max(fallbackByteLength, 0) : packetBytes.length;
+        this.outboundRawEncodedPackets.increment();
+        this.outboundRawEncodedBytes.add(safeByteLength);
+        this.outboundVanillaCompressedEstimateBytes.add(VanillaCompressionEstimator.estimateOutboundFrameBytes(packetBytes, safeByteLength));
     }
 
     public void recordInboundRawEncoded(int byteLength, int packetCount) {
@@ -89,6 +98,7 @@ public final class ChannelBandwidthStats {
     public void resetCounters() {
         this.outboundRawEncodedPackets.reset();
         this.outboundRawEncodedBytes.reset();
+        this.outboundVanillaCompressedEstimateBytes.reset();
         this.inboundRawEncodedPackets.reset();
         this.inboundRawEncodedBytes.reset();
         this.outboundTransportFrames.reset();
@@ -112,6 +122,7 @@ public final class ChannelBandwidthStats {
                 this.boundAtMillis,
                 this.outboundRawEncodedPackets.sum(),
                 this.outboundRawEncodedBytes.sum(),
+                this.outboundVanillaCompressedEstimateBytes.sum(),
                 this.inboundRawEncodedPackets.sum(),
                 this.inboundRawEncodedBytes.sum(),
                 this.outboundTransportFrames.sum(),
@@ -135,6 +146,7 @@ public final class ChannelBandwidthStats {
             long boundAtMillis,
             long outboundRawEncodedPackets,
             long outboundRawEncodedBytes,
+            long outboundVanillaCompressedEstimateBytes,
             long inboundRawEncodedPackets,
             long inboundRawEncodedBytes,
             long outboundTransportFrames,
@@ -148,11 +160,56 @@ public final class ChannelBandwidthStats {
             long outboundWireBytes,
             long inboundWireBytes
     ) {
+        public Snapshot(
+                String channelId,
+                UUID playerId,
+                String playerName,
+                long createdAtMillis,
+                long boundAtMillis,
+                long outboundRawEncodedPackets,
+                long outboundRawEncodedBytes,
+                long inboundRawEncodedPackets,
+                long inboundRawEncodedBytes,
+                long outboundTransportFrames,
+                long outboundTransportFrameBytes,
+                long inboundTransportFrames,
+                long inboundTransportFrameBytes,
+                long outboundBypassPackets,
+                long outboundBypassBytes,
+                long inboundBypassPackets,
+                long inboundBypassBytes,
+                long outboundWireBytes,
+                long inboundWireBytes
+        ) {
+            this(
+                    channelId,
+                    playerId,
+                    playerName,
+                    createdAtMillis,
+                    boundAtMillis,
+                    outboundRawEncodedPackets,
+                    outboundRawEncodedBytes,
+                    outboundRawEncodedBytes,
+                    inboundRawEncodedPackets,
+                    inboundRawEncodedBytes,
+                    outboundTransportFrames,
+                    outboundTransportFrameBytes,
+                    inboundTransportFrames,
+                    inboundTransportFrameBytes,
+                    outboundBypassPackets,
+                    outboundBypassBytes,
+                    inboundBypassPackets,
+                    inboundBypassBytes,
+                    outboundWireBytes,
+                    inboundWireBytes
+            );
+        }
+
         public long outboundTransportSavedBytes() {
             if (outboundTransportFrameBytes <= 0L) {
                 return 0L;
             }
-            return outboundRawEncodedBytes - outboundTransportFrameBytes - outboundBypassBytes;
+            return outboundVanillaCompressedEstimateBytes - outboundTransportFrameBytes - outboundBypassBytes;
         }
     }
 }

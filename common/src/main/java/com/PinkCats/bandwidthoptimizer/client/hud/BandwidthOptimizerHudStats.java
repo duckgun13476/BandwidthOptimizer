@@ -77,12 +77,16 @@ public final class BandwidthOptimizerHudStats {
 
         return new Snapshot(
                 totals.effectiveRawBytes(),
+                totals.effectiveVanillaBaselineBytes(),
                 totals.effectiveSentBytes(),
                 recentTotals.effectiveRawBytes(),
+                recentTotals.effectiveVanillaBaselineBytes(),
                 recentTotals.effectiveSentBytes(),
                 totals.optimizeRawBytes(),
+                totals.optimizeVanillaBaselineBytes(),
                 totals.optimizeSentBytes(),
                 recentTotals.optimizeRawBytes(),
+                recentTotals.optimizeVanillaBaselineBytes(),
                 recentTotals.optimizeSentBytes(),
                 totals.chunkCacheSavedBytes(),
                 recentTotals.chunkCacheSavedBytes(),
@@ -126,6 +130,7 @@ public final class BandwidthOptimizerHudStats {
                 serverSnapshot.activeChannels(),
                 serverSnapshot.boundPlayers(),
                 serverSnapshot.outboundRawEncodedBytes(),
+                serverSnapshot.outboundVanillaCompressedEstimateBytes(),
                 serverSnapshot.outboundTransportFrameBytes(),
                 serverSnapshot.outboundBypassBytes(),
                 serverSnapshot.outboundWireBytes(),
@@ -241,6 +246,7 @@ public final class BandwidthOptimizerHudStats {
                 safeOperationTotals(inboundChunk.operationTotals(), ChunkHotspotFrameOp.PUBLISH_FULL);
 
         long optimizeRawBytes = inboundTransport == null ? 0L : inboundTransport.baselineBytes();
+        long optimizeVanillaBaselineBytes = inboundTransport == null ? 0L : inboundTransport.vanillaCompressedEstimateBytes();
         long optimizeSentBytes = inboundTransport == null ? 0L : inboundTransport.transportFrameBytes();
         long chunkCacheSavedBytes = savedBytes(
                 inboundChunk.totalLogicalPacketBytes(),
@@ -282,8 +288,10 @@ public final class BandwidthOptimizerHudStats {
 
         return new Totals(
                 optimizeRawBytes + chunkCacheSavedBytes,
+                optimizeVanillaBaselineBytes + chunkCacheSavedBytes,
                 optimizeSentBytes,
                 optimizeRawBytes,
+                optimizeVanillaBaselineBytes,
                 optimizeSentBytes,
                 chunkCacheSavedBytes,
                 safeLocalReuseSnapshot.temporaryReuseSavedBytes(),
@@ -324,8 +332,10 @@ public final class BandwidthOptimizerHudStats {
                 RECENT_SAMPLES.addLast(new Sample(
                         now,
                         totals.effectiveRawBytes(),
+                        totals.effectiveVanillaBaselineBytes(),
                         totals.effectiveSentBytes(),
                         totals.optimizeRawBytes(),
+                        totals.optimizeVanillaBaselineBytes(),
                         totals.optimizeSentBytes(),
                         totals.chunkCacheSavedBytes(),
                         totals.totalBatchCount(),
@@ -344,8 +354,10 @@ public final class BandwidthOptimizerHudStats {
 
             return new Totals(
                     positiveDelta(totals.effectiveRawBytes(), firstSample.effectiveRawBytes()),
+                    positiveDelta(totals.effectiveVanillaBaselineBytes(), firstSample.effectiveVanillaBaselineBytes()),
                     positiveDelta(totals.effectiveSentBytes(), firstSample.effectiveSentBytes()),
                     positiveDelta(totals.optimizeRawBytes(), firstSample.optimizeRawBytes()),
+                    positiveDelta(totals.optimizeVanillaBaselineBytes(), firstSample.optimizeVanillaBaselineBytes()),
                     positiveDelta(totals.optimizeSentBytes(), firstSample.optimizeSentBytes()),
                     positiveDelta(totals.chunkCacheSavedBytes(), firstSample.chunkCacheSavedBytes()),
                     totals.temporaryCacheSavedBytes(),
@@ -434,8 +446,10 @@ public final class BandwidthOptimizerHudStats {
     private record Sample(
             long timestampMillis,
             long effectiveRawBytes,
+            long effectiveVanillaBaselineBytes,
             long effectiveSentBytes,
             long optimizeRawBytes,
+            long optimizeVanillaBaselineBytes,
             long optimizeSentBytes,
             long chunkCacheSavedBytes,
             long totalBatchCount,
@@ -453,8 +467,10 @@ public final class BandwidthOptimizerHudStats {
 
     private record Totals(
             long effectiveRawBytes,
+            long effectiveVanillaBaselineBytes,
             long effectiveSentBytes,
             long optimizeRawBytes,
+            long optimizeVanillaBaselineBytes,
             long optimizeSentBytes,
             long chunkCacheSavedBytes,
             long temporaryCacheSavedBytes,
@@ -487,18 +503,22 @@ public final class BandwidthOptimizerHudStats {
             long totalMapTemplateAdditions
     ) {
         private static Totals empty() {
-            return new Totals(0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+            return new Totals(0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
         }
     }
 
     public record Snapshot(
             long effectiveTotalRawBytes,
+            long effectiveTotalVanillaBaselineBytes,
             long effectiveTotalSentBytes,
             long effectiveRecentRawBytes,
+            long effectiveRecentVanillaBaselineBytes,
             long effectiveRecentSentBytes,
             long optimizeTotalRawBytes,
+            long optimizeTotalVanillaBaselineBytes,
             long optimizeTotalSentBytes,
             long optimizeRecentRawBytes,
+            long optimizeRecentVanillaBaselineBytes,
             long optimizeRecentSentBytes,
             long chunkCacheSavedTotalBytes,
             long chunkCacheSavedRecentBytes,
@@ -542,6 +562,7 @@ public final class BandwidthOptimizerHudStats {
             int serverActiveChannels,
             int serverBoundPlayers,
             long serverOutboundRawEncodedBytes,
+            long serverOutboundVanillaCompressedEstimateBytes,
             long serverOutboundTransportFrameBytes,
             long serverOutboundBypassBytes,
             long serverOutboundWireBytes,
