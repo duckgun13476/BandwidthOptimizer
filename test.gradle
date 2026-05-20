@@ -84,7 +84,6 @@ def applySharedBandwidthOptimizerRunProperties = { Project projectRef, def runCo
             ['boTransportBatchWindowMillis', 'bandwidthoptimizer.transport.batchWindowMillis'],
             ['boTransportPacketIdMappingEnabled', 'bandwidthoptimizer.transport.packetIdMappingEnabled'],
             ['boTransportTelemetryDumpFileName', 'bandwidthoptimizer.transport.telemetryDumpFileName'],
-            ['boBandwidthEvaluationFileName', 'bandwidthoptimizer.bandwidthEvaluation.fileName'],
             ['boChannelJsonlCaptureEnabled', 'bandwidthoptimizer.channelJsonlCaptureEnabled'],
             ['boChunkGlobalStoreBudgetBytes', 'bandwidthoptimizer.chunkGlobalStoreBudgetBytes'],
             ['boChunkGlobalStoreMaxVersionsPerChunk', 'bandwidthoptimizer.chunkGlobalStoreMaxVersionsPerChunk'],
@@ -103,9 +102,7 @@ def applySharedBandwidthOptimizerRunProperties = { Project projectRef, def runCo
             ['boExperientChunkHotspotPathDimensionHopMode', 'bandwidthoptimizer.experient.chunkHotspotPathDimensionHopMode'],
             ['boExperientChunkHotspotPathRangeBounceMode', 'bandwidthoptimizer.experient.chunkHotspotPathRangeBounceMode'],
             ['boExperientRunAllMarkerExit', 'bandwidthoptimizer.experient.runAllMarkerExit'],
-            ['boExperientWatchBoundaryRefreshPatchEnabled', 'bandwidthoptimizer.experient.watchBoundaryRefreshPatchEnabled'],
-            ['boBandwidthEvaluationEnabled', 'bandwidthoptimizer.bandwidthEvaluation.enabled'],
-            ['boBandwidthEvaluationLogConsole', 'bandwidthoptimizer.bandwidthEvaluation.logConsole']
+            ['boExperientWatchBoundaryRefreshPatchEnabled', 'bandwidthoptimizer.experient.watchBoundaryRefreshPatchEnabled']
     ].each { List<String> mapping ->
         applyBooleanRunProperty(projectRef, runConfig, mapping[0], mapping[1])
     }
@@ -275,9 +272,6 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportBatchWindowMillis')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportPacketIdMappingEnabled')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportTelemetryDumpFileName')
-    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boBandwidthEvaluationFileName')
-    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boBandwidthEvaluationEnabled')
-    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boBandwidthEvaluationLogConsole')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChannelJsonlCaptureEnabled')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkGlobalStoreBudgetBytes')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkGlobalStoreMaxVersionsPerChunk')

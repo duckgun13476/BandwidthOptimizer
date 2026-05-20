@@ -63,6 +63,9 @@ final class BandwidthOptimizerHudOverlayCore {
         if (trimmedLine.equals(text("hud.bandwidthoptimizer.server"))) {
             return HUD_SERVER_TITLE_COLOR;
         }
+        if (trimmedLine.equals(text("hud.bandwidthoptimizer.summary"))) {
+            return HUD_SERVER_TITLE_COLOR;
+        }
         if (lineStartsWithText(trimmedLine, "hud.bandwidthoptimizer.metric.raw_flow")) {
             return HUD_SERVER_TOTAL_COLOR;
         }
@@ -144,6 +147,7 @@ final class BandwidthOptimizerHudOverlayCore {
                 + " | " + text("hud.bandwidthoptimizer.metric.win") + " " + snapshot.batchWindowMillis() + "ms");
         lines.add(text("hud.bandwidthoptimizer.server"));
         addServerStatsLines(lines, snapshot);
+        addSummaryStatsLines(lines, snapshot);
         return lines;
     }
 
@@ -164,7 +168,6 @@ final class BandwidthOptimizerHudOverlayCore {
             return;
         }
         long serverBaselineBytes = serverBaselineBytes(snapshot);
-        long clientBaselineBytes = clientBaselineBytes(snapshot);
         lines.add("  " + text("hud.bandwidthoptimizer.metric.raw_flow") + " " + formatBytes(serverBaselineBytes)
                 + " | " + text("hud.bandwidthoptimizer.metric.actual_flow") + " " + formatBytes(snapshot.serverOutboundWireBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.save") + " " + formatBytes(snapshot.serverOutboundSavedBytes())
@@ -174,10 +177,12 @@ final class BandwidthOptimizerHudOverlayCore {
                 + " | " + text("hud.bandwidthoptimizer.metric.temporary_cache") + " "
                 + formatSavedShare(serverBaselineBytes, snapshot.serverTemporaryReuseSavedBytes()));
         lines.add("  " + text("hud.bandwidthoptimizer.metric.create_gate") + " "
-                + text("hud.bandwidthoptimizer.metric.save") + " "
-                + formatSavedShare(snapshot.serverCreateGateObservedBytes(), snapshot.serverCreateGateSavedBytes())
-                + " | " + text("hud.bandwidthoptimizer.metric.global") + " "
-                + formatSharePercent(serverBaselineBytes, snapshot.serverCreateGateSavedBytes())
+                + formatSavedShare(serverBaselineBytes, snapshot.serverCreateGateSavedBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.compression_ratio") + " "
+                + formatTrafficRatioPercent(
+                        snapshot.serverCreateGateObservedBytes(),
+                        Math.max(snapshot.serverCreateGateObservedBytes() - snapshot.serverCreateGateSavedBytes(), 0L)
+                )
                 + " | " + text("hud.bandwidthoptimizer.metric.pkt") + " "
                 + formatCount(snapshot.serverCreateGateSavedPackets())
                 + " | " + text("hud.bandwidthoptimizer.metric.sent") + " "
@@ -188,6 +193,15 @@ final class BandwidthOptimizerHudOverlayCore {
                 + formatByteShare(serverBaselineBytes, snapshot.serverOutboundBypassBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.packet_raw") + " " + formatBytes(snapshot.serverOutboundRawEncodedBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.players") + " " + formatCount(snapshot.serverBoundPlayers()));
+    }
+
+    private static void addSummaryStatsLines(List<String> lines, BandwidthOptimizerHudStats.Snapshot snapshot) {
+        if (snapshot == null || !snapshot.serverStatsFresh()) {
+            return;
+        }
+        long serverBaselineBytes = serverBaselineBytes(snapshot);
+        long clientBaselineBytes = clientBaselineBytes(snapshot);
+        lines.add(text("hud.bandwidthoptimizer.summary"));
         lines.add("  " + text("hud.bandwidthoptimizer.metric.realtime_speed") + " "
                 + text("hud.bandwidthoptimizer.metric.client_side") + " "
                 + formatDirectionalRate(snapshot.clientInboundWireBytesPerSecond(), snapshot.clientOutboundWireBytesPerSecond())
