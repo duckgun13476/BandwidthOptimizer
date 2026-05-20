@@ -199,7 +199,8 @@ final class BandwidthOptimizerHudOverlayCore {
         lines.add("  " + text("hud.bandwidthoptimizer.metric.raw_flow") + " " + formatBytes(snapshot.serverOutboundRawEncodedBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.actual_flow") + " " + formatBytes(snapshot.serverOutboundWireBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.save") + " " + formatBytes(Math.max(snapshot.serverOutboundRawEncodedBytes() - snapshot.serverOutboundWireBytes(), 0L))
-                + " | " + text("hud.bandwidthoptimizer.metric.total_ratio") + " " + formatTrafficRatioPercent(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverOutboundWireBytes()));
+                + " | " + text("hud.bandwidthoptimizer.metric.total_ratio") + " " + formatTrafficRatioPercent(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverOutboundWireBytes())
+                + " | 2 min " + formatTrafficRatioPercent(snapshot.serverRecentOutboundRawEncodedBytes(), snapshot.serverRecentOutboundWireBytes()));
         lines.add("  " + text("hud.bandwidthoptimizer.metric.realtime_speed") + " "
                 + text("hud.bandwidthoptimizer.metric.client_side") + " "
                 + formatDirectionalRate(snapshot.clientInboundWireBytesPerSecond(), snapshot.clientOutboundWireBytesPerSecond())

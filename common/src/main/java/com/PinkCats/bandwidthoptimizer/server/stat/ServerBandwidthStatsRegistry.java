@@ -103,6 +103,7 @@ public final class ServerBandwidthStatsRegistry {
         ChunkHotspotStats.reset();
         ChunkServerOfflineReuseStats.reset();
         CreateBlockEntityUpdateGate.resetStats();
+        ServerBandwidthRecentWindow.reset();
     }
 
     public static List<ChannelBandwidthStats.Snapshot> snapshotChannels() {

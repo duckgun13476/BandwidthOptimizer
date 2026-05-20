@@ -40,6 +40,8 @@ public final class ClientServerBandwidthHudStats {
                 payload.serverCreateGateSavedBytes(),
                 payload.serverCreateGateSavedPackets(),
                 payload.serverCreateGateReleasedPackets(),
+                payload.recentOutboundRawEncodedBytes(),
+                payload.recentOutboundWireBytes(),
                 payload.vanillaCompressionEstimateEnabled()
         );
     }
@@ -76,11 +78,13 @@ public final class ClientServerBandwidthHudStats {
             long serverCreateGateSavedBytes,
             long serverCreateGateSavedPackets,
             long serverCreateGateReleasedPackets,
+            long recentOutboundRawEncodedBytes,
+            long recentOutboundWireBytes,
             boolean vanillaCompressionEstimateEnabled
     ) {
 
         private static Snapshot empty() {
-            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false);
+            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false);
         }
 
         public boolean fresh() {

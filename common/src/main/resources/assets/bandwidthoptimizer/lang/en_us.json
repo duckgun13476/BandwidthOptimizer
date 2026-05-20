@@ -36,7 +36,7 @@
   "hud.bandwidthoptimizer.metric.client_side": "client",
   "hud.bandwidthoptimizer.metric.server_side": "server",
   "hud.bandwidthoptimizer.metric.realtime_speed": "realtime",
-  "hud.bandwidthoptimizer.metric.estimated_save": "est saving",
+  "hud.bandwidthoptimizer.metric.estimated_save": "est saving with MC compression",
   "hud.bandwidthoptimizer.metric.high_cost": "high cost/off by default",
   "hud.bandwidthoptimizer.metric.optimize_ratio": "opt ratio",
   "hud.bandwidthoptimizer.metric.total_ratio": "total ratio",

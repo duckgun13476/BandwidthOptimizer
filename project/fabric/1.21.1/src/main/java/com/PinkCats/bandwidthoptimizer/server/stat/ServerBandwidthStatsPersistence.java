@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.server.stat;
 
+import com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.datafix.DataFixTypes;
 import net.minecraft.world.level.saveddata.SavedData;
@@ -16,6 +17,7 @@ public final class ServerBandwidthStatsPersistence {
             new ConcurrentHashMap<>();
     private static volatile ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot lastFlushedCacheReuse =
             ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot.empty();
+    private static volatile CreateBlockEntityUpdateGate.Snapshot lastFlushedCreateGate = emptyCreateGateSnapshot();
     private static volatile MinecraftServer lastServer;
 
     private ServerBandwidthStatsPersistence() {}
@@ -72,12 +74,14 @@ public final class ServerBandwidthStatsPersistence {
         if (server == null) {
             LAST_FLUSHED.clear();
             lastFlushedCacheReuse = ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot.empty();
+            lastFlushedCreateGate = emptyCreateGateSnapshot();
             return;
         }
         rememberServer(server);
         get(server).resetAll();
         LAST_FLUSHED.clear();
         lastFlushedCacheReuse = ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot.empty();
+        lastFlushedCreateGate = emptyCreateGateSnapshot();
     }
 
 
@@ -89,7 +93,8 @@ public final class ServerBandwidthStatsPersistence {
                 ServerBandwidthStatsRegistry.activeChannelCount(),
                 ServerBandwidthStatsRegistry.boundPlayerCount(),
                 pendingDeltas(),
-                pendingCacheReuseDelta()
+                pendingCacheReuseDelta(),
+                pendingCreateGateDelta()
         );
     }
 
@@ -121,6 +126,7 @@ public final class ServerBandwidthStatsPersistence {
                 persistentStats.addDelta(delta);
         }
         persistentStats.addServerCacheReuseDelta(cacheReuseDeltaSinceLastFlush());
+        persistentStats.addCreateGateDelta(createGateDeltaSinceLastFlush());
     }
 
     private static void flushSnapshot(MinecraftServer server, ChannelBandwidthStats.Snapshot snapshot) {
@@ -130,6 +136,7 @@ public final class ServerBandwidthStatsPersistence {
         if (delta != null)
             get(server).addDelta(delta);
         get(server).addServerCacheReuseDelta(cacheReuseDeltaSinceLastFlush());
+        get(server).addCreateGateDelta(createGateDeltaSinceLastFlush());
     }
 
     private static List<ChannelBandwidthStats.Snapshot> pendingDeltas() {
@@ -158,6 +165,19 @@ public final class ServerBandwidthStatsPersistence {
         return hasCacheReuse(delta) ? delta : null;
     }
 
+    private static CreateBlockEntityUpdateGate.Snapshot createGateDeltaSinceLastFlush() {
+        CreateBlockEntityUpdateGate.Snapshot current = CreateBlockEntityUpdateGate.snapshotStats();
+        CreateBlockEntityUpdateGate.Snapshot delta = createGateDelta(current, lastFlushedCreateGate);
+        lastFlushedCreateGate = current == null ? emptyCreateGateSnapshot() : current;
+        return hasCreateGate(delta) ? delta : null;
+    }
+
+    private static CreateBlockEntityUpdateGate.Snapshot pendingCreateGateDelta() {
+        CreateBlockEntityUpdateGate.Snapshot delta =
+                createGateDelta(CreateBlockEntityUpdateGate.snapshotStats(), lastFlushedCreateGate);
+        return hasCreateGate(delta) ? delta : null;
+    }
+
     private static ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot cacheReuseDelta(
             ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot current,
             ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot previous
@@ -171,6 +191,24 @@ public final class ServerBandwidthStatsPersistence {
                 positiveDelta(safeCurrent.offlineReuseConfirmedSavedBytes(), safePrevious.offlineReuseConfirmedSavedBytes()),
                 positiveDelta(safeCurrent.offlineReuseConfirmedWireBytes(), safePrevious.offlineReuseConfirmedWireBytes()),
                 positiveDelta(safeCurrent.temporaryReuseSavedBytes(), safePrevious.temporaryReuseSavedBytes())
+        );
+    }
+
+    private static CreateBlockEntityUpdateGate.Snapshot createGateDelta(
+            CreateBlockEntityUpdateGate.Snapshot current,
+            CreateBlockEntityUpdateGate.Snapshot previous
+    ) {
+        CreateBlockEntityUpdateGate.Snapshot safeCurrent = current == null ? emptyCreateGateSnapshot() : current;
+        CreateBlockEntityUpdateGate.Snapshot safePrevious = previous == null ? emptyCreateGateSnapshot() : previous;
+        return new CreateBlockEntityUpdateGate.Snapshot(
+                positiveDelta(safeCurrent.delayedPackets(), safePrevious.delayedPackets()),
+                positiveDelta(safeCurrent.supersededPackets(), safePrevious.supersededPackets()),
+                positiveDelta(safeCurrent.releasedPackets(), safePrevious.releasedPackets()),
+                positiveDelta(safeCurrent.droppedPackets(), safePrevious.droppedPackets()),
+                positiveDelta(safeCurrent.delayedBytes(), safePrevious.delayedBytes()),
+                positiveDelta(safeCurrent.supersededSavedBytes(), safePrevious.supersededSavedBytes()),
+                positiveDelta(safeCurrent.releasedBytes(), safePrevious.releasedBytes()),
+                positiveDelta(safeCurrent.droppedSavedBytes(), safePrevious.droppedSavedBytes())
         );
     }
 
@@ -209,6 +247,8 @@ public final class ServerBandwidthStatsPersistence {
                 current.boundAtMillis(),
                 positiveDelta(current.outboundRawEncodedPackets(), previous.outboundRawEncodedPackets()),
                 positiveDelta(current.outboundRawEncodedBytes(), previous.outboundRawEncodedBytes()),
+                positiveDelta(current.outboundVanillaCompressedEstimateBytes(), previous.outboundVanillaCompressedEstimateBytes()),
+                positiveDelta(current.outboundVanillaEstimateWireBytes(), previous.outboundVanillaEstimateWireBytes()),
                 positiveDelta(current.inboundRawEncodedPackets(), previous.inboundRawEncodedPackets()),
                 positiveDelta(current.inboundRawEncodedBytes(), previous.inboundRawEncodedBytes()),
                 positiveDelta(current.outboundTransportFrames(), previous.outboundTransportFrames()),
@@ -232,6 +272,8 @@ public final class ServerBandwidthStatsPersistence {
         return snapshot != null
                 && (snapshot.outboundRawEncodedPackets() != 0L
                 || snapshot.outboundRawEncodedBytes() != 0L
+                || snapshot.outboundVanillaCompressedEstimateBytes() != 0L
+                || snapshot.outboundVanillaEstimateWireBytes() != 0L
                 || snapshot.inboundRawEncodedPackets() != 0L
                 || snapshot.inboundRawEncodedBytes() != 0L
                 || snapshot.outboundTransportFrames() != 0L
@@ -252,5 +294,17 @@ public final class ServerBandwidthStatsPersistence {
                 || snapshot.offlineReuseConfirmedSavedBytes() != 0L
                 || snapshot.offlineReuseConfirmedWireBytes() != 0L
                 || snapshot.temporaryReuseSavedBytes() != 0L);
+    }
+
+    private static boolean hasCreateGate(CreateBlockEntityUpdateGate.Snapshot snapshot) {
+        return snapshot != null
+                && (snapshot.observedBytes() != 0L
+                || snapshot.savedBytes() != 0L
+                || snapshot.savedPackets() != 0L
+                || snapshot.releasedPackets() != 0L);
+    }
+
+    private static CreateBlockEntityUpdateGate.Snapshot emptyCreateGateSnapshot() {
+        return new CreateBlockEntityUpdateGate.Snapshot(0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
     }
 }

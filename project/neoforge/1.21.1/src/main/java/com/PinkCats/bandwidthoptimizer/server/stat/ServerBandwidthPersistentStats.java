@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.server.stat;
 
+import com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.core.HolderLookup;
@@ -16,7 +17,7 @@ import java.util.UUID;
 public final class ServerBandwidthPersistentStats extends SavedData {
 
     static final String DATA_NAME = "bandwidthoptimizer_server_bandwidth_stats";
-    private static final int DATA_VERSION = 1;
+    private static final int DATA_VERSION = 2;
 
     private final MutableCounters totals = new MutableCounters();
     private final Map<UUID, PlayerCounters> players = new LinkedHashMap<>();
@@ -87,6 +88,15 @@ public final class ServerBandwidthPersistentStats extends SavedData {
         setDirty();
     }
 
+    public void addCreateGateDelta(CreateBlockEntityUpdateGate.Snapshot delta) {
+        if (delta == null || !hasCreateGate(delta)) {
+            return;
+        }
+
+        this.totals.add(delta);
+        setDirty();
+    }
+
 
     public void resetAll() {
         this.totals.reset();
@@ -99,7 +109,8 @@ public final class ServerBandwidthPersistentStats extends SavedData {
             int activeChannels,
             int boundPlayers,
             List<ChannelBandwidthStats.Snapshot> pendingDeltas,
-            ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot pendingCacheReuseDelta
+            ServerBandwidthStatsRegistry.ServerCacheReuseSnapshot pendingCacheReuseDelta,
+            CreateBlockEntityUpdateGate.Snapshot pendingCreateGateDelta
     ) {
         MutableCounters snapshot = this.totals.copy();
         if (pendingDeltas != null) {
@@ -108,6 +119,7 @@ public final class ServerBandwidthPersistentStats extends SavedData {
             }
         }
         snapshot.add(pendingCacheReuseDelta);
+        snapshot.add(pendingCreateGateDelta);
         return snapshot.toTotalsSnapshot(activeChannels, boundPlayers);
     }
 
@@ -130,6 +142,8 @@ public final class ServerBandwidthPersistentStats extends SavedData {
     private static boolean hasTraffic(ChannelBandwidthStats.Snapshot snapshot) {
         return snapshot.outboundRawEncodedPackets() != 0L
                 || snapshot.outboundRawEncodedBytes() != 0L
+                || snapshot.outboundVanillaCompressedEstimateBytes() != 0L
+                || snapshot.outboundVanillaEstimateWireBytes() != 0L
                 || snapshot.inboundRawEncodedPackets() != 0L
                 || snapshot.inboundRawEncodedBytes() != 0L
                 || snapshot.outboundTransportFrames() != 0L
@@ -152,6 +166,14 @@ public final class ServerBandwidthPersistentStats extends SavedData {
                 || snapshot.temporaryReuseSavedBytes() != 0L);
     }
 
+    private static boolean hasCreateGate(CreateBlockEntityUpdateGate.Snapshot snapshot) {
+        return snapshot != null
+                && (snapshot.observedBytes() != 0L
+                || snapshot.savedBytes() != 0L
+                || snapshot.savedPackets() != 0L
+                || snapshot.releasedPackets() != 0L);
+    }
+
     private static class PlayerCounters extends MutableCounters {
         private final UUID playerId;
         private String playerName;
@@ -170,6 +192,8 @@ public final class ServerBandwidthPersistentStats extends SavedData {
                     0L,
                     this.outboundRawEncodedPackets,
                     this.outboundRawEncodedBytes,
+                    this.outboundVanillaCompressedEstimateBytes,
+                    this.outboundVanillaEstimateWireBytes,
                     this.inboundRawEncodedPackets,
                     this.inboundRawEncodedBytes,
                     this.outboundTransportFrames,
@@ -189,6 +213,8 @@ public final class ServerBandwidthPersistentStats extends SavedData {
     static class MutableCounters {
         protected long outboundRawEncodedPackets;
         protected long outboundRawEncodedBytes;
+        protected long outboundVanillaCompressedEstimateBytes;
+        protected long outboundVanillaEstimateWireBytes;
         protected long inboundRawEncodedPackets;
         protected long inboundRawEncodedBytes;
         protected long outboundTransportFrames;
@@ -205,6 +231,10 @@ public final class ServerBandwidthPersistentStats extends SavedData {
         protected long serverOfflineReuseConfirmedSavedBytes;
         protected long serverOfflineReuseConfirmedWireBytes;
         protected long serverTemporaryReuseSavedBytes;
+        protected long serverCreateGateObservedBytes;
+        protected long serverCreateGateSavedBytes;
+        protected long serverCreateGateSavedPackets;
+        protected long serverCreateGateReleasedPackets;
 
         protected void add(ChannelBandwidthStats.Snapshot delta) {
             if (delta == null) {
@@ -212,6 +242,8 @@ public final class ServerBandwidthPersistentStats extends SavedData {
             }
             this.outboundRawEncodedPackets += delta.outboundRawEncodedPackets();
             this.outboundRawEncodedBytes += delta.outboundRawEncodedBytes();
+            this.outboundVanillaCompressedEstimateBytes += delta.outboundVanillaCompressedEstimateBytes();
+            this.outboundVanillaEstimateWireBytes += delta.outboundVanillaEstimateWireBytes();
             this.inboundRawEncodedPackets += delta.inboundRawEncodedPackets();
             this.inboundRawEncodedBytes += delta.inboundRawEncodedBytes();
             this.outboundTransportFrames += delta.outboundTransportFrames();
@@ -236,12 +268,24 @@ public final class ServerBandwidthPersistentStats extends SavedData {
             this.serverTemporaryReuseSavedBytes += delta.temporaryReuseSavedBytes();
         }
 
+        protected void add(CreateBlockEntityUpdateGate.Snapshot delta) {
+            if (delta == null) {
+                return;
+            }
+            this.serverCreateGateObservedBytes += delta.observedBytes();
+            this.serverCreateGateSavedBytes += delta.savedBytes();
+            this.serverCreateGateSavedPackets += delta.savedPackets();
+            this.serverCreateGateReleasedPackets += delta.releasedPackets();
+        }
+
         protected void read(CompoundTag tag) {
             if (tag == null) {
                 return;
             }
             this.outboundRawEncodedPackets = tag.getLong("outboundRawEncodedPackets");
             this.outboundRawEncodedBytes = tag.getLong("outboundRawEncodedBytes");
+            this.outboundVanillaCompressedEstimateBytes = tag.getLong("outboundVanillaCompressedEstimateBytes");
+            this.outboundVanillaEstimateWireBytes = tag.getLong("outboundVanillaEstimateWireBytes");
             this.inboundRawEncodedPackets = tag.getLong("inboundRawEncodedPackets");
             this.inboundRawEncodedBytes = tag.getLong("inboundRawEncodedBytes");
             this.outboundTransportFrames = tag.getLong("outboundTransportFrames");
@@ -258,6 +302,10 @@ public final class ServerBandwidthPersistentStats extends SavedData {
             this.serverOfflineReuseConfirmedSavedBytes = tag.getLong("serverOfflineReuseConfirmedSavedBytes");
             this.serverOfflineReuseConfirmedWireBytes = tag.getLong("serverOfflineReuseConfirmedWireBytes");
             this.serverTemporaryReuseSavedBytes = tag.getLong("serverTemporaryReuseSavedBytes");
+            this.serverCreateGateObservedBytes = tag.getLong("serverCreateGateObservedBytes");
+            this.serverCreateGateSavedBytes = tag.getLong("serverCreateGateSavedBytes");
+            this.serverCreateGateSavedPackets = tag.getLong("serverCreateGateSavedPackets");
+            this.serverCreateGateReleasedPackets = tag.getLong("serverCreateGateReleasedPackets");
         }
 
 
@@ -265,6 +313,8 @@ public final class ServerBandwidthPersistentStats extends SavedData {
             CompoundTag tag = new CompoundTag();
             tag.putLong("outboundRawEncodedPackets", this.outboundRawEncodedPackets);
             tag.putLong("outboundRawEncodedBytes", this.outboundRawEncodedBytes);
+            tag.putLong("outboundVanillaCompressedEstimateBytes", this.outboundVanillaCompressedEstimateBytes);
+            tag.putLong("outboundVanillaEstimateWireBytes", this.outboundVanillaEstimateWireBytes);
             tag.putLong("inboundRawEncodedPackets", this.inboundRawEncodedPackets);
             tag.putLong("inboundRawEncodedBytes", this.inboundRawEncodedBytes);
             tag.putLong("outboundTransportFrames", this.outboundTransportFrames);
@@ -281,6 +331,10 @@ public final class ServerBandwidthPersistentStats extends SavedData {
             tag.putLong("serverOfflineReuseConfirmedSavedBytes", this.serverOfflineReuseConfirmedSavedBytes);
             tag.putLong("serverOfflineReuseConfirmedWireBytes", this.serverOfflineReuseConfirmedWireBytes);
             tag.putLong("serverTemporaryReuseSavedBytes", this.serverTemporaryReuseSavedBytes);
+            tag.putLong("serverCreateGateObservedBytes", this.serverCreateGateObservedBytes);
+            tag.putLong("serverCreateGateSavedBytes", this.serverCreateGateSavedBytes);
+            tag.putLong("serverCreateGateSavedPackets", this.serverCreateGateSavedPackets);
+            tag.putLong("serverCreateGateReleasedPackets", this.serverCreateGateReleasedPackets);
             return tag;
         }
 
@@ -288,6 +342,8 @@ public final class ServerBandwidthPersistentStats extends SavedData {
             MutableCounters copy = new MutableCounters();
             copy.outboundRawEncodedPackets = this.outboundRawEncodedPackets;
             copy.outboundRawEncodedBytes = this.outboundRawEncodedBytes;
+            copy.outboundVanillaCompressedEstimateBytes = this.outboundVanillaCompressedEstimateBytes;
+            copy.outboundVanillaEstimateWireBytes = this.outboundVanillaEstimateWireBytes;
             copy.inboundRawEncodedPackets = this.inboundRawEncodedPackets;
             copy.inboundRawEncodedBytes = this.inboundRawEncodedBytes;
             copy.outboundTransportFrames = this.outboundTransportFrames;
@@ -304,12 +360,18 @@ public final class ServerBandwidthPersistentStats extends SavedData {
             copy.serverOfflineReuseConfirmedSavedBytes = this.serverOfflineReuseConfirmedSavedBytes;
             copy.serverOfflineReuseConfirmedWireBytes = this.serverOfflineReuseConfirmedWireBytes;
             copy.serverTemporaryReuseSavedBytes = this.serverTemporaryReuseSavedBytes;
+            copy.serverCreateGateObservedBytes = this.serverCreateGateObservedBytes;
+            copy.serverCreateGateSavedBytes = this.serverCreateGateSavedBytes;
+            copy.serverCreateGateSavedPackets = this.serverCreateGateSavedPackets;
+            copy.serverCreateGateReleasedPackets = this.serverCreateGateReleasedPackets;
             return copy;
         }
 
         protected void reset() {
             this.outboundRawEncodedPackets = 0L;
             this.outboundRawEncodedBytes = 0L;
+            this.outboundVanillaCompressedEstimateBytes = 0L;
+            this.outboundVanillaEstimateWireBytes = 0L;
             this.inboundRawEncodedPackets = 0L;
             this.inboundRawEncodedBytes = 0L;
             this.outboundTransportFrames = 0L;
@@ -326,6 +388,10 @@ public final class ServerBandwidthPersistentStats extends SavedData {
             this.serverOfflineReuseConfirmedSavedBytes = 0L;
             this.serverOfflineReuseConfirmedWireBytes = 0L;
             this.serverTemporaryReuseSavedBytes = 0L;
+            this.serverCreateGateObservedBytes = 0L;
+            this.serverCreateGateSavedBytes = 0L;
+            this.serverCreateGateSavedPackets = 0L;
+            this.serverCreateGateReleasedPackets = 0L;
         }
 
         private ServerBandwidthStatsRegistry.TotalsSnapshot toTotalsSnapshot(int activeChannels, int boundPlayers) {
@@ -334,6 +400,8 @@ public final class ServerBandwidthPersistentStats extends SavedData {
                     boundPlayers,
                     this.outboundRawEncodedPackets,
                     this.outboundRawEncodedBytes,
+                    this.outboundVanillaCompressedEstimateBytes,
+                    this.outboundVanillaEstimateWireBytes,
                     this.inboundRawEncodedPackets,
                     this.inboundRawEncodedBytes,
                     this.outboundTransportFrames,
@@ -349,7 +417,11 @@ public final class ServerBandwidthPersistentStats extends SavedData {
                     this.serverOfflineReuseConfirmedFrames,
                     this.serverOfflineReuseConfirmedSavedBytes,
                     this.serverOfflineReuseConfirmedWireBytes,
-                    this.serverTemporaryReuseSavedBytes
+                    this.serverTemporaryReuseSavedBytes,
+                    this.serverCreateGateObservedBytes,
+                    this.serverCreateGateSavedBytes,
+                    this.serverCreateGateSavedPackets,
+                    this.serverCreateGateReleasedPackets
             );
         }
     }

@@ -36,7 +36,7 @@
   "hud.bandwidthoptimizer.metric.client_side": "客户端",
   "hud.bandwidthoptimizer.metric.server_side": "服务端",
   "hud.bandwidthoptimizer.metric.realtime_speed": "实时速度",
-  "hud.bandwidthoptimizer.metric.estimated_save": "估算节省",
+  "hud.bandwidthoptimizer.metric.estimated_save": "MC开启压缩下的估算节省",
   "hud.bandwidthoptimizer.metric.high_cost": "高开销/默认关",
   "hud.bandwidthoptimizer.metric.optimize_ratio": "优化占比",
   "hud.bandwidthoptimizer.metric.total_ratio": "全局压缩总占比",
