@@ -1,3 +1,11 @@
+#### v2.7.7.14-beta
+1. Added Create block entity update gating to reduce repeated off-screen sync traffic.
+2. Added sound-aware safety handling for Create block entity updates.
+3. Added HUD stats for Create gate savings and real-time client/server wire rates.
+4. Added Minecraft-compression-based saving estimates with an explicit high-cost toggle.
+5. Added persistent server HUD stats for compression estimates and Create gate results.
+6. Added a 2-minute server global compression ratio window.
+
 #### v2.7.6.11-beta
 1. Improved Velocity server-switch transport stability.
 2. Fixed TrueUUID login compatibility issues.
