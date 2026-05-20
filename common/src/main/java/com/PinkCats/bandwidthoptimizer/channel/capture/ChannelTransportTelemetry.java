@@ -55,6 +55,7 @@ public final class ChannelTransportTelemetry {
     private static final LongAdder INBOUND_MAPPING_STAGE_BYTES = new LongAdder();
     private static final LongAdder INBOUND_RESTORED_PACKET_BYTES = new LongAdder();
     private static final LongAdder INBOUND_VANILLA_COMPRESSED_ESTIMATE_BYTES = new LongAdder();
+    private static final LongAdder INBOUND_VANILLA_ESTIMATE_ACTUAL_BYTES = new LongAdder();
     private static final LongAdder INBOUND_RESTORED_PACKET_COUNT = new LongAdder();
     private static final LongAdder INBOUND_LITERAL_ENTRY_COUNT = new LongAdder();
     private static final LongAdder INBOUND_EXACT_REFERENCE_COUNT = new LongAdder();
@@ -95,6 +96,7 @@ public final class ChannelTransportTelemetry {
         INBOUND_MAPPING_STAGE_BYTES.reset();
         INBOUND_RESTORED_PACKET_BYTES.reset();
         INBOUND_VANILLA_COMPRESSED_ESTIMATE_BYTES.reset();
+        INBOUND_VANILLA_ESTIMATE_ACTUAL_BYTES.reset();
         INBOUND_RESTORED_PACKET_COUNT.reset();
         INBOUND_LITERAL_ENTRY_COUNT.reset();
         INBOUND_EXACT_REFERENCE_COUNT.reset();
@@ -225,7 +227,10 @@ public final class ChannelTransportTelemetry {
         INBOUND_TRANSPORT_BODY_BYTES.add(unwrappedFrame.zstdBodyBytes());
         INBOUND_MAPPING_STAGE_BYTES.add(telemetry.mappingStageBytes());
         INBOUND_RESTORED_PACKET_BYTES.add(unwrappedFrame.restoredPacketBytes());
-        INBOUND_VANILLA_COMPRESSED_ESTIMATE_BYTES.add(estimateVanillaCompressedBytes(unwrappedFrame.restoredPacketBytesList()));
+        if (VanillaCompressionEstimator.isEnabled()) {
+            INBOUND_VANILLA_COMPRESSED_ESTIMATE_BYTES.add(estimateVanillaCompressedBytes(unwrappedFrame.restoredPacketBytesList()));
+            INBOUND_VANILLA_ESTIMATE_ACTUAL_BYTES.add(unwrappedFrame.inboundFrameBytes());
+        }
         INBOUND_RESTORED_PACKET_COUNT.add(unwrappedFrame.restoredPacketCount());
         updateMappingCounters(
                 telemetry,
@@ -318,6 +323,7 @@ public final class ChannelTransportTelemetry {
                         OUTBOUND_ORIGINAL_PACKET_COUNT.sum(),
                         OUTBOUND_RAW_PACKET_BYTES.sum(),
                         OUTBOUND_RAW_PACKET_BYTES.sum(),
+                        OUTBOUND_TRANSPORT_FRAME_BYTES.sum(),
                         OUTBOUND_MAPPING_STAGE_BYTES.sum(),
                         OUTBOUND_TRANSPORT_BODY_BYTES.sum(),
                         OUTBOUND_TRANSPORT_FRAME_BYTES.sum(),
@@ -338,6 +344,7 @@ public final class ChannelTransportTelemetry {
                         INBOUND_RESTORED_PACKET_COUNT.sum(),
                         INBOUND_RESTORED_PACKET_BYTES.sum(),
                         INBOUND_VANILLA_COMPRESSED_ESTIMATE_BYTES.sum(),
+                        INBOUND_VANILLA_ESTIMATE_ACTUAL_BYTES.sum(),
                         INBOUND_MAPPING_STAGE_BYTES.sum(),
                         INBOUND_TRANSPORT_BODY_BYTES.sum(),
                         INBOUND_TRANSPORT_FRAME_BYTES.sum(),
@@ -534,6 +541,7 @@ public final class ChannelTransportTelemetry {
             long packetCount,
             long baselineBytes,
             long vanillaCompressedEstimateBytes,
+            long vanillaEstimateActualBytes,
             long mappingStageBytes,
             long transportBodyBytes,
             long transportFrameBytes,

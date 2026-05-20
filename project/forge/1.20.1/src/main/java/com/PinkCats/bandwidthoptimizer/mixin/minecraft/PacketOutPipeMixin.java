@@ -6,6 +6,7 @@ import com.PinkCats.bandwidthoptimizer.channel.access.PacketEncoderFlowAccess;
 import com.PinkCats.bandwidthoptimizer.compat.trueuuid.TrueUuidLateLoginQueryGuard;
 import com.PinkCats.bandwidthoptimizer.server.stat.ChannelBandwidthStats;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
+import com.PinkCats.bandwidthoptimizer.server.stat.VanillaCompressionEstimator;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.channel.ChannelHandlerContext;
@@ -55,10 +56,13 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
         ChannelBandwidthStats stats = ServerBandwidthStatsRegistry.getOrCreate(context);
         if (stats != null) {
             int encodedByteLength = out.writerIndex() - this.bandwidthoptimizer$writerIndexBefore;
-            stats.recordOutboundRawEncoded(
-                    ByteBufUtil.getBytes(out, this.bandwidthoptimizer$writerIndexBefore, encodedByteLength, false),
-                    encodedByteLength
-            );
+            stats.recordOutboundRawEncoded(encodedByteLength);
+            if (VanillaCompressionEstimator.isEnabled()) {
+                stats.recordOutboundVanillaCompressedEstimate(
+                        ByteBufUtil.getBytes(out, this.bandwidthoptimizer$writerIndexBefore, encodedByteLength, false),
+                        encodedByteLength
+                );
+            }
         }
 
         //Patch

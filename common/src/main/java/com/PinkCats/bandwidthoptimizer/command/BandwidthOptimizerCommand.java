@@ -30,7 +30,7 @@ public final class BandwidthOptimizerCommand {
                 "BandwidthOptimizer commands: /bandwidthoptimizer hud (client) | "
                         + "/bandwidthoptimizer test transportreport run [ticks] | "
                         + "/bandwidthoptimizer test packetrank run [ticks] | "
-                        + "/bandwidthoptimizer stats total|players [limit]|reset"
+                        + "/bandwidthoptimizer stats total|players [limit]|reset|vanilla on|off"
         ), false);
         return Command.SINGLE_SUCCESS;
     }

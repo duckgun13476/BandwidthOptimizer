@@ -11,6 +11,7 @@ public final class ChannelBandwidthStats {
     private final LongAdder outboundRawEncodedPackets = new LongAdder();
     private final LongAdder outboundRawEncodedBytes = new LongAdder();
     private final LongAdder outboundVanillaCompressedEstimateBytes = new LongAdder();
+    private final LongAdder outboundVanillaEstimateWireBytes = new LongAdder();
     private final LongAdder inboundRawEncodedPackets = new LongAdder();
     private final LongAdder inboundRawEncodedBytes = new LongAdder();
     private final LongAdder outboundTransportFrames = new LongAdder();
@@ -52,13 +53,10 @@ public final class ChannelBandwidthStats {
         int safeByteLength = Math.max(byteLength, 0);
         this.outboundRawEncodedPackets.increment();
         this.outboundRawEncodedBytes.add(safeByteLength);
-        this.outboundVanillaCompressedEstimateBytes.add(VanillaCompressionEstimator.estimateOutboundFrameBytes(null, safeByteLength));
     }
 
-    public void recordOutboundRawEncoded(byte[] packetBytes, int fallbackByteLength) {
+    public void recordOutboundVanillaCompressedEstimate(byte[] packetBytes, int fallbackByteLength) {
         int safeByteLength = packetBytes == null ? Math.max(fallbackByteLength, 0) : packetBytes.length;
-        this.outboundRawEncodedPackets.increment();
-        this.outboundRawEncodedBytes.add(safeByteLength);
         this.outboundVanillaCompressedEstimateBytes.add(VanillaCompressionEstimator.estimateOutboundFrameBytes(packetBytes, safeByteLength));
     }
 
@@ -88,7 +86,11 @@ public final class ChannelBandwidthStats {
     }
 
     public void recordOutboundWire(int byteLength) {
-        this.outboundWireBytes.add(Math.max(byteLength, 0));
+        int safeByteLength = Math.max(byteLength, 0);
+        this.outboundWireBytes.add(safeByteLength);
+        if (VanillaCompressionEstimator.isEnabled()) {
+            this.outboundVanillaEstimateWireBytes.add(safeByteLength);
+        }
     }
 
     public void recordInboundWire(int byteLength) {
@@ -99,6 +101,7 @@ public final class ChannelBandwidthStats {
         this.outboundRawEncodedPackets.reset();
         this.outboundRawEncodedBytes.reset();
         this.outboundVanillaCompressedEstimateBytes.reset();
+        this.outboundVanillaEstimateWireBytes.reset();
         this.inboundRawEncodedPackets.reset();
         this.inboundRawEncodedBytes.reset();
         this.outboundTransportFrames.reset();
@@ -123,6 +126,7 @@ public final class ChannelBandwidthStats {
                 this.outboundRawEncodedPackets.sum(),
                 this.outboundRawEncodedBytes.sum(),
                 this.outboundVanillaCompressedEstimateBytes.sum(),
+                this.outboundVanillaEstimateWireBytes.sum(),
                 this.inboundRawEncodedPackets.sum(),
                 this.inboundRawEncodedBytes.sum(),
                 this.outboundTransportFrames.sum(),
@@ -147,6 +151,7 @@ public final class ChannelBandwidthStats {
             long outboundRawEncodedPackets,
             long outboundRawEncodedBytes,
             long outboundVanillaCompressedEstimateBytes,
+            long outboundVanillaEstimateWireBytes,
             long inboundRawEncodedPackets,
             long inboundRawEncodedBytes,
             long outboundTransportFrames,
@@ -190,6 +195,7 @@ public final class ChannelBandwidthStats {
                     outboundRawEncodedPackets,
                     outboundRawEncodedBytes,
                     outboundRawEncodedBytes,
+                    outboundWireBytes,
                     inboundRawEncodedPackets,
                     inboundRawEncodedBytes,
                     outboundTransportFrames,
@@ -209,7 +215,7 @@ public final class ChannelBandwidthStats {
             if (outboundTransportFrameBytes <= 0L) {
                 return 0L;
             }
-            return outboundVanillaCompressedEstimateBytes - outboundTransportFrameBytes - outboundBypassBytes;
+            return Math.max(outboundVanillaCompressedEstimateBytes - outboundVanillaEstimateWireBytes, 0L);
         }
     }
 }

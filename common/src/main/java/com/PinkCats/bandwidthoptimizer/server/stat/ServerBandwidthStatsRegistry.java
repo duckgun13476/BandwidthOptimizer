@@ -128,6 +128,7 @@ public final class ServerBandwidthStatsRegistry {
         long outboundRawPackets = 0L;
         long outboundRawBytes = 0L;
         long outboundVanillaCompressedEstimateBytes = 0L;
+        long outboundVanillaEstimateWireBytes = 0L;
         long inboundRawPackets = 0L;
         long inboundRawBytes = 0L;
         long outboundTransportFrames = 0L;
@@ -148,6 +149,7 @@ public final class ServerBandwidthStatsRegistry {
             outboundRawPackets += snapshot.outboundRawEncodedPackets();
             outboundRawBytes += snapshot.outboundRawEncodedBytes();
             outboundVanillaCompressedEstimateBytes += snapshot.outboundVanillaCompressedEstimateBytes();
+            outboundVanillaEstimateWireBytes += snapshot.outboundVanillaEstimateWireBytes();
             inboundRawPackets += snapshot.inboundRawEncodedPackets();
             inboundRawBytes += snapshot.inboundRawEncodedBytes();
             outboundTransportFrames += snapshot.outboundTransportFrames();
@@ -171,6 +173,7 @@ public final class ServerBandwidthStatsRegistry {
                 outboundRawPackets,
                 outboundRawBytes,
                 outboundVanillaCompressedEstimateBytes,
+                outboundVanillaEstimateWireBytes,
                 inboundRawPackets,
                 inboundRawBytes,
                 outboundTransportFrames,
@@ -293,6 +296,7 @@ public final class ServerBandwidthStatsRegistry {
             long outboundRawEncodedPackets,
             long outboundRawEncodedBytes,
             long outboundVanillaCompressedEstimateBytes,
+            long outboundVanillaEstimateWireBytes,
             long inboundRawEncodedPackets,
             long inboundRawEncodedBytes,
             long outboundTransportFrames,
@@ -342,6 +346,7 @@ public final class ServerBandwidthStatsRegistry {
                     outboundRawEncodedPackets,
                     outboundRawEncodedBytes,
                     outboundRawEncodedBytes,
+                    outboundWireBytes,
                     inboundRawEncodedPackets,
                     inboundRawEncodedBytes,
                     outboundTransportFrames,
@@ -366,6 +371,7 @@ public final class ServerBandwidthStatsRegistry {
                 long outboundRawEncodedPackets,
                 long outboundRawEncodedBytes,
                 long outboundVanillaCompressedEstimateBytes,
+                long outboundVanillaEstimateWireBytes,
                 long inboundRawEncodedPackets,
                 long inboundRawEncodedBytes,
                 long outboundTransportFrames,
@@ -389,6 +395,7 @@ public final class ServerBandwidthStatsRegistry {
                     outboundRawEncodedPackets,
                     outboundRawEncodedBytes,
                     outboundVanillaCompressedEstimateBytes,
+                    outboundVanillaEstimateWireBytes,
                     inboundRawEncodedPackets,
                     inboundRawEncodedBytes,
                     outboundTransportFrames,
@@ -415,7 +422,11 @@ public final class ServerBandwidthStatsRegistry {
             if (outboundTransportFrameBytes <= 0L && outboundBypassBytes <= 0L) {
                 return 0L;
             }
-            return outboundVanillaCompressedEstimateBytes - outboundWireBytes;
+            return Math.max(outboundVanillaCompressedEstimateBytes - outboundWireBytes, 0L);
+        }
+
+        public long outboundVanillaEstimateSavedBytes() {
+            return Math.max(outboundVanillaCompressedEstimateBytes - outboundVanillaEstimateWireBytes, 0L);
         }
     }
 

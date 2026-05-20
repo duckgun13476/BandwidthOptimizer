@@ -11,6 +11,7 @@ public record ServerBandwidthStatsPayload(
         int boundPlayers,
         long outboundRawEncodedBytes,
         long outboundVanillaCompressedEstimateBytes,
+        long outboundVanillaEstimateWireBytes,
         long outboundTransportFrameBytes,
         long outboundBypassBytes,
         long outboundWireBytes,
@@ -23,7 +24,8 @@ public record ServerBandwidthStatsPayload(
         long serverCreateGateObservedBytes,
         long serverCreateGateSavedBytes,
         long serverCreateGateSavedPackets,
-        long serverCreateGateReleasedPackets
+        long serverCreateGateReleasedPackets,
+        boolean vanillaCompressionEstimateEnabled
 ) {
 
     public static ServerBandwidthStatsPayload fromTotals(ServerBandwidthStatsRegistry.TotalsSnapshot totals) {
@@ -49,6 +51,7 @@ public record ServerBandwidthStatsPayload(
                 totals.boundPlayers(),
                 totals.outboundRawEncodedBytes(),
                 totals.outboundVanillaCompressedEstimateBytes(),
+                totals.outboundVanillaEstimateWireBytes(),
                 totals.outboundTransportFrameBytes(),
                 totals.outboundBypassBytes(),
                 totals.outboundWireBytes(),
@@ -61,13 +64,14 @@ public record ServerBandwidthStatsPayload(
                 createGateObservedBytes,
                 createGateSavedBytes,
                 createGateSavedPackets,
-                createGateReleasedPackets
+                createGateReleasedPackets,
+                VanillaCompressionEstimator.isEnabled()
         );
     }
 
 
     public static ServerBandwidthStatsPayload empty() {
-        return new ServerBandwidthStatsPayload(System.currentTimeMillis(), 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+        return new ServerBandwidthStatsPayload(System.currentTimeMillis(), 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false);
     }
 
     public static void encode(ServerBandwidthStatsPayload payload, FriendlyByteBuf buffer) {
@@ -90,6 +94,8 @@ public record ServerBandwidthStatsPayload(
         buffer.writeVarLong(Math.max(safePayload.serverCreateGateSavedPackets(), 0L));
         buffer.writeVarLong(Math.max(safePayload.serverCreateGateReleasedPackets(), 0L));
         buffer.writeVarLong(Math.max(safePayload.outboundVanillaCompressedEstimateBytes(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.outboundVanillaEstimateWireBytes(), 0L));
+        buffer.writeBoolean(safePayload.vanillaCompressionEstimateEnabled());
     }
 
     public static ServerBandwidthStatsPayload decode(FriendlyByteBuf buffer) {
@@ -111,12 +117,15 @@ public record ServerBandwidthStatsPayload(
         long serverCreateGateSavedPackets = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         long serverCreateGateReleasedPackets = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         long outboundVanillaCompressedEstimateBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : outboundRawEncodedBytes;
+        long outboundVanillaEstimateWireBytes = buffer.readableBytes() > 1 ? buffer.readVarLong() : outboundWireBytes;
+        boolean vanillaCompressionEstimateEnabled = buffer.readableBytes() > 0 && buffer.readBoolean();
         return new ServerBandwidthStatsPayload(
                 capturedAtMillis,
                 activeChannels,
                 boundPlayers,
                 outboundRawEncodedBytes,
                 outboundVanillaCompressedEstimateBytes,
+                outboundVanillaEstimateWireBytes,
                 outboundTransportFrameBytes,
                 outboundBypassBytes,
                 outboundWireBytes,
@@ -129,7 +138,8 @@ public record ServerBandwidthStatsPayload(
                 serverCreateGateObservedBytes,
                 serverCreateGateSavedBytes,
                 serverCreateGateSavedPackets,
-                serverCreateGateReleasedPackets
+                serverCreateGateReleasedPackets,
+                vanillaCompressionEstimateEnabled
         );
     }
 

@@ -32,7 +32,13 @@ public final class ServerBandwidthStatsCommand {
                                         IntegerArgumentType.getInteger(context, "limit")
                                 ))))
                 .then(Commands.literal("reset")
-                        .executes(context -> reset(context.getSource())));
+                        .executes(context -> reset(context.getSource())))
+                .then(Commands.literal("vanilla")
+                        .executes(context -> vanillaStatus(context.getSource()))
+                        .then(Commands.literal("on")
+                                .executes(context -> setVanillaEstimate(context.getSource(), true)))
+                        .then(Commands.literal("off")
+                                .executes(context -> setVanillaEstimate(context.getSource(), false))));
     }
 
 
@@ -54,6 +60,7 @@ public final class ServerBandwidthStatsCommand {
                         + ", outWire=" + formatBytes(totals.outboundWireBytes())
                         + ", inWire=" + formatBytes(totals.inboundWireBytes())
                         + ", estSaved=" + formatBytes(totals.outboundSavedBytes())
+                        + ", vanillaEstimate=" + onOff(VanillaCompressionEstimator.isEnabled())
                         + ", sessionOfflineReuse=" + formatBytes(sessionTotals.serverOfflineReuseConfirmedSavedBytes())
                         + "/" + sessionTotals.serverOfflineReuseConfirmedFrames() + " frames"
                         + ", sessionTemporaryReuse=" + formatBytes(sessionTotals.serverTemporaryReuseSavedBytes())
@@ -67,6 +74,24 @@ public final class ServerBandwidthStatsCommand {
                                 totals.outboundVanillaCompressedEstimateBytes()
                         )
         ), false);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int vanillaStatus(CommandSourceStack source) {
+        CommandSourceCompat.sendSuccess(source, Component.literal(
+                "BO vanilla compression estimate is " + onOff(VanillaCompressionEstimator.isEnabled())
+                        + ". Enable only while measuring; it copies and compresses packet bytes."
+        ), false);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int setVanillaEstimate(CommandSourceStack source, boolean enabled) {
+        VanillaCompressionEstimator.setEnabled(enabled);
+        VanillaCompressionEstimator.resetCachedThreshold();
+        CommandSourceCompat.sendSuccess(source, Component.literal(
+                "BO vanilla compression estimate " + onOff(enabled)
+                        + ". Normal operation should keep this off because it has noticeable Netty-side cost."
+        ), true);
         return Command.SINGLE_SUCCESS;
     }
 
@@ -143,5 +168,9 @@ public final class ServerBandwidthStatsCommand {
             return "n/a";
         }
         return String.format(Locale.ROOT, "%.2f%%", (double) currentBytes * 100.0D / (double) baselineBytes);
+    }
+
+    private static String onOff(boolean value) {
+        return value ? "on" : "off";
     }
 }

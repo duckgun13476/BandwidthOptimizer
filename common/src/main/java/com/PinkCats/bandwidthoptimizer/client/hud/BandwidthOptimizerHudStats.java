@@ -84,9 +84,11 @@ public final class BandwidthOptimizerHudStats {
                 recentTotals.effectiveSentBytes(),
                 totals.optimizeRawBytes(),
                 totals.optimizeVanillaBaselineBytes(),
+                totals.optimizeVanillaActualBytes(),
                 totals.optimizeSentBytes(),
                 recentTotals.optimizeRawBytes(),
                 recentTotals.optimizeVanillaBaselineBytes(),
+                recentTotals.optimizeVanillaActualBytes(),
                 recentTotals.optimizeSentBytes(),
                 totals.chunkCacheSavedBytes(),
                 recentTotals.chunkCacheSavedBytes(),
@@ -131,6 +133,7 @@ public final class BandwidthOptimizerHudStats {
                 serverSnapshot.boundPlayers(),
                 serverSnapshot.outboundRawEncodedBytes(),
                 serverSnapshot.outboundVanillaCompressedEstimateBytes(),
+                serverSnapshot.outboundVanillaEstimateWireBytes(),
                 serverSnapshot.outboundTransportFrameBytes(),
                 serverSnapshot.outboundBypassBytes(),
                 serverSnapshot.outboundWireBytes(),
@@ -149,7 +152,8 @@ public final class BandwidthOptimizerHudStats {
                 clientWireRate.inboundBytesPerSecond(),
                 serverWireRate.outboundBytesPerSecond(),
                 serverWireRate.inboundBytesPerSecond(),
-                serverSnapshot.outboundWireRatioPercent()
+                serverSnapshot.outboundWireRatioPercent(),
+                serverSnapshot.vanillaCompressionEstimateEnabled()
         );
     }
 
@@ -247,6 +251,7 @@ public final class BandwidthOptimizerHudStats {
 
         long optimizeRawBytes = inboundTransport == null ? 0L : inboundTransport.baselineBytes();
         long optimizeVanillaBaselineBytes = inboundTransport == null ? 0L : inboundTransport.vanillaCompressedEstimateBytes();
+        long optimizeVanillaActualBytes = inboundTransport == null ? 0L : inboundTransport.vanillaEstimateActualBytes();
         long optimizeSentBytes = inboundTransport == null ? 0L : inboundTransport.transportFrameBytes();
         long chunkCacheSavedBytes = savedBytes(
                 inboundChunk.totalLogicalPacketBytes(),
@@ -292,6 +297,7 @@ public final class BandwidthOptimizerHudStats {
                 optimizeSentBytes,
                 optimizeRawBytes,
                 optimizeVanillaBaselineBytes,
+                optimizeVanillaActualBytes,
                 optimizeSentBytes,
                 chunkCacheSavedBytes,
                 safeLocalReuseSnapshot.temporaryReuseSavedBytes(),
@@ -336,6 +342,7 @@ public final class BandwidthOptimizerHudStats {
                         totals.effectiveSentBytes(),
                         totals.optimizeRawBytes(),
                         totals.optimizeVanillaBaselineBytes(),
+                        totals.optimizeVanillaActualBytes(),
                         totals.optimizeSentBytes(),
                         totals.chunkCacheSavedBytes(),
                         totals.totalBatchCount(),
@@ -358,6 +365,7 @@ public final class BandwidthOptimizerHudStats {
                     positiveDelta(totals.effectiveSentBytes(), firstSample.effectiveSentBytes()),
                     positiveDelta(totals.optimizeRawBytes(), firstSample.optimizeRawBytes()),
                     positiveDelta(totals.optimizeVanillaBaselineBytes(), firstSample.optimizeVanillaBaselineBytes()),
+                    positiveDelta(totals.optimizeVanillaActualBytes(), firstSample.optimizeVanillaActualBytes()),
                     positiveDelta(totals.optimizeSentBytes(), firstSample.optimizeSentBytes()),
                     positiveDelta(totals.chunkCacheSavedBytes(), firstSample.chunkCacheSavedBytes()),
                     totals.temporaryCacheSavedBytes(),
@@ -450,6 +458,7 @@ public final class BandwidthOptimizerHudStats {
             long effectiveSentBytes,
             long optimizeRawBytes,
             long optimizeVanillaBaselineBytes,
+            long optimizeVanillaActualBytes,
             long optimizeSentBytes,
             long chunkCacheSavedBytes,
             long totalBatchCount,
@@ -471,6 +480,7 @@ public final class BandwidthOptimizerHudStats {
             long effectiveSentBytes,
             long optimizeRawBytes,
             long optimizeVanillaBaselineBytes,
+            long optimizeVanillaActualBytes,
             long optimizeSentBytes,
             long chunkCacheSavedBytes,
             long temporaryCacheSavedBytes,
@@ -503,7 +513,7 @@ public final class BandwidthOptimizerHudStats {
             long totalMapTemplateAdditions
     ) {
         private static Totals empty() {
-            return new Totals(0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+            return new Totals(0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
         }
     }
 
@@ -516,9 +526,11 @@ public final class BandwidthOptimizerHudStats {
             long effectiveRecentSentBytes,
             long optimizeTotalRawBytes,
             long optimizeTotalVanillaBaselineBytes,
+            long optimizeTotalVanillaActualBytes,
             long optimizeTotalSentBytes,
             long optimizeRecentRawBytes,
             long optimizeRecentVanillaBaselineBytes,
+            long optimizeRecentVanillaActualBytes,
             long optimizeRecentSentBytes,
             long chunkCacheSavedTotalBytes,
             long chunkCacheSavedRecentBytes,
@@ -563,6 +575,7 @@ public final class BandwidthOptimizerHudStats {
             int serverBoundPlayers,
             long serverOutboundRawEncodedBytes,
             long serverOutboundVanillaCompressedEstimateBytes,
+            long serverOutboundVanillaEstimateWireBytes,
             long serverOutboundTransportFrameBytes,
             long serverOutboundBypassBytes,
             long serverOutboundWireBytes,
@@ -581,7 +594,8 @@ public final class BandwidthOptimizerHudStats {
             long clientInboundWireBytesPerSecond,
             long serverOutboundWireBytesPerSecond,
             long serverInboundWireBytesPerSecond,
-            double serverOutboundWireRatioPercent
+            double serverOutboundWireRatioPercent,
+            boolean vanillaCompressionEstimateEnabled
     ) {
 
         public boolean hasData() {

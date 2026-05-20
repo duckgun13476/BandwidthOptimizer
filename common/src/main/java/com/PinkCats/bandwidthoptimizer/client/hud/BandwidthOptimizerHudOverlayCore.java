@@ -168,10 +168,6 @@ final class BandwidthOptimizerHudOverlayCore {
             return;
         }
         long serverBaselineBytes = serverBaselineBytes(snapshot);
-        lines.add("  " + text("hud.bandwidthoptimizer.metric.raw_flow") + " " + formatBytes(serverBaselineBytes)
-                + " | " + text("hud.bandwidthoptimizer.metric.actual_flow") + " " + formatBytes(snapshot.serverOutboundWireBytes())
-                + " | " + text("hud.bandwidthoptimizer.metric.save") + " " + formatBytes(snapshot.serverOutboundSavedBytes())
-                + " | " + text("hud.bandwidthoptimizer.metric.total_ratio") + " " + formatTrafficRatioPercent(serverBaselineBytes, snapshot.serverOutboundWireBytes()));
         lines.add("  " + text("hud.bandwidthoptimizer.metric.offline_cache") + " "
                 + formatSavedShare(serverBaselineBytes, snapshot.serverOfflineReuseConfirmedSavedBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.temporary_cache") + " "
@@ -199,19 +195,30 @@ final class BandwidthOptimizerHudOverlayCore {
         if (snapshot == null || !snapshot.serverStatsFresh()) {
             return;
         }
-        long serverBaselineBytes = serverBaselineBytes(snapshot);
-        long clientBaselineBytes = clientBaselineBytes(snapshot);
         lines.add(text("hud.bandwidthoptimizer.summary"));
+        lines.add("  " + text("hud.bandwidthoptimizer.metric.raw_flow") + " " + formatBytes(snapshot.serverOutboundRawEncodedBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.actual_flow") + " " + formatBytes(snapshot.serverOutboundWireBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.save") + " " + formatBytes(Math.max(snapshot.serverOutboundRawEncodedBytes() - snapshot.serverOutboundWireBytes(), 0L))
+                + " | " + text("hud.bandwidthoptimizer.metric.total_ratio") + " " + formatTrafficRatioPercent(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverOutboundWireBytes()));
         lines.add("  " + text("hud.bandwidthoptimizer.metric.realtime_speed") + " "
                 + text("hud.bandwidthoptimizer.metric.client_side") + " "
                 + formatDirectionalRate(snapshot.clientInboundWireBytesPerSecond(), snapshot.clientOutboundWireBytesPerSecond())
                 + " | " + text("hud.bandwidthoptimizer.metric.server_side") + " "
                 + formatDirectionalRate(snapshot.serverInboundWireBytesPerSecond(), snapshot.serverOutboundWireBytesPerSecond()));
-        lines.add("  " + text("hud.bandwidthoptimizer.metric.estimated_save") + " "
+        lines.add("  " + text("hud.bandwidthoptimizer.metric.estimated_save")
+                + "(" + text("hud.bandwidthoptimizer.metric.high_cost") + ") "
                 + text("hud.bandwidthoptimizer.metric.client_side") + " "
-                + formatSavedRatioPercent(clientBaselineBytes, snapshot.effectiveTotalSentBytes())
+                + formatEstimatedSavedRatio(
+                        snapshot.vanillaCompressionEstimateEnabled(),
+                        snapshot.optimizeTotalVanillaBaselineBytes(),
+                        snapshot.optimizeTotalVanillaActualBytes()
+                )
                 + " | " + text("hud.bandwidthoptimizer.metric.server_side") + " "
-                + formatSavedRatioPercent(serverBaselineBytes, snapshot.serverOutboundWireBytes()));
+                + formatEstimatedSavedRatio(
+                        snapshot.vanillaCompressionEstimateEnabled(),
+                        snapshot.serverOutboundVanillaCompressedEstimateBytes(),
+                        snapshot.serverOutboundVanillaEstimateWireBytes()
+                ));
     }
 
     private static String buildChunkCacheLine(BandwidthOptimizerHudStats.Snapshot snapshot) {
@@ -292,6 +299,16 @@ final class BandwidthOptimizerHudOverlayCore {
         return String.format(Locale.ROOT, "%.1f%%", Math.max(savedRatioPercent, 0.0D));
     }
 
+    private static String formatEstimatedSavedRatio(boolean enabled, long vanillaBaselineBytes, long actualBytes) {
+        if (!enabled) {
+            return text("hud.bandwidthoptimizer.metric.disabled");
+        }
+        if (vanillaBaselineBytes <= 0L) {
+            return text("hud.bandwidthoptimizer.metric.collecting");
+        }
+        return formatSavedRatioPercent(vanillaBaselineBytes, actualBytes);
+    }
+
     private static String formatFlow(long rawBytes, long sentBytes) {
         return formatBytes(rawBytes) + " → " + formatBytes(sentBytes);
     }
@@ -330,14 +347,6 @@ final class BandwidthOptimizerHudOverlayCore {
         }
         long baselineBytes = snapshot.serverOutboundVanillaCompressedEstimateBytes();
         return baselineBytes > 0L ? baselineBytes : snapshot.serverOutboundRawEncodedBytes();
-    }
-
-    private static long clientBaselineBytes(BandwidthOptimizerHudStats.Snapshot snapshot) {
-        if (snapshot == null) {
-            return 0L;
-        }
-        long baselineBytes = snapshot.effectiveTotalVanillaBaselineBytes();
-        return baselineBytes > 0L ? baselineBytes : snapshot.effectiveTotalRawBytes();
     }
 
     private static String formatDirectionalRate(long inboundBytesPerSecond, long outboundBytesPerSecond) {

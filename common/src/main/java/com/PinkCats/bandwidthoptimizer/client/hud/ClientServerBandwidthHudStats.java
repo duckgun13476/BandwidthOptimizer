@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.client.hud;
 
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsPayload;
+import com.PinkCats.bandwidthoptimizer.server.stat.VanillaCompressionEstimator;
 
 public final class ClientServerBandwidthHudStats {
 
@@ -13,9 +14,11 @@ public final class ClientServerBandwidthHudStats {
 
     public static void accept(ServerBandwidthStatsPayload payload) {
         if (payload == null) {
+            VanillaCompressionEstimator.setEnabled(false);
             latestSnapshot = Snapshot.empty();
             return;
         }
+        VanillaCompressionEstimator.setEnabled(payload.vanillaCompressionEstimateEnabled());
         latestSnapshot = new Snapshot(
                 System.currentTimeMillis(),
                 payload.capturedAtMillis(),
@@ -23,6 +26,7 @@ public final class ClientServerBandwidthHudStats {
                 payload.boundPlayers(),
                 payload.outboundRawEncodedBytes(),
                 payload.outboundVanillaCompressedEstimateBytes(),
+                payload.outboundVanillaEstimateWireBytes(),
                 payload.outboundTransportFrameBytes(),
                 payload.outboundBypassBytes(),
                 payload.outboundWireBytes(),
@@ -35,12 +39,14 @@ public final class ClientServerBandwidthHudStats {
                 payload.serverCreateGateObservedBytes(),
                 payload.serverCreateGateSavedBytes(),
                 payload.serverCreateGateSavedPackets(),
-                payload.serverCreateGateReleasedPackets()
+                payload.serverCreateGateReleasedPackets(),
+                payload.vanillaCompressionEstimateEnabled()
         );
     }
 
 
     public static void reset() {
+        VanillaCompressionEstimator.setEnabled(false);
         latestSnapshot = Snapshot.empty();
     }
 
@@ -56,6 +62,7 @@ public final class ClientServerBandwidthHudStats {
             int boundPlayers,
             long outboundRawEncodedBytes,
             long outboundVanillaCompressedEstimateBytes,
+            long outboundVanillaEstimateWireBytes,
             long outboundTransportFrameBytes,
             long outboundBypassBytes,
             long outboundWireBytes,
@@ -68,11 +75,12 @@ public final class ClientServerBandwidthHudStats {
             long serverCreateGateObservedBytes,
             long serverCreateGateSavedBytes,
             long serverCreateGateSavedPackets,
-            long serverCreateGateReleasedPackets
+            long serverCreateGateReleasedPackets,
+            boolean vanillaCompressionEstimateEnabled
     ) {
 
         private static Snapshot empty() {
-            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false);
         }
 
         public boolean fresh() {
@@ -83,7 +91,7 @@ public final class ClientServerBandwidthHudStats {
             if (outboundVanillaCompressedEstimateBytes <= 0L) {
                 return 0.0D;
             }
-            return (double) outboundWireBytes * 100.0D / (double) outboundVanillaCompressedEstimateBytes;
+            return (double) outboundVanillaEstimateWireBytes * 100.0D / (double) outboundVanillaCompressedEstimateBytes;
         }
 
         public double createGateSavedRatioPercent() {

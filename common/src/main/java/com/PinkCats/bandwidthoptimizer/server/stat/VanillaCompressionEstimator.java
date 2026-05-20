@@ -14,12 +14,13 @@ public final class VanillaCompressionEstimator {
     private static final ThreadLocal<Deflater> DEFLATER = ThreadLocal.withInitial(Deflater::new);
     private static final ThreadLocal<byte[]> BUFFER = ThreadLocal.withInitial(() -> new byte[16 * 1024]);
 
+    private static volatile boolean enabled;
     private static volatile int cachedThreshold = Integer.MIN_VALUE;
 
     private VanillaCompressionEstimator() {
     }
 
-    // 按 MC 外层压缩和长度前缀估算原版真实线速，保留 raw 之外更接近公网流量的基线。
+    // 按 MC 外层压缩和长度前缀估算原版线路大小；默认关闭，避免常驻热路径开销。
     public static int estimateOutboundFrameBytes(byte[] packetBytes, int fallbackPacketLength) {
         int packetLength = packetBytes == null ? Math.max(fallbackPacketLength, 0) : packetBytes.length;
         if (packetLength <= 0) {
@@ -37,6 +38,14 @@ public final class VanillaCompressionEstimator {
         int compressedLength = compressedLength(packetBytes);
         int bodyLength = varIntSize(packetLength) + compressedLength;
         return varIntSize(bodyLength) + bodyLength;
+    }
+
+    public static boolean isEnabled() {
+        return enabled;
+    }
+
+    public static void setEnabled(boolean enabled) {
+        VanillaCompressionEstimator.enabled = enabled;
     }
 
     public static int compressionThreshold() {
