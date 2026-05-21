@@ -62,6 +62,14 @@ public final class ChunkTransportDispatcher {
             "fallback_full_after_watch_boundary_refresh_patch_miss";
     private static final String WATCH_BOUNDARY_REFRESH_PATCH_FALLBACK_INVALIDATE_REASON =
             "runtime_watch_boundary_refresh_patch_fallback_unavailable";
+    private static final String RUNTIME_REF_FALLBACK_FULL_REASON =
+            "fallback_full_after_runtime_ref_missing_base";
+    private static final String RUNTIME_PATCH_FALLBACK_FULL_REASON =
+            "fallback_full_after_runtime_patch_missing_full_base";
+    private static final String RUNTIME_REF_FALLBACK_INVALIDATE_REASON =
+            "runtime_ref_fallback_unavailable";
+    private static final String RUNTIME_PATCH_FALLBACK_INVALIDATE_REASON =
+            "runtime_patch_fallback_unavailable";
     private static final AtomicLong OUTBOUND_FULL_FRAME_COUNT = new AtomicLong();
     private static final AtomicLong OUTBOUND_REF_FRAME_COUNT = new AtomicLong();
     private static final AtomicLong OUTBOUND_PATCH_FRAME_COUNT = new AtomicLong();
@@ -170,7 +178,7 @@ public final class ChunkTransportDispatcher {
                     fingerprint.shortHash()
             );
         }
-        rememberWatchBoundaryFallbackFrame(context, runtimeDecision, originalPacketBytes);
+        rememberRecoverableFullChunkFrame(context, runtimeDecision, originalPacketBytes);
         return encodedEnvelopeBytes;
     }
 
@@ -276,7 +284,7 @@ public final class ChunkTransportDispatcher {
                     fingerprint.shortHash()
             );
         }
-        rememberWatchBoundaryFallbackFrame(context, runtimeDecision, originalPacketBytes);
+        rememberRecoverableFullChunkFrame(context, runtimeDecision, originalPacketBytes);
         return OutboundChunkEncodeResult.applied(
                 runtimeDecision.operation(),
                 runtimeDecision.frame().reason(),
@@ -458,7 +466,7 @@ public final class ChunkTransportDispatcher {
                 logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_NACK_FRAME_COUNT);
                 return ChunkInboundDecodeResult.consumeControlFrame();
             }
-            if (tryHandleWatchBoundaryFallbackNack(context, envelope.frame())) {
+            if (tryHandleRecoverableFullChunkNack(context, envelope.frame())) {
                 logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_NACK_FRAME_COUNT);
                 return ChunkInboundDecodeResult.consumeControlFrame();
             }
@@ -1218,7 +1226,7 @@ public final class ChunkTransportDispatcher {
                 && runtimeFullBasePacketBytes.length > 0;
     }
 
-    private static void rememberWatchBoundaryFallbackFrame(
+    private static void rememberRecoverableFullChunkFrame(
             ChannelHandlerContext context,
             RuntimeChunkTransportDecision runtimeDecision,
             byte[] originalPacketBytes
@@ -1226,7 +1234,7 @@ public final class ChunkTransportDispatcher {
         if (context == null
                 || runtimeDecision == null
                 || runtimeDecision.frame() == null
-                || !shouldRememberWatchBoundaryFallbackFrame(runtimeDecision.frame())) {
+                || !shouldRememberRecoverableFullChunkFrame(runtimeDecision.frame())) {
             return;
         }
         ChunkWatchBoundaryReusePendingStore.rememberProbe(
@@ -1272,8 +1280,11 @@ public final class ChunkTransportDispatcher {
                 : ChunkLocalCacheReuseStats.RUNTIME_REF_REUSED_FROM_PERSISTENT_CACHE_REASON;
     }
 
-    private static boolean shouldRememberWatchBoundaryFallbackFrame(ChunkHotspotFrame frame) {
-        return isWatchBoundaryReuseProbeFrame(frame) || isWatchBoundaryRefreshPatchFrame(frame);
+    private static boolean shouldRememberRecoverableFullChunkFrame(ChunkHotspotFrame frame) {
+        return frame != null
+                && frame.hotspotKind() == ChunkHotspotKind.FULL_CHUNK
+                && (frame.operation() == ChunkHotspotFrameOp.PUBLISH_REF
+                || frame.operation() == ChunkHotspotFrameOp.PUBLISH_PATCH);
     }
 
     private static boolean isWatchBoundaryReuseProbeMiss(ChunkHotspotFrame frame) {
@@ -1289,11 +1300,11 @@ public final class ChunkTransportDispatcher {
                 && hasDistinctTargetFullSnapshot(frame);
     }
 
-    private static boolean tryHandleWatchBoundaryFallbackNack(
+    private static boolean tryHandleRecoverableFullChunkNack(
             ChannelHandlerContext context,
             ChunkHotspotFrame frame
     ) {
-        if (!isWatchBoundaryReuseProbeMiss(frame) && !isWatchBoundaryRefreshPatchMiss(frame)) {
+        if (!isRecoverableFullChunkMiss(frame)) {
             return false;
         }
 
@@ -1305,7 +1316,7 @@ public final class ChunkTransportDispatcher {
                 context.channel(),
                 pendingReplay.probeFrame(),
                 pendingReplay.copyOriginalPacketBytes(),
-                resolveWatchBoundaryFallbackFullReason(frame)
+                resolveRecoverableFallbackFullReason(frame)
         )) {
             return true;
         }
@@ -1313,21 +1324,50 @@ public final class ChunkTransportDispatcher {
         ChunkTransportControlFrameSender.sendInvalidate(
                 context,
                 frame,
-                resolveWatchBoundaryFallbackInvalidateReason(frame)
+                resolveRecoverableFallbackInvalidateReason(frame)
         );
         return true;
     }
 
-    private static String resolveWatchBoundaryFallbackFullReason(ChunkHotspotFrame frame) {
-        return isWatchBoundaryRefreshPatchMiss(frame)
-                ? WATCH_BOUNDARY_REFRESH_PATCH_FALLBACK_FULL_REASON
-                : WATCH_BOUNDARY_REUSE_PROBE_FALLBACK_FULL_REASON;
+    private static boolean isRecoverableFullChunkMiss(ChunkHotspotFrame frame) {
+        return isWatchBoundaryReuseProbeMiss(frame)
+                || isWatchBoundaryRefreshPatchMiss(frame)
+                || isRuntimeRefMissingBase(frame)
+                || isRuntimePatchMissingFullBase(frame);
     }
 
-    private static String resolveWatchBoundaryFallbackInvalidateReason(ChunkHotspotFrame frame) {
+    private static boolean isRuntimeRefMissingBase(ChunkHotspotFrame frame) {
+        return frame != null
+                && frame.operation() == ChunkHotspotFrameOp.NACK
+                && frame.hotspotKind() == ChunkHotspotKind.FULL_CHUNK
+                && "runtime_ref_missing_base".equals(frame.reason());
+    }
+
+    private static boolean isRuntimePatchMissingFullBase(ChunkHotspotFrame frame) {
+        return frame != null
+                && frame.operation() == ChunkHotspotFrameOp.NACK
+                && frame.hotspotKind() == ChunkHotspotKind.FULL_CHUNK
+                && "runtime_patch_missing_full_base".equals(frame.reason());
+    }
+
+    private static String resolveRecoverableFallbackFullReason(ChunkHotspotFrame frame) {
+        return isWatchBoundaryRefreshPatchMiss(frame)
+                ? WATCH_BOUNDARY_REFRESH_PATCH_FALLBACK_FULL_REASON
+                : isWatchBoundaryReuseProbeMiss(frame)
+                ? WATCH_BOUNDARY_REUSE_PROBE_FALLBACK_FULL_REASON
+                : isRuntimePatchMissingFullBase(frame)
+                ? RUNTIME_PATCH_FALLBACK_FULL_REASON
+                : RUNTIME_REF_FALLBACK_FULL_REASON;
+    }
+
+    private static String resolveRecoverableFallbackInvalidateReason(ChunkHotspotFrame frame) {
         return isWatchBoundaryRefreshPatchMiss(frame)
                 ? WATCH_BOUNDARY_REFRESH_PATCH_FALLBACK_INVALIDATE_REASON
-                : WATCH_BOUNDARY_REUSE_PROBE_FALLBACK_INVALIDATE_REASON;
+                : isWatchBoundaryReuseProbeMiss(frame)
+                ? WATCH_BOUNDARY_REUSE_PROBE_FALLBACK_INVALIDATE_REASON
+                : isRuntimePatchMissingFullBase(frame)
+                ? RUNTIME_PATCH_FALLBACK_INVALIDATE_REASON
+                : RUNTIME_REF_FALLBACK_INVALIDATE_REASON;
     }
 
     private static String resolveRefMissingBaseReason(ChunkHotspotFrame frame) {
