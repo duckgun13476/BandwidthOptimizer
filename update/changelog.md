@@ -1,3 +1,8 @@
+#### v2.7.7.15-beta
+1. Fix Voxy chunk bound compat.
+2. Fix problem if full chunk packet is missing.
+
+
 #### v2.7.7.14-beta
 1. Added Create block entity update gating to reduce repeated off-screen sync traffic.
 2. Added sound-aware safety handling for Create block entity updates.
