@@ -1,0 +1,14 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "com.PinkCats.bandwidthoptimizer.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "bandwidthoptimizer.refmap.json",
+  "client": [
+    "voxy.VoxyChunkBoundRendererMixin",
+    "voxy.VoxyRenderSectionMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

@@ -19,7 +19,8 @@
     ]
   },
   "mixins": [
-    "bandwidthoptimizer.mixins.json"
+    "bandwidthoptimizer.mixins.json",
+    "bandwidthoptimizer-voxy.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=${loader_version}",

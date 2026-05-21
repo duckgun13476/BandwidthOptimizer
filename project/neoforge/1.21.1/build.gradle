@@ -268,7 +268,7 @@ tasks.named('jar', Jar).configure {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from(embeddedRuntimeLibsOutputDir)
     manifest {
-        attributes(['MixinConfigs': "${mod_id}.mixins.json"])
+        attributes(['MixinConfigs': "${mod_id}.mixins.json,${mod_id}-voxy.mixins.json"])
     }
 
 }
