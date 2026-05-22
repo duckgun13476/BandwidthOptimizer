@@ -22,6 +22,9 @@ public final class ChunkGenericReplacePatchCodec {
         }
 
         byte[] safeTargetPacketBytes = Arrays.copyOf(targetPacketBytes, targetPacketBytes.length);
+        if (basePacketSnapshot != null && !basePacketSnapshot.hasOriginalPacketBytes()) {
+            return ChunkPatchBuilder.ChunkPatchBuildResult.unavailable("base_packet_bytes_evicted");
+        }
         byte[] basePacketBytes = basePacketSnapshot == null
                 ? new byte[0]
                 : basePacketSnapshot.copyOriginalPacketBytes();

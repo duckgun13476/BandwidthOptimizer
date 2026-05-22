@@ -42,6 +42,17 @@ public final class ClientServerBandwidthHudStats {
                 payload.serverCreateGateReleasedPackets(),
                 payload.recentOutboundRawEncodedBytes(),
                 payload.recentOutboundWireBytes(),
+                payload.serverShadowRetainedOriginalBytes(),
+                payload.serverShadowRetainedOriginalPacketCount(),
+                payload.serverShadowMetadataPacketCount(),
+                payload.serverShadowChunkCount(),
+                payload.serverShadowOriginalBytesBudget(),
+                payload.serverShadowMetadataEntryLimit(),
+                payload.serverShadowEvictedOriginalBytes(),
+                payload.serverShadowEvictedOriginalPackets(),
+                payload.serverShadowEvictedMetadataPackets(),
+                payload.serverJvmUsedBytes(),
+                payload.serverJvmMaxBytes(),
                 payload.vanillaCompressionEstimateEnabled()
         );
     }
@@ -80,11 +91,22 @@ public final class ClientServerBandwidthHudStats {
             long serverCreateGateReleasedPackets,
             long recentOutboundRawEncodedBytes,
             long recentOutboundWireBytes,
+            long serverShadowRetainedOriginalBytes,
+            long serverShadowRetainedOriginalPacketCount,
+            long serverShadowMetadataPacketCount,
+            long serverShadowChunkCount,
+            long serverShadowOriginalBytesBudget,
+            long serverShadowMetadataEntryLimit,
+            long serverShadowEvictedOriginalBytes,
+            long serverShadowEvictedOriginalPackets,
+            long serverShadowEvictedMetadataPackets,
+            long serverJvmUsedBytes,
+            long serverJvmMaxBytes,
             boolean vanillaCompressionEstimateEnabled
     ) {
 
         private static Snapshot empty() {
-            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false);
+            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false);
         }
 
         public boolean fresh() {

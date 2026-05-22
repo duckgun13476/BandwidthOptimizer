@@ -386,6 +386,12 @@ public class Config {
             public static final String GLOBAL_STORE_MAX_VERSIONS_PER_CHUNK =
                     "bandwidthoptimizer.chunkGlobalStoreMaxVersionsPerChunk";
             public static final int DEFAULT_GLOBAL_STORE_MAX_VERSIONS_PER_CHUNK = 8;
+            public static final String SERVER_SHADOW_ORIGINAL_BYTES_BUDGET_BYTES =
+                    "bandwidthoptimizer.chunk.serverShadowOriginalBytesBudgetBytes";
+            public static final long DEFAULT_SERVER_SHADOW_ORIGINAL_BYTES_BUDGET_BYTES = 256L * 1024L * 1024L;
+            public static final String SERVER_SHADOW_METADATA_ENTRY_LIMIT =
+                    "bandwidthoptimizer.chunk.serverShadowMetadataEntryLimit";
+            public static final long DEFAULT_SERVER_SHADOW_METADATA_ENTRY_LIMIT = 1_000_000L;
             public static final String DIAGNOSTIC_OUTPUTS_ENABLED =
                     "bandwidthoptimizer.chunk.diagnosticOutputsEnabled";
             public static final boolean DEFAULT_DIAGNOSTIC_OUTPUTS_ENABLED = false;

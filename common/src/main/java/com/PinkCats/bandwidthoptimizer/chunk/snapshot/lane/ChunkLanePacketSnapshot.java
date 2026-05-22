@@ -17,6 +17,8 @@ public record ChunkLanePacketSnapshot(
         String payloadShortHash,
         int encodedBytes,
         long observedAtMillis,
+        long accessCount,
+        long lastAccessAtMillis,
         byte[] originalPacketBytes
 ) {
 
@@ -28,6 +30,8 @@ public record ChunkLanePacketSnapshot(
         payloadShortHash = payloadShortHash == null ? "" : payloadShortHash;
         encodedBytes = Math.max(encodedBytes, 0);
         observedAtMillis = Math.max(observedAtMillis, 0L);
+        accessCount = Math.max(accessCount, 0L);
+        lastAccessAtMillis = Math.max(lastAccessAtMillis, 0L);
         originalPacketBytes = originalPacketBytes == null
                 ? new byte[0]
                 : Arrays.copyOf(originalPacketBytes, originalPacketBytes.length);
@@ -35,6 +39,56 @@ public record ChunkLanePacketSnapshot(
 
     public byte[] copyOriginalPacketBytes() {
         return Arrays.copyOf(this.originalPacketBytes, this.originalPacketBytes.length);
+    }
+
+    public boolean hasOriginalPacketBytes() {
+        return this.originalPacketBytes.length > 0;
+    }
+
+    public long retainedOriginalBytes() {
+        return this.originalPacketBytes.length;
+    }
+
+    public ChunkLanePacketSnapshot withoutOriginalPacketBytes() {
+        return new ChunkLanePacketSnapshot(
+                this.protocolName,
+                this.packetClassName,
+                this.hotspotKind,
+                this.laneKind,
+                this.semanticKey,
+                this.sequenceVersion,
+                this.fullSnapshotVersion,
+                this.payloadHash,
+                this.payloadShortHash,
+                this.encodedBytes,
+                this.observedAtMillis,
+                this.accessCount,
+                this.lastAccessAtMillis,
+                new byte[0]
+        );
+    }
+
+    public ChunkLanePacketSnapshot markAccess(long accessedAtMillis) {
+        return withAccessStats(this.accessCount + 1L, accessedAtMillis);
+    }
+
+    public ChunkLanePacketSnapshot withAccessStats(long accessCount, long accessedAtMillis) {
+        return new ChunkLanePacketSnapshot(
+                this.protocolName,
+                this.packetClassName,
+                this.hotspotKind,
+                this.laneKind,
+                this.semanticKey,
+                this.sequenceVersion,
+                this.fullSnapshotVersion,
+                this.payloadHash,
+                this.payloadShortHash,
+                this.encodedBytes,
+                this.observedAtMillis,
+                accessCount,
+                accessedAtMillis,
+                this.originalPacketBytes
+        );
     }
 
     public String summaryText() {

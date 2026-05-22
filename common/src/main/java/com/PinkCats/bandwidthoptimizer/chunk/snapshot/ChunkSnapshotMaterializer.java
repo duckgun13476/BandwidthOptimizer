@@ -31,7 +31,10 @@ public final class ChunkSnapshotMaterializer {
         }
 
         ChunkLanePacketSnapshot fullPacketSnapshot = snapshot.fullPacketSnapshot();
-        return fullPacketSnapshot == null ? null : fullPacketSnapshot.copyOriginalPacketBytes();
+        if (fullPacketSnapshot == null || !fullPacketSnapshot.hasOriginalPacketBytes()) {
+            return null;
+        }
+        return fullPacketSnapshot.copyOriginalPacketBytes();
     }
 
 
@@ -45,6 +48,9 @@ public final class ChunkSnapshotMaterializer {
 
         List<byte[]> materializedPacketBytes = new ArrayList<>(laneSnapshot.packetSnapshots().size());
         for (ChunkLanePacketSnapshot packetSnapshot : laneSnapshot.packetSnapshots().values()) {
+            if (packetSnapshot == null || !packetSnapshot.hasOriginalPacketBytes()) {
+                continue;
+            }
             materializedPacketBytes.add(packetSnapshot.copyOriginalPacketBytes());
         }
         return List.copyOf(materializedPacketBytes);

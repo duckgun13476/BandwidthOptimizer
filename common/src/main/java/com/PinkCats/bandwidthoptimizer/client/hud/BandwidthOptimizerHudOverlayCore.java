@@ -75,6 +75,12 @@ final class BandwidthOptimizerHudOverlayCore {
         if (lineStartsWithText(trimmedLine, "hud.bandwidthoptimizer.metric.create_gate")) {
             return HUD_SERVER_CACHE_COLOR;
         }
+        if (lineStartsWithText(trimmedLine, "hud.bandwidthoptimizer.metric.server_memory")) {
+            return HUD_SERVER_CACHE_COLOR;
+        }
+        if (lineStartsWithText(trimmedLine, "hud.bandwidthoptimizer.metric.server_jvm")) {
+            return HUD_SERVER_CACHE_COLOR;
+        }
         if (lineStartsWithText(trimmedLine, "hud.bandwidthoptimizer.metric.optimized_flow")) {
             return HUD_SERVER_FLOW_COLOR;
         }
@@ -189,6 +195,21 @@ final class BandwidthOptimizerHudOverlayCore {
                 + formatByteShare(serverBaselineBytes, snapshot.serverOutboundBypassBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.packet_raw") + " " + formatBytes(snapshot.serverOutboundRawEncodedBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.players") + " " + formatCount(snapshot.serverBoundPlayers()));
+        lines.add("  " + text("hud.bandwidthoptimizer.metric.server_memory") + " "
+                + formatBytes(snapshot.serverShadowRetainedOriginalBytes())
+                + "/" + formatBytes(snapshot.serverShadowOriginalBytesBudget())
+                + " | " + text("hud.bandwidthoptimizer.metric.chunk") + " "
+                + formatCount(snapshot.serverShadowChunkCount())
+                + " | " + text("hud.bandwidthoptimizer.metric.hash") + " "
+                + formatCount(snapshot.serverShadowMetadataPacketCount())
+                + " | " + text("hud.bandwidthoptimizer.metric.pkt") + " "
+                + formatCount(snapshot.serverShadowRetainedOriginalPacketCount())
+                + " | " + text("hud.bandwidthoptimizer.metric.trimmed") + " "
+                + formatBytes(snapshot.serverShadowEvictedOriginalBytes())
+                + "/" + formatCount(snapshot.serverShadowEvictedOriginalPackets()));
+        lines.add("  " + text("hud.bandwidthoptimizer.metric.server_jvm") + " "
+                + formatBytes(snapshot.serverJvmUsedBytes())
+                + "/" + formatBytes(snapshot.serverJvmMaxBytes()));
     }
 
     private static void addSummaryStatsLines(List<String> lines, BandwidthOptimizerHudStats.Snapshot snapshot) {

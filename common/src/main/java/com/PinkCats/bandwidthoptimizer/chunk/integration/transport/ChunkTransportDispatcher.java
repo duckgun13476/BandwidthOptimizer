@@ -707,6 +707,8 @@ public final class ChunkTransportDispatcher {
                 shortenHash(knownChunkSnapshot.knownSnapshotHash()),
                 storedFullBasePacketBytes.length,
                 0L,
+                1L,
+                System.currentTimeMillis(),
                 storedFullBasePacketBytes
         );
         return ChunkPatchBuilder.buildPatch(

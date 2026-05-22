@@ -23,6 +23,9 @@ public final class BlockEntityDataChunkPatchCodec {
         if (basePacketSnapshot == null) {
             return ChunkPatchBuilder.ChunkPatchBuildResult.unavailable("missing_base_packet");
         }
+        if (!basePacketSnapshot.hasOriginalPacketBytes()) {
+            return ChunkPatchBuilder.ChunkPatchBuildResult.unavailable("base_packet_bytes_evicted");
+        }
         if (targetPacketBytes == null) {
             return ChunkPatchBuilder.ChunkPatchBuildResult.unavailable("missing_target_packet");
         }

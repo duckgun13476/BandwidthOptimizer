@@ -87,6 +87,8 @@ def applySharedBandwidthOptimizerRunProperties = { Project projectRef, def runCo
             ['boChannelJsonlCaptureEnabled', 'bandwidthoptimizer.channelJsonlCaptureEnabled'],
             ['boChunkGlobalStoreBudgetBytes', 'bandwidthoptimizer.chunkGlobalStoreBudgetBytes'],
             ['boChunkGlobalStoreMaxVersionsPerChunk', 'bandwidthoptimizer.chunkGlobalStoreMaxVersionsPerChunk'],
+            ['boChunkServerShadowOriginalBytesBudgetBytes', 'bandwidthoptimizer.chunk.serverShadowOriginalBytesBudgetBytes'],
+            ['boChunkServerShadowMetadataEntryLimit', 'bandwidthoptimizer.chunk.serverShadowMetadataEntryLimit'],
             ['boChunkWatchBoundaryReuseMaxDeltaPackets', 'bandwidthoptimizer.chunk.watchBoundaryReuseMaxDeltaPackets'],
             ['boChunkWatchBoundaryReuseMaxDeltaBytesRatio', 'bandwidthoptimizer.chunk.watchBoundaryReuseMaxDeltaBytesRatio']
     ].each { List<String> mapping ->
@@ -243,6 +245,9 @@ def upsertRunAllProperty(List<String> args, String propertyName, String property
 def buildRunAllSharedGradleArgs(Project projectRef) {
 
     List<String> args = []
+    if (projectRef.gradle.startParameter.offline) {
+        args.add('--offline')
+    }
     args.addAll(buildExperientEnabledGradleArgs())
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientServerCommand')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientServerCommandDelayTicks')
@@ -275,6 +280,8 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChannelJsonlCaptureEnabled')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkGlobalStoreBudgetBytes')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkGlobalStoreMaxVersionsPerChunk')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkServerShadowOriginalBytesBudgetBytes')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkServerShadowMetadataEntryLimit')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkWatchBoundaryReuseMaxDeltaPackets')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkWatchBoundaryReuseMaxDeltaBytesRatio')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boClientChunkCacheMaxMemoryMb')
