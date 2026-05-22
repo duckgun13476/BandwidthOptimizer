@@ -130,9 +130,6 @@ final class BandwidthOptimizerHudOverlayCore {
         lines.add("  " + text("hud.bandwidthoptimizer.total_save") + " " + formatTrafficRatioPercent(snapshot.effectiveTotalRawBytes(), snapshot.effectiveTotalSentBytes())
                 + " | 2 min " + formatTrafficRatioPercent(snapshot.effectiveRecentRawBytes(), snapshot.effectiveRecentSentBytes())
                 + "  (" + formatFlow(snapshot.effectiveTotalRawBytes(), snapshot.effectiveTotalSentBytes()) + ")");
-        lines.add("  " + text("hud.bandwidthoptimizer.optimize") + " " + formatTrafficRatioPercent(snapshot.optimizeTotalRawBytes(), snapshot.optimizeTotalSentBytes())
-                + " | 2 min " + formatTrafficRatioPercent(snapshot.optimizeRecentRawBytes(), snapshot.optimizeRecentSentBytes())
-                + "  (" + formatFlow(snapshot.optimizeTotalRawBytes(), snapshot.optimizeTotalSentBytes()) + ")");
         lines.add(buildChunkCacheLine(snapshot));
         lines.add(buildChunkCacheSourceLine(snapshot));
         lines.add("  " + text("hud.bandwidthoptimizer.local_cache") + " " + formatBytes(snapshot.localCacheBytes())
