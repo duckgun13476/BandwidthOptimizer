@@ -1,3 +1,7 @@
+#### v2.7.7.17-beta
+1. Trim server shadow chunk cache(This may cause high memory usage)
+2. Validate persistent manifest reuse(Robust improve)
+
 #### v2.7.7.15-beta
 1. Fix Voxy chunk bound compat.
 2. Fix problem if full chunk packet is missing.
