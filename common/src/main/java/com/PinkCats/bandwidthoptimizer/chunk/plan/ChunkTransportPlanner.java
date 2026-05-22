@@ -134,6 +134,21 @@ public final class ChunkTransportPlanner {
             );
         }
 
+        if (shouldUsePersistentManifestCandidateReference(chunkSnapshot, snapshotFingerprint)
+                && costEstimate.refTransportBytes() > 0
+                && costEstimate.refTransportBytes() < costEstimate.fullTransportBytes()) {
+            return buildDecision(
+                    ChunkPlanDecisionKind.PUBLISH_REF,
+                    ChunkLocalCacheReuseStats.PERSISTENT_MANIFEST_REF_REASON,
+                    descriptor,
+                    snapshotFingerprint,
+                    chunkSnapshot,
+                    storeObservation,
+                    nextFullSnapshotVersion,
+                    costEstimate
+            );
+        }
+
         if (shouldUseReference(chunkSnapshot, snapshotFingerprint)
                 && costEstimate.refTransportBytes() > 0
                 && costEstimate.refTransportBytes() < costEstimate.fullTransportBytes()) {
@@ -387,6 +402,19 @@ public final class ChunkTransportPlanner {
         return "reuse_acknowledged_full_snapshot";
     }
 
+    // Restart manifests are candidates until the current full snapshot hash proves they still match.
+    private static boolean shouldUsePersistentManifestCandidateReference(
+            ChunkPeerChunkStateSnapshot chunkSnapshot,
+            ChunkSnapshotFingerprint snapshotFingerprint
+    ) {
+        return chunkSnapshot != null
+                && chunkSnapshot.persistentClientManifestCandidate()
+                && chunkSnapshot.persistentClientManifestCandidateHash() != null
+                && !chunkSnapshot.persistentClientManifestCandidateHash().isBlank()
+                && snapshotFingerprint != null
+                && chunkSnapshot.persistentClientManifestCandidateHash().equals(snapshotFingerprint.hashHex());
+    }
+
     private static boolean shouldUseWatchBoundaryReuseProbe(
             ChunkPeerChunkStateSnapshot chunkSnapshot,
             ChunkSnapshotFingerprint snapshotFingerprint,
@@ -451,7 +479,7 @@ public final class ChunkTransportPlanner {
         return chunkSnapshot.deltaBytesSinceFullSnapshot() < deltaBytesBudget;
     }
 
-    // 这里沿用 watch boundary 的预算口径：累计变化次数不能超标，同时 patch 体积也必须小于 full 的预算比例。
+    // Reuse the watch-boundary budget: both mutation count and patch bytes must stay below limits.
     private static boolean isWatchBoundaryRefreshPatchWithinBudget(
             ChunkPeerChunkStateSnapshot chunkSnapshot,
             ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult
@@ -727,7 +755,7 @@ public final class ChunkTransportPlanner {
                 && snapshotFingerprint.hashHex().equals(chunkSnapshot.knownSnapshotHash());
     }
 
-    // 这里统一估算 full/ref/patch 的传输成本，full-chunk 的 watch boundary patch 也复用这套估算。
+    // Keep full/ref/patch cost estimates consistent across normal and watch-boundary planning.
     private static ChunkPlanCostEstimate estimatePlanCosts(
             ChunkPacketDescriptor descriptor,
             ChunkSnapshotFingerprint snapshotFingerprint,

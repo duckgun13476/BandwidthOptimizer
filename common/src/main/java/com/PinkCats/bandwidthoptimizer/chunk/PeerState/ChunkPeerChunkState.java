@@ -28,6 +28,10 @@ final class ChunkPeerChunkState {
     private String lastPayloadHash = "";
     private String lastPayloadShortHash = "";
     private boolean persistentClientManifestAcknowledged;
+    private boolean persistentClientManifestCandidate;
+    private String persistentClientManifestCandidateHash = "";
+    private String persistentClientManifestCandidateShortHash = "";
+    private int persistentClientManifestCandidateEncodedBytes;
     private int lastEncodedBytes;
     private int lastFullSnapshotEncodedBytes;
     private long lastObservedChannelPacketCount;
@@ -95,6 +99,14 @@ final class ChunkPeerChunkState {
         this.deltaBytesSinceFullSnapshot = 0L;
         this.lastFullSnapshotEncodedBytes = this.lastEncodedBytes;
         this.fullReplayRequiredBeforeDelta = false;
+        if (this.persistentClientManifestCandidate
+                && this.lastPayloadHash != null
+                && this.lastPayloadHash.equals(this.persistentClientManifestCandidateHash)) {
+            this.persistentClientManifestAcknowledged = true;
+        } else if (this.persistentClientManifestCandidate) {
+            this.persistentClientManifestAcknowledged = false;
+            clearPersistentManifestCandidate();
+        }
     }
 
 
@@ -120,6 +132,7 @@ final class ChunkPeerChunkState {
         this.acknowledgedSnapshotVersion = fullSnapshotVersion;
         this.acknowledgedSnapshotHash = acknowledgedSnapshotHash;
         this.fullReplayRequiredBeforeDelta = false;
+        clearPersistentManifestCandidate();
         return snapshot();
     }
 
@@ -142,6 +155,7 @@ final class ChunkPeerChunkState {
         this.sectionBlocksLaneVersion = 0L;
         this.blockLaneVersion = 0L;
         this.blockEntityLaneVersion = 0L;
+        clearPersistentManifestCandidate();
         return snapshot();
     }
 
@@ -155,36 +169,19 @@ final class ChunkPeerChunkState {
         if (payloadHash == null || payloadHash.isBlank()) {
             return snapshot();
         }
-        if (this.knownSnapshotPublished
-                && this.knownSnapshotHash != null
-                && !this.knownSnapshotHash.isBlank()
-                && !this.knownSnapshotHash.equals(payloadHash)) {
-            return snapshot();
-        }
 
         this.epoch = Math.max(epoch, 0L);
-        this.knownSnapshotPublished = true;
-        this.receiverSnapshotAcknowledged = true;
-        this.persistentClientManifestAcknowledged = true;
-        this.fullReplayRequiredBeforeDelta = false;
-        this.fullSnapshotVersion = Math.max(Math.max(this.fullSnapshotVersion, fullSnapshotVersion), 1L);
-        this.acknowledgedSnapshotVersion = this.fullSnapshotVersion;
-        this.knownSnapshotHash = payloadHash;
-        this.knownSnapshotShortHash = shortenHash(payloadHash);
-        this.acknowledgedSnapshotHash = payloadHash;
+        this.persistentClientManifestAcknowledged = false;
+        this.persistentClientManifestCandidate = true;
+        this.persistentClientManifestCandidateHash = payloadHash;
+        this.persistentClientManifestCandidateShortHash = shortenHash(payloadHash);
+        this.persistentClientManifestCandidateEncodedBytes = Math.max(encodedBytes, 0);
         this.lastPayloadHash = payloadHash;
-        this.lastPayloadShortHash = this.knownSnapshotShortHash;
+        this.lastPayloadShortHash = this.persistentClientManifestCandidateShortHash;
         this.lastHotspotKind = ChunkHotspotKind.FULL_CHUNK.logName();
         this.lastLaneKind = "full";
         this.lastEncodedBytes = Math.max(encodedBytes, 0);
-        this.lastFullSnapshotEncodedBytes = Math.max(encodedBytes, 0);
         this.lastObservedAtMillis = this.lastAcknowledgedAtMillis;
-        this.lightLaneVersion = 0L;
-        this.sectionBlocksLaneVersion = 0L;
-        this.blockLaneVersion = 0L;
-        this.blockEntityLaneVersion = 0L;
-        this.deltaPacketCountSinceFullSnapshot = 0L;
-        this.deltaBytesSinceFullSnapshot = 0L;
         return snapshot();
     }
 
@@ -211,6 +208,14 @@ final class ChunkPeerChunkState {
         this.persistentClientManifestAcknowledged = false;
         this.acknowledgedSnapshotVersion = 0L;
         this.acknowledgedSnapshotHash = "";
+    }
+
+    // Clear manifest candidates after validation or rejection so stale restart data cannot affect later planning.
+    private void clearPersistentManifestCandidate() {
+        this.persistentClientManifestCandidate = false;
+        this.persistentClientManifestCandidateHash = "";
+        this.persistentClientManifestCandidateShortHash = "";
+        this.persistentClientManifestCandidateEncodedBytes = 0;
     }
 
     private static String shortenHash(String hashHex) {
@@ -252,7 +257,11 @@ final class ChunkPeerChunkState {
                 this.lastAcknowledgedAtMillis,
                 this.lastNegativeAckAtMillis,
                 this.lastInvalidatedAtMillis,
-                this.persistentClientManifestAcknowledged
+                this.persistentClientManifestAcknowledged,
+                this.persistentClientManifestCandidate,
+                this.persistentClientManifestCandidateHash,
+                this.persistentClientManifestCandidateShortHash,
+                this.persistentClientManifestCandidateEncodedBytes
         );
     }
 }

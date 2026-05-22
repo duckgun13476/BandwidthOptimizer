@@ -663,7 +663,11 @@ public final class ChunkTransportDispatcher {
                 snapshot.lastAcknowledgedAtMillis(),
                 snapshot.lastNegativeAckAtMillis(),
                 snapshot.lastInvalidatedAtMillis(),
-                false
+                false,
+                snapshot.persistentClientManifestCandidate(),
+                snapshot.persistentClientManifestCandidateHash(),
+                snapshot.persistentClientManifestCandidateShortHash(),
+                snapshot.persistentClientManifestCandidateEncodedBytes()
         );
     }
 

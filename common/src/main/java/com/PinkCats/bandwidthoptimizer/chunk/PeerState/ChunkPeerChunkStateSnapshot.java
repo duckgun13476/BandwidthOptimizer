@@ -30,7 +30,11 @@ public record ChunkPeerChunkStateSnapshot(
         long lastAcknowledgedAtMillis,
         long lastNegativeAckAtMillis,
         long lastInvalidatedAtMillis,
-        boolean persistentClientManifestAcknowledged
+        boolean persistentClientManifestAcknowledged,
+        boolean persistentClientManifestCandidate,
+        String persistentClientManifestCandidateHash,
+        String persistentClientManifestCandidateShortHash,
+        int persistentClientManifestCandidateEncodedBytes
 ) {
 
     public String summaryText() {
@@ -54,7 +58,10 @@ public record ChunkPeerChunkStateSnapshot(
                 + ", lastPayloadHash=" + this.lastPayloadShortHash
                 + ", lastEncodedBytes=" + this.lastEncodedBytes
                 + ", lastFullSnapshotBytes=" + this.lastFullSnapshotEncodedBytes
-                + ", persistentManifestAcked=" + this.persistentClientManifestAcknowledged;
+                + ", persistentManifestAcked=" + this.persistentClientManifestAcknowledged
+                + ", persistentManifestCandidate=" + this.persistentClientManifestCandidate
+                + ", persistentManifestCandidateHash=" + this.persistentClientManifestCandidateShortHash
+                + ", persistentManifestCandidateBytes=" + this.persistentClientManifestCandidateEncodedBytes;
     }
 
     private static String shortenHash(String hashHex) {
