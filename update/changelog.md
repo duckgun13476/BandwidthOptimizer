@@ -1,3 +1,8 @@
+#### v2.7.8.18-beta
+1. Improved Sable dynamic structure chunk sync compatibility.
+2. Added Valkyrien Skies dynamic structure payload boundary handling.
+3. Fixed Create update visibility checks on moving dynamic structures.
+
 #### v2.7.7.17-beta
 1. Trim server shadow chunk cache(This may cause high memory usage)
 2. Validate persistent manifest reuse(Robust improve)
