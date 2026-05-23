@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.CustomPayloadPacketCompat;
 import com.PinkCats.bandwidthoptimizer.compat.sable.SableChunkSyncCompat;
+import com.PinkCats.bandwidthoptimizer.compat.valkyrienskies.ValkyrienSkiesChunkSyncCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -75,11 +76,16 @@ public final class ChannelTransportControlPlane {
             return TransportControlDecision.forceDirect("protocol_boundary_non_play");
         }
 
-        //Sable compat
+        // Dynamic structure payloads are timing boundaries.
         SableChunkSyncCompat.PayloadDecision sablePayloadDecision =
                 SableChunkSyncCompat.observeOutboundPayload(context, packet);
         if (sablePayloadDecision.forceDirectTransport()) {
             return TransportControlDecision.forceDirect(sablePayloadDecision.reason());
+        }
+        ValkyrienSkiesChunkSyncCompat.PayloadDecision valkyrienSkiesPayloadDecision =
+                ValkyrienSkiesChunkSyncCompat.observeOutboundPayload(context, packet);
+        if (valkyrienSkiesPayloadDecision.forceDirectTransport()) {
+            return TransportControlDecision.forceDirect(valkyrienSkiesPayloadDecision.reason());
         }
 
         ImmediateTransportProfile immediateTransportProfile = classifyImmediateTransport(packet);

@@ -184,6 +184,24 @@ tasks.register('runChannelTransportRoundTrip', JavaExec) {
     )
 }
 
+tasks.register('runSableChunkSyncCompatRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies Sable dynamic-structure chunk sync lifecycle tracking.',
+            'com.PinkCats.bandwidthoptimizer.test.SableChunkSyncCompatRegressionMain'
+    )
+}
+
+tasks.register('runOptionalDynamicCompatAbsentRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies optional dynamic-structure compatibility is a no-op without optional mods.',
+            'com.PinkCats.bandwidthoptimizer.test.OptionalDynamicCompatAbsentRegressionMain'
+    )
+}
+
 // run Gradle run mission.
 def startExistingRunTaskProcess(File projectDir, boolean isWindows, String wrapperPath, String taskName, List<String> extraGradleArgs, String taskArgs, File outputFile, String consoleLabel) {
     outputFile.parentFile.mkdirs()

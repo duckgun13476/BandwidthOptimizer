@@ -4,6 +4,8 @@ import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.BlockEntityTypeKeyCompat;
+import com.PinkCats.bandwidthoptimizer.compat.sable.SableDynamicStructureCompat;
+import com.PinkCats.bandwidthoptimizer.compat.valkyrienskies.ValkyrienSkiesDynamicStructureCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -212,8 +214,10 @@ public final class CreateBlockEntityUpdateGate {
         state.bind(player, context.channel().id().asLongText());
         PendingKey key = PendingKey.of(blockEntityTypeKey, blockEntityDataPacket.getPos());
         boolean soundCritical = state.rememberSoundStateAndShouldFlush(key, blockEntityDataPacket.getTag());
-        if (shouldSendImmediately(player, blockEntityDataPacket.getPos())
-                || soundCritical && isWithinSoundSendDistance(player, blockEntityDataPacket.getPos(), blockEntityTypeKey)) {
+        DynamicTarget dynamicTarget = resolveDynamicTarget(player, blockEntityDataPacket.getPos());
+        if (dynamicTarget.forceImmediate()
+                || shouldSendImmediately(player, dynamicTarget.target())
+                || soundCritical && isWithinSoundSendDistance(player, dynamicTarget.target(), blockEntityTypeKey)) {
             recordDropped(state.forgetPending(key));
             return false;
         }
@@ -317,12 +321,11 @@ public final class CreateBlockEntityUpdateGate {
         return state == null ? null : state.player();
     }
 
-    private static boolean shouldSendImmediately(ServerPlayer player, BlockPos pos) {
-        if (player == null || pos == null) {
+    private static boolean shouldSendImmediately(ServerPlayer player, Vec3 target) {
+        if (player == null || target == null) {
             return true;
         }
         Vec3 eyePosition = player.getEyePosition();
-        Vec3 target = new Vec3(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
         Vec3 offset = target.subtract(eyePosition);
         double distanceSqr = offset.lengthSqr();
         double nearDistance = alwaysSendDistanceBlocks();
@@ -394,13 +397,31 @@ public final class CreateBlockEntityUpdateGate {
                 128.0D);
     }
 
-    private static boolean isWithinSoundSendDistance(ServerPlayer player, BlockPos pos, ResourceLocation typeKey) {
-        if (player == null || pos == null || typeKey == null) {
+    private static boolean isWithinSoundSendDistance(ServerPlayer player, Vec3 target, ResourceLocation typeKey) {
+        if (player == null || target == null || typeKey == null) {
             return true;
         }
         double soundDistance = soundSendDistanceBlocks(typeKey);
-        Vec3 target = new Vec3(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
         return player.getEyePosition().distanceToSqr(target) <= soundDistance * soundDistance;
+    }
+
+    private static DynamicTarget resolveDynamicTarget(ServerPlayer player, BlockPos pos) {
+        Vec3 vanillaTarget = centerOf(pos);
+        SableDynamicStructureCompat.DynamicTarget sableTarget =
+                SableDynamicStructureCompat.resolveTarget(player, pos, vanillaTarget);
+        if (sableTarget.forceImmediate() || sableTarget.transformed()) {
+            return new DynamicTarget(sableTarget.target(), sableTarget.forceImmediate());
+        }
+        ValkyrienSkiesDynamicStructureCompat.DynamicTarget valkyrienSkiesTarget =
+                ValkyrienSkiesDynamicStructureCompat.resolveTarget(player, pos, vanillaTarget);
+        return new DynamicTarget(valkyrienSkiesTarget.target(), valkyrienSkiesTarget.forceImmediate());
+    }
+
+    private static Vec3 centerOf(BlockPos pos) {
+        if (pos == null) {
+            return null;
+        }
+        return new Vec3(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
     }
 
     private static double soundSendDistanceBlocks(ResourceLocation typeKey) {
@@ -466,6 +487,8 @@ public final class CreateBlockEntityUpdateGate {
             return new PendingKey(typeKey, pos, pos.getX() >> 4, pos.getZ() >> 4);
         }
     }
+
+    private record DynamicTarget(Vec3 target, boolean forceImmediate) {}
 
     public record Snapshot(
             long delayedPackets,
@@ -712,7 +735,9 @@ public final class CreateBlockEntityUpdateGate {
             while (iterator.hasNext()) {
                 Map.Entry<PendingKey, PendingUpdate> entry = iterator.next();
                 PendingUpdate pendingUpdate = entry.getValue();
-                boolean visible = shouldSendImmediately(player, pendingUpdate.key().pos());
+                DynamicTarget dynamicTarget = resolveDynamicTarget(player, pendingUpdate.key().pos());
+                boolean visible = dynamicTarget.forceImmediate()
+                        || shouldSendImmediately(player, dynamicTarget.target());
                 boolean expired = nowNanos - pendingUpdate.firstQueuedNanos() >= maxDelayNanos;
                 if (!visible && !expired) {
                     continue;
