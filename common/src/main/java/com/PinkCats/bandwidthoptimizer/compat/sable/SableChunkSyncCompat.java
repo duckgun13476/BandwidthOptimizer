@@ -26,12 +26,15 @@ public final class SableChunkSyncCompat {
     private static final String START_TRACKING_SUB_LEVEL = "sable:start_tracking_sub_level";
     private static final String FINALIZE_SUB_LEVEL = "sable:finalize_sub_level";
     private static final String STOP_TRACKING_SUB_LEVEL = "sable:stop_tracking_sub_level";
+    private static final String CHANGE_BOUNDS_SUB_LEVEL = "sable:change_bounds_sublevel";
+    private static final String RECENTLY_SPLIT_SUB_LEVEL = "sable:recently_split_sub_level";
+    private static final String STOP_MOVING_SUB_LEVEL = "sable:stop_moving_sub_level";
     private static final int MAX_TRACKED_PLOTS = 256;
     private static final int MAX_CHUNKS_PER_PLOT = 2048;
 
     private SableChunkSyncCompat() {}
 
-    //Sable compat
+    // Track Sable sub-level sync boundaries so chunk transport can fall back safely.
     public static PayloadDecision observeOutboundPayload(ChannelHandlerContext context, Packet<?> packet) {
         String payloadChannel = normalizePayloadChannel(CustomPayloadPacketCompat.payloadChannel(packet));
         if (context == null || payloadChannel.isBlank() || !payloadChannel.startsWith(SABLE_CHANNEL_PREFIX)) {
@@ -54,6 +57,20 @@ public final class SableChunkSyncCompat {
             int invalidatedChunks = invalidateTrackedPlot(context, state, plotCoordinate);
             logPayloadBoundary(context, "stop", payloadChannel, plotCoordinate, invalidatedChunks);
             return PayloadDecision.forceDirect("sable_stop_tracking_sub_level");
+        }
+        if (CHANGE_BOUNDS_SUB_LEVEL.equals(payloadChannel)) {
+            int invalidatedChunks = invalidateTrackedPlot(context, state, plotCoordinate);
+            logPayloadBoundary(context, "change_bounds", payloadChannel, plotCoordinate, invalidatedChunks);
+            return PayloadDecision.forceDirect("sable_change_bounds_sublevel");
+        }
+        if (RECENTLY_SPLIT_SUB_LEVEL.equals(payloadChannel)) {
+            state.clearInitialSync();
+            logPayloadBoundary(context, "recently_split", payloadChannel, plotCoordinate, 0);
+            return PayloadDecision.forceDirect("sable_recently_split_sub_level");
+        }
+        if (STOP_MOVING_SUB_LEVEL.equals(payloadChannel)) {
+            logPayloadBoundary(context, "stop_moving", payloadChannel, plotCoordinate, 0);
+            return PayloadDecision.forceDirect("sable_stop_moving_sub_level");
         }
         return state.isInitialSyncActive()
                 ? PayloadDecision.forceDirect("sable_initial_sync_payload_boundary")
@@ -94,11 +111,13 @@ public final class SableChunkSyncCompat {
             SableSyncState state,
             Long plotCoordinate
     ) {
-        if (context == null || state == null || plotCoordinate == null) {
+        if (context == null || state == null) {
             return 0;
         }
 
-        Set<ChunkPacketCoordinate> trackedChunks = state.removeTrackedPlot(plotCoordinate);
+        Set<ChunkPacketCoordinate> trackedChunks = plotCoordinate == null
+                ? state.removeUnknownTrackedChunks()
+                : state.removeTrackedPlot(plotCoordinate);
         int invalidatedChunks = 0;
         for (ChunkPacketCoordinate coordinate : trackedChunks) {
             if (coordinate == null || !coordinate.present()) {
@@ -146,7 +165,10 @@ public final class SableChunkSyncCompat {
     private static boolean isLifecyclePayload(String payloadChannel) {
         return START_TRACKING_SUB_LEVEL.equals(payloadChannel)
                 || FINALIZE_SUB_LEVEL.equals(payloadChannel)
-                || STOP_TRACKING_SUB_LEVEL.equals(payloadChannel);
+                || STOP_TRACKING_SUB_LEVEL.equals(payloadChannel)
+                || CHANGE_BOUNDS_SUB_LEVEL.equals(payloadChannel)
+                || RECENTLY_SPLIT_SUB_LEVEL.equals(payloadChannel)
+                || STOP_MOVING_SUB_LEVEL.equals(payloadChannel);
     }
 
     private static void logPayloadBoundary(
@@ -184,10 +206,13 @@ public final class SableChunkSyncCompat {
     }
 
     private static final class SableSyncState {
+        private boolean initialSyncActive;
         private Long activeInitialSyncPlot;
         private final LinkedHashMap<Long, LinkedHashSet<ChunkPacketCoordinate>> chunksByPlot = new LinkedHashMap<>();
+        private final LinkedHashSet<ChunkPacketCoordinate> unknownInitialSyncChunks = new LinkedHashSet<>();
 
         private synchronized void beginInitialSync(Long plotCoordinate) {
+            this.initialSyncActive = true;
             this.activeInitialSyncPlot = plotCoordinate;
             if (plotCoordinate != null) {
                 this.chunksByPlot.put(plotCoordinate, new LinkedHashSet<>());
@@ -197,13 +222,19 @@ public final class SableChunkSyncCompat {
 
         private synchronized int finishInitialSync(Long plotCoordinate) {
             Long resolvedPlot = plotCoordinate == null ? this.activeInitialSyncPlot : plotCoordinate;
-            int trackedChunks = trackedChunkCount(resolvedPlot);
+            int trackedChunks = resolvedPlot == null ? this.unknownInitialSyncChunks.size() : trackedChunkCount(resolvedPlot);
+            this.initialSyncActive = false;
             this.activeInitialSyncPlot = null;
             return trackedChunks;
         }
 
         private synchronized boolean isInitialSyncActive() {
-            return this.activeInitialSyncPlot != null;
+            return this.initialSyncActive;
+        }
+
+        private synchronized void clearInitialSync() {
+            this.initialSyncActive = false;
+            this.activeInitialSyncPlot = null;
         }
 
         private synchronized String activePlotText() {
@@ -213,7 +244,19 @@ public final class SableChunkSyncCompat {
         }
 
         private synchronized void rememberInitialSyncChunk(ChunkPacketCoordinate coordinate) {
-            if (this.activeInitialSyncPlot == null || coordinate == null || !coordinate.present()) {
+            if (!this.initialSyncActive || coordinate == null || !coordinate.present()) {
+                return;
+            }
+            if (this.activeInitialSyncPlot == null) {
+                this.unknownInitialSyncChunks.add(coordinate);
+                while (this.unknownInitialSyncChunks.size() > MAX_CHUNKS_PER_PLOT) {
+                    Iterator<ChunkPacketCoordinate> iterator = this.unknownInitialSyncChunks.iterator();
+                    if (!iterator.hasNext()) {
+                        break;
+                    }
+                    iterator.next();
+                    iterator.remove();
+                }
                 return;
             }
             LinkedHashSet<ChunkPacketCoordinate> chunks = this.chunksByPlot.computeIfAbsent(
@@ -234,10 +277,21 @@ public final class SableChunkSyncCompat {
 
         private synchronized Set<ChunkPacketCoordinate> removeTrackedPlot(long plotCoordinate) {
             LinkedHashSet<ChunkPacketCoordinate> chunks = this.chunksByPlot.remove(plotCoordinate);
-            if (this.activeInitialSyncPlot != null && plotCoordinate == this.activeInitialSyncPlot) {
-                this.activeInitialSyncPlot = null;
+            if (this.activeInitialSyncPlot != null && this.activeInitialSyncPlot.equals(plotCoordinate)) {
+                clearInitialSync();
             }
             return chunks == null ? Set.of() : Set.copyOf(chunks);
+        }
+
+        private synchronized Set<ChunkPacketCoordinate> removeUnknownTrackedChunks() {
+            if (this.unknownInitialSyncChunks.isEmpty()) {
+                clearInitialSync();
+                return Set.of();
+            }
+            Set<ChunkPacketCoordinate> chunks = Set.copyOf(this.unknownInitialSyncChunks);
+            this.unknownInitialSyncChunks.clear();
+            clearInitialSync();
+            return chunks;
         }
 
         private synchronized int trackedChunkCount(Long plotCoordinate) {
