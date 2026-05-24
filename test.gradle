@@ -211,6 +211,15 @@ tasks.register('runProtocolLibProxyChannelIdRegression', JavaExec) {
     )
 }
 
+tasks.register('runBungeeCordPluginMessageCompatRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies BungeeCord plugin messages stay visible to proxy-side login/session plugins.',
+            'com.PinkCats.bandwidthoptimizer.test.BungeeCordPluginMessageCompatRegressionMain'
+    )
+}
+
 // run Gradle run mission.
 def startExistingRunTaskProcess(File projectDir, boolean isWindows, String wrapperPath, String taskName, List<String> extraGradleArgs, String taskArgs, File outputFile, String consoleLabel) {
     outputFile.parentFile.mkdirs()

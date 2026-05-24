@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
+import com.PinkCats.bandwidthoptimizer.compat.bungeecord.BungeeCordPluginMessageCompat;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.CustomPayloadPacketCompat;
 import com.PinkCats.bandwidthoptimizer.compat.sable.SableChunkSyncCompat;
 import com.PinkCats.bandwidthoptimizer.compat.valkyrienskies.ValkyrienSkiesChunkSyncCompat;
@@ -203,6 +204,9 @@ public final class ChannelTransportControlPlane {
         }
         if (DIRECT_CUSTOM_PAYLOAD_CHANNELS.contains(payloadChannel)) {
             return BoundaryProfile.customPayload("protocol_channel", packetClassName, payloadChannel);
+        }
+        if (BungeeCordPluginMessageCompat.isProxyControlChannel(payloadChannel)) {
+            return BoundaryProfile.customPayload("proxy_control_channel", packetClassName, payloadChannel);
         }
         if (packetClassName.endsWith("ServerboundCustomPayloadPacket")) {
             return BoundaryProfile.customPayload("serverbound_channel", packetClassName, payloadChannel);
