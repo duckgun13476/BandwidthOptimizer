@@ -1338,7 +1338,7 @@ public final class ChannelTransportHooks {
 
 
     private static String channelIdText(ChannelHandlerContext context) {
-        return context == null || context.channel() == null ? "<null>" : context.channel().id().asShortText();
+        return context == null || context.channel() == null ? "<null>" : com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(context.channel());
     }
 
 

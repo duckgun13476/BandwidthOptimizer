@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.server.stat;
 
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ConnectionAccessor;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ServerGamePacketListenerImplAccessor;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotReport;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
@@ -48,7 +49,7 @@ public final class ServerBandwidthStatsRegistry {
             return existingStats;
         }
 
-        String channelId = channel.id() == null ? "<unknown-channel>" : channel.id().asLongText();
+        String channelId = ChannelIdentity.longText(channel);
         ChannelBandwidthStats newStats = new ChannelBandwidthStats(channelId);
         ChannelBandwidthStats racedStats = channel.attr(CHANNEL_STATS_KEY).setIfAbsent(newStats);
         ChannelBandwidthStats resolvedStats = racedStats == null ? newStats : racedStats;
@@ -71,7 +72,7 @@ public final class ServerBandwidthStatsRegistry {
         UUID playerId = player.getUUID();
         String playerName = player.getGameProfile() == null ? "<unknown-player>" : player.getGameProfile().getName();
         stats.bindPlayer(playerId, playerName);
-        PLAYER_CHANNELS.put(playerId, channel.id().asLongText());
+        PLAYER_CHANNELS.put(playerId, ChannelIdentity.longText(channel));
     }
 
 

@@ -343,7 +343,7 @@ public final class ChunkTransportControlFrameSender {
             if (DebugRuntimeConfig.isDiagnoseEnabled()) {
                 Bandwidthoptimizer.LOGGER.info(
                         "[ChunkTransport][Control][Send] channel={}, op={}, epoch={}, observedPackets={}, chunk={}, fullVersion={}, payloadHash={}, payloadBytes={}, reason={}",
-                        channel.id().asLongText(),
+                        com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
                         frame.operation().logName(),
                         frame.epoch(),
                         frame.observedPacketCount(),

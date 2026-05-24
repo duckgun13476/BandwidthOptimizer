@@ -56,7 +56,7 @@ public final class ChannelTransportControlPlane {
                         "[Transport][ListenerPolicy][Observe] action={}, packetClass={}, channel={}",
                         listenerTransportPolicy.logAction(),
                         packetClassName(packet),
-                        channel.id().asShortText()
+                        com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(channel)
                 );
             }
         }
@@ -95,7 +95,7 @@ public final class ChannelTransportControlPlane {
                         "[Transport][ImmediatePolicy][Consume] reason={}, packetClass={}, channel={}",
                         immediateTransportProfile.reason(),
                         packetClassName(packet),
-                        context.channel().id().asShortText()
+                        com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(context.channel())
                 );
             }
             return TransportControlDecision.forceImmediateTransport(immediateTransportProfile.reason());
@@ -112,7 +112,7 @@ public final class ChannelTransportControlPlane {
                         "[Transport][ListenerPolicy][Consume] action={}, packetClass={}, channel={}",
                         listenerTransportPolicy.logAction(),
                         packetClassName(packet),
-                        context.channel().id().asShortText()
+                        com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(context.channel())
                 );
             }
             return TransportControlDecision.forceImmediateTransport("packet_send_listener_immediate_transport");
@@ -123,7 +123,7 @@ public final class ChannelTransportControlPlane {
                         "[Transport][ListenerPolicy][Consume] action={}, packetClass={}, channel={}",
                         listenerTransportPolicy.logAction(),
                         packetClassName(packet),
-                        context.channel().id().asShortText()
+                        com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(context.channel())
                 );
             }
             return TransportControlDecision.forceDirect("packet_send_listener");

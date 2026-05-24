@@ -84,7 +84,7 @@ public final class ChannelTransportBypassRankLogger {
             return "<no-channel>";
         }
         try {
-            return context.channel().id().asShortText();
+            return com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(context.channel());
         } catch (Throwable ignored) {
             return "<unknown-channel>";
         }

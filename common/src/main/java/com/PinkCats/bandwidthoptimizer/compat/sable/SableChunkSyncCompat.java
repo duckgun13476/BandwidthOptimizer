@@ -90,7 +90,7 @@ public final class SableChunkSyncCompat {
         if (DebugRuntimeConfig.isDiagnoseEnabled()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[SableCompat][ChunkForceFull] channel={}, plot={}, chunk={}",
-                    context.channel().id().asShortText(),
+                    com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(context.channel()),
                     state.activePlotText(),
                     descriptor.coordinate().logText()
             );
@@ -185,7 +185,7 @@ public final class SableChunkSyncCompat {
                 "[SableCompat][Payload] action={}, channel={}, nettyChannel={}, plot={}, chunks={}",
                 action,
                 payloadChannel,
-                context.channel().id().asShortText(),
+                com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(context.channel()),
                 plotCoordinate == null ? "<unknown>" : coordinateFromPlot(plotCoordinate).logText(),
                 chunkCount
         );

@@ -119,7 +119,7 @@ public final class ChunkClientCacheBudgetManager {
             return;
         }
 
-        String currentChannelId = channel.id().asLongText();
+        String currentChannelId = com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel);
         String safeReason = reason == null || reason.isBlank() ? "client_cache_budget_trim" : reason;
         for (ChunkShadowSnapshotManager.EvictedChunkSnapshot evictedChunk : evictedChunks) {
             if (evictedChunk == null
@@ -148,7 +148,7 @@ public final class ChunkClientCacheBudgetManager {
             return;
         }
 
-        String currentChannelId = channel.id().asLongText();
+        String currentChannelId = com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel);
         String safeReasonPrefix = reason == null || reason.isBlank() ? "client_cache_budget_trim" : reason;
         for (ChunkRuntimeReferenceStore.EvictedFullSnapshot evictedFullSnapshot : evictedFullSnapshots) {
             if (evictedFullSnapshot == null
@@ -194,7 +194,7 @@ public final class ChunkClientCacheBudgetManager {
         }
 
         ChunkClientTrimmedFullBaseStore.recordTrimmedFullBase(
-                channel.id().asLongText(),
+                com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
                 scopeId,
                 coordinate,
                 fullSnapshotVersion,

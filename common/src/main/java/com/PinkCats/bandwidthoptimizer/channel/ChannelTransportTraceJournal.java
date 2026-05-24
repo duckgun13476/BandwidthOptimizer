@@ -52,7 +52,7 @@ public final class ChannelTransportTraceJournal {
         if (journal == null) {
             return;
         }
-        journal.dump(channel.id().asShortText(), reason, throwable);
+        journal.dump(com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(channel), reason, throwable);
     }
 
     private static TraceJournal getOrCreateJournal(Channel channel) {

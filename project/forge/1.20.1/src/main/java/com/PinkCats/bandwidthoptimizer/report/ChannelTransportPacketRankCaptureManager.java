@@ -77,7 +77,7 @@ public final class ChannelTransportPacketRankCaptureManager {
                 packetRankActive ? activeCaptureSession.sessionId() : -1L,
                 packetRankActive ? activeCaptureSession.nextCaptureIndex().incrementAndGet() : 0L,
                 System.currentTimeMillis(),
-                context.channel().id().asLongText(),
+                com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()),
                 packet.getClass().getName(),
                 ChannelTransportPacketRankSourceResolver.resolveSourceKey(packet),
                 tryReadLeadingVarInt(rawPacketBytes),

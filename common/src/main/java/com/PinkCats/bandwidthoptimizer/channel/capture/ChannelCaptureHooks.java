@@ -146,7 +146,7 @@ public final class ChannelCaptureHooks {
 
 
     private static String readChannelId(ChannelHandlerContext context) {
-        return context == null ? "<null-channel>" : context.channel().id().asLongText();
+        return context == null ? "<null-channel>" : com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel());
     }
 
     private static int tryReadLeadingVarInt(byte[] encodedBytes) {

@@ -202,6 +202,15 @@ tasks.register('runOptionalDynamicCompatAbsentRegression', JavaExec) {
     )
 }
 
+tasks.register('runProtocolLibProxyChannelIdRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies channel identity survives ProtocolLib proxy channels without Channel.id().',
+            'com.PinkCats.bandwidthoptimizer.test.ProtocolLibProxyChannelIdRegressionMain'
+    )
+}
+
 // run Gradle run mission.
 def startExistingRunTaskProcess(File projectDir, boolean isWindows, String wrapperPath, String taskName, List<String> extraGradleArgs, String taskArgs, File outputFile, String consoleLabel) {
     outputFile.parentFile.mkdirs()

@@ -51,7 +51,7 @@ public final class ChunkOutboundObservationService {
         ChunkPeerChunkStateSnapshot chunkSnapshotBeforeObserve =
                 ChunkPeerStateManager.snapshotOutboundChunk(context, currentScopeId, descriptor.coordinate());
         ChunkShadowSnapshot localChunkSnapshotBeforeObserve =
-                ChunkShadowSnapshotManager.snapshotChunk(context.channel().id().asLongText(), currentScopeId, descriptor.coordinate());
+                ChunkShadowSnapshotManager.snapshotChunk(com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()), currentScopeId, descriptor.coordinate());
         recordTwoPointFullChunkProgress(context, descriptor);
         logTwoPointFullChunkBeforePlan(
                 context,
@@ -115,7 +115,7 @@ public final class ChunkOutboundObservationService {
 
         Bandwidthoptimizer.LOGGER.info(
                 "[ChunkTwoPoint][BeforePlan] channel={}, chunk={}, payloadHash={}, encodedBytes={}, peerState={}, localShadow={}",
-                context.channel().id().asLongText(),
+                com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()),
                 descriptor.coordinate().logText(),
                 snapshotFingerprint == null ? "<none>" : snapshotFingerprint.shortHash(),
                 snapshotFingerprint == null ? 0 : Math.max(snapshotFingerprint.encodedBytes(), 0),

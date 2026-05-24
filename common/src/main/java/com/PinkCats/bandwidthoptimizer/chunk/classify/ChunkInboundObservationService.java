@@ -48,7 +48,7 @@ public final class ChunkInboundObservationService {
 
         registerChannelCloseCleanup(context);
         String protocolName = pendingFrame.protocolName();
-        String channelId = context.channel().id().asLongText();
+        String channelId = com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel());
         boolean observedChunkPacket = false;
         for (int index = outputSizeBeforeDecode; index < out.size(); index++) {
             Object decodedObject = out.get(index);
@@ -85,7 +85,7 @@ public final class ChunkInboundObservationService {
         if (context == null || context.channel() == null) {
             return;
         }
-        String channelId = context.channel().id().asLongText();
+        String channelId = com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel());
         if (channelId == null || channelId.isBlank() || !CHANNEL_CLOSE_CLEANUP_REGISTERED.add(channelId)) {
             return;
         }
@@ -114,7 +114,7 @@ public final class ChunkInboundObservationService {
         }
 
         String reason = "clientbound_login_server_switch_boundary";
-        String channelId = context.channel().id().asLongText();
+        String channelId = com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel());
         ChannelTransportBatchManager.clearChannelState(context.channel(), reason);
         ChannelTransportStateManager.clearSession(context.channel(), reason);
         ChunkTransportBoundaryController.resetChannelState(context, reason);
@@ -126,7 +126,7 @@ public final class ChunkInboundObservationService {
         if (DebugRuntimeConfig.isDiagnoseEnabled()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkTransport][VelocitySwitch][Reset] channel={}, protocol={}, packetClass={}, reason={}",
-                    context.channel().id().asLongText(),
+                    com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()),
                     protocolName,
                     packet.getClass().getName(),
                     reason

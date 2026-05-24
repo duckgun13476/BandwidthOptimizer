@@ -59,8 +59,8 @@ public final class ChunkShadowSnapshotManager {
         if (context == null)
             return null;
         ChunkShadowSnapshot snapshot =
-                observePacket(context.channel().id().asLongText(), epoch, descriptor, packet, encodedPacketBytes);
-        ChunkGlobalSnapshotStore.observeMaterializedSnapshot(context.channel().id().asLongText(), snapshot);
+                observePacket(com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()), epoch, descriptor, packet, encodedPacketBytes);
+        ChunkGlobalSnapshotStore.observeMaterializedSnapshot(com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()), snapshot);
         return snapshot;
     }
 

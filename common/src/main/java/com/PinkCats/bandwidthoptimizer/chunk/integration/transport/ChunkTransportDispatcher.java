@@ -1627,7 +1627,7 @@ public final class ChunkTransportDispatcher {
         if (context == null) {
             return "<null>";
         }
-        return context.channel().id().asLongText();
+        return com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel());
     }
 
     private static String shortenHash(String hashHex) {

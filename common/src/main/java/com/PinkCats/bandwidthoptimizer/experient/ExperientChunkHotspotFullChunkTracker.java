@@ -20,7 +20,7 @@ public final class ExperientChunkHotspotFullChunkTracker {
             return;
         }
 
-        String channelId = context.channel().id().asLongText();
+        String channelId = com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel());
         CHANNEL_PROGRESS.computeIfAbsent(channelId, ignored -> new ChannelFullChunkProgress()).recordNow();
     }
 
@@ -34,7 +34,7 @@ public final class ExperientChunkHotspotFullChunkTracker {
             return true;
         }
 
-        ChannelFullChunkProgress progress = CHANNEL_PROGRESS.get(channel.id().asLongText());
+        ChannelFullChunkProgress progress = CHANNEL_PROGRESS.get(com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel));
         if (progress == null) {
             return true;
         }

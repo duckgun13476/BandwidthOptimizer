@@ -126,7 +126,7 @@ public final class CreateBlockEntityUpdateGate {
             return;
         }
         Channel channel = ChunkPeerStateManager.findPlayerChannel(player);
-        String channelId = channel == null ? "" : channel.id().asLongText();
+        String channelId = channel == null ? "" : com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel);
         PlayerState state = PLAYER_STATES.computeIfAbsent(player.getUUID(), ignored -> new PlayerState());
         String previousChannelId = state.channelId();
         if (previousChannelId != null && !previousChannelId.isBlank() && !previousChannelId.equals(channelId)) {
@@ -211,7 +211,7 @@ public final class CreateBlockEntityUpdateGate {
             return false;
         }
         PlayerState state = PLAYER_STATES.computeIfAbsent(player.getUUID(), ignored -> new PlayerState());
-        state.bind(player, context.channel().id().asLongText());
+        state.bind(player, com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()));
         PendingKey key = PendingKey.of(blockEntityTypeKey, blockEntityDataPacket.getPos());
         boolean soundCritical = state.rememberSoundStateAndShouldFlush(key, blockEntityDataPacket.getTag());
         DynamicTarget dynamicTarget = resolveDynamicTarget(player, blockEntityDataPacket.getPos());
@@ -313,7 +313,7 @@ public final class CreateBlockEntityUpdateGate {
         if (context == null || context.channel() == null) {
             return null;
         }
-        UUID playerId = CHANNEL_PLAYERS.get(context.channel().id().asLongText());
+        UUID playerId = CHANNEL_PLAYERS.get(com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()));
         if (playerId == null) {
             return null;
         }

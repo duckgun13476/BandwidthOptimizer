@@ -317,7 +317,7 @@ public final class ChunkPersistentClientCache {
         if (DebugRuntimeConfig.isDiagnoseEnabled()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkPersistentCache][Scope][Reset] channel={}, previousScope={}, hadManifest={}, reason={}, cleared={}",
-                    channel.id().asLongText(),
+                    com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
                     shortenHash(previousScopeHash),
                     hadManifestForChannel,
                     safeText(reason, "server_switch"),
@@ -331,7 +331,7 @@ public final class ChunkPersistentClientCache {
             return 0;
         }
 
-        String channelId = channel.id().asLongText();
+        String channelId = com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel);
         String serverScopeHash = currentServerScopeHash();
         if (!isSafeScopeHash(serverScopeHash)) {
             return 0;
@@ -720,7 +720,7 @@ public final class ChunkPersistentClientCache {
             activeServerScopeHash = "";
         }
         if (channel != null) {
-            MANIFEST_SENT_CHANNELS.removeIf(key -> key.startsWith(channel.id().asLongText() + "|"));
+            MANIFEST_SENT_CHANNELS.removeIf(key -> key.startsWith(com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel) + "|"));
         }
     }
 
@@ -728,7 +728,7 @@ public final class ChunkPersistentClientCache {
         if (channel == null) {
             return false;
         }
-        String channelPrefix = channel.id().asLongText() + "|";
+        String channelPrefix = com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel) + "|";
         for (String manifestKey : MANIFEST_SENT_CHANNELS) {
             if (manifestKey != null && manifestKey.startsWith(channelPrefix)) {
                 return true;
@@ -745,12 +745,12 @@ public final class ChunkPersistentClientCache {
             activeServerScopeHash = serverScopeHash.toLowerCase(Locale.ROOT);
         }
         if (channel != null) {
-            MANIFEST_SENT_CHANNELS.removeIf(key -> key.startsWith(channel.id().asLongText() + "|"));
+            MANIFEST_SENT_CHANNELS.removeIf(key -> key.startsWith(com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel) + "|"));
         }
         if (DebugRuntimeConfig.isDiagnoseEnabled()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkPersistentCache][Scope] channel={}, scope={}, reason={}",
-                    channel == null ? "<none>" : channel.id().asLongText(),
+                    channel == null ? "<none>" : com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
                     shortenHash(serverScopeHash),
                     safeText(reason, "server_cache_scope")
             );

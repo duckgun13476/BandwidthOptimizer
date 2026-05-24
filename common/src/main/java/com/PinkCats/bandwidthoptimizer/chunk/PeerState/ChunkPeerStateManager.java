@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.PeerState;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceStore;
@@ -42,7 +43,7 @@ public final class ChunkPeerStateManager {
             return null;
         }
 
-        String channelId = context.channel().id().asLongText();
+        String channelId = ChannelIdentity.longText(context.channel());
         ChunkPeerState state = CHANNEL_STATES.get(channelId);
         if (state == null) {
             return null;
@@ -149,7 +150,7 @@ public final class ChunkPeerStateManager {
     public static ChunkPeerStateSnapshot snapshotOutboundChannel(ChannelHandlerContext context) {
         if (context == null)
             return null;
-        ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
+        ChunkPeerState state = CHANNEL_STATES.get(ChannelIdentity.longText(context.channel()));
         return state == null ? null : state.snapshot();
     }
 
@@ -158,7 +159,7 @@ public final class ChunkPeerStateManager {
             return null;
         }
 
-        String channelId = context.channel().id().asLongText();
+        String channelId = ChannelIdentity.longText(context.channel());
         if (channelId == null || channelId.isBlank()) {
             return null;
         }
@@ -184,7 +185,7 @@ public final class ChunkPeerStateManager {
             return null;
         }
 
-        ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
+        ChunkPeerState state = CHANNEL_STATES.get(ChannelIdentity.longText(context.channel()));
         return state == null ? null : state.snapshotChunk(coordinate);
     }
 
@@ -197,7 +198,7 @@ public final class ChunkPeerStateManager {
             return null;
         }
 
-        ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
+        ChunkPeerState state = CHANNEL_STATES.get(ChannelIdentity.longText(context.channel()));
         return state == null ? null : state.snapshotChunk(scopeId, coordinate);
     }
 
@@ -210,7 +211,7 @@ public final class ChunkPeerStateManager {
             return null;
         }
 
-        ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
+        ChunkPeerState state = CHANNEL_STATES.get(ChannelIdentity.longText(context.channel()));
         return state == null ? null : state.latestKnownSnapshotAcrossScopes(coordinate);
     }
 
@@ -220,7 +221,7 @@ public final class ChunkPeerStateManager {
             return null;
         }
 
-        ChunkPeerState state = CHANNEL_STATES.get(channel.id().asLongText());
+        ChunkPeerState state = CHANNEL_STATES.get(ChannelIdentity.longText(channel));
         return state == null ? null : state.snapshotChunk(coordinate);
     }
 
@@ -230,7 +231,7 @@ public final class ChunkPeerStateManager {
             return null;
         }
 
-        ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
+        ChunkPeerState state = CHANNEL_STATES.get(ChannelIdentity.longText(context.channel()));
         ChunkPeerChunkStateSnapshot chunkSnapshot = state == null
                 ? null
                 : state.acknowledgeChunk(frame.epoch(), frame.coordinate(), frame.fullSnapshotVersion(), frame.payloadHash());
@@ -243,7 +244,7 @@ public final class ChunkPeerStateManager {
             return null;
         }
 
-        ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
+        ChunkPeerState state = CHANNEL_STATES.get(ChannelIdentity.longText(context.channel()));
         ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.negativeAcknowledgeChunk(frame.epoch(), frame.coordinate());
         logControlUpdate("Nack", context, frame, chunkSnapshot);
         return chunkSnapshot;
@@ -254,9 +255,9 @@ public final class ChunkPeerStateManager {
             return null;
         }
 
-        ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
+        ChunkPeerState state = CHANNEL_STATES.get(ChannelIdentity.longText(context.channel()));
         ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.invalidateChunk(frame.epoch(), frame.coordinate());
-        ChunkShadowSnapshotManager.invalidateChunk(context.channel().id().asLongText(), frame.epoch(), frame.coordinate());
+        ChunkShadowSnapshotManager.invalidateChunk(ChannelIdentity.longText(context.channel()), frame.epoch(), frame.coordinate());
         logControlUpdate("Invalidate", context, frame, chunkSnapshot);
         return chunkSnapshot;
     }
@@ -271,7 +272,7 @@ public final class ChunkPeerStateManager {
             return null;
         }
 
-        ChunkPeerState state = CHANNEL_STATES.get(context.channel().id().asLongText());
+        ChunkPeerState state = CHANNEL_STATES.get(ChannelIdentity.longText(context.channel()));
         ChunkPeerStateSnapshot channelSnapshot = state == null ? null : state.snapshot();
         if (channelSnapshot == null || channelSnapshot.epoch() <= 0L) {
             return null;
@@ -299,16 +300,16 @@ public final class ChunkPeerStateManager {
             return null;
         }
 
-        ChunkPeerState state = CHANNEL_STATES.get(channel.id().asLongText());
+        ChunkPeerState state = CHANNEL_STATES.get(ChannelIdentity.longText(channel));
         long scopeId = state == null ? 0L : state.snapshot().epoch();
         ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.invalidateChunk(scopeId, coordinate);
-        ChunkShadowSnapshotManager.invalidateChunk(channel.id().asLongText(), scopeId, coordinate);
+        ChunkShadowSnapshotManager.invalidateChunk(ChannelIdentity.longText(channel), scopeId, coordinate);
         if (shouldLogDiagnose()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkPeer][LifecycleInvalidate] player={}, uuid={}, channel={}, reason={}, chunk={}, state={}",
                     player.getGameProfile().getName(),
                     player.getUUID(),
-                    channel.id().asLongText(),
+                    ChannelIdentity.longText(channel),
                     reason,
                     coordinate.logText(),
                     chunkSnapshot == null ? "<missing>" : chunkSnapshot.summaryText()
@@ -326,7 +327,7 @@ public final class ChunkPeerStateManager {
             return 0;
         }
 
-        String channelId = context.channel().id().asLongText();
+        String channelId = ChannelIdentity.longText(context.channel());
         ChunkPeerState state = CHANNEL_STATES.get(channelId);
         int removedPeerStates = state == null ? 0 : state.invalidateChunkAcrossScopes(coordinate);
         ChunkRuntimeReferenceStore.invalidateFullSnapshotAcrossScopes(channelId, coordinate);
@@ -353,7 +354,7 @@ public final class ChunkPeerStateManager {
             return null;
         }
 
-        ChunkPeerState state = CHANNEL_STATES.get(channel.id().asLongText());
+        ChunkPeerState state = CHANNEL_STATES.get(ChannelIdentity.longText(channel));
         long scopeId = state == null ? 0L : state.snapshot().epoch();
         ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.markChunkAwaitingFullReplay(scopeId, coordinate);
         if (shouldLogDiagnose()) {
@@ -361,7 +362,7 @@ public final class ChunkPeerStateManager {
                     "[ChunkPeer][LifecycleRetain] player={}, uuid={}, channel={}, reason={}, chunk={}, state={}",
                     player.getGameProfile().getName(),
                     player.getUUID(),
-                    channel.id().asLongText(),
+                    ChannelIdentity.longText(channel),
                     reason,
                     coordinate.logText(),
                     chunkSnapshot == null ? "<missing>" : chunkSnapshot.summaryText()
@@ -389,7 +390,7 @@ public final class ChunkPeerStateManager {
 
     private static String readPlayerChannelId(ServerPlayer player) {
         Channel channel = readPlayerChannel(player);
-        return channel == null ? null : channel.id().asLongText();
+        return channel == null ? null : ChannelIdentity.longText(channel);
     }
 
     private static Channel readPlayerChannel(ServerPlayer player) {
@@ -418,7 +419,7 @@ public final class ChunkPeerStateManager {
         Bandwidthoptimizer.LOGGER.info(
                 "[ChunkPeer][{}] channel={}, epoch={}, chunk={}, fullVersion={}, payloadHash={}, state={}",
                 label,
-                context.channel().id().asLongText(),
+                ChannelIdentity.longText(context.channel()),
                 frame.epoch(),
                 frame.coordinate().logText(),
                 frame.fullSnapshotVersion(),

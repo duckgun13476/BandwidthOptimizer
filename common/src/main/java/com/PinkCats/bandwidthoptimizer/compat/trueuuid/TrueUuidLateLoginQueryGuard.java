@@ -149,7 +149,7 @@ public final class TrueUuidLateLoginQueryGuard {
     }
 
     private static String channelIdText(Channel channel) {
-        return channel == null ? "<no-channel>" : channel.id().asLongText();
+        return channel == null ? "<no-channel>" : com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel);
     }
 
     private record VarIntRead(int value, int nextIndex, boolean complete) { }

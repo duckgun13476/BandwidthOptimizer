@@ -172,7 +172,7 @@ public final class ChannelDecoderExceptionDumper {
     }
 
     private static String channelId(Channel channel) {
-        return channel == null ? "<null-channel>" : channel.id().asLongText();
+        return channel == null ? "<null-channel>" : com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel);
     }
 
     private static String sha256Hex(byte[] bytes) {

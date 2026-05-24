@@ -65,7 +65,7 @@ public final class ChunkTransportBoundaryController {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkTransport][Boundary][ListenerSkip] packetClass={}, channel={}",
                     packetClassName(packet),
-                    channel.id().asShortText()
+                    com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(channel)
             );
             return;
         }
@@ -181,7 +181,7 @@ public final class ChunkTransportBoundaryController {
         if (DebugRuntimeConfig.isDiagnoseEnabled()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkTransport][Boundary][Reset] channel={}, reason={}",
-                    context.channel().id().asLongText(),
+                    com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()),
                     reason == null ? "" : reason
             );
         }
@@ -314,7 +314,7 @@ public final class ChunkTransportBoundaryController {
             if (DebugRuntimeConfig.isDiagnoseEnabled()) {
                 Bandwidthoptimizer.LOGGER.info(
                         "[ChunkTransport][Barrier][SendSkipped] channel={}, barrierId={}, reason={}",
-                        channel.id().asLongText(),
+                        com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
                         pendingBarrier.barrierId(),
                         pendingBarrier.reason()
                 );

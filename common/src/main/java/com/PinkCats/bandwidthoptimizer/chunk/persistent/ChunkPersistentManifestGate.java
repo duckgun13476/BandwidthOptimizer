@@ -41,7 +41,7 @@ public final class ChunkPersistentManifestGate {
         if (DebugRuntimeConfig.isDiagnoseEnabled()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkPersistentCache][ManifestGate][Arm] channel={}, timeoutMillis={}, reason={}",
-                    channel.id().asLongText(),
+                    com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
                     timeoutMillis,
                     safeText(reason, "server_login")
             );
@@ -94,7 +94,7 @@ public final class ChunkPersistentManifestGate {
         if (queued && DebugRuntimeConfig.isDiagnoseEnabled()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkPersistentCache][ManifestGate][Queue] channel={}, queued={}, packetClass={}",
-                    channel.id().asLongText(),
+                    com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
                     gateState.queuedCount(),
                     packet.getClass().getName()
             );
@@ -138,7 +138,7 @@ public final class ChunkPersistentManifestGate {
             if (DebugRuntimeConfig.isDiagnoseEnabled()) {
                 Bandwidthoptimizer.LOGGER.info(
                         "[ChunkPersistentCache][ManifestGate][Flush] channel={}, packets={}, reason={}",
-                        channel.id().asLongText(),
+                        com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
                         queuedPackets.size(),
                         safeText(reason, "manifest_gate_release")
                 );

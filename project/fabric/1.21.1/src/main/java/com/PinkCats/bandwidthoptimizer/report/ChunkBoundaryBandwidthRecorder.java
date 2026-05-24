@@ -76,7 +76,7 @@ public final class ChunkBoundaryBandwidthRecorder {
 
         return new OutboundPacketTrace(
                 System.currentTimeMillis(),
-                context.channel().id().asLongText(),
+                com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()),
                 packetClassName,
                 safeEncodeResult.chunkPacketCandidate(),
                 safeEncodeResult.chunkProtocolApplied(),
