@@ -20,7 +20,6 @@ public final class BandwidthOptimizerHudOverlay {
         BandwidthOptimizerHudOverlayCore.onLoggingIn();
     }
 
-    // logout write
     @SubscribeEvent
     public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         BandwidthOptimizerHudOverlayCore.onLoggingOut("neoforge_client_logging_out");

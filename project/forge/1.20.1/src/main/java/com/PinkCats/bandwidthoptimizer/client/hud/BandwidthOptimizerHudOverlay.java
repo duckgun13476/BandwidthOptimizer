@@ -7,6 +7,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.client.event.RenderGuiOverlayEvent;
+import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
@@ -20,7 +21,7 @@ public final class BandwidthOptimizerHudOverlay {
     public static void onLoggingIn(ClientPlayerNetworkEvent.LoggingIn event) {
         BandwidthOptimizerHudOverlayCore.onLoggingIn();
     }
-    // logout write
+
     @SubscribeEvent
     public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         BandwidthOptimizerHudOverlayCore.onLoggingOut("forge_client_logging_out");
@@ -28,6 +29,10 @@ public final class BandwidthOptimizerHudOverlay {
 
     @SubscribeEvent
     public static void render(RenderGuiOverlayEvent.Post event) {
+        if (!VanillaGuiOverlay.HOTBAR.id().equals(event.getOverlay().id())) {
+            return;
+        }
+
         Minecraft minecraft = Minecraft.getInstance();
         if (!BandwidthOptimizerHudOverlayCore.shouldRender(minecraft)) {
             return;
