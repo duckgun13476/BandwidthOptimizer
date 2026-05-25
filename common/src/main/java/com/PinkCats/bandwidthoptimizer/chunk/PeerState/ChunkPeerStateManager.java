@@ -180,6 +180,38 @@ public final class ChunkPeerStateManager {
         return snapshot;
     }
 
+    public static ChunkPeerStateSnapshot ensureOutboundChannelScopeAtLeast(
+            ChannelHandlerContext context,
+            long minimumEpoch,
+            String reason
+    ) {
+        if (context == null || context.channel() == null) {
+            return null;
+        }
+
+        String channelId = ChannelIdentity.longText(context.channel());
+        if (channelId == null || channelId.isBlank()) {
+            return null;
+        }
+
+        long targetEpoch = Math.max(minimumEpoch, FIRST_SCOPE_ID);
+        ChunkPeerState state = CHANNEL_STATES.computeIfAbsent(channelId, ChunkPeerState::new);
+        ChunkPeerStateSnapshot snapshot = state.snapshot();
+        // Keep the real outbound channel aligned when loaders wrap it with a proxy channel.
+        if (snapshot.epoch() < targetEpoch) {
+            snapshot = state.setEpoch(targetEpoch);
+            if (shouldLogDiagnose()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[ChunkPeer][EnsureAtLeast] channel={}, epoch={}, reason={}",
+                        snapshot.channelId(),
+                        snapshot.epoch(),
+                        reason == null ? "" : reason
+                );
+            }
+        }
+        return snapshot;
+    }
+
     public static ChunkPeerChunkStateSnapshot snapshotOutboundChunk(ChannelHandlerContext context, ChunkPacketCoordinate coordinate) {
         if (context == null || coordinate == null || !coordinate.present()) {
             return null;

@@ -97,8 +97,10 @@ public final class ChunkTransportBoundaryController {
             barrierId = boundaryState.armOutboundBarrier(boundaryTrigger.reason());
         }
         if (packet instanceof ClientboundLoginPacket) {
-            ChunkPeerStateManager.ensureOutboundChannelScope(context, boundaryTrigger.reason());
             ChunkPersistentManifestGate.arm(context.channel(), boundaryTrigger.reason());
+        }
+        if (boundaryTrigger.advancesInboundEpoch()) {
+            ChunkPeerStateManager.ensureOutboundChannelScopeAtLeast(context, barrierId, boundaryTrigger.reason());
         }
         return forceDirectTransport
                 ? OutboundBoundaryDecision.forceDirect(boundaryTrigger.reason(), barrierId)
