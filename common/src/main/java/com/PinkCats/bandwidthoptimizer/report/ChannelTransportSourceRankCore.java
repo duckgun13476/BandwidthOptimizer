@@ -17,7 +17,9 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 
 public final class ChannelTransportSourceRankCore {
@@ -35,6 +37,8 @@ public final class ChannelTransportSourceRankCore {
     private static final ConcurrentHashMap<SourceKey, SourceCounter> COUNTERS = new ConcurrentHashMap<>();
     private static final AtomicLong NEXT_REPORT_AT_MILLIS = new AtomicLong();
     private static final AtomicLong NEXT_FAILURE_LOG_AT_MILLIS = new AtomicLong();
+    private static final AtomicBoolean REPORT_SCHEDULED = new AtomicBoolean();
+    private static final AtomicReference<String> PENDING_REPORT_REASON = new AtomicReference<>();
     private static final ExecutorService REPORT_EXECUTOR = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "bo-transport-source-rank");
         thread.setDaemon(true);
@@ -108,12 +112,30 @@ public final class ChannelTransportSourceRankCore {
     }
 
     private static void scheduleReport(String reason) {
-        List<SourceReportEntry> entries = snapshotEntries();
-        if (entries.isEmpty()) {
+        PENDING_REPORT_REASON.set(textOrFallback(reason, "manual"));
+        scheduleReportWorker();
+    }
+
+    private static void scheduleReportWorker() {
+        if (!REPORT_SCHEDULED.compareAndSet(false, true)) {
             return;
         }
-        int topN = readTopN();
-        REPORT_EXECUTOR.execute(() -> writeReport(reason, entries, topN));
+        REPORT_EXECUTOR.execute(() -> {
+            try {
+                String reason;
+                while ((reason = PENDING_REPORT_REASON.getAndSet(null)) != null) {
+                    List<SourceReportEntry> entries = snapshotEntries();
+                    if (!entries.isEmpty()) {
+                        writeReport(reason, entries, readTopN());
+                    }
+                }
+            } finally {
+                REPORT_SCHEDULED.set(false);
+                if (PENDING_REPORT_REASON.get() != null) {
+                    scheduleReportWorker();
+                }
+            }
+        });
     }
 
     private static List<SourceReportEntry> snapshotEntries() {

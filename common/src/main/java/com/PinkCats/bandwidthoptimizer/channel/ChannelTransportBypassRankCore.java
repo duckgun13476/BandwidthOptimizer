@@ -21,6 +21,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class ChannelTransportBypassRankCore {
 
@@ -32,6 +34,8 @@ public final class ChannelTransportBypassRankCore {
     private static final String REPORT_PROTOCOL = "PLAY";
     private static final int REPORT_SCHEMA_VERSION = 2;
     private static final int REPORT_HEADER_SCAN_LINES = 40;
+    private static final AtomicBoolean REPORT_SCHEDULED = new AtomicBoolean();
+    private static final AtomicReference<PendingReport> PENDING_REPORT = new AtomicReference<>();
     private static final ExecutorService REPORT_EXECUTOR = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "bo-transport-bypass-rank");
         thread.setDaemon(true);
@@ -118,7 +122,6 @@ public final class ChannelTransportBypassRankCore {
         return packetBytes == null ? 0 : packetBytes.length;
     }
 
-    // 周期性收口 bypass 窗口计数，并把报告任务交给后台线程处理。
     private static void dumpLocked(String reason) {
         List<Map.Entry<BypassKey, BypassCounter>> entries = new ArrayList<>(COUNTERS.entrySet());
 
@@ -204,7 +207,7 @@ public final class ChannelTransportBypassRankCore {
         );
     }
 
-    // 复制当前 bypass 计数快照，避免后台报告线程读取正在变化的窗口计数。
+    // Snapshot counters before the window is reset.
     private static List<Map.Entry<BypassKey, BypassCounter>> snapshotEntries(List<Map.Entry<BypassKey, BypassCounter>> entries) {
         List<Map.Entry<BypassKey, BypassCounter>> snapshots = new ArrayList<>(entries.size());
         for (Map.Entry<BypassKey, BypassCounter> entry : entries) {
@@ -213,12 +216,31 @@ public final class ChannelTransportBypassRankCore {
         return snapshots;
     }
 
-    // 将 bypass 报告生成和文件写入放到单独线程，降低网络包线程上的 IO 开销。
     private static void writeReportAsync(String reason, List<Map.Entry<BypassKey, BypassCounter>> entries, int topN) {
-        REPORT_EXECUTOR.execute(() -> writeReport(reason, entries, topN));
+        PENDING_REPORT.set(new PendingReport(reason, entries, topN));
+        scheduleReportWorker();
     }
 
-    // 根据快照生成 bypass Markdown 报告，只在后台报告线程中执行。
+    private static void scheduleReportWorker() {
+        if (!REPORT_SCHEDULED.compareAndSet(false, true)) {
+            return;
+        }
+        REPORT_EXECUTOR.execute(() -> {
+            try {
+                PendingReport report;
+                while ((report = PENDING_REPORT.getAndSet(null)) != null) {
+                    writeReport(report.reason(), report.entries(), report.topN());
+                }
+            } finally {
+                REPORT_SCHEDULED.set(false);
+                if (PENDING_REPORT.get() != null) {
+                    scheduleReportWorker();
+                }
+            }
+        });
+    }
+
+    // Build and write reports only on the report worker.
     private static void writeReport(String reason, List<Map.Entry<BypassKey, BypassCounter>> entries, int topN) {
         entries = new ArrayList<>(entries);
         entries.sort(Comparator
@@ -775,6 +797,9 @@ public final class ChannelTransportBypassRankCore {
     ) {
     }
 
+    private record PendingReport(String reason, List<Map.Entry<BypassKey, BypassCounter>> entries, int topN) {
+    }
+
     private static final class BypassCounter {
 
         private long windowCount;
@@ -808,7 +833,7 @@ public final class ChannelTransportBypassRankCore {
             this.windowBytes = 0L;
         }
 
-        // 生成不可变使用语义的计数副本，供后台线程安全读取。
+        // Return a stable counter copy for the report worker.
         private BypassCounter snapshot() {
             return new BypassCounter(
                     this.windowCount,
