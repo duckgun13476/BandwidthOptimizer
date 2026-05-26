@@ -90,6 +90,9 @@ def applySharedBandwidthOptimizerRunProperties = { Project projectRef, def runCo
             ['boTransportTelemetryDumpFileName', 'bandwidthoptimizer.transport.telemetryDumpFileName'],
             ['boTransportDebugTraceSampleLimit', 'bandwidthoptimizer.transport.debugTraceSampleLimit'],
             ['boTransportDebugTracePrefixBytes', 'bandwidthoptimizer.transport.debugTracePrefixBytes'],
+            ['boChunkLoadDelayProbe', 'bandwidthoptimizer.chunk.loadDelayProbe'],
+            ['boChunkLoadDelayProbeMaxEvents', 'bandwidthoptimizer.chunk.loadDelayProbeMaxEvents'],
+            ['boChunkLoadDelayProbeSlowStageMillis', 'bandwidthoptimizer.chunk.loadDelayProbeSlowStageMillis'],
             ['boChannelJsonlCaptureEnabled', 'bandwidthoptimizer.channelJsonlCaptureEnabled'],
             ['boChunkGlobalStoreBudgetBytes', 'bandwidthoptimizer.chunkGlobalStoreBudgetBytes'],
             ['boChunkGlobalStoreMaxVersionsPerChunk', 'bandwidthoptimizer.chunkGlobalStoreMaxVersionsPerChunk'],
@@ -438,6 +441,9 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportTelemetryDumpFileName')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportDebugTraceSampleLimit')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportDebugTracePrefixBytes')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkLoadDelayProbe')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkLoadDelayProbeMaxEvents')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkLoadDelayProbeSlowStageMillis')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChannelJsonlCaptureEnabled')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkGlobalStoreBudgetBytes')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkGlobalStoreMaxVersionsPerChunk')

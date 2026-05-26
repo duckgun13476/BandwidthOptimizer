@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.chunk.debug;
+﻿package com.PinkCats.bandwidthoptimizer.chunk.debug;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
@@ -7,7 +7,12 @@ import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 
+import java.util.Collections;
+import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -30,11 +35,78 @@ public final class ChunkLoadDelayProbe {
     private static final AtomicLong SERVER_NACK_EVENTS = new AtomicLong();
     private static final AtomicLong CACHE_BUDGET_EVENTS = new AtomicLong();
     private static final AtomicLong STAGE_EVENTS = new AtomicLong();
+    private static final AtomicLong VANILLA_CHUNK_PACKET_EVENTS = new AtomicLong();
+    private static final Map<Packet<?>, ConstructedChunkPacketTiming> CONSTRUCTED_CHUNK_PACKETS =
+            Collections.synchronizedMap(new WeakHashMap<>());
 
     private ChunkLoadDelayProbe() {}
 
     public static boolean isEnabled() {
         return ENABLED;
+    }
+
+    // Marks vanilla chunk packet construction timing.
+    public static void recordVanillaLevelChunkPacketConstructed(
+            Packet<?> packet,
+            int chunkX,
+            int chunkZ,
+            long constructStartNanos
+    ) {
+        if (!ENABLED || packet == null) {
+            return;
+        }
+        long nowMillis = System.currentTimeMillis();
+        long elapsedMillis = elapsedMillisSince(constructStartNanos);
+        ConstructedChunkPacketTiming timing =
+                new ConstructedChunkPacketTiming(chunkX, chunkZ, nowMillis, elapsedMillis, Thread.currentThread().getName());
+        CONSTRUCTED_CHUNK_PACKETS.put(packet, timing);
+        long eventIndex = VANILLA_CHUNK_PACKET_EVENTS.incrementAndGet();
+        if (!shouldLogVanillaChunkPacket(eventIndex, elapsedMillis)) {
+            return;
+        }
+        Bandwidthoptimizer.LOGGER.info(
+                "[ChunkVanillaProbe] event={}, nowMs={}, stage=server_vanilla_chunk_packet_construct, chunk=({}, {}), constructElapsedMs={}, thread={}",
+                eventIndex,
+                nowMillis,
+                chunkX,
+                chunkZ,
+                Math.max(elapsedMillis, 0L),
+                timing.threadName()
+        );
+    }
+
+    // Marks BO outbound chunk processing timing.
+    public static void logVanillaLevelChunkPacketOutbound(
+            ChannelHandlerContext context,
+            Packet<?> packet,
+            int packetBytes
+    ) {
+        if (!ENABLED || !(packet instanceof ClientboundLevelChunkWithLightPacket levelChunkPacket)) {
+            return;
+        }
+        ConstructedChunkPacketTiming timing = CONSTRUCTED_CHUNK_PACKETS.remove(packet);
+        long nowMillis = System.currentTimeMillis();
+        int chunkX = timing == null ? levelChunkPacket.getX() : timing.chunkX();
+        int chunkZ = timing == null ? levelChunkPacket.getZ() : timing.chunkZ();
+        long constructToOutboundMillis = timing == null ? -1L : Math.max(nowMillis - timing.constructedAtMillis(), 0L);
+        long constructElapsedMillis = timing == null ? -1L : timing.constructElapsedMillis();
+        long eventIndex = VANILLA_CHUNK_PACKET_EVENTS.incrementAndGet();
+        if (!shouldLogVanillaChunkPacket(eventIndex, Math.max(constructToOutboundMillis, constructElapsedMillis))) {
+            return;
+        }
+        Bandwidthoptimizer.LOGGER.info(
+                "[ChunkVanillaProbe] event={}, nowMs={}, stage=server_vanilla_chunk_packet_outbound, channel={}, chunk=({}, {}), packetBytes={}, constructElapsedMs={}, constructToOutboundMs={}, constructThread={}, outboundThread={}",
+                eventIndex,
+                nowMillis,
+                channelText(context),
+                chunkX,
+                chunkZ,
+                Math.max(packetBytes, 0),
+                constructElapsedMillis,
+                constructToOutboundMillis,
+                timing == null ? "<missing>" : timing.threadName(),
+                Thread.currentThread().getName()
+        );
     }
 
     // Logs server-side chunk frame encoding so TP timelines can be compared with client receive events.
@@ -333,6 +405,10 @@ public final class ChunkLoadDelayProbe {
                 && shouldLogImportant(eventIndex));
     }
 
+    private static boolean shouldLogVanillaChunkPacket(long eventIndex, long elapsedMillis) {
+        return elapsedMillis >= SLOW_STAGE_MILLIS || eventIndex <= 128L || shouldLogSample(eventIndex);
+    }
+
     private static boolean shouldLogDataFrame(ChunkHotspotFrame frame, long eventIndex) {
         return shouldLogImportantFrame(frame, eventIndex)
                 || (frame != null
@@ -398,4 +474,12 @@ public final class ChunkLoadDelayProbe {
         }
         return text.length() <= 180 ? text : text.substring(0, 180);
     }
+
+    private record ConstructedChunkPacketTiming(
+            int chunkX,
+            int chunkZ,
+            long constructedAtMillis,
+            long constructElapsedMillis,
+            String threadName
+    ) {}
 }
