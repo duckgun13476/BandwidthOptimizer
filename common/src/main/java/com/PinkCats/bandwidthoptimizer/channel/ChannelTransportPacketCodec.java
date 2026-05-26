@@ -36,7 +36,7 @@ public final class ChannelTransportPacketCodec {
 
     // Packet as transport batch frame.
     public static WrappedTransportFrame wrapBatchPackets(ChannelTransportSession transportSession, List<byte[]> originalPacketBytesList) {
-        return wrapBatchPackets(transportSession, originalPacketBytesList, BatchEncodingProfile.FULL_TEMPLATE);
+        return wrapBatchPackets(transportSession, originalPacketBytesList, BatchEncodingProfile.LITERAL_MAPPING);
     }
 
     public static WrappedTransportFrame wrapBatchPacketsLight(ChannelTransportSession transportSession, List<byte[]> originalPacketBytesList) {
@@ -53,6 +53,7 @@ public final class ChannelTransportPacketCodec {
             return null;
         }
 
+        // Batch carrier 必须保持自包含；否则接收端重建 session 后会用空模板表读取旧模板引用。
         byte[] batchPayloadBytes = BATCH_LAYER.encodePacketBatch(safePacketBytesList);
         ChannelTransportSession.PacketResult packetResult = encodingProfile == BatchEncodingProfile.LITERAL_MAPPING
                 ? transportSession.encodeSinglePacketWithLiteralMappingTelemetry(batchPayloadBytes)

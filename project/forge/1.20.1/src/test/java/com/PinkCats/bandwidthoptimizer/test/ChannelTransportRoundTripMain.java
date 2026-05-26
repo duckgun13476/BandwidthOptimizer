@@ -35,6 +35,7 @@ public final class ChannelTransportRoundTripMain {
             verifyRoundTrip(senderSession, receiverSession, algorithmId, testCase);
         }
 
+        verifyDefaultBatchUsesStatelessMapping();
         verifyLightBatchRoundTrip();
         verifyLargeLightBatchRoundTrip();
         verifyNonTransportPassThrough(receiverSession);
@@ -92,6 +93,42 @@ public final class ChannelTransportRoundTripMain {
         var result = KineticChannel.tryUnpackInboundPacket(receiverSession, vanillaPacketBytes);
         if (result != null) {
             throw new IllegalStateException("Non-transport bytes should not be unwrapped");
+        }
+    }
+
+    // 默认 batch carrier 必须保持字典无状态，避免接收端 session 重建后缺少旧模板映射。
+    private static void verifyDefaultBatchUsesStatelessMapping() {
+        ChannelTransportSession senderSession = new ChannelTransportSession();
+        ChannelTransportSession receiverSession = new ChannelTransportSession();
+        for (int round = 0; round < 4; round++) {
+            List<byte[]> packetBytesList = List.of(
+                    templateLikeBytes(0x30 + round, 0x40 + round),
+                    templateLikeBytes(0x50 + round, 0x60 + round),
+                    patternedBytes()
+            );
+
+            var wrappedFrame = ChannelTransportPacketCodec.wrapBatchPackets(senderSession, packetBytesList);
+            if (wrappedFrame == null || wrappedFrame.frameKind() != ChannelTransportPacketCodec.FrameKind.BATCH) {
+                throw new IllegalStateException("Default batch wrap did not produce a batch transport frame.");
+            }
+            if (wrappedFrame.telemetry() == null
+                    || wrappedFrame.telemetry().literalEntryCount() != 1
+                    || wrappedFrame.telemetry().exactReferenceCount() != 0
+                    || wrappedFrame.telemetry().templateReferenceCount() != 0
+                    || wrappedFrame.telemetry().exactAdditionCount() != 0
+                    || wrappedFrame.telemetry().templateAdditionCount() != 0) {
+                throw new IllegalStateException("Default batch should use one literal mapping entry without dictionary state.");
+            }
+
+            var unwrappedFrame = KineticChannel.tryUnpackInboundPacket(receiverSession, wrappedFrame.transportFrameBytes());
+            if (unwrappedFrame == null || unwrappedFrame.restoredPacketCount() != packetBytesList.size()) {
+                throw new IllegalStateException("Default stateless batch did not restore the expected packet count.");
+            }
+            for (int index = 0; index < packetBytesList.size(); index++) {
+                if (!Arrays.equals(packetBytesList.get(index), unwrappedFrame.restoredPacketBytesList().get(index))) {
+                    throw new IllegalStateException("Default stateless batch payload mismatch at index " + index);
+                }
+            }
         }
     }
 
