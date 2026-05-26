@@ -14,6 +14,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
@@ -212,11 +213,13 @@ public final class CreateBlockEntityUpdateGate {
         }
         PlayerState state = PLAYER_STATES.computeIfAbsent(player.getUUID(), ignored -> new PlayerState());
         state.bind(player, com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()));
+        long nowNanos = System.nanoTime();
+        boolean chunkBootstrapActive = state.isChunkBootstrapActive(nowNanos);
         PendingKey key = PendingKey.of(blockEntityTypeKey, blockEntityDataPacket.getPos());
         boolean soundCritical = state.rememberSoundStateAndShouldFlush(key, blockEntityDataPacket.getTag());
         DynamicTarget dynamicTarget = resolveDynamicTarget(player, blockEntityDataPacket.getPos());
         if (dynamicTarget.forceImmediate()
-                || shouldSendImmediately(player, dynamicTarget.target())
+                || shouldSendImmediately(player, dynamicTarget.target(), !chunkBootstrapActive)
                 || soundCritical && isWithinSoundSendDistance(player, dynamicTarget.target(), blockEntityTypeKey)) {
             recordDropped(state.forgetPending(key));
             return false;
@@ -240,6 +243,29 @@ public final class CreateBlockEntityUpdateGate {
                     DROPPED_COUNT.get());
         }
         return true;
+    }
+
+    public static void observeOutboundPacket(
+            ChannelHandlerContext context,
+            String protocolName,
+            PacketFlow packetFlow,
+            Packet<?> packet
+    ) {
+        if (!isEnabled()
+                || context == null
+                || packetFlow != PacketFlow.CLIENTBOUND
+                || protocolName == null
+                || !"PLAY".equalsIgnoreCase(protocolName)
+                || !(packet instanceof ClientboundSetChunkCacheCenterPacket)) {
+            return;
+        }
+        ServerPlayer player = resolvePlayer(context);
+        if (player == null) {
+            return;
+        }
+        PlayerState state = PLAYER_STATES.computeIfAbsent(player.getUUID(), ignored -> new PlayerState());
+        state.bind(player, com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()));
+        state.markChunkBootstrap(System.nanoTime(), chunkBootstrapNanos());
     }
 
     public static void onServerTick() {
@@ -321,7 +347,7 @@ public final class CreateBlockEntityUpdateGate {
         return state == null ? null : state.player();
     }
 
-    private static boolean shouldSendImmediately(ServerPlayer player, Vec3 target) {
+    private static boolean shouldSendImmediately(ServerPlayer player, Vec3 target, boolean allowLookDirection) {
         if (player == null || target == null) {
             return true;
         }
@@ -331,6 +357,9 @@ public final class CreateBlockEntityUpdateGate {
         double nearDistance = alwaysSendDistanceBlocks();
         if (distanceSqr <= nearDistance * nearDistance) {
             return true;
+        }
+        if (!allowLookDirection) {
+            return false;
         }
         double length = Math.sqrt(distanceSqr);
         if (length <= 0.0001D) {
@@ -387,6 +416,14 @@ public final class CreateBlockEntityUpdateGate {
                 Config.RuntimeProperty.Create.DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_MAX_PENDING_PER_PLAYER,
                 1L,
                 8192L);
+    }
+
+    private static long chunkBootstrapNanos() {
+        return TimeUnit.MILLISECONDS.toNanos(readLong(
+                Config.RuntimeProperty.Create.CREATE_BLOCK_ENTITY_UPDATE_GATE_CHUNK_BOOTSTRAP_MILLIS,
+                Config.RuntimeProperty.Create.DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_CHUNK_BOOTSTRAP_MILLIS,
+                0L,
+                15_000L));
     }
 
     private static double alwaysSendDistanceBlocks() {
@@ -666,6 +703,7 @@ public final class CreateBlockEntityUpdateGate {
         private final Map<PendingKey, CreateSoundState> soundStates = new LinkedHashMap<>();
         private volatile ServerPlayer player;
         private volatile String channelId = "";
+        private long chunkBootstrapDeadlineNanos;
 
         private void bind(ServerPlayer player, String channelId) {
             this.player = player;
@@ -678,6 +716,17 @@ public final class CreateBlockEntityUpdateGate {
 
         private String channelId() {
             return this.channelId;
+        }
+
+        private synchronized void markChunkBootstrap(long nowNanos, long durationNanos) {
+            if (durationNanos <= 0L) {
+                return;
+            }
+            this.chunkBootstrapDeadlineNanos = Math.max(this.chunkBootstrapDeadlineNanos, nowNanos + durationNanos);
+        }
+
+        private synchronized boolean isChunkBootstrapActive(long nowNanos) {
+            return this.chunkBootstrapDeadlineNanos > nowNanos;
         }
 
         private synchronized boolean rememberSoundStateAndShouldFlush(PendingKey key, CompoundTag tag) {
@@ -730,6 +779,7 @@ public final class CreateBlockEntityUpdateGate {
                 return List.of();
             }
             long maxDelayNanos = maxDelayNanos();
+            boolean chunkBootstrapActive = isChunkBootstrapActive(nowNanos);
             List<PendingUpdate> readyUpdates = new ArrayList<>();
             Iterator<Map.Entry<PendingKey, PendingUpdate>> iterator = this.pendingUpdates.entrySet().iterator();
             while (iterator.hasNext()) {
@@ -737,8 +787,9 @@ public final class CreateBlockEntityUpdateGate {
                 PendingUpdate pendingUpdate = entry.getValue();
                 DynamicTarget dynamicTarget = resolveDynamicTarget(player, pendingUpdate.key().pos());
                 boolean visible = dynamicTarget.forceImmediate()
-                        || shouldSendImmediately(player, dynamicTarget.target());
-                boolean expired = nowNanos - pendingUpdate.firstQueuedNanos() >= maxDelayNanos;
+                        || shouldSendImmediately(player, dynamicTarget.target(), !chunkBootstrapActive);
+                boolean expired = !chunkBootstrapActive
+                        && nowNanos - pendingUpdate.firstQueuedNanos() >= maxDelayNanos;
                 if (!visible && !expired) {
                     continue;
                 }

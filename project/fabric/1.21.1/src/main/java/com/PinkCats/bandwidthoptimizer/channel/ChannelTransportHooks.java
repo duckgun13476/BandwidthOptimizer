@@ -90,6 +90,7 @@ public final class ChannelTransportHooks {
         String protocolName = readProtocolName(connectionProtocol);
         byte[] originalPacketBytes = ByteBufUtil.getBytes(out, startIndexInclusive, endIndexExclusive - startIndexInclusive, false);
         PacketFlow outboundPacketFlow = resolvePacketFlow(packetEncoderFlowAccess, connectionProtocol, packet);
+        CreateBlockEntityUpdateGate.observeOutboundPacket(context, protocolName, outboundPacketFlow, packet);
         if (CreateBlockEntityUpdateGate.tryDelayOutboundPacket(context, protocolName, outboundPacketFlow, packet, originalPacketBytes)) {
             out.writerIndex(startIndexInclusive);
             return;

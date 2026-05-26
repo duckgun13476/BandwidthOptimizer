@@ -99,7 +99,9 @@ def applySharedBandwidthOptimizerRunProperties = { Project projectRef, def runCo
             ['boChunkWatchBoundaryReuseMaxDeltaPackets', 'bandwidthoptimizer.chunk.watchBoundaryReuseMaxDeltaPackets'],
             ['boChunkWatchBoundaryReuseMaxDeltaBytesRatio', 'bandwidthoptimizer.chunk.watchBoundaryReuseMaxDeltaBytesRatio'],
             ['boCreateBlockEntityUpdateGateEnabled', 'bandwidthoptimizer.create.blockEntityUpdateGateEnabled'],
-            ['boCreateBlockEntityUpdateGateMaxDelayMillis', 'bandwidthoptimizer.create.blockEntityUpdateGateMaxDelayMillis']
+            ['boCreateBlockEntityUpdateGateMaxDelayMillis', 'bandwidthoptimizer.create.blockEntityUpdateGateMaxDelayMillis'],
+            ['boCreateBlockEntityUpdateGateMaxPendingPerPlayer', 'bandwidthoptimizer.create.blockEntityUpdateGateMaxPendingPerPlayer'],
+            ['boCreateBlockEntityUpdateGateChunkBootstrapMillis', 'bandwidthoptimizer.create.blockEntityUpdateGateChunkBootstrapMillis']
     ].each { List<String> mapping ->
         applyOptionalRunProperty(projectRef, runConfig, mapping[0], mapping[1])
     }

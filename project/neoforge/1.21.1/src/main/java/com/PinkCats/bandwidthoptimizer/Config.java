@@ -421,7 +421,10 @@ public class Config {
             public static final double DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_ALWAYS_SEND_DISTANCE_BLOCKS = 8.0D;
             public static final String CREATE_BLOCK_ENTITY_UPDATE_GATE_MAX_PENDING_PER_PLAYER =
                     "bandwidthoptimizer.create.blockEntityUpdateGateMaxPendingPerPlayer";
-            public static final int DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_MAX_PENDING_PER_PLAYER = 1024;
+            public static final int DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_MAX_PENDING_PER_PLAYER = 8192;
+            public static final String CREATE_BLOCK_ENTITY_UPDATE_GATE_CHUNK_BOOTSTRAP_MILLIS =
+                    "bandwidthoptimizer.create.blockEntityUpdateGateChunkBootstrapMillis";
+            public static final long DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_CHUNK_BOOTSTRAP_MILLIS = 8000L;
 
             private Create() {
             }

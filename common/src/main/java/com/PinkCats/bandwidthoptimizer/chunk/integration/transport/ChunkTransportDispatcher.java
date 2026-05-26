@@ -128,7 +128,7 @@ public final class ChunkTransportDispatcher {
         long scopeId = peerSnapshot.epoch();
         ChunkPeerChunkStateSnapshot knownChunkSnapshot =
                 resolvePlanningChunkSnapshot(context, scopeId, descriptor, fingerprint);
-        ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult = buildOutboundPatchCandidate(
+        ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult = resolveOutboundPatchCandidate(
                 context,
                 scopeId,
                 descriptor,
@@ -282,7 +282,7 @@ public final class ChunkTransportDispatcher {
         long patchStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult = forceSableInitialSyncFull
                 ? ChunkPatchBuilder.ChunkPatchBuildResult.unavailable("sable_initial_sync_force_full")
-                : buildOutboundPatchCandidate(
+                : resolveOutboundPatchCandidate(
                         context,
                         scopeId,
                         descriptor,
@@ -878,6 +878,48 @@ public final class ChunkTransportDispatcher {
                 readChannelId(context),
                 frame.reason() == null ? "" : frame.reason()
         );
+    }
+
+    private static ChunkPatchBuilder.ChunkPatchBuildResult resolveOutboundPatchCandidate(
+            ChannelHandlerContext context,
+            long scopeId,
+            ChunkPacketDescriptor descriptor,
+            Packet<?> packet,
+            byte[] originalPacketBytes,
+            ChunkSnapshotFingerprint fingerprint,
+            ChunkPeerChunkStateSnapshot knownChunkSnapshot
+    ) {
+        if (!shouldBuildOutboundPatchCandidate(descriptor, fingerprint, knownChunkSnapshot)) {
+            return ChunkPatchBuilder.ChunkPatchBuildResult.unavailable("patch_base_not_eligible");
+        }
+        return buildOutboundPatchCandidate(
+                context,
+                scopeId,
+                descriptor,
+                packet,
+                originalPacketBytes,
+                fingerprint,
+                knownChunkSnapshot
+        );
+    }
+
+    private static boolean shouldBuildOutboundPatchCandidate(
+            ChunkPacketDescriptor descriptor,
+            ChunkSnapshotFingerprint fingerprint,
+            ChunkPeerChunkStateSnapshot knownChunkSnapshot
+    ) {
+        if (descriptor == null
+                || fingerprint == null
+                || fingerprint.hashHex() == null
+                || fingerprint.hashHex().isBlank()
+                || knownChunkSnapshot == null
+                || !knownChunkSnapshot.knownSnapshotPublished()
+                || knownChunkSnapshot.knownSnapshotHash() == null
+                || knownChunkSnapshot.knownSnapshotHash().isBlank()) {
+            return false;
+        }
+        return descriptor.hotspotKind() != ChunkHotspotKind.FULL_CHUNK
+                || !knownChunkSnapshot.knownSnapshotHash().equals(fingerprint.hashHex());
     }
 
     private static ChunkPatchBuilder.ChunkPatchBuildResult buildOutboundPatchCandidate(
