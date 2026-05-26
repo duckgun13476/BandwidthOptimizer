@@ -334,6 +334,7 @@ public final class ChunkTransportDispatcher {
             ChunkLocalCacheReuseStats.ReuseSource reuseSource =
                     ChunkLocalCacheReuseStats.ReuseSource.TEMPORARY_RUNTIME_CACHE;
             ChunkRuntimeReferenceStore.RuntimeFullSnapshot runtimeFullSnapshot = null;
+            boolean restoredFromPersistentCache = false;
             if (!restoredFromSnapshot) {
                 runtimeFullSnapshot = ChunkRuntimeReferenceStore.findFullSnapshot(
                         channelId,
@@ -348,9 +349,11 @@ public final class ChunkTransportDispatcher {
                     restoredPacketBytes = ChunkPersistentClientCache.findPacketBytes(envelope.frame());
                     if (restoredPacketBytes != null) {
                         reuseSource = ChunkLocalCacheReuseStats.ReuseSource.OFFLINE_PERSISTENT_CACHE;
+                        restoredFromPersistentCache = true;
+                        // 持久缓存 manifest ref 可能没有 baseSnapshotHash；命中后按 payloadHash 写入运行时缓存。
                         ChunkRuntimeReferenceStore.storePacketBytes(
                                 channelId,
-                                envelope.frame().baseSnapshotHash(),
+                                envelope.frame().payloadHash(),
                                 restoredPacketBytes
                         );
                         ChunkRuntimeReferenceStore.storeFullSnapshot(channelId, envelope.frame());
@@ -359,6 +362,7 @@ public final class ChunkTransportDispatcher {
             }
             if (restoredPacketBytes == null
                     || (!restoredFromSnapshot
+                    && !restoredFromPersistentCache
                     && !hasMatchingRuntimeFullSnapshot(runtimeFullSnapshot, envelope.frame(), restoredPacketBytes)
                     && !canUseContentAddressedFullPacket(envelope.frame(), restoredPacketBytes))) {
                 String trimmedBudgetIgnoreReason = resolveTrimmedBudgetIgnoreReason(context, envelope.frame(), "runtime_ref_missing_base");
