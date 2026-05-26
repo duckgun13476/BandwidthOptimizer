@@ -420,17 +420,9 @@ public final class ChunkTransportDispatcher {
                     restoredPacketBytes.length,
                     ""
             );
-            long persistentStoreStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
-            ChunkPersistentClientCache.storeFullSnapshot(envelope.frame(), restoredPacketBytes);
-            ChunkLoadDelayProbe.logStage(
-                    context,
-                    envelope.frame(),
-                    "client",
-                    "inbound_full_persistent_store",
-                    ChunkLoadDelayProbe.elapsedMillisSince(persistentStoreStartNanos),
-                    restoredPacketBytes.length,
-                    ""
-            );
+            // The restored packet is passed back into the normal inbound decoder, where
+            // ChunkInboundObservationService persists it once. Persisting here as well
+            // doubled fingerprint/cache work on the Netty client thread during TP floods.
             long runtimeStoreStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
             ChunkRuntimeReferenceStore.storePacketBytes(
                     readChannelId(context),
@@ -570,7 +562,6 @@ public final class ChunkTransportDispatcher {
                     reuseSource
             );
             long storeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
-            ChunkPersistentClientCache.storeFullSnapshot(envelope.frame(), restoredPacketBytes);
             ChunkRuntimeReferenceStore.storePacketBytes(
                     channelId,
                     envelope.frame().payloadHash(),
@@ -637,7 +628,6 @@ public final class ChunkTransportDispatcher {
                     patchReuseSource
             );
             long storeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
-            ChunkPersistentClientCache.storeFullSnapshot(envelope.frame(), restoredPacketBytes);
             acknowledgeFullChunkPatchIfNeeded(context, envelope.frame(), restoredPacketBytes);
             ChunkLoadDelayProbe.logStage(
                     context,

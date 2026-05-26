@@ -7,6 +7,8 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordina
 import com.PinkCats.bandwidthoptimizer.chunk.debug.ChunkLoadDelayProbe;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportControlFrameSender;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameCodec;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprintService;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
@@ -178,6 +180,63 @@ public final class ChunkPersistentClientCache {
 
     public static void storeFullSnapshot(ChunkHotspotFrame frame, byte[] restoredPacketBytes) {
         String serverScopeHash = currentServerScopeHash();
+        storeFullSnapshot(frame, restoredPacketBytes, serverScopeHash, null);
+    }
+
+    public static void storeInboundFullChunkAsync(
+            String protocolName,
+            long epoch,
+            String packetClassName,
+            ChunkHotspotKind hotspotKind,
+            ChunkLaneKind laneKind,
+            ChunkPacketCoordinate coordinate,
+            byte[] encodedPacketBytes,
+            String reason
+    ) {
+        String serverScopeHash = currentServerScopeHash();
+        if (!isEnabled()
+                || !isSafeScopeHash(serverScopeHash)
+                || hotspotKind != ChunkHotspotKind.FULL_CHUNK
+                || encodedPacketBytes == null
+                || encodedPacketBytes.length == 0) {
+            return;
+        }
+
+        byte[] snapshotBytes = encodedPacketBytes.clone();
+        IO_EXECUTOR.execute(() -> {
+            ChunkSnapshotFingerprint fingerprint =
+                    ChunkSnapshotFingerprintService.fingerprintOutboundPacket(snapshotBytes);
+            if (fingerprint == null || fingerprint.hashHex() == null || fingerprint.hashHex().isBlank()) {
+                return;
+            }
+            ChunkHotspotFrame frame = new ChunkHotspotFrame(
+                    ChunkHotspotFrameCodec.PROTOCOL_VERSION,
+                    ChunkHotspotFrameOp.PUBLISH_FULL,
+                    Math.max(epoch, 0L),
+                    0L,
+                    protocolName == null ? "PLAY" : protocolName,
+                    safeText(packetClassName, ""),
+                    hotspotKind,
+                    laneKind,
+                    coordinate,
+                    snapshotBytes.length,
+                    1L,
+                    0L,
+                    fingerprint.hashHex(),
+                    fingerprint.hashHex(),
+                    0L,
+                    safeText(reason, "persistent_cache_from_decoded_inbound_full")
+            );
+            storeFullSnapshot(frame, snapshotBytes, serverScopeHash, fingerprint);
+        });
+    }
+
+    private static void storeFullSnapshot(
+            ChunkHotspotFrame frame,
+            byte[] restoredPacketBytes,
+            String serverScopeHash,
+            ChunkSnapshotFingerprint knownFingerprint
+    ) {
         if (!isEnabled()
                 || !isSafeScopeHash(serverScopeHash)
                 || !isStorableFullSnapshot(frame)
@@ -187,7 +246,9 @@ public final class ChunkPersistentClientCache {
         }
 
         long fingerprintStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
-        ChunkSnapshotFingerprint fingerprint = ChunkSnapshotFingerprintService.fingerprintOutboundPacket(restoredPacketBytes);
+        ChunkSnapshotFingerprint fingerprint = knownFingerprint == null
+                ? ChunkSnapshotFingerprintService.fingerprintOutboundPacket(restoredPacketBytes)
+                : knownFingerprint;
         ChunkLoadDelayProbe.logStage(
                 (Channel) null,
                 frame,

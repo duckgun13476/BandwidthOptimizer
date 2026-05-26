@@ -12,11 +12,6 @@ import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceSt
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportBoundaryController;
 import com.PinkCats.bandwidthoptimizer.chunk.packet.ClientboundPlayPacketCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
-import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
-import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameCodec;
-import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
-import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
-import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprintService;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateSnapshot;
@@ -147,32 +142,15 @@ public final class ChunkInboundObservationService {
             return;
         }
 
-        ChunkSnapshotFingerprint fingerprint =
-                ChunkSnapshotFingerprintService.fingerprintOutboundPacket(encodedPacketBytes);
-        if (fingerprint == null || fingerprint.hashHex() == null || fingerprint.hashHex().isBlank()) {
-            return;
-        }
-
-        ChunkPersistentClientCache.storeFullSnapshot(
-                new ChunkHotspotFrame(
-                        ChunkHotspotFrameCodec.PROTOCOL_VERSION,
-                        ChunkHotspotFrameOp.PUBLISH_FULL,
-                        Math.max(epoch, 0L),
-                        0L,
-                        protocolName == null ? "PLAY" : protocolName,
-                        descriptor.packetClassName(),
-                        descriptor.hotspotKind(),
-                        descriptor.laneKind(),
-                        descriptor.coordinate(),
-                        encodedPacketBytes.length,
-                        1L,
-                        0L,
-                        fingerprint.hashHex(),
-                        fingerprint.hashHex(),
-                        0L,
-                        "persistent_cache_from_direct_inbound_full"
-                ),
-                encodedPacketBytes
+        ChunkPersistentClientCache.storeInboundFullChunkAsync(
+                protocolName,
+                epoch,
+                descriptor.packetClassName(),
+                descriptor.hotspotKind(),
+                descriptor.laneKind(),
+                descriptor.coordinate(),
+                encodedPacketBytes,
+                "persistent_cache_from_direct_inbound_full"
         );
     }
 
