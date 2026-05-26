@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkLaneKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
+import com.PinkCats.bandwidthoptimizer.chunk.debug.ChunkLoadDelayProbe;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportControlFrameSender;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
@@ -42,6 +43,7 @@ public final class ChunkPersistentClientCache {
 
     private static final String ENABLED_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCache";
     private static final String MANIFEST_LIMIT_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheManifestLimit";
+    private static final String MANIFEST_BATCH_ENTRIES_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheManifestBatchEntries";
     private static final String ZIP_LEVEL_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheZipLevel";
     private static final String CHECKPOINT_INTERVAL_MILLIS_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheCheckpointMillis";
     private static final String CHECKPOINT_DIRTY_BLOBS_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheCheckpointDirtyBlobs";
@@ -50,6 +52,7 @@ public final class ChunkPersistentClientCache {
     private static final String BACKUP_INTERVAL_MILLIS_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheBackupMillis";
     private static final boolean DEFAULT_ENABLED = true;
     private static final int DEFAULT_MANIFEST_LIMIT = 512;
+    private static final int DEFAULT_MANIFEST_BATCH_ENTRIES = 512;
     private static final int DEFAULT_ZIP_LEVEL = 2;
     private static final long DEFAULT_CHECKPOINT_INTERVAL_MILLIS = 5_000L;
     private static final int DEFAULT_CHECKPOINT_DIRTY_BLOBS = 16;
@@ -173,13 +176,24 @@ public final class ChunkPersistentClientCache {
             return;
         }
 
+        long fingerprintStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         ChunkSnapshotFingerprint fingerprint = ChunkSnapshotFingerprintService.fingerprintOutboundPacket(restoredPacketBytes);
+        ChunkLoadDelayProbe.logStage(
+                (Channel) null,
+                frame,
+                "client",
+                "persistent_store_fingerprint",
+                ChunkLoadDelayProbe.elapsedMillisSince(fingerprintStartNanos),
+                restoredPacketBytes.length,
+                ""
+        );
         if (fingerprint == null
                 || fingerprint.hashHex() == null
                 || !fingerprint.hashHex().equals(frame.payloadHash())) {
             return;
         }
 
+        long storeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         synchronized (LOCK) {
             try {
                 ZipCacheSnapshot cacheSnapshot = cachedZipCacheSnapshot();
@@ -214,6 +228,15 @@ public final class ChunkPersistentClientCache {
                 }
             }
         }
+        ChunkLoadDelayProbe.logStage(
+                (Channel) null,
+                frame,
+                "client",
+                "persistent_store_total",
+                ChunkLoadDelayProbe.elapsedMillisSince(storeStartNanos),
+                restoredPacketBytes.length,
+                ""
+        );
     }
 
 
@@ -223,6 +246,7 @@ public final class ChunkPersistentClientCache {
             return null;
         }
 
+        long loadStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         synchronized (LOCK) {
             try {
                 ZipCacheSnapshot cacheSnapshot = cachedZipCacheSnapshot();
@@ -233,13 +257,33 @@ public final class ChunkPersistentClientCache {
                 }
 
                 byte[] packetBytes = cacheSnapshot.blobs().get(blobEntryName(cachedHash));
-                if (packetBytes == null || packetBytes.length == 0 || !matchesHash(packetBytes, cachedHash)) {
+                long hashStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
+                boolean matchedHash = packetBytes != null && packetBytes.length > 0 && matchesHash(packetBytes, cachedHash);
+                ChunkLoadDelayProbe.logStage(
+                        (Channel) null,
+                        frame,
+                        "client",
+                        "persistent_find_hash_check",
+                        ChunkLoadDelayProbe.elapsedMillisSince(hashStartNanos),
+                        packetBytes == null ? 0 : packetBytes.length,
+                        "matched=" + matchedHash
+                );
+                if (!matchedHash) {
                     return null;
                 }
 
                 cacheSnapshot.index().setProperty(keyPrefix + "lastUsedAtMillis", Long.toString(System.currentTimeMillis()));
                 markDirty(0);
                 logLoad(frame, packetBytes.length);
+                ChunkLoadDelayProbe.logStage(
+                        (Channel) null,
+                        frame,
+                        "client",
+                        "persistent_find_total",
+                        ChunkLoadDelayProbe.elapsedMillisSince(loadStartNanos),
+                        packetBytes.length,
+                        "hit=true"
+                );
                 return packetBytes.clone();
             } catch (IOException exception) {
                 if (DebugRuntimeConfig.isDiagnoseEnabled()) {
@@ -265,6 +309,7 @@ public final class ChunkPersistentClientCache {
             return null;
         }
 
+        long loadStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         synchronized (LOCK) {
             try {
                 ZipCacheSnapshot cacheSnapshot = cachedZipCacheSnapshot();
@@ -275,13 +320,33 @@ public final class ChunkPersistentClientCache {
                 }
 
                 byte[] packetBytes = cacheSnapshot.blobs().get(blobEntryName(cachedHash));
-                if (packetBytes == null || packetBytes.length == 0 || !matchesHash(packetBytes, cachedHash)) {
+                long hashStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
+                boolean matchedHash = packetBytes != null && packetBytes.length > 0 && matchesHash(packetBytes, cachedHash);
+                ChunkLoadDelayProbe.logStage(
+                        (Channel) null,
+                        frame,
+                        "client",
+                        "persistent_find_base_hash_check",
+                        ChunkLoadDelayProbe.elapsedMillisSince(hashStartNanos),
+                        packetBytes == null ? 0 : packetBytes.length,
+                        "matched=" + matchedHash
+                );
+                if (!matchedHash) {
                     return null;
                 }
 
                 cacheSnapshot.index().setProperty(keyPrefix + "lastUsedAtMillis", Long.toString(System.currentTimeMillis()));
                 markDirty(0);
                 logLoad(frame, packetBytes.length);
+                ChunkLoadDelayProbe.logStage(
+                        (Channel) null,
+                        frame,
+                        "client",
+                        "persistent_find_base_total",
+                        ChunkLoadDelayProbe.elapsedMillisSince(loadStartNanos),
+                        packetBytes.length,
+                        "hit=true"
+                );
                 return packetBytes.clone();
             } catch (IOException exception) {
                 if (DebugRuntimeConfig.isDiagnoseEnabled()) {
@@ -350,11 +415,31 @@ public final class ChunkPersistentClientCache {
             return 0;
         }
 
+        long manifestLoadStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         List<ManifestEntry> entries = loadManifestEntries(serverScopeHash);
+        ChunkLoadDelayProbe.logStage(
+                channel,
+                null,
+                "client",
+                "persistent_manifest_load_entries",
+                ChunkLoadDelayProbe.elapsedMillisSince(manifestLoadStartNanos),
+                entries.size(),
+                "reason=" + safeText(reason, "persistent_client_cache_manifest")
+        );
         int sentCount = 0;
-        for (ManifestEntry entry : entries) {
-            if (ChunkTransportControlFrameSender.sendPersistentClientCacheManifest(channel, entry.toFrame(reason))) {
-                sentCount++;
+        long manifestSendStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
+        int batchEntries = manifestBatchEntries();
+        for (int startIndex = 0; startIndex < entries.size(); startIndex += batchEntries) {
+            int endIndex = Math.min(startIndex + batchEntries, entries.size());
+            List<ManifestEntry> batch = entries.subList(startIndex, endIndex);
+            byte[] batchPayloadBytes = ChunkPersistentClientCacheManifestBatchCodec.encode(batch, safeText(reason, "persistent_client_cache_manifest"));
+            if (ChunkTransportControlFrameSender.sendPersistentClientCacheManifestBatch(
+                    channel,
+                    batchPayloadBytes,
+                    batch.size(),
+                    safeText(reason, "persistent_client_cache_manifest") + "_batch"
+            )) {
+                sentCount += batch.size();
             }
         }
         ChunkTransportControlFrameSender.sendPersistentClientCacheManifestComplete(
@@ -371,9 +456,129 @@ public final class ChunkPersistentClientCache {
                     reason == null ? "" : reason
             );
         }
+        ChunkLoadDelayProbe.logStage(
+                channel,
+                null,
+                "client",
+                "persistent_manifest_send_total",
+                ChunkLoadDelayProbe.elapsedMillisSince(manifestSendStartNanos),
+                sentCount,
+                "entries=" + entries.size() + ", reason=" + safeText(reason, "persistent_client_cache_manifest")
+        );
         return sentCount;
     }
 
+    // Prepares manifest batches outside the Netty inbound callback.
+    public static void sendManifestOnceAsync(Channel channel, String reason) {
+        if (channel == null) {
+            return;
+        }
+
+        String channelId = com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel);
+        String serverScopeHash = currentServerScopeHash();
+        if (!isSafeScopeHash(serverScopeHash)) {
+            return;
+        }
+
+        if (!isEnabled()) {
+            channel.eventLoop().execute(() -> ChunkTransportControlFrameSender.sendPersistentClientCacheManifestComplete(
+                    channel,
+                    safeText(reason, "persistent_client_cache_manifest") + "_disabled_complete"
+            ));
+            return;
+        }
+
+        String manifestKey = channelId + "|" + serverScopeHash;
+        if (!MANIFEST_SENT_CHANNELS.add(manifestKey)) {
+            return;
+        }
+
+        IO_EXECUTOR.execute(() -> sendManifestOnceFromWorker(channel, reason, manifestKey, serverScopeHash));
+    }
+
+    // Builds payloads on the cache worker and writes them back on the event loop.
+    private static void sendManifestOnceFromWorker(
+            Channel channel,
+            String reason,
+            String manifestKey,
+            String serverScopeHash
+    ) {
+        if (channel == null || !channel.isOpen()) {
+            return;
+        }
+
+        long manifestLoadStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
+        List<ManifestEntry> entries = loadManifestEntries(serverScopeHash);
+        ChunkLoadDelayProbe.logStage(
+                channel,
+                null,
+                "client",
+                "persistent_manifest_load_entries_async",
+                ChunkLoadDelayProbe.elapsedMillisSince(manifestLoadStartNanos),
+                entries.size(),
+                "reason=" + safeText(reason, "persistent_client_cache_manifest")
+        );
+
+        long encodeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
+        ArrayList<ManifestBatchPayload> batchPayloads = new ArrayList<>();
+        int batchEntries = manifestBatchEntries();
+        for (int startIndex = 0; startIndex < entries.size(); startIndex += batchEntries) {
+            int endIndex = Math.min(startIndex + batchEntries, entries.size());
+            List<ManifestEntry> batch = entries.subList(startIndex, endIndex);
+            batchPayloads.add(new ManifestBatchPayload(
+                    ChunkPersistentClientCacheManifestBatchCodec.encode(batch, safeText(reason, "persistent_client_cache_manifest")),
+                    batch.size()
+            ));
+        }
+        ChunkLoadDelayProbe.logStage(
+                channel,
+                null,
+                "client",
+                "persistent_manifest_encode_batches_async",
+                ChunkLoadDelayProbe.elapsedMillisSince(encodeStartNanos),
+                batchPayloads.size(),
+                "entries=" + entries.size() + ", reason=" + safeText(reason, "persistent_client_cache_manifest")
+        );
+
+        long sendStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
+        channel.eventLoop().execute(() -> {
+            int sentCount = 0;
+            for (ManifestBatchPayload batchPayload : batchPayloads) {
+                if (ChunkTransportControlFrameSender.sendPersistentClientCacheManifestBatch(
+                        channel,
+                        batchPayload.payloadBytes,
+                        batchPayload.entryCount,
+                        safeText(reason, "persistent_client_cache_manifest") + "_batch"
+                )) {
+                    sentCount += batchPayload.entryCount;
+                }
+            }
+            ChunkTransportControlFrameSender.sendPersistentClientCacheManifestComplete(
+                    channel,
+                    safeText(reason, "persistent_client_cache_manifest") + "_complete"
+            );
+            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[ChunkPersistentCache][Manifest][Async] channel={}, entries={}, sent={}, batches={}, cacheFile={}, reason={}",
+                        manifestKey,
+                        entries.size(),
+                        sentCount,
+                        batchPayloads.size(),
+                        cacheFile(),
+                        reason == null ? "" : reason
+                );
+            }
+            ChunkLoadDelayProbe.logStage(
+                    channel,
+                    null,
+                    "client",
+                    "persistent_manifest_send_total_async",
+                    ChunkLoadDelayProbe.elapsedMillisSince(sendStartNanos),
+                    sentCount,
+                    "entries=" + entries.size() + ", batches=" + batchPayloads.size() + ", reason=" + safeText(reason, "persistent_client_cache_manifest")
+            );
+        });
+    }
     private static List<ManifestEntry> loadManifestEntries(String serverScopeHash) {
         if (!isSafeScopeHash(serverScopeHash)) {
             return List.of();
@@ -576,6 +781,7 @@ public final class ChunkPersistentClientCache {
     }
 
     private static ZipCacheSnapshot cachedZipCacheSnapshot() throws IOException {
+        long startNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         installShutdownHookIfNeeded();
         startCheckpointLoopIfNeeded();
         startBackupLoopIfNeeded();
@@ -583,6 +789,15 @@ public final class ChunkPersistentClientCache {
         if (cachedSnapshot == null) {
             cachedSnapshot = readZipCacheSnapshot();
         }
+        ChunkLoadDelayProbe.logStage(
+                (Channel) null,
+                null,
+                "client",
+                "persistent_cached_snapshot",
+                ChunkLoadDelayProbe.elapsedMillisSince(startNanos),
+                cachedSnapshot == null ? 0 : cachedSnapshot.blobs().size(),
+                "loaded=" + (cachedSnapshot != null)
+        );
         return cachedSnapshot;
     }
 
@@ -695,6 +910,10 @@ public final class ChunkPersistentClientCache {
 
     private static int checkpointDirtyBlobs() {
         return Math.max(readIntProperty(CHECKPOINT_DIRTY_BLOBS_PROPERTY, DEFAULT_CHECKPOINT_DIRTY_BLOBS), 1);
+    }
+
+    private static int manifestBatchEntries() {
+        return Math.max(readIntProperty(MANIFEST_BATCH_ENTRIES_PROPERTY, DEFAULT_MANIFEST_BATCH_ENTRIES), 1);
     }
 
     private static long checkpointDirtyBytes() {
@@ -1018,6 +1237,13 @@ public final class ChunkPersistentClientCache {
         private static ZipCacheSnapshot empty() {
             return new ZipCacheSnapshot(new Properties(), new HashMap<>());
         }
+    }
+
+    // Holds worker-built payloads until the event loop writes them.
+    private record ManifestBatchPayload(
+            byte[] payloadBytes,
+            int entryCount
+    ) {
     }
 
     public record ManifestEntry(

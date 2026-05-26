@@ -6,6 +6,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.budget.ChunkClientTrimmedFullBaseSt
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketClassifier;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
+import com.PinkCats.bandwidthoptimizer.chunk.debug.ChunkLoadDelayProbe;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkInboundDecodeResult;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceStore;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelope;
@@ -20,6 +21,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.packet.ClientboundPlayPacketCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.packet.ChunkHeavyProtocolBypassPacketList;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkLocalCacheReuseStats;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
+import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCacheManifestBatchCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentManifestGate;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameCodec;
@@ -163,6 +165,13 @@ public final class ChunkTransportDispatcher {
                 encodedEnvelopeBytes.length
         );
         ChunkHotspotVerifyHooks.flushCurrentReport();
+        ChunkLoadDelayProbe.logServerEncode(
+                context,
+                runtimeDecision.frame(),
+                originalPacketBytes == null ? 0 : originalPacketBytes.length,
+                encodedEnvelopeBytes.length,
+                runtimeDecision.decision()
+        );
         long frameCount = incrementOutboundFrameCount(runtimeDecision.operation());
         if (shouldLogDiagnose() && shouldLogSample(frameCount)) {
             Bandwidthoptimizer.LOGGER.info(
@@ -194,7 +203,17 @@ public final class ChunkTransportDispatcher {
         if (shouldBypassHeavyChunkProtocol(packet))
             return OutboundChunkEncodeResult.bypass(false, "heavy_chunk_protocol_bypass");
 
+        long classifyStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         ChunkPacketDescriptor descriptor = ChunkPacketClassifier.classifyOutboundPlayPacket(protocolName, packet);
+        ChunkLoadDelayProbe.logStage(
+                context,
+                null,
+                "server",
+                "outbound_classify",
+                ChunkLoadDelayProbe.elapsedMillisSince(classifyStartNanos),
+                originalPacketBytes == null ? 0 : originalPacketBytes.length,
+                packet == null ? "<null>" : packet.getClass().getName()
+        );
         boolean chunkPacketCandidate = shouldUseRuntimeChunkTransport(descriptor);
         if (!chunkPacketCandidate)
             return OutboundChunkEncodeResult.bypass(false, "descriptor_not_chunk_candidate");
@@ -212,23 +231,54 @@ public final class ChunkTransportDispatcher {
             return OutboundChunkEncodeResult.bypass(true, transportPermit.reason());
         }
 
+        long peerStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         ChunkPeerStateSnapshot peerSnapshot = ChunkPeerStateManager.snapshotOutboundChannel(context);
         if (!hasActiveRuntimeScope(peerSnapshot)) {
             peerSnapshot = ChunkPeerStateManager.ensureOutboundChannelScope(context, "runtime_chunk_transport_missing_scope");
         }
+        ChunkLoadDelayProbe.logStage(
+                context,
+                null,
+                "server",
+                "outbound_peer_scope",
+                ChunkLoadDelayProbe.elapsedMillisSince(peerStartNanos),
+                originalPacketBytes == null ? 0 : originalPacketBytes.length,
+                "active=" + hasActiveRuntimeScope(peerSnapshot)
+        );
         if (!hasActiveRuntimeScope(peerSnapshot)) {
             return OutboundChunkEncodeResult.bypass(true, "missing_bound_chunk_scope");
         }
 
+        long fingerprintStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         ChunkSnapshotFingerprint fingerprint = ChunkSnapshotFingerprintService.fingerprintOutboundPacket(originalPacketBytes);
+        ChunkLoadDelayProbe.logStage(
+                context,
+                null,
+                "server",
+                "outbound_fingerprint",
+                ChunkLoadDelayProbe.elapsedMillisSince(fingerprintStartNanos),
+                originalPacketBytes == null ? 0 : originalPacketBytes.length,
+                fingerprint == null ? "fingerprint=false" : "fingerprint=true"
+        );
         if (fingerprint == null) {
             return OutboundChunkEncodeResult.bypass(true, "missing_snapshot_fingerprint");
         }
 
         long scopeId = peerSnapshot.epoch();
+        long snapshotStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         ChunkPeerChunkStateSnapshot knownChunkSnapshot = forceSableInitialSyncFull
                 ? null
                 : resolvePlanningChunkSnapshot(context, scopeId, descriptor, fingerprint);
+        ChunkLoadDelayProbe.logStage(
+                context,
+                null,
+                "server",
+                "outbound_resolve_known_snapshot",
+                ChunkLoadDelayProbe.elapsedMillisSince(snapshotStartNanos),
+                originalPacketBytes == null ? 0 : originalPacketBytes.length,
+                knownChunkSnapshot == null ? "known=false" : "known=true"
+        );
+        long patchStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult = forceSableInitialSyncFull
                 ? ChunkPatchBuilder.ChunkPatchBuildResult.unavailable("sable_initial_sync_force_full")
                 : buildOutboundPatchCandidate(
@@ -240,6 +290,16 @@ public final class ChunkTransportDispatcher {
                         fingerprint,
                         knownChunkSnapshot
                 );
+        ChunkLoadDelayProbe.logStage(
+                context,
+                null,
+                "server",
+                "outbound_patch_candidate",
+                ChunkLoadDelayProbe.elapsedMillisSince(patchStartNanos),
+                originalPacketBytes == null ? 0 : originalPacketBytes.length,
+                patchBuildResult == null ? "<null>" : patchBuildResult.reason()
+        );
+        long planStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         RuntimeChunkPlanningResult planningResult =
                 planRuntimeTransportWithTrace(
                         descriptor,
@@ -250,13 +310,33 @@ public final class ChunkTransportDispatcher {
                         originalPacketBytes
                 );
         RuntimeChunkTransportDecision runtimeDecision = planningResult.transportDecision();
+        ChunkLoadDelayProbe.logStage(
+                context,
+                runtimeDecision == null ? null : runtimeDecision.frame(),
+                "server",
+                "outbound_plan",
+                ChunkLoadDelayProbe.elapsedMillisSince(planStartNanos),
+                originalPacketBytes == null ? 0 : originalPacketBytes.length,
+                runtimeDecision == null ? planningResult.bypassReason() : runtimeDecision.operation().logName()
+        );
         if (runtimeDecision == null) {
             return OutboundChunkEncodeResult.bypass(true, planningResult.bypassReason());
         }
 
+        long envelopeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         byte[] encodedEnvelopeBytes = ChunkTransportEnvelopeCodec.encodeEnvelope(
                 new ChunkTransportEnvelope(runtimeDecision.frame(), runtimeDecision.copyTransportPayloadBytes())
         );
+        ChunkLoadDelayProbe.logStage(
+                context,
+                runtimeDecision.frame(),
+                "server",
+                "outbound_encode_envelope",
+                ChunkLoadDelayProbe.elapsedMillisSince(envelopeStartNanos),
+                encodedEnvelopeBytes.length,
+                ""
+        );
+        long statsStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         ChunkHotspotStats.recordOutboundFrame(
                 runtimeDecision.frame(),
                 originalPacketBytes == null ? 0 : originalPacketBytes.length,
@@ -269,6 +349,15 @@ public final class ChunkTransportDispatcher {
                 encodedEnvelopeBytes.length
         );
         ChunkHotspotVerifyHooks.flushCurrentReport();
+        ChunkLoadDelayProbe.logStage(
+                context,
+                runtimeDecision.frame(),
+                "server",
+                "outbound_stats_flush",
+                ChunkLoadDelayProbe.elapsedMillisSince(statsStartNanos),
+                encodedEnvelopeBytes.length,
+                ""
+        );
         long frameCount = incrementOutboundFrameCount(runtimeDecision.operation());
         if (shouldLogDiagnose() && shouldLogSample(frameCount)) {
             Bandwidthoptimizer.LOGGER.info(
@@ -297,7 +386,18 @@ public final class ChunkTransportDispatcher {
             return ChunkInboundDecodeResult.passthrough(packetBytes);
         }
 
+        long envelopeDecodeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         ChunkTransportEnvelope envelope = ChunkTransportEnvelopeCodec.decodeEnvelope(packetBytes);
+        ChunkLoadDelayProbe.logStage(
+                context,
+                envelope.frame(),
+                "client",
+                "inbound_decode_envelope",
+                ChunkLoadDelayProbe.elapsedMillisSince(envelopeDecodeStartNanos),
+                packetBytes == null ? 0 : packetBytes.length,
+                ""
+        );
+        ChunkLoadDelayProbe.logClientEnvelopeDecode(context, envelope.frame(), packetBytes.length);
         if (isRuntimeChunkDataFrame(envelope.frame())) {
             ChunkTransportBoundaryController.InboundRuntimeFrameDecision inboundFrameDecision =
                     ChunkTransportBoundaryController.beginInboundRuntimeFrame(context, envelope.frame().epoch());
@@ -308,8 +408,29 @@ public final class ChunkTransportDispatcher {
         }
         if (envelope.frame().operation() == ChunkHotspotFrameOp.PUBLISH_FULL) {
             byte[] restoredPacketBytes = envelope.copyOriginalPacketBytes();
+            long observeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
             observeInboundSnapshot(context, envelope.frame(), restoredPacketBytes);
+            ChunkLoadDelayProbe.logStage(
+                    context,
+                    envelope.frame(),
+                    "client",
+                    "inbound_full_observe_snapshot",
+                    ChunkLoadDelayProbe.elapsedMillisSince(observeStartNanos),
+                    restoredPacketBytes.length,
+                    ""
+            );
+            long persistentStoreStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
             ChunkPersistentClientCache.storeFullSnapshot(envelope.frame(), restoredPacketBytes);
+            ChunkLoadDelayProbe.logStage(
+                    context,
+                    envelope.frame(),
+                    "client",
+                    "inbound_full_persistent_store",
+                    ChunkLoadDelayProbe.elapsedMillisSince(persistentStoreStartNanos),
+                    restoredPacketBytes.length,
+                    ""
+            );
+            long runtimeStoreStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
             ChunkRuntimeReferenceStore.storePacketBytes(
                     readChannelId(context),
                     envelope.frame().payloadHash(),
@@ -317,12 +438,28 @@ public final class ChunkTransportDispatcher {
             );
             ChunkRuntimeReferenceStore.storeFullSnapshot(readChannelId(context), envelope.frame());
             ChunkTransportControlFrameSender.sendAck(context, envelope.frame(), "runtime_full_received");
+            ChunkLoadDelayProbe.logStage(
+                    context,
+                    envelope.frame(),
+                    "client",
+                    "inbound_full_runtime_store_ack",
+                    ChunkLoadDelayProbe.elapsedMillisSince(runtimeStoreStartNanos),
+                    restoredPacketBytes.length,
+                    ""
+            );
+            ChunkLoadDelayProbe.logClientRestored(
+                    context,
+                    envelope.frame(),
+                    restoredPacketBytes.length,
+                    "publish_full"
+            );
             logInboundFrame(context, packetBytes, envelope, restoredPacketBytes, INBOUND_FULL_FRAME_COUNT);
             return ChunkInboundDecodeResult.passthrough(restoredPacketBytes);
         }
 
         if (envelope.frame().operation() == ChunkHotspotFrameOp.PUBLISH_REF) {
             String channelId = readChannelId(context);
+            long shadowStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
             byte[] restoredPacketBytes = ChunkShadowSnapshotManager.materializeFullChunkPacket(
                     channelId,
                     envelope.frame().epoch(),
@@ -330,12 +467,22 @@ public final class ChunkTransportDispatcher {
                     envelope.frame().fullSnapshotVersion(),
                     envelope.frame().baseSnapshotHash()
             );
+            ChunkLoadDelayProbe.logStage(
+                    context,
+                    envelope.frame(),
+                    "client",
+                    "inbound_ref_shadow_materialize",
+                    ChunkLoadDelayProbe.elapsedMillisSince(shadowStartNanos),
+                    restoredPacketBytes == null ? 0 : restoredPacketBytes.length,
+                    "hit=" + (restoredPacketBytes != null)
+            );
             boolean restoredFromSnapshot = restoredPacketBytes != null;
             ChunkLocalCacheReuseStats.ReuseSource reuseSource =
                     ChunkLocalCacheReuseStats.ReuseSource.TEMPORARY_RUNTIME_CACHE;
             ChunkRuntimeReferenceStore.RuntimeFullSnapshot runtimeFullSnapshot = null;
             boolean restoredFromPersistentCache = false;
             if (!restoredFromSnapshot) {
+                long runtimeLookupStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
                 runtimeFullSnapshot = ChunkRuntimeReferenceStore.findFullSnapshot(
                         channelId,
                         envelope.frame().epoch(),
@@ -345,12 +492,31 @@ public final class ChunkTransportDispatcher {
                         channelId,
                         envelope.frame().baseSnapshotHash()
                 );
+                ChunkLoadDelayProbe.logStage(
+                        context,
+                        envelope.frame(),
+                        "client",
+                        "inbound_ref_runtime_lookup",
+                        ChunkLoadDelayProbe.elapsedMillisSince(runtimeLookupStartNanos),
+                        restoredPacketBytes == null ? 0 : restoredPacketBytes.length,
+                        "hit=" + (restoredPacketBytes != null)
+                );
                 if (restoredPacketBytes == null) {
+                    long persistentFindStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
                     restoredPacketBytes = ChunkPersistentClientCache.findPacketBytes(envelope.frame());
+                    ChunkLoadDelayProbe.logStage(
+                            context,
+                            envelope.frame(),
+                            "client",
+                            "inbound_ref_persistent_find",
+                            ChunkLoadDelayProbe.elapsedMillisSince(persistentFindStartNanos),
+                            restoredPacketBytes == null ? 0 : restoredPacketBytes.length,
+                            "hit=" + (restoredPacketBytes != null)
+                    );
                     if (restoredPacketBytes != null) {
                         reuseSource = ChunkLocalCacheReuseStats.ReuseSource.OFFLINE_PERSISTENT_CACHE;
                         restoredFromPersistentCache = true;
-                        // 持久缓存 manifest ref 可能没有 baseSnapshotHash；命中后按 payloadHash 写入运行时缓存。
+                        // Persistent manifest refs may not carry a base hash.
                         ChunkRuntimeReferenceStore.storePacketBytes(
                                 channelId,
                                 envelope.frame().payloadHash(),
@@ -367,6 +533,7 @@ public final class ChunkTransportDispatcher {
                     && !canUseContentAddressedFullPacket(envelope.frame(), restoredPacketBytes))) {
                 String trimmedBudgetIgnoreReason = resolveTrimmedBudgetIgnoreReason(context, envelope.frame(), "runtime_ref_missing_base");
                 if (!trimmedBudgetIgnoreReason.isBlank()) {
+                    ChunkLoadDelayProbe.logClientRestoreMiss(context, envelope.frame(), trimmedBudgetIgnoreReason, false);
                     logTrimmedBudgetSuppressedRuntimeFrame(context, envelope.frame(), trimmedBudgetIgnoreReason);
                     return ChunkInboundDecodeResult.consumeControlFrame();
                 }
@@ -375,16 +542,33 @@ public final class ChunkTransportDispatcher {
                         envelope.frame(),
                         resolveRefMissingBaseReason(envelope.frame())
                 );
+                ChunkLoadDelayProbe.logClientRestoreMiss(
+                        context,
+                        envelope.frame(),
+                        resolveRefMissingBaseReason(envelope.frame()),
+                        true
+                );
                 logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_NACK_FRAME_COUNT);
                 return ChunkInboundDecodeResult.consumeControlFrame();
             }
+            long observeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
             observeInboundSnapshot(context, envelope.frame(), restoredPacketBytes);
+            ChunkLoadDelayProbe.logStage(
+                    context,
+                    envelope.frame(),
+                    "client",
+                    "inbound_ref_observe_snapshot",
+                    ChunkLoadDelayProbe.elapsedMillisSince(observeStartNanos),
+                    restoredPacketBytes.length,
+                    ""
+            );
             ChunkLocalCacheReuseStats.recordReferenceReuse(
                     envelope.frame(),
                     restoredPacketBytes.length,
                     packetBytes == null ? 0 : packetBytes.length,
                     reuseSource
             );
+            long storeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
             ChunkPersistentClientCache.storeFullSnapshot(envelope.frame(), restoredPacketBytes);
             ChunkRuntimeReferenceStore.storePacketBytes(
                     channelId,
@@ -397,16 +581,51 @@ public final class ChunkTransportDispatcher {
             } else if (isWatchBoundaryReuseProbeFrame(envelope.frame())) {
                 ChunkTransportControlFrameSender.sendAck(context, envelope.frame(), WATCH_BOUNDARY_REUSE_PROBE_ACK_REASON);
             }
+            ChunkLoadDelayProbe.logStage(
+                    context,
+                    envelope.frame(),
+                    "client",
+                    "inbound_ref_store_ack",
+                    ChunkLoadDelayProbe.elapsedMillisSince(storeStartNanos),
+                    restoredPacketBytes.length,
+                    "source=" + reuseSource.name()
+            );
+            ChunkLoadDelayProbe.logClientRestored(
+                    context,
+                    envelope.frame(),
+                    restoredPacketBytes.length,
+                    restoredFromSnapshot ? "shadow_snapshot" : reuseSource.name()
+            );
             logInboundFrame(context, packetBytes, envelope, restoredPacketBytes, INBOUND_REF_FRAME_COUNT);
             return ChunkInboundDecodeResult.passthrough(restoredPacketBytes);
         }
 
         if (envelope.frame().operation() == ChunkHotspotFrameOp.PUBLISH_PATCH) {
+            long patchRestoreStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
             byte[] restoredPacketBytes = tryRestorePatchedPacket(context, envelope);
+            ChunkLoadDelayProbe.logStage(
+                    context,
+                    envelope.frame(),
+                    "client",
+                    "inbound_patch_restore",
+                    ChunkLoadDelayProbe.elapsedMillisSince(patchRestoreStartNanos),
+                    restoredPacketBytes == null ? 0 : restoredPacketBytes.length,
+                    "hit=" + (restoredPacketBytes != null)
+            );
             if (restoredPacketBytes == null) {
                 return ChunkInboundDecodeResult.consumeControlFrame();
             }
+            long observeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
             observeInboundSnapshot(context, envelope.frame(), restoredPacketBytes);
+            ChunkLoadDelayProbe.logStage(
+                    context,
+                    envelope.frame(),
+                    "client",
+                    "inbound_patch_observe_snapshot",
+                    ChunkLoadDelayProbe.elapsedMillisSince(observeStartNanos),
+                    restoredPacketBytes.length,
+                    ""
+            );
             ChunkLocalCacheReuseStats.ReuseSource patchReuseSource = isPersistentManifestPatchFrame(envelope.frame())
                     ? ChunkLocalCacheReuseStats.ReuseSource.OFFLINE_PERSISTENT_CACHE
                     : ChunkLocalCacheReuseStats.ReuseSource.TEMPORARY_RUNTIME_CACHE;
@@ -416,8 +635,24 @@ public final class ChunkTransportDispatcher {
                     packetBytes == null ? 0 : packetBytes.length,
                     patchReuseSource
             );
+            long storeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
             ChunkPersistentClientCache.storeFullSnapshot(envelope.frame(), restoredPacketBytes);
             acknowledgeFullChunkPatchIfNeeded(context, envelope.frame(), restoredPacketBytes);
+            ChunkLoadDelayProbe.logStage(
+                    context,
+                    envelope.frame(),
+                    "client",
+                    "inbound_patch_store_ack",
+                    ChunkLoadDelayProbe.elapsedMillisSince(storeStartNanos),
+                    restoredPacketBytes.length,
+                    "source=" + patchReuseSource.name()
+            );
+            ChunkLoadDelayProbe.logClientRestored(
+                    context,
+                    envelope.frame(),
+                    restoredPacketBytes.length,
+                    patchReuseSource.name()
+            );
             logInboundFrame(context, packetBytes, envelope, restoredPacketBytes, INBOUND_PATCH_FRAME_COUNT);
             return ChunkInboundDecodeResult.passthrough(restoredPacketBytes);
         }
@@ -436,7 +671,7 @@ public final class ChunkTransportDispatcher {
 
         if (envelope.frame().operation() == ChunkHotspotFrameOp.SERVER_CACHE_SCOPE) {
             ChunkPersistentClientCache.applyServerCacheScope(context == null ? null : context.channel(), envelope.frame());
-            ChunkPersistentClientCache.sendManifestOnce(
+            ChunkPersistentClientCache.sendManifestOnceAsync(
                     context == null ? null : context.channel(),
                     "persistent_client_cache_after_server_scope"
             );
@@ -503,7 +738,7 @@ public final class ChunkTransportDispatcher {
         }
 
         if (envelope.frame().operation() == ChunkHotspotFrameOp.CLIENT_CACHE_MANIFEST) {
-            handlePersistentClientCacheManifest(context, envelope.frame());
+            handlePersistentClientCacheManifest(context, envelope.frame(), envelope.copyOriginalPacketBytes());
             logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_CLIENT_CACHE_MANIFEST_FRAME_COUNT);
             return ChunkInboundDecodeResult.consumeControlFrame();
         }
@@ -517,9 +752,15 @@ public final class ChunkTransportDispatcher {
 
     private static void handlePersistentClientCacheManifest(
             ChannelHandlerContext context,
-            ChunkHotspotFrame frame
+            ChunkHotspotFrame frame,
+            byte[] payloadBytes
     ) {
         if (context == null || frame == null || frame.operation() != ChunkHotspotFrameOp.CLIENT_CACHE_MANIFEST) {
+            return;
+        }
+
+        if ((frame.coordinate() == null || !frame.coordinate().present()) && payloadBytes != null && payloadBytes.length > 0) {
+            handlePersistentClientCacheManifestBatch(context, frame, payloadBytes);
             return;
         }
 
@@ -530,13 +771,66 @@ public final class ChunkTransportDispatcher {
             return;
         }
 
+        applyPersistentClientCacheManifest(context, frame, true);
+    }
+
+    private static void handlePersistentClientCacheManifestBatch(
+            ChannelHandlerContext context,
+            ChunkHotspotFrame batchFrame,
+            byte[] payloadBytes
+    ) {
+        long startNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
+        int appliedCount = 0;
+        try {
+            for (ChunkHotspotFrame manifestFrame : ChunkPersistentClientCacheManifestBatchCodec.decode(
+                    payloadBytes,
+                    batchFrame.reason()
+            )) {
+                if (applyPersistentClientCacheManifest(context, manifestFrame, false) != null) {
+                    appliedCount++;
+                }
+            }
+            ChunkLoadDelayProbe.logStage(
+                    context,
+                    batchFrame,
+                    "server",
+                    "manifest_batch_apply",
+                    ChunkLoadDelayProbe.elapsedMillisSince(startNanos),
+                    payloadBytes.length,
+                    "applied=" + appliedCount
+            );
+            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[ChunkPersistentCache][Manifest][BatchRecv] channel={}, entries={}, applied={}, bytes={}, reason={}",
+                        readChannelId(context),
+                        batchFrame.fullSnapshotVersion(),
+                        appliedCount,
+                        payloadBytes.length,
+                        batchFrame.reason() == null ? "" : batchFrame.reason()
+                );
+            }
+        } catch (RuntimeException exception) {
+            Bandwidthoptimizer.LOGGER.warn(
+                    "[ChunkPersistentCache][Manifest][BatchFail] channel={}, bytes={}, reason={}",
+                    readChannelId(context),
+                    payloadBytes.length,
+                    exception.toString()
+            );
+        }
+    }
+
+    private static ChunkPeerChunkStateSnapshot applyPersistentClientCacheManifest(
+            ChannelHandlerContext context,
+            ChunkHotspotFrame frame,
+            boolean logEachEntry
+    ) {
         if (frame.payloadHash() == null || frame.payloadHash().isBlank()) {
-            return;
+            return null;
         }
 
         ChunkPeerChunkStateSnapshot chunkSnapshot =
                 ChunkPeerStateManager.recordPersistentClientManifest(context, frame);
-        if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (logEachEntry && DebugRuntimeConfig.isDiagnoseEnabled()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkPersistentCache][Manifest][Recv] channel={}, chunk={}, hash={}, state={}",
                     readChannelId(context),
@@ -545,6 +839,7 @@ public final class ChunkTransportDispatcher {
                     chunkSnapshot == null ? "<ignored>" : chunkSnapshot.summaryText()
             );
         }
+        return chunkSnapshot;
     }
 
     private static void logPersistentManifestComplete(ChannelHandlerContext context, ChunkHotspotFrame frame) {
@@ -818,7 +1113,8 @@ public final class ChunkTransportDispatcher {
         return new RuntimeChunkTransportDecision(
                 mapOperation(decision.decisionKind()),
                 buildRuntimeFrame(descriptor, peerSnapshot, decision),
-                resolveTransportPayloadBytes(decision, patchBuildResult, originalPacketBytes)
+                resolveTransportPayloadBytes(decision, patchBuildResult, originalPacketBytes),
+                decision
         );
     }
 
@@ -851,7 +1147,8 @@ public final class ChunkTransportDispatcher {
                 new RuntimeChunkTransportDecision(
                         mapOperation(decision.decisionKind()),
                         buildRuntimeFrame(descriptor, peerSnapshot, decision),
-                        resolveTransportPayloadBytes(decision, patchBuildResult, originalPacketBytes)
+                        resolveTransportPayloadBytes(decision, patchBuildResult, originalPacketBytes),
+                        decision
                 ),
                 ""
         );
@@ -965,13 +1262,25 @@ public final class ChunkTransportDispatcher {
 
         String channelId = readChannelId(context);
         ChunkPatch chunkPatch;
+        long patchDecodeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         try {
             chunkPatch = ChunkPatch.decode(envelope.copyOriginalPacketBytes());
         } catch (RuntimeException exception) {
             ChunkTransportControlFrameSender.sendNack(context, envelope.frame(), "runtime_patch_decode_failed");
+            ChunkLoadDelayProbe.logClientRestoreMiss(context, envelope.frame(), "runtime_patch_decode_failed", true);
             return null;
         }
+        ChunkLoadDelayProbe.logStage(
+                context,
+                envelope.frame(),
+                "client",
+                "patch_decode",
+                ChunkLoadDelayProbe.elapsedMillisSince(patchDecodeStartNanos),
+                envelope.copyOriginalPacketBytes().length,
+                ""
+        );
 
+        long baseLookupStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         ChunkShadowSnapshot chunkSnapshot = ChunkShadowSnapshotManager.snapshotChunk(channelId, envelope.frame().epoch(), envelope.frame().coordinate());
         boolean matchingShadowFullBase = hasMatchingSnapshotFullBase(chunkSnapshot, envelope.frame());
         ChunkRuntimeReferenceStore.RuntimeFullSnapshot runtimeFullSnapshot = null;
@@ -1000,15 +1309,26 @@ public final class ChunkTransportDispatcher {
                 }
             }
         }
+        ChunkLoadDelayProbe.logStage(
+                context,
+                envelope.frame(),
+                "client",
+                "patch_base_lookup",
+                ChunkLoadDelayProbe.elapsedMillisSince(baseLookupStartNanos),
+                runtimeFullBasePacketBytes == null ? 0 : runtimeFullBasePacketBytes.length,
+                "matchingShadowFullBase=" + matchingShadowFullBase + ", source=" + patchBaseSource.name()
+        );
         if (!matchingShadowFullBase
                 && !hasMatchingRuntimeFullSnapshot(runtimeFullSnapshot, envelope.frame(), runtimeFullBasePacketBytes)
                 && !canUseContentAddressedPatchBase(envelope.frame(), runtimeFullBasePacketBytes)) {
             String trimmedBudgetIgnoreReason = resolveTrimmedBudgetIgnoreReason(context, envelope.frame(), "runtime_patch_missing_full_base");
             if (!trimmedBudgetIgnoreReason.isBlank()) {
+                ChunkLoadDelayProbe.logClientRestoreMiss(context, envelope.frame(), trimmedBudgetIgnoreReason, false);
                 logTrimmedBudgetSuppressedRuntimeFrame(context, envelope.frame(), trimmedBudgetIgnoreReason);
                 return null;
             }
             ChunkTransportControlFrameSender.sendNack(context, envelope.frame(), "runtime_patch_missing_full_base");
+            ChunkLoadDelayProbe.logClientRestoreMiss(context, envelope.frame(), "runtime_patch_missing_full_base", true);
             return null;
         }
 
@@ -1023,17 +1343,29 @@ public final class ChunkTransportDispatcher {
         }
         if (!chunkPatch.basePayloadHash().isBlank() && basePacketBytes.length == 0) {
             ChunkTransportControlFrameSender.sendNack(context, envelope.frame(), "runtime_patch_missing_lane_base");
+            ChunkLoadDelayProbe.logClientRestoreMiss(context, envelope.frame(), "runtime_patch_missing_lane_base", true);
             return null;
         }
 
         try {
+            long applyStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
             byte[] restoredPacketBytes = ChunkPatchApplier.applyPatch(chunkPatch, basePacketBytes, envelope.frame().payloadHash());
+            ChunkLoadDelayProbe.logStage(
+                    context,
+                    envelope.frame(),
+                    "client",
+                    "patch_apply",
+                    ChunkLoadDelayProbe.elapsedMillisSince(applyStartNanos),
+                    restoredPacketBytes.length,
+                    "baseBytes=" + basePacketBytes.length
+            );
             if (patchBaseSource == ChunkLocalCacheReuseStats.ReuseSource.OFFLINE_PERSISTENT_CACHE) {
                 ChunkRuntimeReferenceStore.storePacketBytes(channelId, envelope.frame().payloadHash(), restoredPacketBytes);
             }
             return restoredPacketBytes;
         } catch (RuntimeException exception) {
             ChunkTransportControlFrameSender.sendNack(context, envelope.frame(), "runtime_patch_apply_failed");
+            ChunkLoadDelayProbe.logClientRestoreMiss(context, envelope.frame(), "runtime_patch_apply_failed", true);
             return null;
         }
     }
@@ -1328,12 +1660,26 @@ public final class ChunkTransportDispatcher {
                 pendingReplay.copyOriginalPacketBytes(),
                 resolveRecoverableFallbackFullReason(frame)
         )) {
+            ChunkLoadDelayProbe.logServerNackRecovery(
+                    context,
+                    frame,
+                    true,
+                    pendingReplay.copyOriginalPacketBytes().length,
+                    resolveRecoverableFallbackFullReason(frame)
+            );
             return true;
         }
 
         ChunkTransportControlFrameSender.sendInvalidate(
                 context,
                 frame,
+                resolveRecoverableFallbackInvalidateReason(frame)
+        );
+        ChunkLoadDelayProbe.logServerNackRecovery(
+                context,
+                frame,
+                false,
+                0,
                 resolveRecoverableFallbackInvalidateReason(frame)
         );
         return true;
@@ -1644,7 +1990,8 @@ public final class ChunkTransportDispatcher {
     private record RuntimeChunkTransportDecision(
             ChunkHotspotFrameOp operation,
             ChunkHotspotFrame frame,
-            byte[] transportPayloadBytes
+            byte[] transportPayloadBytes,
+            ChunkPlanDecision decision
     ) {
         private RuntimeChunkTransportDecision {
             transportPayloadBytes = transportPayloadBytes == null ? new byte[0] : transportPayloadBytes.clone();

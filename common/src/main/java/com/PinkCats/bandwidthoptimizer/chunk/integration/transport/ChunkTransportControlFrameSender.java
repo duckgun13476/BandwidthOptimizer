@@ -12,6 +12,7 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkLaneKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
+import com.PinkCats.bandwidthoptimizer.chunk.debug.ChunkLoadDelayProbe;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelope;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelopeCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentServerScope;
@@ -164,6 +165,36 @@ public final class ChunkTransportControlFrameSender {
         return sendControlFrame(channel, manifestFrame);
     }
 
+    // Sends many persistent cache manifest entries as one control payload.
+    public static boolean sendPersistentClientCacheManifestBatch(
+            Channel channel,
+            byte[] batchPayloadBytes,
+            int entryCount,
+            String reason
+    ) {
+        if (batchPayloadBytes == null || batchPayloadBytes.length == 0 || entryCount <= 0) {
+            return false;
+        }
+        return sendEnvelopeFrame(channel, new ChunkHotspotFrame(
+                ChunkHotspotFrameCodec.PROTOCOL_VERSION,
+                ChunkHotspotFrameOp.CLIENT_CACHE_MANIFEST,
+                0L,
+                0L,
+                "PLAY",
+                "bandwidthoptimizer.chunk.transport.ClientCacheManifestBatch",
+                ChunkHotspotKind.FULL_CHUNK,
+                ChunkLaneKind.FULL,
+                ChunkPacketCoordinate.unknown(),
+                batchPayloadBytes.length,
+                Math.max(entryCount, 1),
+                0L,
+                "",
+                "",
+                0L,
+                reason == null || reason.isBlank() ? "persistent_client_cache_manifest_batch" : reason
+        ), batchPayloadBytes, batchPayloadBytes.length);
+    }
+
     // ensure server know is complete
     public static boolean sendPersistentClientCacheManifestComplete(Channel channel, String reason) {
         return sendControlFrame(channel, new ChunkHotspotFrame(
@@ -302,12 +333,33 @@ public final class ChunkTransportControlFrameSender {
         }
 
         try {
+            long totalStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
+            long envelopeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
             byte[] encodedEnvelopeBytes = ChunkTransportEnvelopeCodec.encodeEnvelope(
                     new ChunkTransportEnvelope(frame, payloadBytes)
             );
+            ChunkLoadDelayProbe.logStage(
+                    channel,
+                    frame,
+                    "control",
+                    "control_encode_envelope",
+                    ChunkLoadDelayProbe.elapsedMillisSince(envelopeStartNanos),
+                    encodedEnvelopeBytes.length,
+                    ""
+            );
             ChannelTransportSession transportSession = ChannelTransportStateManager.getOrCreateSession(channel);
+            long wrapStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
             ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame =
                     KineticChannel.processOutboundPacket(transportSession, encodedEnvelopeBytes);
+            ChunkLoadDelayProbe.logStage(
+                    channel,
+                    frame,
+                    "control",
+                    "control_transport_wrap",
+                    ChunkLoadDelayProbe.elapsedMillisSince(wrapStartNanos),
+                    encodedEnvelopeBytes.length,
+                    wrappedFrame == null ? "wrapped=false" : "wrapped=true"
+            );
             if (wrappedFrame == null) {
                 return false;
             }
@@ -317,10 +369,20 @@ public final class ChunkTransportControlFrameSender {
                 return false;
             }
 
+            long writeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
             ChannelFuture writeFuture = ChannelTransportHooks.writeTransportCarrierPacketToPipeline(
                     channel,
                     outboundPacketFlow,
                     wrappedFrame.transportFrameBytes()
+            );
+            ChunkLoadDelayProbe.logStage(
+                    channel,
+                    frame,
+                    "control",
+                    "control_pipeline_write",
+                    ChunkLoadDelayProbe.elapsedMillisSince(writeStartNanos),
+                    wrappedFrame.transportFrameBytes().length,
+                    writeFuture == null ? "future=false" : "future=true"
             );
             if (writeFuture == null) {
                 return false;
@@ -354,6 +416,15 @@ public final class ChunkTransportControlFrameSender {
                         frame.reason()
                 );
             }
+            ChunkLoadDelayProbe.logStage(
+                    channel,
+                    frame,
+                    "control",
+                    "control_send_total",
+                    ChunkLoadDelayProbe.elapsedMillisSince(totalStartNanos),
+                    encodedEnvelopeBytes.length,
+                    "wireBytes=" + wrappedFrame.transportFrameBytes().length
+            );
             return true;
         } catch (Throwable throwable) {
             if (shouldIgnoreControlFrameSendFailure(channel, throwable)) {
