@@ -11,9 +11,11 @@ import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.ChannelTransportOpe
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
+import com.PinkCats.bandwidthoptimizer.channel.debug.NettySpikeProbe;
 import com.PinkCats.bandwidthoptimizer.channel.packet.ChannelTransportBypassPacketList;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkOutboundObservationService;
+import com.PinkCats.bandwidthoptimizer.chunk.debug.ChunkLoadDelayProbe;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkInboundDecodeResult;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportBoundaryController;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportControlFrameSender;
@@ -79,6 +81,7 @@ public final class ChannelTransportHooks {
         if (context == null || out == null) {
             return;
         }
+        if (NettySpikeProbe.isEnabled()) { NettySpikeProbe.ensureWatchdog(context); }
 
         int endIndexExclusive = out.writerIndex();
         if (endIndexExclusive <= startIndexInclusive) {
@@ -193,12 +196,27 @@ public final class ChannelTransportHooks {
             }
         }
 
-        OutboundChunkEncodeResult chunkEncodeResult = ChunkTransportDispatcher.tryEncodeOutboundPacketWithTrace(
+        long chunkEncodeStartNanos = NettySpikeProbe.beginOperation(
                 context,
-                protocolName,
-                packet,
-                originalPacketBytes
+                "outbound_chunk_encode",
+                packetClassName(packet) + ", rawBytes=" + originalPacketBytes.length
         );
+        OutboundChunkEncodeResult chunkEncodeResult;
+        try {
+            chunkEncodeResult = ChunkTransportDispatcher.tryEncodeOutboundPacketWithTrace(
+                    context,
+                    protocolName,
+                    packet,
+                    originalPacketBytes
+            );
+        } finally {
+            NettySpikeProbe.finishOperation(
+                    context,
+                    "outbound_chunk_encode",
+                    chunkEncodeStartNanos,
+                    packetClassName(packet) + ", rawBytes=" + originalPacketBytes.length
+            );
+        }
         if (ChunkPersistentManifestGate.tryQueueWaitingPacket(context, packet, chunkEncodeResult.traceReason())) {
             out.writerIndex(startIndexInclusive);
             return;
@@ -329,8 +347,22 @@ public final class ChannelTransportHooks {
             }
 
             ChannelTransportSession transportSession = ChannelTransportStateManager.getOrCreateSession(context.channel());
-            ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame =
-                    KineticChannel.processOutboundPacket(transportSession, transportInputPacketBytes);
+            long wrapStartNanos = NettySpikeProbe.beginOperation(
+                    context,
+                    "outbound_transport_wrap",
+                    packetClassName(packet) + ", inputBytes=" + transportInputPacketBytes.length
+            );
+            ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame;
+            try {
+                wrappedFrame = KineticChannel.processOutboundPacket(transportSession, transportInputPacketBytes);
+            } finally {
+                NettySpikeProbe.finishOperation(
+                        context,
+                        "outbound_transport_wrap",
+                        wrapStartNanos,
+                        packetClassName(packet) + ", inputBytes=" + transportInputPacketBytes.length
+                );
+            }
             if (wrappedFrame == null) {
                 if (forceImmediateTransport) {
                     if (DebugRuntimeConfig.isDiagnoseEnabled()) {
@@ -562,13 +594,15 @@ public final class ChannelTransportHooks {
         }
     }
 
-    // Receive handle
+    // 入站 transport 快路径：PacketDecoder HEAD 阶段如果直接看到 BO 帧，就在原版解码前还原成原版 packet 对象。
+    // 这里会推进 ByteBuf readerIndex 并把还原结果写入 out，但不会直接执行 packet.handle(...)。
     public static <T extends PacketListener> boolean tryDecodeInboundTransportFrame(
             ChannelHandlerContext context,
             ByteBuf in,
             List<Object> out,
             PacketDecoderFlowAccess packetDecoderFlowAccess
     ) throws Exception {
+        if (NettySpikeProbe.isEnabled()) { NettySpikeProbe.ensureWatchdog(context); }
         if (context == null
                 || in == null
                 || out == null
@@ -616,6 +650,7 @@ public final class ChannelTransportHooks {
             int outputSizeBeforeDecode,
             PacketDecoderFlowAccess packetDecoderFlowAccess
     ) throws Exception {
+        if (NettySpikeProbe.isEnabled()) { NettySpikeProbe.ensureWatchdog(context); }
         if (context == null
                 || out == null
                 || packetDecoderFlowAccess == null
@@ -627,6 +662,7 @@ public final class ChannelTransportHooks {
 
         boolean expandedAny = false;
         for (int index = outputSizeBeforeDecode; index < out.size(); index++) {
+            // 某些路径会先被原版解成 custom payload carrier；这里在 RETURN 阶段取出 payload 再替换为真实子包。
             byte[] transportFrameBytes = copyTransportPayloadBytes(out.get(index));
             if (transportFrameBytes == null) {
                 continue;
@@ -654,7 +690,8 @@ public final class ChannelTransportHooks {
         return expandedAny;
     }
 
-    // Fix decode handshake problem (not support for index)
+    // 用还原出的 packet 列表替换 carrier，并把本次 decode 里 carrier 后面的尾包挪回末尾。
+    // 这样 PacketDecoder 的输出顺序仍然是“还原子包 -> 原尾包”，避免 carrier 和后续直通包发生局部重排。
     private static int replaceDecodedCarrierWithRestoredPackets(List<Object> out, int index, List<Object> restoredPackets) {
         Object carrierPacket = out.remove(index);
         releaseTransportPayloadBuffer(carrierPacket);
@@ -677,32 +714,100 @@ public final class ChannelTransportHooks {
             List<Object> out,
             PacketDecoderFlowAccess packetDecoderFlowAccess
     ) throws Exception {
-        for (byte[] transportRestoredPacketBytes : unwrappedFrame.restoredPacketBytesList()) {
-            ChunkInboundDecodeResult inboundDecodeResult =
-                    ChunkTransportDispatcher.tryDecodeInboundPacket(context, transportRestoredPacketBytes);
-            if (!inboundDecodeResult.shouldDecodeVanillaPacket()) {
-                continue;
-            }
-            byte[] restoredPacketBytes = inboundDecodeResult.restoredPacketBytes();
-            ChannelCapturedFrame pendingInboundFrame = beginInboundCapture(context, restoredPacketBytes);
-            int outputSizeBeforeDecode = out.size();
-            Packet<? super T> restoredPacket;
-            try {
-                restoredPacket = decodeRestoredPacket(context, restoredPacketBytes, packetDecoderFlowAccess);
-            } catch (Exception exception) {
-                logRestoredPacketDecodeFailure(context, packetDecoderFlowAccess, restoredPacketBytes, exception);
-                throw exception;
-            }
-            logRestoredPacketTrace(context, packetDecoderFlowAccess, restoredPacketBytes, restoredPacket);
-            out.add(restoredPacket);
+        long decodeStartNanos = NettySpikeProbe.beginOperation(
+                context,
+                "inbound_decode_restored_output",
+                "frameKind=" + (unwrappedFrame == null ? "<null>" : unwrappedFrame.frameKind())
+                        + ", packets=" + (unwrappedFrame == null ? 0 : unwrappedFrame.restoredPacketBytesList().size())
+        );
+        try {
+            for (byte[] transportRestoredPacketBytes : unwrappedFrame.restoredPacketBytesList()) {
+                long packetStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
+                long chunkRestoreStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
+                // 区块特化帧先交给 chunk transport 还原；还原成功后才继续走原版 packet 解码。
+                // client_restored 日志记录的是这个阶段，不等价于 ClientPacketListener 已经把区块应用到世界。
+                ChunkInboundDecodeResult inboundDecodeResult =
+                        ChunkTransportDispatcher.tryDecodeInboundPacket(context, transportRestoredPacketBytes);
+                ChunkLoadDelayProbe.logStage(
+                        context,
+                        null,
+                        "client",
+                        "transport_chunk_restore",
+                        ChunkLoadDelayProbe.elapsedMillisSince(chunkRestoreStartNanos),
+                        transportRestoredPacketBytes.length,
+                        "shouldDecodeVanilla=" + inboundDecodeResult.shouldDecodeVanillaPacket()
+                );
+                if (!inboundDecodeResult.shouldDecodeVanillaPacket()) {
+                    continue;
+                }
+                byte[] restoredPacketBytes = inboundDecodeResult.restoredPacketBytes();
+                long captureStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
+                ChannelCapturedFrame pendingInboundFrame = beginInboundCapture(context, restoredPacketBytes);
+                ChunkLoadDelayProbe.logStage(
+                        context,
+                        null,
+                        "client",
+                        "inbound_capture_begin",
+                        ChunkLoadDelayProbe.elapsedMillisSince(captureStartNanos),
+                        restoredPacketBytes.length,
+                        ""
+                );
+                int outputSizeBeforeDecode = out.size();
+                Packet<? super T> restoredPacket;
+                long vanillaDecodeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
+                try {
+                    restoredPacket = decodeRestoredPacket(context, restoredPacketBytes, packetDecoderFlowAccess);
+                } catch (Exception exception) {
+                    logRestoredPacketDecodeFailure(context, packetDecoderFlowAccess, restoredPacketBytes, exception);
+                    throw exception;
+                }
+                ChunkLoadDelayProbe.logStage(
+                        context,
+                        null,
+                        "client",
+                        "vanilla_packet_decode",
+                        ChunkLoadDelayProbe.elapsedMillisSince(vanillaDecodeStartNanos),
+                        restoredPacketBytes.length,
+                        restoredPacket == null ? "<null>" : restoredPacket.getClass().getName()
+                );
+                logRestoredPacketTrace(context, packetDecoderFlowAccess, restoredPacketBytes, restoredPacket);
+                out.add(restoredPacket);
 
-            ChunkInboundObservationService.observeInboundDecodedPackets(
+                long observeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
+                ChunkInboundObservationService.observeInboundDecodedPackets(
+                        context,
+                        pendingInboundFrame,
+                        out,
+                        outputSizeBeforeDecode
+                );
+                ChannelCaptureHooks.finishInboundDecode(context, pendingInboundFrame, out, outputSizeBeforeDecode);
+                ChunkLoadDelayProbe.logStage(
+                        context,
+                        null,
+                        "client",
+                        "inbound_observe_capture_finish",
+                        ChunkLoadDelayProbe.elapsedMillisSince(observeStartNanos),
+                        restoredPacketBytes.length,
+                        restoredPacket == null ? "<null>" : restoredPacket.getClass().getName()
+                );
+                ChunkLoadDelayProbe.logStage(
+                        context,
+                        null,
+                        "client",
+                        "restored_packet_total",
+                        ChunkLoadDelayProbe.elapsedMillisSince(packetStartNanos),
+                        restoredPacketBytes.length,
+                        restoredPacket == null ? "<null>" : restoredPacket.getClass().getName()
+                );
+            }
+        } finally {
+            NettySpikeProbe.finishOperation(
                     context,
-                    pendingInboundFrame,
-                    out,
-                    outputSizeBeforeDecode
+                    "inbound_decode_restored_output",
+                    decodeStartNanos,
+                    "frameKind=" + (unwrappedFrame == null ? "<null>" : unwrappedFrame.frameKind())
+                            + ", packets=" + (unwrappedFrame == null ? 0 : unwrappedFrame.restoredPacketBytesList().size())
             );
-            ChannelCaptureHooks.finishInboundDecode(context, pendingInboundFrame, out, outputSizeBeforeDecode);
         }
     }
 
@@ -732,6 +837,11 @@ public final class ChannelTransportHooks {
             return false;
         }
 
+        long carrierWriteStartNanos = NettySpikeProbe.beginOperation(
+                context,
+                "transport_carrier_write",
+                "flow=" + packetFlow + ", frameBytes=" + transportFrameBytes.length
+        );
         ConnectionProtocol protocol = readConnectionProtocol(context);
         FriendlyByteBuf payloadBuffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(transportFrameBytes));
         FriendlyByteBuf outputBuffer = new FriendlyByteBuf(out);
@@ -748,6 +858,12 @@ public final class ChannelTransportHooks {
             carrierPacket.write(outputBuffer);
             return true;
         } finally {
+            NettySpikeProbe.finishOperation(
+                    context,
+                    "transport_carrier_write",
+                    carrierWriteStartNanos,
+                    "flow=" + packetFlow + ", frameBytes=" + transportFrameBytes.length
+            );
             payloadBuffer.release();
         }
     }
@@ -768,18 +884,31 @@ public final class ChannelTransportHooks {
             return null;
         }
 
+        ChannelHandlerContext encoderContext = channel.pipeline().context("encoder");
+        long pipelineWriteStartNanos = NettySpikeProbe.beginOperation(
+                encoderContext,
+                "transport_pipeline_write",
+                "flow=" + packetFlow + ", frameBytes=" + transportFrameBytes.length
+        );
         FriendlyByteBuf payloadBuffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(transportFrameBytes));
         try {
             Packet<?> carrierPacket = packetFlow == PacketFlow.CLIENTBOUND
                     ? new ClientboundCustomPayloadPacket(TRANSPORT_PAYLOAD_ID, payloadBuffer)
                     : new ServerboundCustomPayloadPacket(TRANSPORT_PAYLOAD_ID, payloadBuffer);
-            logOutboundCarrierTrace(channel.pipeline().context("encoder"), packetFlow, -1, transportFrameBytes);
+            logOutboundCarrierTrace(encoderContext, packetFlow, -1, transportFrameBytes);
             ChannelFuture writeFuture = channel.writeAndFlush(carrierPacket);
             writeFuture.addListener(future -> payloadBuffer.release());
             return writeFuture;
         } catch (RuntimeException e) {
             payloadBuffer.release();
             return null;
+        } finally {
+            NettySpikeProbe.finishOperation(
+                    encoderContext,
+                    "transport_pipeline_write",
+                    pipelineWriteStartNanos,
+                    "flow=" + packetFlow + ", frameBytes=" + transportFrameBytes.length
+            );
         }
     }
 

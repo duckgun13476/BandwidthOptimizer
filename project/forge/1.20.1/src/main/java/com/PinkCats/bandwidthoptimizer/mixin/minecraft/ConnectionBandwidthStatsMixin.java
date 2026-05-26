@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
 
+import com.PinkCats.bandwidthoptimizer.channel.debug.NettySpikeProbe;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthWireMonitorHandler;
 import io.netty.channel.Channel;
@@ -16,9 +17,10 @@ public abstract class ConnectionBandwidthStatsMixin {
     @Shadow
     private Channel channel;
 
-    // player stats per channel
+    // 连接激活时安装带宽统计和 Netty 心跳探针，后续 event loop 卡超过阈值会输出低频尖峰日志。
     @Inject(method = "channelActive", at = @At("RETURN"))
     private void bandwidthoptimizer$installBandwidthStats(io.netty.channel.ChannelHandlerContext context, CallbackInfo ci) {
+        if (NettySpikeProbe.isEnabled()) { NettySpikeProbe.ensureWatchdog(context); }
         Channel activeChannel = this.channel == null && context != null ? context.channel() : this.channel;
         if (activeChannel == null) {
             return;

@@ -29,7 +29,7 @@ public final class ServerBandwidthStatsNetworkChannel {
         channel = NetworkRegistry.newSimpleChannel(
                 CHANNEL_ID,
                 () -> PROTOCOL_VERSION,
-                PROTOCOL_VERSION::equals,
+                NetworkRegistry.acceptMissingOr(PROTOCOL_VERSION),
                 NetworkRegistry.acceptMissingOr(PROTOCOL_VERSION)
         );
         channel.registerMessage(

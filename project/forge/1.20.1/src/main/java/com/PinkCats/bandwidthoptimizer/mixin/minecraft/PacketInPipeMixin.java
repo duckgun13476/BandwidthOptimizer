@@ -38,12 +38,15 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
     private ChannelCapturedFrame bandwidthoptimizer$pendingInboundFrame;
 
 
-    // Better method
+    // 透出当前 PacketDecoder 的方向，供 BO 入站解包时判断这是客户端收包还是服务端收包。
     @Override
     public PacketFlow bandwidthoptimizer$getPacketFlow() {
         return this.flow;
     }
 
+    // 客户端入站最早的 BO 还原点：在原版 PacketDecoder 读取 packet id 之前先尝试识别 BO transport 帧。
+    // 如果这里成功消费帧，方法会把还原出的原版 packet 对象放回同一个 out 列表，并取消原版解码。
+    // 注意：这个时间点只代表 Netty 解码阶段已经还原 packet，后续真正执行 packet.handle(...) 仍然要经过原版连接分发。
     @Inject(method = "decode", at = @At("HEAD"), cancellable = true)
     private void bandwidthoptimizer$unwrapAndCapture(ChannelHandlerContext context, ByteBuf in, List<Object> out, CallbackInfo ci) throws Exception {
         this.bandwidthoptimizer$outputSizeBeforeDecode = out.size();
@@ -60,10 +63,12 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
             ci.cancel();
             return;
         }
-        // Save use
+        // 记录原始入站字节，后续 RETURN 阶段如果发现是 carrier，会用这些上下文完成观测和替换。
         bandwidthoptimizer$recordInboundRawEncoded(context, in);
     }
 
+    // 兼容已经被原版解成 custom payload 的 carrier：RETURN 阶段把 carrier 替换成 BO 还原出的原版 packet 列表。
+    // 替换只调整 PacketDecoder 本次输出队列的内容和顺序，不直接调用 packet.handle(...)。
     @Inject(method = "decode", at = @At("RETURN"))
     private void bandwidthoptimizer$finishDecodeFrame(ChannelHandlerContext context, ByteBuf in, List<Object> out, CallbackInfo ci) throws Exception {
         if (ChannelTransportHooks.expandDecodedTransportCarrierPackets(
@@ -85,7 +90,7 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
                 this.bandwidthoptimizer$outputSizeBeforeDecode
         );
 
-        //Log
+        // 完成普通包或旁路包的入站观测，供抓包、带宽统计和区块诊断共用。
         ChannelCaptureHooks.finishInboundDecode(context, this.bandwidthoptimizer$pendingInboundFrame, out, this.bandwidthoptimizer$outputSizeBeforeDecode);
         bandwidthoptimizer$recordInboundBypass(context, out);
         this.bandwidthoptimizer$pendingInboundFrame = null;

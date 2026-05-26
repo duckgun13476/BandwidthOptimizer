@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.chunk.budget;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
+import com.PinkCats.bandwidthoptimizer.chunk.debug.ChunkLoadDelayProbe;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceStore;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportControlFrameSender;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
@@ -188,6 +189,15 @@ public final class ChunkClientCacheBudgetManager {
                 fullSnapshotVersion,
                 fullSnapshotHash,
                 reason
+        );
+        ChunkLoadDelayProbe.logClientBudgetInvalidate(
+                com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
+                scopeId,
+                coordinate == null ? "<unknown>" : coordinate.logText(),
+                fullSnapshotVersion,
+                fullSnapshotHash,
+                reason,
+                queued
         );
         if (!queued) {
             return;

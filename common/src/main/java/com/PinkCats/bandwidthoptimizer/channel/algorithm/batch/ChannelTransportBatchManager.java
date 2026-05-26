@@ -90,7 +90,7 @@ public final class ChannelTransportBatchManager {
         clearBatchState(channel, false);
     }
 
-    // Prevent sensitive overtake problem
+    // 出站 batch 有预热期，避免连接刚进入新阶段时把强时序包放进窗口里。
     public static boolean shouldBatchOutboundPacket(ChannelHandlerContext context) {
         if (context == null || !ChannelTransportBatchRuntimeConfig.isBatchEnabled()) {
             return false;
@@ -102,7 +102,8 @@ public final class ChannelTransportBatchManager {
         return unwrappedFrame != null && unwrappedFrame.frameKind() == ChannelTransportPacketCodec.FrameKind.BATCH;
     }
 
-    // simulate like original replay
+    // 入站 batch 回放会按 batch window 分散 fireChannelRead；这和当前区块特化的 PacketDecoder out 替换路径不同。
+    // 当前 TP 卡顿排查要区分这两条链路：区块 ref/patch 还原成功后通常只是加入 decoder 输出队列，不会走这里排队等待。
     public static void replayInboundBatch(ChannelHandlerContext context, List<InboundReplayEntry> replayEntries) {
         if (context == null || replayEntries == null || replayEntries.isEmpty()) {
             return;

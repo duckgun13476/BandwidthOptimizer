@@ -28,8 +28,8 @@ public final class ChannelTransportNetworkChannel {
         versionGateChannel = NetworkRegistry.newSimpleChannel(
                 VERSION_GATE_CHANNEL_ID,
                 () -> PROTOCOL_VERSION,
-                PROTOCOL_VERSION::equals,
-                PROTOCOL_VERSION::equals
+                NetworkRegistry.acceptMissingOr(PROTOCOL_VERSION),
+                NetworkRegistry.acceptMissingOr(PROTOCOL_VERSION)
         );
         TorqueLayer.platform().network().registerAcceptedPayloadChannel(
                 com.pinkcats.torque.layer.net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(

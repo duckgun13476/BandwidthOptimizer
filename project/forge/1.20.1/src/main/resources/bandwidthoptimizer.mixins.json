@@ -15,7 +15,9 @@
     "minecraft.ServerboundCustomPayloadPacketAccessor",
     "minecraft.ServerGamePacketListenerImplAccessor"
   ],
-  "client": [],
+  "client": [
+    "minecraft.ClientPacketListenerChunkHandleMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
   },
