@@ -170,11 +170,13 @@ public final class ChunkTransportControlFrameSender {
             Channel channel,
             byte[] batchPayloadBytes,
             int entryCount,
+            String serverScopeHash,
             String reason
     ) {
         if (batchPayloadBytes == null || batchPayloadBytes.length == 0 || entryCount <= 0) {
             return false;
         }
+        String safeServerScopeHash = ChunkPersistentServerScope.isSafeScopeHash(serverScopeHash) ? serverScopeHash : "";
         return sendEnvelopeFrame(channel, new ChunkHotspotFrame(
                 ChunkHotspotFrameCodec.PROTOCOL_VERSION,
                 ChunkHotspotFrameOp.CLIENT_CACHE_MANIFEST,
@@ -188,15 +190,16 @@ public final class ChunkTransportControlFrameSender {
                 batchPayloadBytes.length,
                 Math.max(entryCount, 1),
                 0L,
-                "",
-                "",
+                safeServerScopeHash,
+                safeServerScopeHash,
                 0L,
                 reason == null || reason.isBlank() ? "persistent_client_cache_manifest_batch" : reason
         ), batchPayloadBytes, batchPayloadBytes.length);
     }
 
     // ensure server know is complete
-    public static boolean sendPersistentClientCacheManifestComplete(Channel channel, String reason) {
+    public static boolean sendPersistentClientCacheManifestComplete(Channel channel, String serverScopeHash, String reason) {
+        String safeServerScopeHash = ChunkPersistentServerScope.isSafeScopeHash(serverScopeHash) ? serverScopeHash : "";
         return sendControlFrame(channel, new ChunkHotspotFrame(
                 ChunkHotspotFrameCodec.PROTOCOL_VERSION,
                 ChunkHotspotFrameOp.CLIENT_CACHE_MANIFEST,
@@ -210,8 +213,8 @@ public final class ChunkTransportControlFrameSender {
                 0,
                 0L,
                 0L,
-                "",
-                "",
+                safeServerScopeHash,
+                safeServerScopeHash,
                 0L,
                 reason == null || reason.isBlank() ? "persistent_client_cache_manifest_complete" : reason
         ));

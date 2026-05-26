@@ -23,6 +23,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkLocalCacheReuseStat
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCacheManifestBatchCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentManifestGate;
+import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentServerScope;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
@@ -760,11 +761,19 @@ public final class ChunkTransportDispatcher {
         }
 
         if ((frame.coordinate() == null || !frame.coordinate().present()) && payloadBytes != null && payloadBytes.length > 0) {
+            if (!matchesCurrentPersistentManifestScope(frame)) {
+                logIgnoredPersistentManifestScope(context, frame, payloadBytes.length);
+                return;
+            }
             handlePersistentClientCacheManifestBatch(context, frame, payloadBytes);
             return;
         }
 
         if (frame.coordinate() == null || !frame.coordinate().present()) {
+            if (!matchesCurrentPersistentManifestScope(frame)) {
+                logIgnoredPersistentManifestScope(context, frame, 0);
+                return;
+            }
             ChunkPeerStateManager.ensureOutboundChannelScope(context, "persistent_manifest_complete_before_release");
             ChunkPersistentManifestGate.complete(context.channel(), frame.reason());
             logPersistentManifestComplete(context, frame);
@@ -772,6 +781,34 @@ public final class ChunkTransportDispatcher {
         }
 
         applyPersistentClientCacheManifest(context, frame, true);
+    }
+
+    private static boolean matchesCurrentPersistentManifestScope(ChunkHotspotFrame frame) {
+        if (frame == null || frame.payloadHash() == null || frame.payloadHash().isBlank()) {
+            return true;
+        }
+        if (!ChunkPersistentServerScope.isSafeScopeHash(frame.payloadHash())) {
+            return true;
+        }
+        return frame.payloadHash().equalsIgnoreCase(ChunkPersistentServerScope.currentScopeHash());
+    }
+
+    private static void logIgnoredPersistentManifestScope(
+            ChannelHandlerContext context,
+            ChunkHotspotFrame frame,
+            int payloadBytes
+    ) {
+        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+            return;
+        }
+        Bandwidthoptimizer.LOGGER.info(
+                "[ChunkPersistentCache][Manifest][IgnoreStaleScope] channel={}, frameScope={}, currentScope={}, bytes={}, reason={}",
+                readChannelId(context),
+                frame == null ? "<none>" : shortenHash(frame.payloadHash()),
+                shortenHash(ChunkPersistentServerScope.currentScopeHash()),
+                Math.max(payloadBytes, 0),
+                frame == null ? "" : frame.reason()
+        );
     }
 
     private static void handlePersistentClientCacheManifestBatch(

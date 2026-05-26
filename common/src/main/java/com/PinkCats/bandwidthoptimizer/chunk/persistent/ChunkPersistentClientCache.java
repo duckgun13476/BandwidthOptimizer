@@ -405,6 +405,7 @@ public final class ChunkPersistentClientCache {
         if (!isEnabled()) {
             ChunkTransportControlFrameSender.sendPersistentClientCacheManifestComplete(
                     channel,
+                    serverScopeHash,
                     safeText(reason, "persistent_client_cache_manifest") + "_disabled_complete"
             );
             return 0;
@@ -437,6 +438,7 @@ public final class ChunkPersistentClientCache {
                     channel,
                     batchPayloadBytes,
                     batch.size(),
+                    serverScopeHash,
                     safeText(reason, "persistent_client_cache_manifest") + "_batch"
             )) {
                 sentCount += batch.size();
@@ -444,6 +446,7 @@ public final class ChunkPersistentClientCache {
         }
         ChunkTransportControlFrameSender.sendPersistentClientCacheManifestComplete(
                 channel,
+                serverScopeHash,
                 safeText(reason, "persistent_client_cache_manifest") + "_complete"
         );
         if (DebugRuntimeConfig.isDiagnoseEnabled()) {
@@ -483,6 +486,7 @@ public final class ChunkPersistentClientCache {
         if (!isEnabled()) {
             channel.eventLoop().execute(() -> ChunkTransportControlFrameSender.sendPersistentClientCacheManifestComplete(
                     channel,
+                    serverScopeHash,
                     safeText(reason, "persistent_client_cache_manifest") + "_disabled_complete"
             ));
             return;
@@ -542,12 +546,25 @@ public final class ChunkPersistentClientCache {
 
         long sendStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         channel.eventLoop().execute(() -> {
+            if (!serverScopeHash.equals(currentServerScopeHash())) {
+                if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                    Bandwidthoptimizer.LOGGER.info(
+                            "[ChunkPersistentCache][Manifest][SkipStale] channel={}, scope={}, currentScope={}, reason={}",
+                            manifestKey,
+                            shortenHash(serverScopeHash),
+                            shortenHash(currentServerScopeHash()),
+                            safeText(reason, "persistent_client_cache_manifest")
+                    );
+                }
+                return;
+            }
             int sentCount = 0;
             for (ManifestBatchPayload batchPayload : batchPayloads) {
                 if (ChunkTransportControlFrameSender.sendPersistentClientCacheManifestBatch(
                         channel,
                         batchPayload.payloadBytes,
                         batchPayload.entryCount,
+                        serverScopeHash,
                         safeText(reason, "persistent_client_cache_manifest") + "_batch"
                 )) {
                     sentCount += batchPayload.entryCount;
@@ -555,6 +572,7 @@ public final class ChunkPersistentClientCache {
             }
             ChunkTransportControlFrameSender.sendPersistentClientCacheManifestComplete(
                     channel,
+                    serverScopeHash,
                     safeText(reason, "persistent_client_cache_manifest") + "_complete"
             );
             if (DebugRuntimeConfig.isDiagnoseEnabled()) {
