@@ -44,6 +44,8 @@ public final class ChunkPersistentClientCache {
     private static final String ENABLED_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCache";
     private static final String MANIFEST_LIMIT_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheManifestLimit";
     private static final String MANIFEST_BATCH_ENTRIES_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheManifestBatchEntries";
+    private static final String MANIFEST_REFRESH_ENABLED_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheManifestRefreshEnabled";
+    private static final String MANIFEST_REFRESH_INTERVAL_MILLIS_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheManifestRefreshMillis";
     private static final String ZIP_LEVEL_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheZipLevel";
     private static final String CHECKPOINT_INTERVAL_MILLIS_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheCheckpointMillis";
     private static final String CHECKPOINT_DIRTY_BLOBS_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheCheckpointDirtyBlobs";
@@ -53,6 +55,8 @@ public final class ChunkPersistentClientCache {
     private static final boolean DEFAULT_ENABLED = true;
     private static final int DEFAULT_MANIFEST_LIMIT = 512;
     private static final int DEFAULT_MANIFEST_BATCH_ENTRIES = 512;
+    private static final boolean DEFAULT_MANIFEST_REFRESH_ENABLED = true;
+    private static final long DEFAULT_MANIFEST_REFRESH_INTERVAL_MILLIS = 5_000L;
     private static final int DEFAULT_ZIP_LEVEL = 2;
     private static final long DEFAULT_CHECKPOINT_INTERVAL_MILLIS = 5_000L;
     private static final int DEFAULT_CHECKPOINT_DIRTY_BLOBS = 16;
@@ -72,11 +76,17 @@ public final class ChunkPersistentClientCache {
     private static boolean preloadStarted;
     private static boolean checkpointLoopStarted;
     private static boolean backupLoopStarted;
+    private static boolean manifestRefreshLoopStarted;
     private static boolean shutdownHookInstalled;
     private static boolean flushQueued;
     private static boolean dirty;
     private static int dirtyBlobWrites;
     private static long dirtyBytes;
+    private static Channel activeManifestRefreshChannel;
+    private static String activeManifestRefreshChannelId = "";
+    private static long manifestRefreshDirtyGeneration;
+    private static long manifestRefreshInFlightGeneration;
+    private static long manifestRefreshSentGeneration;
 
 
     // Chunk local client side
@@ -216,6 +226,7 @@ public final class ChunkPersistentClientCache {
                 cacheSnapshot.blobs().putIfAbsent(blobEntryName, restoredPacketBytes.clone());
                 pruneUnreferencedBlobs(cacheSnapshot);
                 markDirty(restoredPacketBytes.length);
+                markManifestRefreshDirty();
                 logStore(frame, restoredPacketBytes.length, cacheFile());
             } catch (IOException exception) {
                 if (DebugRuntimeConfig.isDiagnoseEnabled()) {
@@ -500,6 +511,90 @@ public final class ChunkPersistentClientCache {
         IO_EXECUTOR.execute(() -> sendManifestOnceFromWorker(channel, reason, manifestKey, serverScopeHash));
     }
 
+    // Sends cache changes after the first chunk wave has already continued.
+    private static void sendManifestRefreshFromWorker(
+            Channel channel,
+            String reason,
+            String manifestKey,
+            String serverScopeHash,
+            long generation
+    ) {
+        if (channel == null || !channel.isOpen()) {
+            clearManifestRefreshInFlight(generation);
+            return;
+        }
+
+        List<ManifestEntry> entries = loadManifestEntries(serverScopeHash);
+        ArrayList<ManifestBatchPayload> batchPayloads = new ArrayList<>();
+        int batchEntries = manifestBatchEntries();
+        for (int startIndex = 0; startIndex < entries.size(); startIndex += batchEntries) {
+            int endIndex = Math.min(startIndex + batchEntries, entries.size());
+            List<ManifestEntry> batch = entries.subList(startIndex, endIndex);
+            batchPayloads.add(new ManifestBatchPayload(
+                    ChunkPersistentClientCacheManifestBatchCodec.encode(batch, safeText(reason, "persistent_client_cache_manifest_refresh")),
+                    batch.size()
+            ));
+        }
+
+        channel.eventLoop().execute(() -> {
+            if (!serverScopeHash.equals(currentServerScopeHash()) || !channel.isOpen()) {
+                if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                    Bandwidthoptimizer.LOGGER.info(
+                            "[ChunkPersistentCache][Manifest][RefreshSkipStale] channel={}, scope={}, currentScope={}, reason={}",
+                            manifestKey,
+                            shortenHash(serverScopeHash),
+                            shortenHash(currentServerScopeHash()),
+                            safeText(reason, "persistent_client_cache_manifest_refresh")
+                    );
+                }
+                clearManifestRefreshInFlight(generation);
+                return;
+            }
+            int sentCount = 0;
+            for (ManifestBatchPayload batchPayload : batchPayloads) {
+                if (ChunkTransportControlFrameSender.sendPersistentClientCacheManifestBatch(
+                        channel,
+                        batchPayload.payloadBytes,
+                        batchPayload.entryCount,
+                        serverScopeHash,
+                        safeText(reason, "persistent_client_cache_manifest_refresh") + "_batch"
+                )) {
+                    sentCount += batchPayload.entryCount;
+                }
+            }
+            ChunkTransportControlFrameSender.sendPersistentClientCacheManifestComplete(
+                    channel,
+                    serverScopeHash,
+                    safeText(reason, "persistent_client_cache_manifest_refresh") + "_complete"
+            );
+            synchronized (LOCK) {
+                manifestRefreshSentGeneration = Math.max(manifestRefreshSentGeneration, generation);
+                if (manifestRefreshInFlightGeneration <= generation) {
+                    manifestRefreshInFlightGeneration = 0L;
+                }
+            }
+            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[ChunkPersistentCache][Manifest][Refresh] channel={}, entries={}, sent={}, batches={}, generation={}, reason={}",
+                        manifestKey,
+                        entries.size(),
+                        sentCount,
+                        batchPayloads.size(),
+                        generation,
+                        safeText(reason, "persistent_client_cache_manifest_refresh")
+                );
+            }
+        });
+    }
+
+    private static void clearManifestRefreshInFlight(long generation) {
+        synchronized (LOCK) {
+            if (manifestRefreshInFlightGeneration <= generation) {
+                manifestRefreshInFlightGeneration = 0L;
+            }
+        }
+    }
+
     // Builds payloads on the cache worker and writes them back on the event loop.
     private static void sendManifestOnceFromWorker(
             Channel channel,
@@ -741,6 +836,61 @@ public final class ChunkPersistentClientCache {
         scheduleNextBackup(backupIntervalMillis());
     }
 
+    private static void startManifestRefreshLoopIfNeeded() {
+        if (manifestRefreshLoopStarted) {
+            return;
+        }
+        manifestRefreshLoopStarted = true;
+        scheduleNextManifestRefresh(manifestRefreshIntervalMillis());
+    }
+
+    private static void scheduleNextManifestRefresh(long delayMillis) {
+        IO_EXECUTOR.schedule(
+                () -> {
+                    try {
+                        runManifestRefreshTick();
+                    } finally {
+                        scheduleNextManifestRefresh(manifestRefreshIntervalMillis());
+                    }
+                },
+                Math.max(delayMillis, 1_000L),
+                TimeUnit.MILLISECONDS
+        );
+    }
+
+    private static void runManifestRefreshTick() {
+        if (!isEnabled() || !isManifestRefreshEnabled()) {
+            return;
+        }
+
+        Channel channel;
+        String channelId;
+        String serverScopeHash;
+        long generation;
+        synchronized (LOCK) {
+            if (manifestRefreshDirtyGeneration <= manifestRefreshSentGeneration
+                    || manifestRefreshInFlightGeneration > manifestRefreshSentGeneration
+                    || activeManifestRefreshChannel == null
+                    || !activeManifestRefreshChannel.isOpen()
+                    || !isSafeScopeHash(activeServerScopeHash)) {
+                return;
+            }
+            channel = activeManifestRefreshChannel;
+            channelId = activeManifestRefreshChannelId;
+            serverScopeHash = activeServerScopeHash;
+            generation = manifestRefreshDirtyGeneration;
+            manifestRefreshInFlightGeneration = generation;
+        }
+
+        sendManifestRefreshFromWorker(
+                channel,
+                "persistent_client_cache_dirty_refresh",
+                channelId + "|" + serverScopeHash,
+                serverScopeHash,
+                generation
+        );
+    }
+
     private static void scheduleNextBackup(long delayMillis) {
         IO_EXECUTOR.schedule(
                 () -> {
@@ -826,6 +976,10 @@ public final class ChunkPersistentClientCache {
         if (dirtyBlobWrites >= checkpointDirtyBlobs() || dirtyBytes >= checkpointDirtyBytes()) {
             queueAsyncFlush("dirty_threshold_checkpoint");
         }
+    }
+
+    private static void markManifestRefreshDirty() {
+        manifestRefreshDirtyGeneration++;
     }
 
     private static void queueAsyncFlush(String reason) {
@@ -934,6 +1088,20 @@ public final class ChunkPersistentClientCache {
         return Math.max(readIntProperty(MANIFEST_BATCH_ENTRIES_PROPERTY, DEFAULT_MANIFEST_BATCH_ENTRIES), 1);
     }
 
+    private static boolean isManifestRefreshEnabled() {
+        return Boolean.parseBoolean(System.getProperty(
+                MANIFEST_REFRESH_ENABLED_PROPERTY,
+                Boolean.toString(DEFAULT_MANIFEST_REFRESH_ENABLED)
+        ));
+    }
+
+    private static long manifestRefreshIntervalMillis() {
+        return Math.max(
+                readLongProperty(MANIFEST_REFRESH_INTERVAL_MILLIS_PROPERTY, DEFAULT_MANIFEST_REFRESH_INTERVAL_MILLIS),
+                1_000L
+        );
+    }
+
     private static long checkpointDirtyBytes() {
         return Math.max(readLongProperty(CHECKPOINT_DIRTY_BYTES_PROPERTY, DEFAULT_CHECKPOINT_DIRTY_BYTES), 64L * 1024L);
     }
@@ -955,6 +1123,11 @@ public final class ChunkPersistentClientCache {
     private static void clearActiveServerScope(Channel channel) {
         synchronized (LOCK) {
             activeServerScopeHash = "";
+            activeManifestRefreshChannel = null;
+            activeManifestRefreshChannelId = "";
+            manifestRefreshDirtyGeneration = 0L;
+            manifestRefreshInFlightGeneration = 0L;
+            manifestRefreshSentGeneration = 0L;
         }
         if (channel != null) {
             MANIFEST_SENT_CHANNELS.removeIf(key -> key.startsWith(com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel) + "|"));
@@ -980,6 +1153,11 @@ public final class ChunkPersistentClientCache {
         }
         synchronized (LOCK) {
             activeServerScopeHash = serverScopeHash.toLowerCase(Locale.ROOT);
+            activeManifestRefreshChannel = channel;
+            activeManifestRefreshChannelId = channel == null
+                    ? ""
+                    : com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel);
+            startManifestRefreshLoopIfNeeded();
         }
         if (channel != null) {
             MANIFEST_SENT_CHANNELS.removeIf(key -> key.startsWith(com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel) + "|"));

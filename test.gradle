@@ -119,6 +119,8 @@ ext.configureBandwidthOptimizerClientRun = { Project projectRef, def runConfig -
     applySharedBandwidthOptimizerRunProperties(projectRef, runConfig)
     applyOptionalRunProperty(projectRef, runConfig, 'boClientChunkCacheMaxMemoryMb', 'bandwidthoptimizer.clientChunkCacheMaxMemoryMb')
     applyOptionalRunProperty(projectRef, runConfig, 'boClientChunkCacheRecycleTriggerFreeMb', 'bandwidthoptimizer.clientChunkCacheRecycleTriggerFreeMb')
+    applyOptionalRunProperty(projectRef, runConfig, 'boClientPersistentChunkCacheManifestRefreshEnabled', 'bandwidthoptimizer.clientPersistentChunkCacheManifestRefreshEnabled')
+    applyOptionalRunProperty(projectRef, runConfig, 'boClientPersistentChunkCacheManifestRefreshMillis', 'bandwidthoptimizer.clientPersistentChunkCacheManifestRefreshMillis')
 }
 
 ext.configureBandwidthOptimizerServerRun = { Project projectRef, def runConfig ->
@@ -322,6 +324,8 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkWatchBoundaryReuseMaxDeltaBytesRatio')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boClientChunkCacheMaxMemoryMb')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boClientChunkCacheRecycleTriggerFreeMb')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boClientPersistentChunkCacheManifestRefreshEnabled')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boClientPersistentChunkCacheManifestRefreshMillis')
     if (!projectRef.hasProperty('boChannelJsonlCaptureEnabled')) {
         args.add('-PboChannelJsonlCaptureEnabled=true')
     }
