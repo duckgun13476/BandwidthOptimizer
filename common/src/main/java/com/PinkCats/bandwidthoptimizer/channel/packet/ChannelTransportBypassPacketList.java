@@ -83,7 +83,9 @@ public final class ChannelTransportBypassPacketList {
             "net.minecraft.network.protocol.game.ClientboundChunkBatchStartPacket",
             "net.minecraft.network.protocol.game.ClientboundDamageEventPacket",
             "net.minecraft.network.protocol.game.ClientboundHurtAnimationPacket",
-            "net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket"
+            "net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket",
+            "net.minecraft.network.protocol.game.ServerboundChatCommandPacket",
+            "net.minecraft.network.protocol.game.ServerboundChatPacket"
     );
     private static final Set<String> CLIENTBOUND_KEEP_ALIVE_PACKET_CLASS_NAMES = Set.of(
             "net.minecraft.network.protocol.common.ClientboundKeepAlivePacket",
