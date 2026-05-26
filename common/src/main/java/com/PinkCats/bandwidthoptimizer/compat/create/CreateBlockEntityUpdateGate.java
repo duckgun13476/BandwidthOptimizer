@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.compat.create;
+﻿package com.PinkCats.bandwidthoptimizer.compat.create;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
@@ -11,6 +11,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
@@ -201,9 +202,8 @@ public final class CreateBlockEntityUpdateGate {
         if (!(packet instanceof ClientboundBlockEntityDataPacket blockEntityDataPacket)) {
             return false;
         }
-
         ResourceLocation blockEntityTypeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityDataPacket.getType());
-        if (!isCreateMechanicalBlockEntity(blockEntityTypeKey)) {
+        if (!isCreateBlockEntity(blockEntityTypeKey)) {
             return false;
         }
 
@@ -215,6 +215,9 @@ public final class CreateBlockEntityUpdateGate {
         state.bind(player, com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()));
         long nowNanos = System.nanoTime();
         boolean chunkBootstrapActive = state.isChunkBootstrapActive(nowNanos);
+        if (!shouldGateCreateBlockEntity(blockEntityTypeKey, chunkBootstrapActive)) {
+            return false;
+        }
         PendingKey key = PendingKey.of(blockEntityTypeKey, blockEntityDataPacket.getPos());
         boolean soundCritical = state.rememberSoundStateAndShouldFlush(key, blockEntityDataPacket.getTag());
         DynamicTarget dynamicTarget = resolveDynamicTarget(player, blockEntityDataPacket.getPos());
@@ -243,6 +246,52 @@ public final class CreateBlockEntityUpdateGate {
                     DROPPED_COUNT.get());
         }
         return true;
+    }
+
+    // Move distant Create updates before they enter the Netty send queue.
+    public static boolean tryDelayConnectionSend(Channel channel, Packet<?> packet, PacketSendListener listener) {
+        if (!isEnabled()
+                || channel == null
+                || packet == null
+                || listener != null
+                || isForcedPacket(packet)
+                || !(packet instanceof ClientboundBlockEntityDataPacket blockEntityDataPacket)) {
+            return false;
+        }
+        ResourceLocation blockEntityTypeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityDataPacket.getType());
+        if (!isCreateBlockEntity(blockEntityTypeKey)) {
+            return false;
+        }
+
+        ServerPlayer player = resolvePlayer(channel);
+        if (player == null) {
+            return false;
+        }
+
+        PlayerState state = PLAYER_STATES.computeIfAbsent(player.getUUID(), ignored -> new PlayerState());
+        state.bind(player, com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel));
+        long nowNanos = System.nanoTime();
+        boolean chunkBootstrapActive = state.isChunkBootstrapActive(nowNanos);
+        if (!shouldGateCreateBlockEntity(blockEntityTypeKey, chunkBootstrapActive)) {
+            return false;
+        }
+        return tryRememberDelayedBlockEntity(player, state, blockEntityDataPacket, blockEntityTypeKey, packet, 0);
+    }
+
+    // Start bootstrap gating before packets enter Netty.
+    public static void observeConnectionSend(Channel channel, Packet<?> packet) {
+        if (!isEnabled()
+                || channel == null
+                || !(packet instanceof ClientboundSetChunkCacheCenterPacket)) {
+            return;
+        }
+        ServerPlayer player = resolvePlayer(channel);
+        if (player == null) {
+            return;
+        }
+        PlayerState state = PLAYER_STATES.computeIfAbsent(player.getUUID(), ignored -> new PlayerState());
+        state.bind(player, com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel));
+        state.markChunkBootstrap(System.nanoTime(), chunkBootstrapNanos());
     }
 
     public static void observeOutboundPacket(
@@ -335,11 +384,58 @@ public final class CreateBlockEntityUpdateGate {
         SUPERSEDED_SAVED_BYTES.addAndGet(existing.rawBytes());
     }
 
+    // Share deferred Create update accounting between send and encode gates.
+    private static boolean tryRememberDelayedBlockEntity(
+            ServerPlayer player,
+            PlayerState state,
+            ClientboundBlockEntityDataPacket blockEntityDataPacket,
+            ResourceLocation blockEntityTypeKey,
+            Packet<?> packet,
+            int originalRawBytes
+    ) {
+        long nowNanos = System.nanoTime();
+        boolean chunkBootstrapActive = state.isChunkBootstrapActive(nowNanos);
+        PendingKey key = PendingKey.of(blockEntityTypeKey, blockEntityDataPacket.getPos());
+        boolean soundCritical = state.rememberSoundStateAndShouldFlush(key, blockEntityDataPacket.getTag());
+        DynamicTarget dynamicTarget = resolveDynamicTarget(player, blockEntityDataPacket.getPos());
+        if (dynamicTarget.forceImmediate()
+                || shouldSendImmediately(player, dynamicTarget.target(), !chunkBootstrapActive)
+                || soundCritical && isWithinSoundSendDistance(player, dynamicTarget.target(), blockEntityTypeKey)) {
+            recordDropped(state.forgetPending(key));
+            return false;
+        }
+
+        boolean accepted = state.rememberLatest(key, packet, originalRawBytes);
+        if (!accepted) {
+            return false;
+        }
+        long delayed = DELAYED_COUNT.incrementAndGet();
+        DELAYED_BYTES.addAndGet(originalRawBytes);
+        if (shouldLogSample(delayed)) {
+            logDiagnose("[CreateUpdateGate][Delay] player={}, type={}, pos={}, delayed={}, superseded={}, released={}, dropped={}",
+                    player.getGameProfile().getName(),
+                    blockEntityTypeKey,
+                    blockEntityDataPacket.getPos(),
+                    delayed,
+                    SUPERSEDED_COUNT.get(),
+                    RELEASED_COUNT.get(),
+                    DROPPED_COUNT.get());
+        }
+        return true;
+    }
+
     private static ServerPlayer resolvePlayer(ChannelHandlerContext context) {
         if (context == null || context.channel() == null) {
             return null;
         }
-        UUID playerId = CHANNEL_PLAYERS.get(com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()));
+        return resolvePlayer(context.channel());
+    }
+
+    private static ServerPlayer resolvePlayer(Channel channel) {
+        if (channel == null) {
+            return null;
+        }
+        UUID playerId = CHANNEL_PLAYERS.get(com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel));
         if (playerId == null) {
             return null;
         }
@@ -370,15 +466,26 @@ public final class CreateBlockEntityUpdateGate {
     }
 
     private static boolean isCreateMechanicalBlockEntity(ResourceLocation typeKey) {
-        return typeKey != null
-                && "create".equals(typeKey.getNamespace())
+        return isCreateBlockEntity(typeKey)
                 && MECHANICAL_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
     }
 
+    // During bootstrap, protect the teleport critical path first.
+    private static boolean shouldGateCreateBlockEntity(ResourceLocation typeKey, boolean chunkBootstrapActive) {
+        if (!isCreateBlockEntity(typeKey)) {
+            return false;
+        }
+        return chunkBootstrapActive || isCreateMechanicalBlockEntity(typeKey);
+    }
+
     private static boolean isSoundClassifiedBlockEntity(ResourceLocation typeKey) {
-        return typeKey != null
-                && "create".equals(typeKey.getNamespace())
+        return isCreateBlockEntity(typeKey)
                 && SOUND_CLASSIFIED_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
+    }
+
+    private static boolean isCreateBlockEntity(ResourceLocation typeKey) {
+        return typeKey != null
+                && "create".equals(typeKey.getNamespace());
     }
 
     private static void sendForced(ServerPlayer player, Packet<?> packet) {
@@ -394,6 +501,10 @@ public final class CreateBlockEntityUpdateGate {
             return false;
         }
         return FORCED_PACKETS.remove(packet);
+    }
+
+    private static boolean isForcedPacket(Packet<?> packet) {
+        return packet != null && FORCED_PACKETS.contains(packet);
     }
 
     private static boolean isEnabled() {

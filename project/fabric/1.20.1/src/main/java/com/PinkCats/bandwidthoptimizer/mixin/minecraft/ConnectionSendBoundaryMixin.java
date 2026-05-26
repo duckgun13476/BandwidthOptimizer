@@ -5,6 +5,7 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportBypassRankLogger;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportControlPlane;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportTraceJournal;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelDecoderExceptionDumper;
+import com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.Connection;
@@ -23,8 +24,13 @@ public abstract class ConnectionSendBoundaryMixin {
     private Channel channel;
 
     // Chunk send
-    @Inject(method = "sendPacket", at = @At("HEAD"))
+    @Inject(method = "sendPacket", at = @At("HEAD"), cancellable = true)
     private void bandwidthoptimizer$notePacketSendBoundary(Packet<?> packet, PacketSendListener listener, CallbackInfo ci) {
+        CreateBlockEntityUpdateGate.observeConnectionSend(this.channel, packet);
+        if (CreateBlockEntityUpdateGate.tryDelayConnectionSend(this.channel, packet, listener)) {
+            ci.cancel();
+            return;
+        }
         ChannelTransportControlPlane.observeConnectionSend(this.channel, packet, listener);
         ChunkTransportBoundaryController.notePacketSendListener(this.channel, packet, listener);
     }
