@@ -1,4 +1,4 @@
-﻿package com.PinkCats.bandwidthoptimizer.experient;
+package com.PinkCats.bandwidthoptimizer.experient;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import it.unimi.dsi.fastutil.shorts.ShortOpenHashSet;
@@ -113,6 +113,7 @@ public final class ExperientChunkHotspotPathController {
     private static final TeleportWaypoint[] RANGE_BOUNCE_SEQUENCE = createRangeBounceSequence();
 
     private static final Map<UUID, PathState> PLAYER_PATH_STATES = new ConcurrentHashMap<>();
+    private static final Map<UUID, Boolean> PLAYER_CLIENT_COMMAND_TARGET_WAS_AWAY = new ConcurrentHashMap<>();
 
     private ExperientChunkHotspotPathController() {
     }
@@ -146,19 +147,18 @@ public final class ExperientChunkHotspotPathController {
                 ? ExperientChunkHotspotPathRuntimeConfig.rangeEndZ()
                 : serverPlayer.getZ();
 
-        PLAYER_PATH_STATES.put(
-                serverPlayer.getUUID(),
-                new PathState(
-                        originX,
-                        originY,
-                        originZ,
-                        0,
-                        0,
-                        0,
-                        0,
-                        ExperientChunkHotspotPathRuntimeConfig.initialDelayTicks()
-                )
+        PathState initialState = new PathState(
+                originX,
+                originY,
+                originZ,
+                0,
+                0,
+                0,
+                0,
+                ExperientChunkHotspotPathRuntimeConfig.initialDelayTicks()
         );
+        PLAYER_PATH_STATES.put(serverPlayer.getUUID(), initialState);
+        refreshInitialClientCommandTargetState(serverPlayer, initialState);
         Bandwidthoptimizer.LOGGER.info(
                 "[ExperientChunkPath] Registered scripted path for player={}, start=({}, {}, {})",
                 serverPlayer.getGameProfile().getName(),
@@ -174,6 +174,7 @@ public final class ExperientChunkHotspotPathController {
             return;
         }
         PLAYER_PATH_STATES.remove(serverPlayer.getUUID());
+        PLAYER_CLIENT_COMMAND_TARGET_WAS_AWAY.remove(serverPlayer.getUUID());
     }
 
     @SubscribeEvent
@@ -189,12 +190,14 @@ public final class ExperientChunkHotspotPathController {
             ServerPlayer serverPlayer = event.getServer().getPlayerList().getPlayer(entry.getKey());
             if (serverPlayer == null) {
                 PLAYER_PATH_STATES.remove(entry.getKey());
+                PLAYER_CLIENT_COMMAND_TARGET_WAS_AWAY.remove(entry.getKey());
                 continue;
             }
 
             PathState nextState = advancePath(serverPlayer, entry.getValue());
             if (nextState == null) {
                 PLAYER_PATH_STATES.remove(entry.getKey());
+                PLAYER_CLIENT_COMMAND_TARGET_WAS_AWAY.remove(entry.getKey());
             } else {
                 PLAYER_PATH_STATES.put(entry.getKey(), nextState);
             }
@@ -652,11 +655,21 @@ public final class ExperientChunkHotspotPathController {
         );
     }
 
-    // Wait for the real teleport command before probing block entities.
+    // Client-command probes must observe a real away-to-target transition, not a persisted login position.
     private static boolean shouldWaitForClientCommandTarget(ServerPlayer serverPlayer, PathState state) {
-        return ExperientChunkHotspotPathRuntimeConfig.isClientCommandMode()
-                && ExperientChunkHotspotPathRuntimeConfig.shouldWaitForClientCommandTarget()
-                && !hasReachedClientCommandTarget(serverPlayer, state);
+        if (!ExperientChunkHotspotPathRuntimeConfig.isClientCommandMode()
+                || !ExperientChunkHotspotPathRuntimeConfig.shouldWaitForClientCommandTarget()
+                || serverPlayer == null
+                || state == null) {
+            return false;
+        }
+        UUID playerId = serverPlayer.getUUID();
+        boolean reachedTarget = hasReachedClientCommandTarget(serverPlayer, state);
+        if (!reachedTarget) {
+            PLAYER_CLIENT_COMMAND_TARGET_WAS_AWAY.put(playerId, true);
+            return true;
+        }
+        return !PLAYER_CLIENT_COMMAND_TARGET_WAS_AWAY.getOrDefault(playerId, false);
     }
 
     private static boolean hasReachedClientCommandTarget(ServerPlayer serverPlayer, PathState state) {
@@ -666,6 +679,16 @@ public final class ExperientChunkHotspotPathController {
         return Math.abs(serverPlayer.getX() - state.originX()) <= 1.0D
                 && Math.abs(serverPlayer.getY() - state.originY()) <= 1.0D
                 && Math.abs(serverPlayer.getZ() - state.originZ()) <= 1.0D;
+    }
+
+    private static void refreshInitialClientCommandTargetState(ServerPlayer serverPlayer, PathState state) {
+        UUID playerId = serverPlayer.getUUID();
+        if (!ExperientChunkHotspotPathRuntimeConfig.isClientCommandMode()
+                || !ExperientChunkHotspotPathRuntimeConfig.shouldWaitForClientCommandTarget()) {
+            PLAYER_CLIENT_COMMAND_TARGET_WAS_AWAY.remove(playerId);
+            return;
+        }
+        PLAYER_CLIENT_COMMAND_TARGET_WAS_AWAY.put(playerId, !hasReachedClientCommandTarget(serverPlayer, state));
     }
 
     private static void emitBeforeAckProbeBurst(ServerPlayer serverPlayer, double baseX, double baseY, double baseZ) {
@@ -1258,6 +1281,7 @@ public final class ExperientChunkHotspotPathController {
         if (serverPlayer == null || serverPlayer.connection == null) {
             return;
         }
+        PLAYER_CLIENT_COMMAND_TARGET_WAS_AWAY.remove(serverPlayer.getUUID());
         RunAllProbeFiles.markChunkHotspotPathCompleted(serverPlayer);
         if (ExperientChunkHotspotPathRuntimeConfig.shouldUseRunAllMarkerExit()) {
             return;

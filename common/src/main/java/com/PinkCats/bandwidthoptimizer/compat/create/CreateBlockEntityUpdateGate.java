@@ -15,6 +15,7 @@ import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -282,7 +283,7 @@ public final class CreateBlockEntityUpdateGate {
     public static void observeConnectionSend(Channel channel, Packet<?> packet) {
         if (!isEnabled()
                 || channel == null
-                || !(packet instanceof ClientboundSetChunkCacheCenterPacket)) {
+                || !isChunkBootstrapBoundaryPacket(packet)) {
             return;
         }
         ServerPlayer player = resolvePlayer(channel);
@@ -305,7 +306,7 @@ public final class CreateBlockEntityUpdateGate {
                 || packetFlow != PacketFlow.CLIENTBOUND
                 || protocolName == null
                 || !"PLAY".equalsIgnoreCase(protocolName)
-                || !(packet instanceof ClientboundSetChunkCacheCenterPacket)) {
+                || !isChunkBootstrapBoundaryPacket(packet)) {
             return;
         }
         ServerPlayer player = resolvePlayer(context);
@@ -486,6 +487,12 @@ public final class CreateBlockEntityUpdateGate {
     private static boolean isCreateBlockEntity(ResourceLocation typeKey) {
         return typeKey != null
                 && "create".equals(typeKey.getNamespace());
+    }
+
+    // PlayerPosition starts the TP chunk bootstrap earlier than the cache-center control packet.
+    private static boolean isChunkBootstrapBoundaryPacket(Packet<?> packet) {
+        return packet instanceof ClientboundSetChunkCacheCenterPacket
+                || packet instanceof ClientboundPlayerPositionPacket;
     }
 
     private static void sendForced(ServerPlayer player, Packet<?> packet) {
