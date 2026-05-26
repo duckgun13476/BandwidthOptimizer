@@ -1,6 +1,8 @@
-package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
+﻿package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.compat.minecraft.BlockEntityTypeKeyCompat;
+import com.PinkCats.bandwidthoptimizer.experient.ExperientClientCommandTiming;
 import net.minecraft.core.BlockPos;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
@@ -10,6 +12,7 @@ import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.ChunkPos;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -46,6 +49,8 @@ public abstract class ClientPacketListenerChunkHandleMixin {
     @Unique
     private static int bandwidthoptimizer$roundBlockEntityCount;
     @Unique
+    private static int bandwidthoptimizer$roundIgnoredBlockEntityCount;
+    @Unique
     private static int bandwidthoptimizer$cacheCenterX;
     @Unique
     private static int bandwidthoptimizer$cacheCenterZ;
@@ -56,7 +61,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
     @Unique
     private static final Set<Long> bandwidthoptimizer$roundReceivedChunks = ConcurrentHashMap.newKeySet();
 
-    // 记录客户端收到服务端视距中心控制包的时间点，用来对齐 TP 后区块窗口。
+    // Align chunk window timing from the server center packet.
     @Inject(method = "handleSetChunkCacheCenter", at = @At(
             value = "INVOKE",
             target = "Lnet/minecraft/network/protocol/PacketUtils;ensureRunningOnSameThread(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketListener;Lnet/minecraft/util/thread/BlockableEventLoop;)V",
@@ -77,7 +82,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         );
     }
 
-    // 记录客户端收到服务端视距半径控制包的时间点，并输出当前窗口大小。
+    // Track the radius packet for chunk window diagnostics.
     @Inject(method = "handleSetChunkCacheRadius", at = @At(
             value = "INVOKE",
             target = "Lnet/minecraft/network/protocol/PacketUtils;ensureRunningOnSameThread(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketListener;Lnet/minecraft/util/thread/BlockableEventLoop;)V",
@@ -108,9 +113,10 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         if (bandwidthoptimizer$firstChunkMillis <= 0L) {
             bandwidthoptimizer$firstChunkMillis = now;
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkLoadProbe] first_chunk round={}, delayMs={}, chunk=({}, {}), center=({}, {}), radius={}, inWindow={}, receivedWindow={}/{}",
+                    "[ChunkLoadProbe] first_chunk round={}, delayMs={}, sinceCommandMs={}, chunk=({}, {}), center=({}, {}), radius={}, inWindow={}, receivedWindow={}/{}",
                     bandwidthoptimizer$currentRound,
                     Math.max(now - bandwidthoptimizer$roundStartMillis, 0L),
+                    ExperientClientCommandTiming.millisSinceLastSent(now),
                     packet.getX(),
                     packet.getZ(),
                     bandwidthoptimizer$cacheCenterX,
@@ -151,7 +157,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         }
     }
 
-    // 记录 TP round 内方块实体数据包到达时间，定位“区块可见但 Waystone 等 BE 还不能交互”的延迟。
+    // Track block entity arrival inside the teleport round.
     @Inject(method = "handleBlockEntityData", at = @At("RETURN"))
     private void bandwidthoptimizer$logBlockEntityHandle(ClientboundBlockEntityDataPacket packet, CallbackInfo ci) {
         if (!bandwidthoptimizer$chunkLoadProbeEnabled() || packet == null || bandwidthoptimizer$currentRound <= 0) {
@@ -161,6 +167,24 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         if (blockPos == null) {
             return;
         }
+        String blockEntityTypeKey = bandwidthoptimizer$blockEntityTypeKey(packet);
+        if (bandwidthoptimizer$isIgnoredBlockEntityType(blockEntityTypeKey)) {
+            int ignoredCount = ++bandwidthoptimizer$roundIgnoredBlockEntityCount;
+            if (ignoredCount <= 16 || ignoredCount % 64 == 0) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[ChunkLoadProbe] block_entity_filtered round={}, ignoredCount={}, sinceTpMs={}, sinceCommandMs={}, type={}, block=({}, {}, {})",
+                        bandwidthoptimizer$currentRound,
+                        ignoredCount,
+                        bandwidthoptimizer$sinceRoundStartMillis(),
+                        bandwidthoptimizer$sinceClientCommandMillis(),
+                        blockEntityTypeKey,
+                        blockPos.getX(),
+                        blockPos.getY(),
+                        blockPos.getZ()
+                );
+            }
+            return;
+        }
         int chunkX = blockPos.getX() >> 4;
         int chunkZ = blockPos.getZ() >> 4;
         int count = ++bandwidthoptimizer$roundBlockEntityCount;
@@ -168,10 +192,12 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         if (bandwidthoptimizer$firstBlockEntityMillis <= 0L) {
             bandwidthoptimizer$firstBlockEntityMillis = now;
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkLoadProbe] first_block_entity round={}, delayMs={}, firstChunkMs={}, block=({}, {}, {}), chunk=({}, {}), inWindow={}, receivedWindow={}/{}",
+                    "[ChunkLoadProbe] first_block_entity round={}, delayMs={}, sinceCommandMs={}, firstChunkMs={}, type={}, block=({}, {}, {}), chunk=({}, {}), inWindow={}, receivedWindow={}/{}, ignoredBlockEntities={}",
                     bandwidthoptimizer$currentRound,
                     Math.max(now - bandwidthoptimizer$roundStartMillis, 0L),
+                    ExperientClientCommandTiming.millisSinceLastSent(now),
                     bandwidthoptimizer$firstChunkDelayMillis(),
+                    blockEntityTypeKey,
                     blockPos.getX(),
                     blockPos.getY(),
                     blockPos.getZ(),
@@ -179,17 +205,19 @@ public abstract class ClientPacketListenerChunkHandleMixin {
                     chunkZ,
                     bandwidthoptimizer$isChunkInWindow(chunkX, chunkZ),
                     bandwidthoptimizer$countReceivedWindow(),
-                    bandwidthoptimizer$totalWindowChunks()
+                    bandwidthoptimizer$totalWindowChunks(),
+                    bandwidthoptimizer$roundIgnoredBlockEntityCount
             );
         }
         if (count <= 32 || count % 8 == 0) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkLoadProbe] block_entity_progress round={}, count={}, sinceTpMs={}, firstChunkMs={}, firstBlockEntityMs={}, block=({}, {}, {}), chunk=({}, {}), inWindow={}, receivedWindow={}/{}",
+                    "[ChunkLoadProbe] block_entity_progress round={}, count={}, sinceTpMs={}, firstChunkMs={}, firstBlockEntityMs={}, type={}, block=({}, {}, {}), chunk=({}, {}), inWindow={}, receivedWindow={}/{}, ignoredBlockEntities={}",
                     bandwidthoptimizer$currentRound,
                     count,
                     Math.max(now - bandwidthoptimizer$roundStartMillis, 0L),
                     bandwidthoptimizer$firstChunkDelayMillis(),
                     Math.max(bandwidthoptimizer$firstBlockEntityMillis - bandwidthoptimizer$roundStartMillis, 0L),
+                    blockEntityTypeKey,
                     blockPos.getX(),
                     blockPos.getY(),
                     blockPos.getZ(),
@@ -197,12 +225,13 @@ public abstract class ClientPacketListenerChunkHandleMixin {
                     chunkZ,
                     bandwidthoptimizer$isChunkInWindow(chunkX, chunkZ),
                     bandwidthoptimizer$countReceivedWindow(),
-                    bandwidthoptimizer$totalWindowChunks()
+                    bandwidthoptimizer$totalWindowChunks(),
+                    bandwidthoptimizer$roundIgnoredBlockEntityCount
             );
         }
     }
 
-    // 每次服务端位置同步都开启一个轻量 round，不做窗口扫描，只清空本轮收到的坐标集合。
+    // Start a lightweight round for each server position sync.
     @Inject(method = "handleMovePlayer", at = @At("RETURN"))
     private void bandwidthoptimizer$logPlayerPositionHandle(ClientboundPlayerPositionPacket packet, CallbackInfo ci) {
         if (!bandwidthoptimizer$chunkLoadProbeEnabled()) {
@@ -215,13 +244,18 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         bandwidthoptimizer$roundChunkCount = 0;
         bandwidthoptimizer$firstBlockEntityMillis = 0L;
         bandwidthoptimizer$roundBlockEntityCount = 0;
+        bandwidthoptimizer$roundIgnoredBlockEntityCount = 0;
         bandwidthoptimizer$fullWindowLogged = false;
         bandwidthoptimizer$roundReceivedChunks.clear();
         LocalPlayer player = Minecraft.getInstance().player;
         ChunkPos playerChunk = player == null ? null : player.chunkPosition();
+        long now = bandwidthoptimizer$roundStartMillis;
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkLoadProbe] tp_start round={}, packetPos=({}, {}, {}), packetId={}, relative={}, playerPos=({}, {}, {}), playerChunk=({}, {}), center=({}, {}), radius={}",
+                "[ChunkLoadProbe] tp_start round={}, sinceCommandMs={}, commandSequence={}, command={}, packetPos=({}, {}, {}), packetId={}, relative={}, playerPos=({}, {}, {}), playerChunk=({}, {}), center=({}, {}), radius={}",
                 round,
+                ExperientClientCommandTiming.millisSinceLastSent(now),
+                ExperientClientCommandTiming.sequence(),
+                ExperientClientCommandTiming.lastCommand(),
                 packet == null ? 0.0D : packet.getX(),
                 packet == null ? 0.0D : packet.getY(),
                 packet == null ? 0.0D : packet.getZ(),
@@ -250,16 +284,45 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         }
         bandwidthoptimizer$fullWindowLogged = true;
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkLoadProbe] full_window_received round={}, sinceTpMs={}, firstChunkMs={}, firstBlockEntityMs={}, receivedWindow={}/{}, totalChunks={}, blockEntities={}",
+                "[ChunkLoadProbe] full_window_received round={}, sinceTpMs={}, sinceCommandMs={}, firstChunkMs={}, firstBlockEntityMs={}, receivedWindow={}/{}, totalChunks={}, blockEntities={}, ignoredBlockEntities={}",
                 bandwidthoptimizer$currentRound,
                 Math.max(now - bandwidthoptimizer$roundStartMillis, 0L),
+                ExperientClientCommandTiming.millisSinceLastSent(now),
                 bandwidthoptimizer$firstChunkDelayMillis(),
                 bandwidthoptimizer$firstBlockEntityMillis <= 0L ? -1L : Math.max(bandwidthoptimizer$firstBlockEntityMillis - bandwidthoptimizer$roundStartMillis, 0L),
                 receivedWindow,
                 totalWindow,
                 bandwidthoptimizer$roundChunkCount,
-                bandwidthoptimizer$roundBlockEntityCount
+                bandwidthoptimizer$roundBlockEntityCount,
+                bandwidthoptimizer$roundIgnoredBlockEntityCount
         );
+    }
+
+    @Unique
+    private static String bandwidthoptimizer$blockEntityTypeKey(ClientboundBlockEntityDataPacket packet) {
+        if (packet == null || packet.getType() == null) {
+            return "<unknown>";
+        }
+        ResourceLocation typeKey = BlockEntityTypeKeyCompat.keyOf(packet.getType());
+        return typeKey == null ? packet.getType().toString() : typeKey.toString();
+    }
+
+    @Unique
+    private static boolean bandwidthoptimizer$isIgnoredBlockEntityType(String blockEntityTypeKey) {
+        if (blockEntityTypeKey == null || blockEntityTypeKey.isBlank()) {
+            return false;
+        }
+        String ignoredNamespaces = System.getProperty(
+                "bandwidthoptimizer.chunk.loadDelayProbeIgnoredBlockEntityNamespaces",
+                "create"
+        );
+        for (String namespace : ignoredNamespaces.split(",")) {
+            String trimmedNamespace = namespace.trim();
+            if (!trimmedNamespace.isEmpty() && blockEntityTypeKey.startsWith(trimmedNamespace + ":")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Unique
@@ -306,6 +369,11 @@ public abstract class ClientPacketListenerChunkHandleMixin {
             return -1L;
         }
         return Math.max(System.currentTimeMillis() - bandwidthoptimizer$roundStartMillis, 0L);
+    }
+
+    @Unique
+    private static long bandwidthoptimizer$sinceClientCommandMillis() {
+        return ExperientClientCommandTiming.millisSinceLastSent(System.currentTimeMillis());
     }
 
     @Unique

@@ -16,10 +16,19 @@ import java.util.Objects;
 public final class ChannelJsonlCompareMain {
 
     private static final int MAX_MISMATCHES_TO_PRINT = 5;
+    private static final String INTERNAL_TRANSPORT_CHANNEL_PREFIX = "bandwidthoptimizer:transport_";
     private static final Path DEFAULT_SERVER_SEND = Path.of("run", "server", "bandwidthoptimizer-native", "send.jsonl");
     private static final Path DEFAULT_CLIENT_RECEIVE = Path.of("run", "client", "bandwidthoptimizer-native", "receive.jsonl");
     private static final Path DEFAULT_CLIENT_SEND = Path.of("run", "client", "bandwidthoptimizer-native", "send.jsonl");
     private static final Path DEFAULT_SERVER_RECEIVE = Path.of("run", "server", "bandwidthoptimizer-native", "receive.jsonl");
+    private static final Path DEFAULT_SERVER_PACKET_STREAM_SEND =
+            Path.of("run", "server", "bandwidthoptimizer-native", "packet-stream-send.jsonl");
+    private static final Path DEFAULT_CLIENT_PACKET_STREAM_RECEIVE =
+            Path.of("run", "client", "bandwidthoptimizer-native", "packet-stream-receive.jsonl");
+    private static final Path DEFAULT_CLIENT_PACKET_STREAM_SEND =
+            Path.of("run", "client", "bandwidthoptimizer-native", "packet-stream-send.jsonl");
+    private static final Path DEFAULT_SERVER_PACKET_STREAM_RECEIVE =
+            Path.of("run", "server", "bandwidthoptimizer-native", "packet-stream-receive.jsonl");
     private static final Path DEFAULT_SERVER_CHUNK_HOTSPOT_STATS =
             Path.of("run", "server", "bandwidthoptimizer-native", "chunk-hotspot-stats.properties");
     private static final Path DEFAULT_CLIENT_CHUNK_HOTSPOT_STATS =
@@ -65,8 +74,16 @@ public final class ChannelJsonlCompareMain {
     private static List<ComparisonTarget> createTargets(String[] args) {
         if (args.length == 0) {
             return List.of(
-                    new ComparisonTarget("server/send → client/receive", DEFAULT_SERVER_SEND, DEFAULT_CLIENT_RECEIVE),
-                    new ComparisonTarget("client/send → server/receive", DEFAULT_CLIENT_SEND, DEFAULT_SERVER_RECEIVE)
+                    new ComparisonTarget(
+                            "server packet-stream/send -> client packet-stream/receive",
+                            preferredPacketStreamPath(DEFAULT_SERVER_PACKET_STREAM_SEND, DEFAULT_SERVER_SEND),
+                            preferredPacketStreamPath(DEFAULT_CLIENT_PACKET_STREAM_RECEIVE, DEFAULT_CLIENT_RECEIVE)
+                    ),
+                    new ComparisonTarget(
+                            "client packet-stream/send -> server packet-stream/receive",
+                            preferredPacketStreamPath(DEFAULT_CLIENT_PACKET_STREAM_SEND, DEFAULT_CLIENT_SEND),
+                            preferredPacketStreamPath(DEFAULT_SERVER_PACKET_STREAM_RECEIVE, DEFAULT_SERVER_RECEIVE)
+                    )
             );
         }
 
@@ -75,6 +92,10 @@ public final class ChannelJsonlCompareMain {
         }
 
         throw new IllegalArgumentException("用法: 无参数，或传入 2 个路径参数");
+    }
+
+    private static Path preferredPacketStreamPath(Path packetStreamPath, Path fallbackPath) {
+        return Files.exists(packetStreamPath) ? packetStreamPath : fallbackPath;
     }
 
     // compare jsonl
@@ -86,12 +107,16 @@ public final class ChannelJsonlCompareMain {
         long comparedLines = 0L;
         boolean stoppedEarly = false;
 
+        JsonlPacketStreamReader leftPacketStreamReader = null;
+        JsonlPacketStreamReader rightPacketStreamReader = null;
         try (BufferedReader leftReader = Files.newBufferedReader(target.leftPath());
              BufferedReader rightReader = Files.newBufferedReader(target.rightPath())) {
+            leftPacketStreamReader = new JsonlPacketStreamReader(leftReader);
+            rightPacketStreamReader = new JsonlPacketStreamReader(rightReader);
 
             while (true) {
-                String leftLine = leftReader.readLine();
-                String rightLine = rightReader.readLine();
+                JsonlPacketStreamLine leftLine = leftPacketStreamReader.readNext();
+                JsonlPacketStreamLine rightLine = rightPacketStreamReader.readNext();
 
                 if (leftLine == null && rightLine == null) {
                     break;
@@ -107,8 +132,8 @@ public final class ChannelJsonlCompareMain {
                     break;
                 }
 
-                ComparableFrame leftFrame = parseComparableFrame(leftLine, target.leftPath(), comparedLines);
-                ComparableFrame rightFrame = parseComparableFrame(rightLine, target.rightPath(), comparedLines);
+                ComparableFrame leftFrame = parseComparableFrame(leftLine.jsonLine(), target.leftPath(), leftLine.rawLineNumber());
+                ComparableFrame rightFrame = parseComparableFrame(rightLine.jsonLine(), target.rightPath(), rightLine.rawLineNumber());
                 String difference = describeFieldDifference(leftFrame, rightFrame);
                 if (difference != null) {
                     mismatches.add(new MismatchDetail(comparedLines, difference));
@@ -120,7 +145,16 @@ public final class ChannelJsonlCompareMain {
             }
         }
 
-        return new ComparisonReport(target, comparedLines, mismatches, stoppedEarly);
+        return new ComparisonReport(
+                target,
+                comparedLines,
+                leftPacketStreamReader == null ? 0L : leftPacketStreamReader.rawLines(),
+                rightPacketStreamReader == null ? 0L : rightPacketStreamReader.rawLines(),
+                leftPacketStreamReader == null ? 0L : leftPacketStreamReader.skippedInternalTransportCarriers(),
+                rightPacketStreamReader == null ? 0L : rightPacketStreamReader.skippedInternalTransportCarriers(),
+                mismatches,
+                stoppedEarly
+        );
     }
 
     private static void ensureFileExists(Path path) {
@@ -243,7 +277,7 @@ public final class ChannelJsonlCompareMain {
     }
 
 
-    private static String describeLengthMismatch(String leftLine, String rightLine) {
+    private static String describeLengthMismatch(JsonlPacketStreamLine leftLine, JsonlPacketStreamLine rightLine) {
         if (leftLine == null) {
             return "左侧文件已结束，但右侧还有更多行";
         }
@@ -269,11 +303,21 @@ public final class ChannelJsonlCompareMain {
         System.out.println("=== ChannelJsonlCompare ===");
         for (ComparisonReport report : reports) {
             if (report.matched()) {
-                System.out.println(report.target().label() + ": 匹配, 共 " + report.comparedLines() + " 行");
+                System.out.println(report.target().label() + ": 匹配, packet-stream " + report.comparedLines()
+                        + " 行, raw=" + report.leftRawLines() + "/" + report.rightRawLines()
+                        + ", skippedInternalTransport="
+                        + report.leftSkippedInternalTransportCarriers()
+                        + "/"
+                        + report.rightSkippedInternalTransportCarriers());
                 continue;
             }
 
-            System.out.println(report.target().label() + ": 不匹配, 已比较 " + report.comparedLines() + " 行");
+            System.out.println(report.target().label() + ": 不匹配, 已比较 packet-stream " + report.comparedLines()
+                    + " 行, raw=" + report.leftRawLines() + "/" + report.rightRawLines()
+                    + ", skippedInternalTransport="
+                    + report.leftSkippedInternalTransportCarriers()
+                    + "/"
+                    + report.rightSkippedInternalTransportCarriers());
             int printedCount = 0;
             for (MismatchDetail mismatch : report.mismatches()) {
                 printedCount++;
@@ -486,11 +530,121 @@ public final class ChannelJsonlCompareMain {
     private record ComparisonReport(
             ComparisonTarget target,
             long comparedLines,
+            long leftRawLines,
+            long rightRawLines,
+            long leftSkippedInternalTransportCarriers,
+            long rightSkippedInternalTransportCarriers,
             List<MismatchDetail> mismatches,
             boolean stoppedEarly
     ) {
         private boolean matched() {
             return mismatches.isEmpty();
+        }
+    }
+
+    private static boolean isInternalTransportCarrierFrame(String jsonLine) {
+        try {
+            if (!extractStringField(jsonLine, "packet_class").endsWith("CustomPayloadPacket")) {
+                return false;
+            }
+            String channelId = readCustomPayloadChannelId(extractStringField(jsonLine, "payload_hex"));
+            return channelId != null && channelId.startsWith(INTERNAL_TRANSPORT_CHANNEL_PREFIX);
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    private static String readCustomPayloadChannelId(String payloadHex) {
+        HexPayloadCursor cursor = new HexPayloadCursor(payloadHex);
+        cursor.readVarInt();
+        int channelIdLength = cursor.readVarInt();
+        if (channelIdLength <= 0 || channelIdLength > 512 || cursor.remainingBytes() < channelIdLength) {
+            return null;
+        }
+        return new String(cursor.readBytes(channelIdLength), StandardCharsets.UTF_8);
+    }
+
+    private static final class JsonlPacketStreamReader {
+        private final BufferedReader reader;
+        private long rawLines;
+        private long skippedInternalTransportCarriers;
+
+        private JsonlPacketStreamReader(BufferedReader reader) {
+            this.reader = reader;
+        }
+
+        private JsonlPacketStreamLine readNext() throws IOException {
+            while (true) {
+                String jsonLine = this.reader.readLine();
+                if (jsonLine == null) {
+                    return null;
+                }
+
+                this.rawLines++;
+                if (isInternalTransportCarrierFrame(jsonLine)) {
+                    this.skippedInternalTransportCarriers++;
+                    continue;
+                }
+                return new JsonlPacketStreamLine(jsonLine, this.rawLines);
+            }
+        }
+
+        private long rawLines() {
+            return this.rawLines;
+        }
+
+        private long skippedInternalTransportCarriers() {
+            return this.skippedInternalTransportCarriers;
+        }
+    }
+
+    private record JsonlPacketStreamLine(String jsonLine, long rawLineNumber) {
+    }
+
+    private static final class HexPayloadCursor {
+        private final String hex;
+        private int byteIndex;
+
+        private HexPayloadCursor(String hex) {
+            if (hex == null || (hex.length() % 2) != 0) {
+                throw new IllegalArgumentException("invalid hex payload");
+            }
+            this.hex = hex;
+        }
+
+        private int remainingBytes() {
+            return (this.hex.length() / 2) - this.byteIndex;
+        }
+
+        private int readVarInt() {
+            int value = 0;
+            int position = 0;
+            for (int index = 0; index < 5; index++) {
+                int current = readUnsignedByte();
+                value |= (current & 0x7F) << position;
+                if ((current & 0x80) == 0) {
+                    return value;
+                }
+                position += 7;
+            }
+            throw new IllegalArgumentException("VarInt is too long");
+        }
+
+        private byte[] readBytes(int length) {
+            byte[] bytes = new byte[length];
+            for (int index = 0; index < length; index++) {
+                bytes[index] = (byte) readUnsignedByte();
+            }
+            return bytes;
+        }
+
+        private int readUnsignedByte() {
+            if (remainingBytes() <= 0) {
+                throw new IllegalArgumentException("hex payload ended early");
+            }
+            int charIndex = this.byteIndex * 2;
+            this.byteIndex++;
+            return Integer.parseInt(this.hex.substring(charIndex, charIndex + 2), 16);
         }
     }
 

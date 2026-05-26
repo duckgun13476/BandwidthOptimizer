@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
 
 import java.nio.charset.StandardCharsets;
@@ -25,6 +26,12 @@ public final class ChannelTransportRuntimeGuard {
         }
 
         initialized = true;
+        if (!isTransportEnabled()) {
+            transportAvailable = false;
+            unavailableReason = "disabled by runtime property";
+            Bandwidthoptimizer.LOGGER.info("[Transport] Runtime disabled by property.");
+            return;
+        }
         try {
             byte[] probeBytes = "bandwidthoptimizer-zstd-probe".getBytes(StandardCharsets.US_ASCII);
             ChannelTransportSession probeSession = new ChannelTransportSession();
@@ -90,6 +97,13 @@ public final class ChannelTransportRuntimeGuard {
             initialize();
         }
         return unavailableReason;
+    }
+
+    private static boolean isTransportEnabled() {
+        return Boolean.parseBoolean(System.getProperty(
+                Config.RuntimeProperty.Transport.ENABLED,
+                Boolean.toString(Config.RuntimeProperty.Transport.DEFAULT_ENABLED)
+        ));
     }
 
 }

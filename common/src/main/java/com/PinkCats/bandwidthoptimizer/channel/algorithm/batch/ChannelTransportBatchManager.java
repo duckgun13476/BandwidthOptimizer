@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.channel.algorithm.batch;
+﻿package com.PinkCats.bandwidthoptimizer.channel.algorithm.batch;
 
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportBypassRankLogger;
@@ -90,7 +90,7 @@ public final class ChannelTransportBatchManager {
         clearBatchState(channel, false);
     }
 
-    // 出站 batch 有预热期，避免连接刚进入新阶段时把强时序包放进窗口里。
+    // Warm up outbound batching after protocol boundaries.
     public static boolean shouldBatchOutboundPacket(ChannelHandlerContext context) {
         if (context == null || !ChannelTransportBatchRuntimeConfig.isBatchEnabled()) {
             return false;
@@ -102,8 +102,7 @@ public final class ChannelTransportBatchManager {
         return unwrappedFrame != null && unwrappedFrame.frameKind() == ChannelTransportPacketCodec.FrameKind.BATCH;
     }
 
-    // 入站 batch 回放会按 batch window 分散 fireChannelRead；这和当前区块特化的 PacketDecoder out 替换路径不同。
-    // 当前 TP 卡顿排查要区分这两条链路：区块 ref/patch 还原成功后通常只是加入 decoder 输出队列，不会走这里排队等待。
+    // Batch replay can add delay that chunk envelope replacement does not.
     public static void replayInboundBatch(ChannelHandlerContext context, List<InboundReplayEntry> replayEntries) {
         if (context == null || replayEntries == null || replayEntries.isEmpty()) {
             return;
@@ -174,6 +173,7 @@ public final class ChannelTransportBatchManager {
                 return;
             }
 
+            recordOutboundBatchPacketStream(drainedBatch.context(), drainedBatch.pendingPackets());
             writeFuture.addListener(future -> {
                 if (!future.isSuccess()) {
                     Throwable failure = future.cause() == null ? new IllegalStateException("Unknown outbound batch flush failure") : future.cause();
@@ -224,6 +224,12 @@ public final class ChannelTransportBatchManager {
         String protocolName = readProtocolName(context);
         for (PendingOutboundPacket pendingPacket : drainedBatch.pendingPackets()) {
             byte[] directPacketBytes = pendingPacket.copyDirectFallbackPacketBytes();
+            ChannelTransportHooks.recordCommittedOutboundPacketStream(
+                    context,
+                    packetClassNameOf(pendingPacket),
+                    packetIdOf(pendingPacket, directPacketBytes),
+                    directPacketBytes
+            );
             context.write(Unpooled.wrappedBuffer(directPacketBytes));
             if (recordRankLog) {
                 ChannelTransportBypassRankLogger.recordEncodedPacket(
@@ -305,6 +311,31 @@ public final class ChannelTransportBatchManager {
             return pendingPacket.packetCapture().packetId();
         }
         return tryReadLeadingVarInt(pendingPacket.packetBytes());
+    }
+
+    private static int packetIdOf(PendingOutboundPacket pendingPacket, byte[] fallbackPacketBytes) {
+        if (pendingPacket != null && pendingPacket.packetCapture() != null) {
+            return pendingPacket.packetCapture().packetId();
+        }
+        return tryReadLeadingVarInt(fallbackPacketBytes);
+    }
+
+    private static void recordOutboundBatchPacketStream(
+            ChannelHandlerContext context,
+            List<PendingOutboundPacket> pendingPackets
+    ) {
+        if (context == null || pendingPackets == null || pendingPackets.isEmpty()) {
+            return;
+        }
+        for (PendingOutboundPacket pendingPacket : pendingPackets) {
+            byte[] directPacketBytes = pendingPacket.copyDirectFallbackPacketBytes();
+            ChannelTransportHooks.recordCommittedOutboundPacketStream(
+                    context,
+                    packetClassNameOf(pendingPacket),
+                    packetIdOf(pendingPacket, directPacketBytes),
+                    directPacketBytes
+            );
+        }
     }
 
 
@@ -446,7 +477,7 @@ public final class ChannelTransportBatchManager {
     }
 
     private static String readProtocolName(ChannelHandlerContext context) {
-        // 通过版本兼容层读取协议名，避免 batch 主逻辑因为 MC 字段差异拆回各版本。
+        // Keep protocol lookup behind the version compatibility layer.
         return ConnectionProtocolNameCompat.readProtocolName(context == null ? null : context.channel());
     }
 

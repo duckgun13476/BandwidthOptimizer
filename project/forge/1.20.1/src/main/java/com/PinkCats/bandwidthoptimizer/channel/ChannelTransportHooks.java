@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.channel;
+﻿package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
@@ -29,6 +29,7 @@ import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ClientboundCustomPayloadP
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ServerboundCustomPayloadPacketAccessor;
 import com.PinkCats.bandwidthoptimizer.report.ChunkBoundaryBandwidthRecorder;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCaptureManager;
+import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankSourceResolver;
 import com.PinkCats.bandwidthoptimizer.server.stat.ChannelBandwidthStats;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
 import io.netty.buffer.ByteBuf;
@@ -99,6 +100,7 @@ public final class ChannelTransportHooks {
 
         if (!ChannelTransportRuntimeGuard.isTransportAvailable()
                 || !shouldUseTransportForCurrentProtocol(protocolName)) {
+            recordCommittedOutboundPacketStream(context, packet, originalPacketBytes);
             recordDirectPacketTrace(
                     context,
                     "transport_unavailable_or_protocol",
@@ -155,6 +157,7 @@ public final class ChannelTransportHooks {
                             originalPacketBytes,
                             directChunkTrace
                     );
+            recordCommittedOutboundPacketStream(context, packet, originalPacketBytes);
             recordDirectPacketTrace(
                     context,
                     controlDecision.forceDirectTransport() ? controlDecision.reason() : boundaryDecision.reason(),
@@ -246,6 +249,7 @@ public final class ChannelTransportHooks {
 
         if (shouldBypassTransparentTransport(context, protocolName, packet, outboundPacketFlow)) {
             ChannelTransportBatchManager.flushOutboundBatchNow(context);
+            recordCommittedOutboundPacketStream(context, packet, originalPacketBytes);
             recordDirectPacketTrace(
                     context,
                     "transparent_bypass",
@@ -286,6 +290,7 @@ public final class ChannelTransportHooks {
             if (shouldBypassServerboundCarrierByInputSize(outboundPacketFlow, transportInputPacketBytes.length)) {
                 out.writerIndex(startIndexInclusive);
                 out.writeBytes(directFallbackPacketBytes);
+                recordCommittedOutboundPacketStream(context, packet, directFallbackPacketBytes);
                 if (forceImmediateTransport && DebugRuntimeConfig.isDiagnoseEnabled()) {
                     Bandwidthoptimizer.LOGGER.info(
                             "[Transport][ImmediatePolicy][Fallback] reason=serverbound_carrier_size, packetClass={}, inputBytes={}, channel={}",
@@ -364,6 +369,7 @@ public final class ChannelTransportHooks {
                 );
             }
             if (wrappedFrame == null) {
+                recordCommittedOutboundPacketStream(context, packet, originalPacketBytes);
                 if (forceImmediateTransport) {
                     if (DebugRuntimeConfig.isDiagnoseEnabled()) {
                         Bandwidthoptimizer.LOGGER.info(
@@ -400,6 +406,7 @@ public final class ChannelTransportHooks {
             if (shouldBypassUnprofitableCarrier(wrappedFrame)) {
                 out.writerIndex(startIndexInclusive);
                 out.writeBytes(directFallbackPacketBytes);
+                recordCommittedOutboundPacketStream(context, packet, directFallbackPacketBytes);
                 recordOutboundBypassStats(context, protocolName, directFallbackPacketBytes.length, 1);
                 ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
                         outboundPacketCapture,
@@ -427,6 +434,7 @@ public final class ChannelTransportHooks {
             );
 
             out.writerIndex(startIndexInclusive);
+            recordCommittedOutboundPacketStream(context, packet, originalPacketBytes);
             if (!writeTransportCarrierPacket(context, outboundPacketFlow, out, wrappedFrame.transportFrameBytes())) {
                 out.writeBytes(directFallbackPacketBytes);
                 if (forceImmediateTransport && DebugRuntimeConfig.isDiagnoseEnabled()) {
@@ -594,9 +602,8 @@ public final class ChannelTransportHooks {
         }
     }
 
-    // 入站 transport 快路径：PacketDecoder HEAD 阶段如果直接看到 BO 帧，就在原版解码前还原成原版 packet 对象。
-    // 这里会推进 ByteBuf readerIndex 并把还原结果写入 out，但不会直接执行 packet.handle(...)。
-    public static <T extends PacketListener> boolean tryDecodeInboundTransportFrame(
+    // Decode direct transport frames before vanilla packet id decoding.
+        public static <T extends PacketListener> boolean tryDecodeInboundTransportFrame(
             ChannelHandlerContext context,
             ByteBuf in,
             List<Object> out,
@@ -662,7 +669,7 @@ public final class ChannelTransportHooks {
 
         boolean expandedAny = false;
         for (int index = outputSizeBeforeDecode; index < out.size(); index++) {
-            // 某些路径会先被原版解成 custom payload carrier；这里在 RETURN 阶段取出 payload 再替换为真实子包。
+            // Some carriers are decoded by vanilla first; replace them at RETURN.
             byte[] transportFrameBytes = copyTransportPayloadBytes(out.get(index));
             if (transportFrameBytes == null) {
                 continue;
@@ -690,9 +697,8 @@ public final class ChannelTransportHooks {
         return expandedAny;
     }
 
-    // 用还原出的 packet 列表替换 carrier，并把本次 decode 里 carrier 后面的尾包挪回末尾。
-    // 这样 PacketDecoder 的输出顺序仍然是“还原子包 -> 原尾包”，避免 carrier 和后续直通包发生局部重排。
-    private static int replaceDecodedCarrierWithRestoredPackets(List<Object> out, int index, List<Object> restoredPackets) {
+    // Preserve output order when replacing a carrier with restored packets.
+        private static int replaceDecodedCarrierWithRestoredPackets(List<Object> out, int index, List<Object> restoredPackets) {
         Object carrierPacket = out.remove(index);
         releaseTransportPayloadBuffer(carrierPacket);
         List<Object> tailPackets = new ArrayList<>();
@@ -724,9 +730,8 @@ public final class ChannelTransportHooks {
             for (byte[] transportRestoredPacketBytes : unwrappedFrame.restoredPacketBytesList()) {
                 long packetStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
                 long chunkRestoreStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
-                // 区块特化帧先交给 chunk transport 还原；还原成功后才继续走原版 packet 解码。
-                // client_restored 日志记录的是这个阶段，不等价于 ClientPacketListener 已经把区块应用到世界。
-                ChunkInboundDecodeResult inboundDecodeResult =
+                // Chunk envelopes restore before vanilla packet decoding.
+                                ChunkInboundDecodeResult inboundDecodeResult =
                         ChunkTransportDispatcher.tryDecodeInboundPacket(context, transportRestoredPacketBytes);
                 ChunkLoadDelayProbe.logStage(
                         context,
@@ -931,6 +936,36 @@ public final class ChannelTransportHooks {
                 && telemetry.templateAdditionCount() == 0
                 && telemetry.exactRemovalCount() == 0
                 && telemetry.templateRemovalCount() == 0;
+    }
+
+    public static void recordCommittedOutboundPacketStream(
+            ChannelHandlerContext context,
+            String packetClassName,
+            int packetId,
+            byte[] encodedPacketBytes
+    ) {
+        ChannelCaptureHooks.captureOutboundPacketStream(context, packetClassName, packetId, encodedPacketBytes);
+    }
+
+    private static void recordCommittedOutboundPacketStream(
+            ChannelHandlerContext context,
+            Packet<?> packet,
+            byte[] encodedPacketBytes
+    ) {
+        if (isInternalTransportCarrierPacket(packet)) {
+            return;
+        }
+        ChannelCaptureHooks.captureOutboundPacketStream(context, packet, encodedPacketBytes);
+    }
+
+    private static boolean isInternalTransportCarrierPacket(Packet<?> packet) {
+        if (packet instanceof ClientboundCustomPayloadPacket customPayloadPacket) {
+            return TRANSPORT_PAYLOAD_ID.equals(customPayloadPacket.getIdentifier());
+        }
+        if (packet instanceof ServerboundCustomPayloadPacket customPayloadPacket) {
+            return TRANSPORT_PAYLOAD_ID.equals(customPayloadPacket.getIdentifier());
+        }
+        return false;
     }
 
 
@@ -1298,6 +1333,7 @@ public final class ChannelTransportHooks {
                         + ", flow=" + packetFlow
                         + ", protocol=" + readProtocolName(context)
                         + ", packetClass=" + packetClassName(restoredPacket)
+                        + ", source=" + ChannelTransportPacketRankSourceResolver.resolveSourceKey(restoredPacket)
                         + ", rawPacketId=" + tryReadLeadingVarInt(restoredPacketBytes)
                         + ", packetBytes=" + lengthOf(restoredPacketBytes)
                         + ", packetPrefix=" + hexPrefix(restoredPacketBytes)
@@ -1307,12 +1343,13 @@ public final class ChannelTransportHooks {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[Transport][Trace][RestoredPacket] index={}, channel={}, flow={}, protocol={}, packetClass={}, rawPacketId={}, packetBytes={}, packetPrefix={}",
+                "[Transport][Trace][RestoredPacket] index={}, channel={}, flow={}, protocol={}, packetClass={}, source={}, rawPacketId={}, packetBytes={}, packetPrefix={}",
                 traceIndex,
                 channelIdText(context),
                 packetFlow,
                 readProtocolName(context),
                 packetClassName(restoredPacket),
+                ChannelTransportPacketRankSourceResolver.resolveSourceKey(restoredPacket),
                 tryReadLeadingVarInt(restoredPacketBytes),
                 lengthOf(restoredPacketBytes),
                 hexPrefix(restoredPacketBytes)

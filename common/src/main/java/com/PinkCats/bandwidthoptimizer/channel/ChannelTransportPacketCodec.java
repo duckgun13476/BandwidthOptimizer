@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.channel;
+﻿package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.batch.KineticBatchLayer;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.ChannelTransportOperationTelemetry;
@@ -53,7 +53,7 @@ public final class ChannelTransportPacketCodec {
             return null;
         }
 
-        // Batch carrier 必须保持自包含；否则接收端重建 session 后会用空模板表读取旧模板引用。
+        // Batch carriers must be self-contained across session rebuilds.
         byte[] batchPayloadBytes = BATCH_LAYER.encodePacketBatch(safePacketBytesList);
         ChannelTransportSession.PacketResult packetResult = encodingProfile == BatchEncodingProfile.LITERAL_MAPPING
                 ? transportSession.encodeSinglePacketWithLiteralMappingTelemetry(batchPayloadBytes)

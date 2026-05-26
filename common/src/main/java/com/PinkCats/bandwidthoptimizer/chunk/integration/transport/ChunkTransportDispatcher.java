@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.chunk.integration.transport;
+﻿package com.PinkCats.bandwidthoptimizer.chunk.integration.transport;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.budget.ChunkClientCacheBudgetManager;
@@ -93,7 +93,7 @@ public final class ChunkTransportDispatcher {
     private ChunkTransportDispatcher() {
     }
 
-    // full/ref/patch -> chunk transport envelope。
+    // full/ref/patch -> chunk transport envelope.
     public static byte[] tryEncodeOutboundPacket(
             ChannelHandlerContext context,
             String protocolName,

@@ -299,6 +299,8 @@ public class Config {
 
         public static final class Transport {
 
+            public static final String ENABLED = "bandwidthoptimizer.transport.enabled";
+            public static final boolean DEFAULT_ENABLED = true;
             public static final String CHUNK_HOTSPOT_TRANSPORT_ENABLED =
                     "bandwidthoptimizer.experimentalChunkHotspotTransport";
             public static final boolean DEFAULT_CHUNK_HOTSPOT_TRANSPORT_ENABLED = true;
@@ -374,6 +376,9 @@ public class Config {
 
         public static final class Chunk {
 
+            public static final String BOUNDARY_BARRIER_ENABLED =
+                    "bandwidthoptimizer.chunk.boundaryBarrierEnabled";
+            public static final boolean DEFAULT_BOUNDARY_BARRIER_ENABLED = true;
             public static final String WATCH_BOUNDARY_REUSE_MAX_DELTA_PACKETS =
                     "bandwidthoptimizer.chunk.watchBoundaryReuseMaxDeltaPackets";
             public static final long DEFAULT_WATCH_BOUNDARY_REUSE_MAX_DELTA_PACKETS = 64L;

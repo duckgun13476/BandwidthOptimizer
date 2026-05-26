@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.channel;
+﻿package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
@@ -95,6 +95,7 @@ public final class ChannelTransportHooks {
 
         if (!ChannelTransportRuntimeGuard.isTransportAvailable()
                 || !shouldUseTransportForCurrentProtocol(protocolName)) {
+            recordCommittedOutboundPacketStream(context, packet, originalPacketBytes);
             recordDirectPacketTrace(
                     context,
                     "transport_unavailable_or_protocol",
@@ -151,6 +152,7 @@ public final class ChannelTransportHooks {
                             originalPacketBytes,
                             directChunkTrace
                     );
+            recordCommittedOutboundPacketStream(context, packet, originalPacketBytes);
             recordDirectPacketTrace(
                     context,
                     controlDecision.forceDirectTransport() ? controlDecision.reason() : boundaryDecision.reason(),
@@ -227,6 +229,7 @@ public final class ChannelTransportHooks {
 
         if (shouldBypassTransparentTransport(context, protocolName, packet, outboundPacketFlow)) {
             ChannelTransportBatchManager.flushOutboundBatchNow(context);
+            recordCommittedOutboundPacketStream(context, packet, originalPacketBytes);
             recordDirectPacketTrace(
                     context,
                     "transparent_bypass",
@@ -267,6 +270,7 @@ public final class ChannelTransportHooks {
             if (shouldBypassServerboundCarrierByInputSize(outboundPacketFlow, transportInputPacketBytes.length)) {
                 out.writerIndex(startIndexInclusive);
                 out.writeBytes(directFallbackPacketBytes);
+                recordCommittedOutboundPacketStream(context, packet, directFallbackPacketBytes);
                 if (forceImmediateTransport && DebugRuntimeConfig.isDiagnoseEnabled()) {
                     Bandwidthoptimizer.LOGGER.info(
                             "[Transport][ImmediatePolicy][Fallback] reason=serverbound_carrier_size, packetClass={}, inputBytes={}, channel={}",
@@ -331,6 +335,7 @@ public final class ChannelTransportHooks {
             ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame =
                     KineticChannel.processOutboundPacket(transportSession, transportInputPacketBytes);
             if (wrappedFrame == null) {
+                recordCommittedOutboundPacketStream(context, packet, originalPacketBytes);
                 if (forceImmediateTransport) {
                     if (DebugRuntimeConfig.isDiagnoseEnabled()) {
                         Bandwidthoptimizer.LOGGER.info(
@@ -367,6 +372,7 @@ public final class ChannelTransportHooks {
             if (shouldBypassUnprofitableCarrier(wrappedFrame)) {
                 out.writerIndex(startIndexInclusive);
                 out.writeBytes(directFallbackPacketBytes);
+                recordCommittedOutboundPacketStream(context, packet, directFallbackPacketBytes);
                 recordOutboundBypassStats(context, protocolName, directFallbackPacketBytes.length, 1);
                 ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
                         outboundPacketCapture,
@@ -394,6 +400,7 @@ public final class ChannelTransportHooks {
             );
 
             out.writerIndex(startIndexInclusive);
+            recordCommittedOutboundPacketStream(context, packet, originalPacketBytes);
             if (!writeTransportCarrierPacket(context, outboundPacketFlow, out, wrappedFrame.transportFrameBytes())) {
                 out.writeBytes(directFallbackPacketBytes);
                 if (forceImmediateTransport && DebugRuntimeConfig.isDiagnoseEnabled()) {
@@ -1344,6 +1351,38 @@ public final class ChannelTransportHooks {
 
     private static String packetClassName(Packet<?> packet) {
         return packet == null ? "<null>" : packet.getClass().getName();
+    }
+
+    // Record bytes that are actually submitted to vanilla outbound flow.
+    public static void recordCommittedOutboundPacketStream(
+            ChannelHandlerContext context,
+            String packetClassName,
+            int packetId,
+            byte[] encodedPacketBytes
+    ) {
+        ChannelCaptureHooks.captureOutboundPacketStream(context, packetClassName, packetId, encodedPacketBytes);
+    }
+
+    // Use original packets for bypass packet-stream accounting.
+    private static void recordCommittedOutboundPacketStream(
+            ChannelHandlerContext context,
+            Packet<?> packet,
+            byte[] encodedPacketBytes
+    ) {
+        if (isInternalTransportCarrierPacket(packet)) {
+            return;
+        }
+        ChannelCaptureHooks.captureOutboundPacketStream(context, packet, encodedPacketBytes);
+    }
+
+    private static boolean isInternalTransportCarrierPacket(Packet<?> packet) {
+        if (packet instanceof ClientboundCustomPayloadPacket customPayloadPacket) {
+            return TRANSPORT_PAYLOAD_ID.equals(customPayloadPacket.getIdentifier());
+        }
+        if (packet instanceof ServerboundCustomPayloadPacket customPayloadPacket) {
+            return TRANSPORT_PAYLOAD_ID.equals(customPayloadPacket.getIdentifier());
+        }
+        return false;
     }
 
     // prevent queue mistake

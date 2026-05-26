@@ -1,4 +1,4 @@
-import groovy.json.JsonOutput
+﻿import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -52,6 +52,8 @@ def applyExperientClientRunProperties = { Project projectRef, def runConfig ->
             applyOptionalRunProperty(projectRef, runConfig, 'boExperientAutoConnectRejoinDelayTicks', 'bandwidthoptimizer.experient.autoConnectRejoinDelayTicks')
         }
 
+        applyOptionalRunProperty(projectRef, runConfig, 'boExperientClientCommand', 'bandwidthoptimizer.experient.clientCommand')
+        applyOptionalRunProperty(projectRef, runConfig, 'boExperientClientCommandDelayTicks', 'bandwidthoptimizer.experient.clientCommandDelayTicks')
         applyOptionalRunProperty(projectRef, runConfig, 'boExperientServerCommand', 'bandwidthoptimizer.experient.serverCommand')
         applyOptionalRunProperty(projectRef, runConfig, 'boExperientServerCommandDelayTicks', 'bandwidthoptimizer.experient.serverCommandDelayTicks')
     }
@@ -76,27 +78,36 @@ def applySharedBandwidthOptimizerRunProperties = { Project projectRef, def runCo
             ['boExperientChunkHotspotPathRangeEndZ', 'bandwidthoptimizer.experient.chunkHotspotPathRangeEndZ'],
             ['boExperientChunkHotspotPathRangeStepBlocks', 'bandwidthoptimizer.experient.chunkHotspotPathRangeStepBlocks'],
             ['boExperientChunkHotspotPathRangeRoundTrips', 'bandwidthoptimizer.experient.chunkHotspotPathRangeRoundTrips'],
+            ['boExperientChunkHotspotPathInitialDelayTicks', 'bandwidthoptimizer.experient.chunkHotspotPathInitialDelayTicks'],
             ['boDebugDiagnose', 'bandwidthoptimizer.debug.diagnose'],
             ['boChunkDiagnosticOutputsEnabled', 'bandwidthoptimizer.chunk.diagnosticOutputsEnabled'],
+            ['boTransportEnabled', 'bandwidthoptimizer.transport.enabled'],
             ['boTransportMappingEnabled', 'bandwidthoptimizer.transport.mappingEnabled'],
             ['boTransportZstdEnabled', 'bandwidthoptimizer.transport.zstdEnabled'],
             ['boTransportBatchEnabled', 'bandwidthoptimizer.transport.batchEnabled'],
             ['boTransportBatchWindowMillis', 'bandwidthoptimizer.transport.batchWindowMillis'],
             ['boTransportPacketIdMappingEnabled', 'bandwidthoptimizer.transport.packetIdMappingEnabled'],
             ['boTransportTelemetryDumpFileName', 'bandwidthoptimizer.transport.telemetryDumpFileName'],
+            ['boTransportDebugTraceSampleLimit', 'bandwidthoptimizer.transport.debugTraceSampleLimit'],
+            ['boTransportDebugTracePrefixBytes', 'bandwidthoptimizer.transport.debugTracePrefixBytes'],
             ['boChannelJsonlCaptureEnabled', 'bandwidthoptimizer.channelJsonlCaptureEnabled'],
             ['boChunkGlobalStoreBudgetBytes', 'bandwidthoptimizer.chunkGlobalStoreBudgetBytes'],
             ['boChunkGlobalStoreMaxVersionsPerChunk', 'bandwidthoptimizer.chunkGlobalStoreMaxVersionsPerChunk'],
             ['boChunkServerShadowOriginalBytesBudgetBytes', 'bandwidthoptimizer.chunk.serverShadowOriginalBytesBudgetBytes'],
             ['boChunkServerShadowMetadataEntryLimit', 'bandwidthoptimizer.chunk.serverShadowMetadataEntryLimit'],
+            ['boChunkBoundaryBarrierEnabled', 'bandwidthoptimizer.chunk.boundaryBarrierEnabled'],
             ['boChunkWatchBoundaryReuseMaxDeltaPackets', 'bandwidthoptimizer.chunk.watchBoundaryReuseMaxDeltaPackets'],
-            ['boChunkWatchBoundaryReuseMaxDeltaBytesRatio', 'bandwidthoptimizer.chunk.watchBoundaryReuseMaxDeltaBytesRatio']
+            ['boChunkWatchBoundaryReuseMaxDeltaBytesRatio', 'bandwidthoptimizer.chunk.watchBoundaryReuseMaxDeltaBytesRatio'],
+            ['boCreateBlockEntityUpdateGateEnabled', 'bandwidthoptimizer.create.blockEntityUpdateGateEnabled'],
+            ['boCreateBlockEntityUpdateGateMaxDelayMillis', 'bandwidthoptimizer.create.blockEntityUpdateGateMaxDelayMillis']
     ].each { List<String> mapping ->
         applyOptionalRunProperty(projectRef, runConfig, mapping[0], mapping[1])
     }
 
     [
             ['boExperientChunkHotspotPathEnabled', 'bandwidthoptimizer.experient.chunkHotspotPathEnabled'],
+            ['boExperientChunkHotspotPathClientCommandMode', 'bandwidthoptimizer.experient.chunkHotspotPathClientCommandMode'],
+            ['boExperientChunkHotspotPathBlockEntityFirstMode', 'bandwidthoptimizer.experient.chunkHotspotPathBlockEntityFirstMode'],
             ['boExperientChunkHotspotPathStopAfterSection', 'bandwidthoptimizer.experient.chunkHotspotPathStopAfterSection'],
             ['boExperientChunkHotspotPathStopAfterBlockEntity', 'bandwidthoptimizer.experient.chunkHotspotPathStopAfterBlockEntity'],
             ['boExperientChunkHotspotPathTwoPointReuseMode', 'bandwidthoptimizer.experient.chunkHotspotPathTwoPointReuseMode'],
@@ -256,6 +267,106 @@ def startExistingRunTaskProcess(File projectDir, boolean isWindows, String wrapp
     return process
 }
 
+def readRunAllTcpPort(Project projectRef, String propertyName, int defaultValue) {
+
+    long rawPort = project.ext.boReadRunAllLongProperty.call(projectRef, propertyName, defaultValue)
+    if (rawPort < 1L || rawPort > 65535L) {
+        throw new GradleException("${propertyName} 必须是 1-65535 的端口号，当前值=${rawPort}")
+    }
+    return (int) rawPort
+}
+
+def readRunAllLatencyDelayMillis(Project projectRef) {
+
+    return project.ext.boReadRunAllLongProperty.call(projectRef, 'boRunAllLatencyDelayMillis', 0L)
+}
+
+def isRunAllLatencyProxyEnabled(Project projectRef) {
+
+    return readRunAllLatencyDelayMillis(projectRef) > 0L
+}
+
+def readRunAllLatencyListenHost(Project projectRef) {
+
+    String rawHost = projectRef.findProperty('boRunAllLatencyListenHost')?.toString()?.trim()
+    return (rawHost == null || rawHost.isEmpty()) ? '127.0.0.1' : rawHost
+}
+
+def readRunAllLatencyTargetHost(Project projectRef) {
+
+    String rawHost = projectRef.findProperty('boRunAllLatencyTargetHost')?.toString()?.trim()
+    return (rawHost == null || rawHost.isEmpty()) ? '127.0.0.1' : rawHost
+}
+
+def readRunAllLatencyListenPort(Project projectRef) {
+
+    return readRunAllTcpPort(projectRef, 'boRunAllLatencyListenPort', 25566)
+}
+
+def readRunAllLatencyTargetPort(Project projectRef) {
+
+    return readRunAllTcpPort(projectRef, 'boRunAllLatencyTargetPort', 25567)
+}
+
+def readRunAllServerPort(Project projectRef) {
+
+    return isRunAllLatencyProxyEnabled(projectRef) ? readRunAllLatencyTargetPort(projectRef) : 25565
+}
+
+def readRunAllClientAddress(Project projectRef) {
+
+    if (!isRunAllLatencyProxyEnabled(projectRef)) {
+        return '127.0.0.1:25565'
+    }
+    return "${readRunAllLatencyListenHost(projectRef)}:${readRunAllLatencyListenPort(projectRef)}"
+}
+
+def readRunAllClientConnectMarkers(Project projectRef) {
+
+    String clientAddress = readRunAllClientAddress(projectRef)
+    String[] parts = clientAddress.split(':', 2)
+    if (parts.length == 2) {
+        return ["Connecting to ${parts[0]}, ${parts[1]}", "Connecting to ${clientAddress}"]
+    }
+    return ["Connecting to ${clientAddress}"]
+}
+
+def startRunAllLatencyProxyProcess(Project projectRef, boolean isWindows, File outputFile) {
+
+    outputFile.parentFile.mkdirs()
+    if (outputFile.exists()) {
+        outputFile.delete()
+    }
+
+    File javaExecutable = new File(
+            new File(System.getProperty('java.home'), 'bin'),
+            isWindows ? 'java.exe' : 'java'
+    )
+    List<String> command = [
+            javaExecutable.absolutePath,
+            '-cp',
+            sourceSets.test.runtimeClasspath.asPath,
+            'com.PinkCats.bandwidthoptimizer.test.LatencyTcpProxyMain',
+            '--listen-host',
+            readRunAllLatencyListenHost(projectRef),
+            '--listen-port',
+            String.valueOf(readRunAllLatencyListenPort(projectRef)),
+            '--target-host',
+            readRunAllLatencyTargetHost(projectRef),
+            '--target-port',
+            String.valueOf(readRunAllLatencyTargetPort(projectRef)),
+            '--delay-ms',
+            String.valueOf(readRunAllLatencyDelayMillis(projectRef))
+    ]
+
+    ProcessBuilder builder = new ProcessBuilder(command.collect { it.toString() })
+    builder.directory(projectRef.projectDir)
+    builder.redirectErrorStream(true)
+    Process process = builder.start()
+    project.ext.boStreamRunTaskOutputToConsole(process, outputFile, 'latencyProxy', 'runAll-log-pump')
+    return process
+}
+
 def buildExperientEnabledGradleArgs() {
 
     return ['-PboExperientEnabled=true']
@@ -289,8 +400,13 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     args.addAll(buildExperientEnabledGradleArgs())
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientServerCommand')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientServerCommandDelayTicks')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientClientCommand')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientClientCommandDelayTicks')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperimentalChunkHotspotTransport')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathEnabled')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathInitialDelayTicks')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathClientCommandMode')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathBlockEntityFirstMode')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathStopAfterSection')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathStopAfterBlockEntity')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathTwoPointReuseMode')
@@ -309,19 +425,25 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathRangeRoundTrips')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boDebugDiagnose')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkDiagnosticOutputsEnabled')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportEnabled')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportMappingEnabled')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportZstdEnabled')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportBatchEnabled')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportBatchWindowMillis')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportPacketIdMappingEnabled')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportTelemetryDumpFileName')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportDebugTraceSampleLimit')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportDebugTracePrefixBytes')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChannelJsonlCaptureEnabled')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkGlobalStoreBudgetBytes')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkGlobalStoreMaxVersionsPerChunk')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkServerShadowOriginalBytesBudgetBytes')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkServerShadowMetadataEntryLimit')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkBoundaryBarrierEnabled')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkWatchBoundaryReuseMaxDeltaPackets')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkWatchBoundaryReuseMaxDeltaBytesRatio')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boCreateBlockEntityUpdateGateEnabled')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boCreateBlockEntityUpdateGateMaxDelayMillis')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boClientChunkCacheMaxMemoryMb')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boClientChunkCacheRecycleTriggerFreeMb')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boClientPersistentChunkCacheManifestRefreshEnabled')
@@ -417,7 +539,7 @@ def runWatchBoundaryRefreshPatchVerifyNow(Project projectRef) {
     }
 }
 
-def configureRunAllServerProperties(File propertiesFile) {
+def configureRunAllServerProperties(File propertiesFile, int serverPort) {
 
     Properties properties = new Properties()
     if (propertiesFile.exists()) {
@@ -431,14 +553,14 @@ def configureRunAllServerProperties(File propertiesFile) {
     properties.setProperty('online-mode', 'false')
     properties.setProperty('enforce-secure-profile', 'false')
     properties.setProperty('server-ip', '')
-    properties.setProperty('server-port', '25565')
+    properties.setProperty('server-port', String.valueOf(serverPort))
     properties.setProperty('level-name', 'bo-runall-world')
 
     propertiesFile.withOutputStream { output ->
         properties.store(output, 'BandwidthOptimizer runAll local test server')
     }
 
-    // runAll 是受控本地验证入口，自动写入 EULA 同意文件，避免新版本运行目录第一次启动时停在原版提示页。
+    // runAll is controlled local validation; write EULA acceptance up front.
     new File(propertiesFile.parentFile, 'eula.txt').setText('eula=true' + System.lineSeparator(), StandardCharsets.UTF_8.name())
 }
 
@@ -518,7 +640,7 @@ def stopExistingRunAllProcesses(Project projectRef, File projectDirFile, boolean
     String escapedProjectDir = projectDirFile.absolutePath.replace("'", "''")
     projectRef.exec {
         commandLine 'powershell', '-NoProfile', '-Command',
-                "\$targets = Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -and \$_.CommandLine -like '*${escapedProjectDir}*' -and (\$_.CommandLine -like '*forgeclientuserdev*' -or \$_.CommandLine -like '*forgeserveruserdev*' -or \$_.CommandLine -like '*gradlew.bat*runClient*' -or \$_.CommandLine -like '*gradlew.bat*runServer*' -or \$_.CommandLine -like '*gradle-wrapper.jar*runClient*' -or \$_.CommandLine -like '*gradle-wrapper.jar*runServer*' -or \$_.CommandLine -like '*fabric.dli.env=client*' -or \$_.CommandLine -like '*fabric.dli.env=server*') }; \$targets | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }"
+                "\$targets = Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -and \$_.CommandLine -like '*${escapedProjectDir}*' -and (\$_.CommandLine -like '*forgeclientuserdev*' -or \$_.CommandLine -like '*forgeserveruserdev*' -or \$_.CommandLine -like '*gradlew.bat*runClient*' -or \$_.CommandLine -like '*gradlew.bat*runServer*' -or \$_.CommandLine -like '*gradle-wrapper.jar*runClient*' -or \$_.CommandLine -like '*gradle-wrapper.jar*runServer*' -or \$_.CommandLine -like '*fabric.dli.env=client*' -or \$_.CommandLine -like '*fabric.dli.env=server*' -or \$_.CommandLine -like '*LatencyTcpProxyMain*') }; \$targets | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }"
         ignoreExitValue = true
     }
 }
@@ -574,7 +696,7 @@ def waitForRunAllAutoExitTrigger(
         project.ext.boWaitForMarkerFile.call(serverLoginMarker, timeoutMillis, 'runAllAutoExitCompare 等待玩家进服')
         project.ext.boWaitForFourWayCapturedTraffic.call(clientSendJsonl, clientReceiveJsonl, serverSendJsonl, serverReceiveJsonl, timeoutMillis)
         if (fourWayPostLoginWarmupMillis > 0L) {
-            // four-way-jsonl 是 PLAY 阶段等价验证入口，进服后保留短暂热身窗口，避免初始区块波次只截到一端。
+            // Keep a short warmup so initial chunk waves are captured on both sides.
             Thread.sleep(fourWayPostLoginWarmupMillis)
         }
         return
@@ -697,7 +819,7 @@ def readTransportReportScenarios(File scenarioListFile) {
 }
 
 if (boRunAllTasksEnabled) {
-// 在任务图生成后提前拦截未指定版本路径的 runAll 类任务，避免先执行 testClasses 等依赖。
+// Reject root runAll-style tasks before Gradle schedules version test dependencies.
 gradle.taskGraph.whenReady { TaskExecutionGraph taskGraph ->
     ['runAll', 'runAllAutoExitCompare', 'runWatchBoundaryRefreshPatchRegression'].each { String taskName ->
         Task taskRef = tasks.named(taskName).get()
@@ -847,6 +969,7 @@ tasks.register('runAll') {
         File clientLatestLog = project.file('run/client/logs/latest.log')
         File serverTaskLog = project.file('run/runall-server-task.log')
         File clientTaskLog = project.file('run/runall-client-task.log')
+        File latencyProxyTaskLog = project.file('run/runall-latency-proxy.log')
         File serverSendJsonl = new File(serverOutputDir, 'send.jsonl')
         File serverReceiveJsonl = new File(serverOutputDir, 'receive.jsonl')
         File clientSendJsonl = new File(clientOutputDir, 'send.jsonl')
@@ -867,6 +990,7 @@ tasks.register('runAll') {
                 clientLatestLog,
                 serverTaskLog,
                 clientTaskLog,
+                latencyProxyTaskLog,
                 serverSendJsonl,
                 serverReceiveJsonl,
                 clientSendJsonl,
@@ -878,10 +1002,12 @@ tasks.register('runAll') {
                 captureResetRequest
         ])
 
-        configureRunAllServerProperties(serverProperties)
+        int serverPort = readRunAllServerPort(project)
+        String clientAddress = readRunAllClientAddress(project)
+        configureRunAllServerProperties(serverProperties, serverPort)
         configureRunAllServerOperators(serverOpsFile)
 
-        println 'runAll: 正在启动本地测试服务端。'
+        println "runAll: 正在启动本地测试服务端，端口 ${serverPort}。"
         Process serverProcess = startExistingRunTaskProcess(projectDirFile, isWindows, wrapperPath, 'runServer', buildRunAllSharedGradleArgs(project), null, serverTaskLog, 'runServer')
         project.ext.boWaitForLogMarker.call(
                 serverTaskLog,
@@ -891,9 +1017,22 @@ tasks.register('runAll') {
                 '服务端启动'
         )
 
-        List<String> clientGradleArgs = buildExperientAutoConnectGradleArgs(project, '127.0.0.1:25565', 'BO RunAll Local', 20L)
+        Process latencyProxyProcess = null
+        if (isRunAllLatencyProxyEnabled(project)) {
+            println "runAll: 正在启动固定延迟代理 ${readRunAllLatencyListenHost(project)}:${readRunAllLatencyListenPort(project)} -> ${readRunAllLatencyTargetHost(project)}:${readRunAllLatencyTargetPort(project)}, delay=${readRunAllLatencyDelayMillis(project)}ms。"
+            latencyProxyProcess = startRunAllLatencyProxyProcess(project, isWindows, latencyProxyTaskLog)
+            project.ext.boWaitForLogMarker.call(
+                    latencyProxyTaskLog,
+                    ['[LatencyTcpProxy] listening'],
+                    ['BindException', 'Address already in use', 'Failed'],
+                    30000L,
+                    '延迟代理启动'
+            )
+        }
 
-        println 'runAll: 服务端已就绪，正在启动客户端，并用 experient 自动发起单次直连 127.0.0.1:25565。'
+        List<String> clientGradleArgs = buildExperientAutoConnectGradleArgs(project, clientAddress, 'BO RunAll Local', 20L)
+
+        println "runAll: 服务端已就绪，正在启动客户端，并用 experient 自动发起单次直连 ${clientAddress}。"
         Process clientProcess = startExistingRunTaskProcess(
                 projectDirFile,
                 isWindows,
@@ -907,7 +1046,7 @@ tasks.register('runAll') {
 
         project.ext.boWaitForLogMarker.call(
                 clientTaskLog,
-                ['Connecting to 127.0.0.1, 25565', 'Connecting to 127.0.0.1:25565'],
+                readRunAllClientConnectMarkers(project),
                 ['Failed to connect to the server', 'disconnect.genericReason', 'Connection refused', 'Internal Exception'],
                 180000L,
                 '客户端连接'
@@ -945,7 +1084,7 @@ tasks.register('runAll') {
             if (clientProcess.isAlive()) {
                 clientProcess.waitFor(15L, TimeUnit.SECONDS)
             }
-            forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
+            forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess, latencyProxyProcess])
             project.ext.boWaitForFilesToSettle.call(
                     [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
                     settleMillis,
@@ -964,6 +1103,10 @@ tasks.register('runAll') {
 
         println 'runAll: 检测到客户端已退出，正在关闭服务端。'
         stopRunAllServerProcesses(project, projectDirFile, isWindows)
+        if (latencyProxyProcess != null && latencyProxyProcess.isAlive()) {
+            latencyProxyProcess.destroy()
+            latencyProxyProcess.waitFor(5L, TimeUnit.SECONDS)
+        }
 
         if (serverProcess.isAlive()) {
             serverProcess.waitFor(30L, TimeUnit.SECONDS)
@@ -1003,6 +1146,7 @@ tasks.register('runAllAutoExitCompare') {
 
         File serverTaskLog = project.file('run/runall-server-task.log')
         File clientTaskLog = project.file('run/runall-client-task.log')
+        File latencyProxyTaskLog = project.file('run/runall-latency-proxy.log')
         File serverOutputDir = project.ext.boServerOutputRoot.call(project)
         File clientOutputDir = project.ext.boClientOutputRoot.call(project)
         File sharedOutputDir = project.ext.boServerOutputRoot.call(project)
@@ -1025,6 +1169,7 @@ tasks.register('runAllAutoExitCompare') {
         project.ext.boClearRunAllProbeFiles.call([
                 serverTaskLog,
                 clientTaskLog,
+                latencyProxyTaskLog,
                 serverSendJsonl,
                 serverReceiveJsonl,
                 clientSendJsonl,
@@ -1037,15 +1182,18 @@ tasks.register('runAllAutoExitCompare') {
                 serverLoginMarker
         ])
 
-        configureRunAllServerProperties(serverProperties)
+        int serverPort = readRunAllServerPort(project)
+        String clientAddress = readRunAllClientAddress(project)
+        configureRunAllServerProperties(serverProperties, serverPort)
         configureRunAllServerOperators(serverOpsFile)
 
         Process serverProcess = null
         Process clientProcess = null
+        Process latencyProxyProcess = null
 
         try {
             println "runAllAutoExitCompare: exitTrigger=${exitTrigger}, exitDelaySeconds=${exitDelaySeconds}, settleMillis=${settleMillis}, fourWayPostLoginWarmupMillis=${fourWayPostLoginWarmupMillis}"
-            println 'runAllAutoExitCompare: 正在启动本地测试服务端。'
+            println "runAllAutoExitCompare: 正在启动本地测试服务端，端口 ${serverPort}。"
             serverProcess = startExistingRunTaskProcess(projectDirFile, isWindows, wrapperPath, 'runServer', buildRunAllSharedGradleArgs(project), null, serverTaskLog, 'runServer')
             project.ext.boWaitForLogMarker.call(
                     serverTaskLog,
@@ -1055,9 +1203,21 @@ tasks.register('runAllAutoExitCompare') {
                     '服务端启动'
             )
 
-            List<String> clientGradleArgs = buildExperientAutoConnectGradleArgs(project, '127.0.0.1:25565', 'BO RunAll AutoExit', 20L)
+            if (isRunAllLatencyProxyEnabled(project)) {
+                println "runAllAutoExitCompare: 正在启动固定延迟代理 ${readRunAllLatencyListenHost(project)}:${readRunAllLatencyListenPort(project)} -> ${readRunAllLatencyTargetHost(project)}:${readRunAllLatencyTargetPort(project)}, delay=${readRunAllLatencyDelayMillis(project)}ms。"
+                latencyProxyProcess = startRunAllLatencyProxyProcess(project, isWindows, latencyProxyTaskLog)
+                project.ext.boWaitForLogMarker.call(
+                        latencyProxyTaskLog,
+                        ['[LatencyTcpProxy] listening'],
+                        ['BindException', 'Address already in use', 'Failed'],
+                        30000L,
+                        '延迟代理启动'
+                )
+            }
 
-            println 'runAllAutoExitCompare: 服务端已就绪，正在启动客户端，并用 experient 自动发起单次直连 127.0.0.1:25565。'
+            List<String> clientGradleArgs = buildExperientAutoConnectGradleArgs(project, clientAddress, 'BO RunAll AutoExit', 20L)
+
+            println "runAllAutoExitCompare: 服务端已就绪，正在启动客户端，并用 experient 自动发起单次直连 ${clientAddress}。"
             clientProcess = startExistingRunTaskProcess(
                     projectDirFile,
                     isWindows,
@@ -1071,7 +1231,7 @@ tasks.register('runAllAutoExitCompare') {
 
             project.ext.boWaitForLogMarker.call(
                     clientTaskLog,
-                    ['Connecting to 127.0.0.1, 25565', 'Connecting to 127.0.0.1:25565'],
+                    readRunAllClientConnectMarkers(project),
                     ['Failed to connect to the server', 'disconnect.genericReason', 'Connection refused', 'Internal Exception'],
                     180000L,
                     '客户端连接'
@@ -1097,7 +1257,7 @@ tasks.register('runAllAutoExitCompare') {
                 println 'runAllAutoExitCompare: 已命中退出条件，正在强制结束客户端和服务端。'
             }
 
-            // 自动退出后同样先停服务端，让客户端完成最后的入站抓包，再统一兜底清理残留进程。
+            // Stop the server first so the client can flush final inbound captures.
             stopRunAllServerProcesses(project, projectDirFile, isWindows)
             if (serverProcess.isAlive()) {
                 serverProcess.waitFor(30L, TimeUnit.SECONDS)
@@ -1105,7 +1265,7 @@ tasks.register('runAllAutoExitCompare') {
             if (clientProcess.isAlive()) {
                 clientProcess.waitFor(15L, TimeUnit.SECONDS)
             }
-            forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
+            forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess, latencyProxyProcess])
             project.ext.boWaitForFilesToSettle.call(
                     [serverSendJsonl, serverReceiveJsonl, clientSendJsonl, clientReceiveJsonl, serverChunkHotspotStats, clientChunkHotspotStats],
                     settleMillis,
@@ -1115,7 +1275,7 @@ tasks.register('runAllAutoExitCompare') {
             println 'runAllAutoExitCompare: jsonl 已稳定，正在执行 compare。'
             runChannelJsonlCompareNow(project)
         } finally {
-            forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
+            forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess, latencyProxyProcess])
         }
     }
 }
@@ -1174,7 +1334,7 @@ tasks.register('runWatchBoundaryRefreshPatchRegression') {
                 watchBoundaryMarker
         ])
 
-        configureRunAllServerProperties(serverProperties)
+        configureRunAllServerProperties(serverProperties, 25565)
         configureRunAllServerOperators(serverOpsFile)
 
         List<String> sharedGradleArgs = buildWatchBoundaryRefreshPatchRegressionGradleArgs(project)

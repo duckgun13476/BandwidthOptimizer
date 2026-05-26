@@ -136,20 +136,27 @@ public final class ExperientChunkHotspotPathController {
             prepareTwoPointReusePlayer(serverPlayer);
         }
 
-        double originX = resolvePathOriginX(serverPlayer);
-        double originY = resolvePathOriginY(serverPlayer);
+        double originX = ExperientChunkHotspotPathRuntimeConfig.isClientCommandMode()
+                ? ExperientChunkHotspotPathRuntimeConfig.rangeEndX()
+                : resolvePathOriginX(serverPlayer);
+        double originY = ExperientChunkHotspotPathRuntimeConfig.isClientCommandMode()
+                ? ExperientChunkHotspotPathRuntimeConfig.rangeEndY()
+                : resolvePathOriginY(serverPlayer);
+        double originZ = ExperientChunkHotspotPathRuntimeConfig.isClientCommandMode()
+                ? ExperientChunkHotspotPathRuntimeConfig.rangeEndZ()
+                : serverPlayer.getZ();
 
         PLAYER_PATH_STATES.put(
                 serverPlayer.getUUID(),
                 new PathState(
                         originX,
                         originY,
-                        serverPlayer.getZ(),
+                        originZ,
                         0,
                         0,
                         0,
                         0,
-                        INITIAL_DELAY_TICKS
+                        ExperientChunkHotspotPathRuntimeConfig.initialDelayTicks()
                 )
         );
         Bandwidthoptimizer.LOGGER.info(
@@ -157,7 +164,7 @@ public final class ExperientChunkHotspotPathController {
                 serverPlayer.getGameProfile().getName(),
                 formatDouble(originX),
                 formatDouble(originY),
-                formatDouble(serverPlayer.getZ())
+                formatDouble(originZ)
         );
     }
 
@@ -215,6 +222,20 @@ public final class ExperientChunkHotspotPathController {
 
         if (ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()) {
             return advanceTwoPointReusePath(serverPlayer, state);
+        }
+
+        if (ExperientChunkHotspotPathRuntimeConfig.isBlockEntityFirstMode()
+                && state.nextBlockEntityPulseIndex() < BLOCK_ENTITY_VARIANT_SEQUENCE.length) {
+            return applyBlockEntityPulse(serverPlayer, state);
+        }
+
+        if (ExperientChunkHotspotPathRuntimeConfig.isBlockEntityFirstMode()
+                && ExperientChunkHotspotPathRuntimeConfig.shouldStopAfterBlockEntity()) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ExperientChunkPath] Completed block-entity-first scripted path for player={}",
+                    serverPlayer.getGameProfile().getName()
+            );
+            return null;
         }
 
         if (state.nextLightPulseIndex() < LIGHT_PULSE_SEQUENCE.length) {

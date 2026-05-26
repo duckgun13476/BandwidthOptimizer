@@ -19,9 +19,13 @@ public final class ChannelFrameJsonlLogger {
     private static final Object LOCK = new Object();
     private static final Path SEND_OUTPUT_PATH = BandwidthOptimizerOutputPaths.resolve("send.jsonl");
     private static final Path RECEIVE_OUTPUT_PATH = BandwidthOptimizerOutputPaths.resolve("receive.jsonl");
+    private static final Path PACKET_STREAM_SEND_OUTPUT_PATH = BandwidthOptimizerOutputPaths.resolve("packet-stream-send.jsonl");
+    private static final Path PACKET_STREAM_RECEIVE_OUTPUT_PATH = BandwidthOptimizerOutputPaths.resolve("packet-stream-receive.jsonl");
 
     private static BufferedWriter sendWriter;
     private static BufferedWriter receiveWriter;
+    private static BufferedWriter packetStreamSendWriter;
+    private static BufferedWriter packetStreamReceiveWriter;
     private static boolean initialized;
     private static boolean shutdownHookInstalled;
     private static boolean shutdownInProgress;
@@ -43,6 +47,8 @@ public final class ChannelFrameJsonlLogger {
             closeWritersUnsafe();
             sendWriter = openFreshWriter(SEND_OUTPUT_PATH);
             receiveWriter = openFreshWriter(RECEIVE_OUTPUT_PATH);
+            packetStreamSendWriter = openFreshWriter(PACKET_STREAM_SEND_OUTPUT_PATH);
+            packetStreamReceiveWriter = openFreshWriter(PACKET_STREAM_RECEIVE_OUTPUT_PATH);
             initialized = true;
             installShutdownHookIfNeeded();
         }
@@ -56,7 +62,23 @@ public final class ChannelFrameJsonlLogger {
         appendFrame(frame, false);
     }
 
+    public static void appendOutboundPacketStreamFrame(ChannelCapturedFrame frame) {
+        appendPacketStreamFrame(frame, true);
+    }
+
+    public static void appendInboundPacketStreamFrame(ChannelCapturedFrame frame) {
+        appendPacketStreamFrame(frame, false);
+    }
+
     private static void appendFrame(ChannelCapturedFrame frame, boolean outbound) {
+        appendFrame(frame, outbound, false);
+    }
+
+    private static void appendPacketStreamFrame(ChannelCapturedFrame frame, boolean outbound) {
+        appendFrame(frame, outbound, true);
+    }
+
+    private static void appendFrame(ChannelCapturedFrame frame, boolean outbound, boolean packetStream) {
         if (frame == null || !ChannelCaptureRuntimeConfig.isJsonlCaptureEnabled()) {
             return;
         }
@@ -67,7 +89,12 @@ public final class ChannelFrameJsonlLogger {
             }
             ensureInitialized();
 
-            BufferedWriter writer = outbound ? sendWriter : receiveWriter;
+            BufferedWriter writer;
+            if (packetStream) {
+                writer = outbound ? packetStreamSendWriter : packetStreamReceiveWriter;
+            } else {
+                writer = outbound ? sendWriter : receiveWriter;
+            }
             if (writer == null) {
                 return;
             }
@@ -203,8 +230,12 @@ public final class ChannelFrameJsonlLogger {
     private static void closeWritersUnsafe() {
         closeWriter(sendWriter);
         closeWriter(receiveWriter);
+        closeWriter(packetStreamSendWriter);
+        closeWriter(packetStreamReceiveWriter);
         sendWriter = null;
         receiveWriter = null;
+        packetStreamSendWriter = null;
+        packetStreamReceiveWriter = null;
         initialized = false;
     }
 

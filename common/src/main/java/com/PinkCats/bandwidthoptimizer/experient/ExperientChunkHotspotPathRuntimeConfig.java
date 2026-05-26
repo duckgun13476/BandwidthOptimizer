@@ -10,6 +10,24 @@ public final class ExperientChunkHotspotPathRuntimeConfig {
         return readBooleanProperty(Config.RuntimeProperty.Experient.CHUNK_HOTSPOT_PATH_ENABLED);
     }
 
+    public static int initialDelayTicks() {
+        return Math.max(
+                readIntProperty(
+                        Config.RuntimeProperty.Experient.CHUNK_HOTSPOT_PATH_INITIAL_DELAY_TICKS,
+                        Config.RuntimeProperty.Experient.DEFAULT_CHUNK_HOTSPOT_PATH_INITIAL_DELAY_TICKS
+                ),
+                0
+        );
+    }
+
+    public static boolean isClientCommandMode() {
+        return readBooleanProperty(Config.RuntimeProperty.Experient.CHUNK_HOTSPOT_PATH_CLIENT_COMMAND_MODE);
+    }
+
+    public static boolean isBlockEntityFirstMode() {
+        return readBooleanProperty(Config.RuntimeProperty.Experient.CHUNK_HOTSPOT_PATH_BLOCK_ENTITY_FIRST_MODE);
+    }
+
     public static boolean shouldStopAfterSection() {
         return readBooleanProperty(Config.RuntimeProperty.Experient.CHUNK_HOTSPOT_PATH_STOP_AFTER_SECTION);
     }

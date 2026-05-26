@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.test;
+﻿package com.PinkCats.bandwidthoptimizer.test;
 
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
@@ -96,7 +96,7 @@ public final class ChannelTransportRoundTripMain {
         }
     }
 
-    // 默认 batch carrier 必须保持字典无状态，避免接收端 session 重建后缺少旧模板映射。
+    // Default batch frames must not depend on receiver-side template history.
     private static void verifyDefaultBatchUsesStatelessMapping() {
         ChannelTransportSession senderSession = new ChannelTransportSession();
         ChannelTransportSession receiverSession = new ChannelTransportSession();

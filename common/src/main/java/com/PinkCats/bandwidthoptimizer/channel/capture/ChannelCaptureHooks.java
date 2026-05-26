@@ -52,6 +52,38 @@ public final class ChannelCaptureHooks {
         ChannelFrameJsonlLogger.appendOutboundFrame(frame);
     }
 
+    public static void captureOutboundPacketStream(ChannelHandlerContext context, Packet<?> packet, byte[] encodedBytes) {
+        captureOutboundPacketStream(
+                context,
+                packet == null ? "<unknown>" : packet.getClass().getName(),
+                tryReadLeadingVarInt(encodedBytes),
+                encodedBytes
+        );
+    }
+
+    public static void captureOutboundPacketStream(
+            ChannelHandlerContext context,
+            String packetClassName,
+            int packetId,
+            byte[] encodedBytes
+    ) {
+        if (context == null || encodedBytes == null || !ChannelCaptureRuntimeConfig.isJsonlCaptureEnabled()) {
+            return;
+        }
+
+        ChannelCapturedFrame frame = new ChannelCapturedFrame(
+                readChannelId(context),
+                "OUTBOUND",
+                readProtocolName(context),
+                packetClassName == null || packetClassName.isBlank() ? "<unknown>" : packetClassName,
+                packetId,
+                encodedBytes.length,
+                encodedBytes.clone(),
+                System.currentTimeMillis()
+        );
+        ChannelFrameJsonlLogger.appendOutboundPacketStreamFrame(frame);
+    }
+
 
     public static ChannelCapturedFrame beginInboundPreDecode(ChannelHandlerContext context, ByteBuf encodedBuffer) {
         if (context == null || encodedBuffer == null || !encodedBuffer.isReadable()) {
@@ -96,6 +128,7 @@ public final class ChannelCaptureHooks {
         LAST_INBOUND_FRAME.set(completedFrame);
         ChannelTransportCompressionCaptureManager.recordCapturedFrame(completedFrame);
         ChannelFrameJsonlLogger.appendInboundFrame(completedFrame);
+        ChannelFrameJsonlLogger.appendInboundPacketStreamFrame(completedFrame);
     }
 
     public static ChannelCapturedFrame lastInboundDecodeCandidate(Channel channel) {

@@ -298,6 +298,8 @@ public class Config {
 
         public static final class Transport {
 
+            public static final String ENABLED = "bandwidthoptimizer.transport.enabled";
+            public static final boolean DEFAULT_ENABLED = true;
             public static final String CHUNK_HOTSPOT_TRANSPORT_ENABLED =
                     "bandwidthoptimizer.experimentalChunkHotspotTransport";
             public static final boolean DEFAULT_CHUNK_HOTSPOT_TRANSPORT_ENABLED = true;
@@ -373,6 +375,9 @@ public class Config {
 
         public static final class Chunk {
 
+            public static final String BOUNDARY_BARRIER_ENABLED =
+                    "bandwidthoptimizer.chunk.boundaryBarrierEnabled";
+            public static final boolean DEFAULT_BOUNDARY_BARRIER_ENABLED = true;
             public static final String WATCH_BOUNDARY_REUSE_MAX_DELTA_PACKETS =
                     "bandwidthoptimizer.chunk.watchBoundaryReuseMaxDeltaPackets";
             public static final long DEFAULT_WATCH_BOUNDARY_REUSE_MAX_DELTA_PACKETS = 64L;
@@ -454,10 +459,23 @@ public class Config {
             public static final String SERVER_COMMAND_DELAY_TICKS =
                     "bandwidthoptimizer.experient.serverCommandDelayTicks";
             public static final int DEFAULT_SERVER_COMMAND_DELAY_TICKS = 0;
+            public static final String CLIENT_COMMAND =
+                    "bandwidthoptimizer.experient.clientCommand";
+            public static final String DEFAULT_CLIENT_COMMAND = "";
+            public static final String CLIENT_COMMAND_DELAY_TICKS =
+                    "bandwidthoptimizer.experient.clientCommandDelayTicks";
+            public static final int DEFAULT_CLIENT_COMMAND_DELAY_TICKS = 40;
             public static final String RUN_ALL_MARKER_EXIT =
                     "bandwidthoptimizer.experient.runAllMarkerExit";
             public static final String CHUNK_HOTSPOT_PATH_ENABLED =
                     "bandwidthoptimizer.experient.chunkHotspotPathEnabled";
+            public static final String CHUNK_HOTSPOT_PATH_INITIAL_DELAY_TICKS =
+                    "bandwidthoptimizer.experient.chunkHotspotPathInitialDelayTicks";
+            public static final int DEFAULT_CHUNK_HOTSPOT_PATH_INITIAL_DELAY_TICKS = 80;
+            public static final String CHUNK_HOTSPOT_PATH_CLIENT_COMMAND_MODE =
+                    "bandwidthoptimizer.experient.chunkHotspotPathClientCommandMode";
+            public static final String CHUNK_HOTSPOT_PATH_BLOCK_ENTITY_FIRST_MODE =
+                    "bandwidthoptimizer.experient.chunkHotspotPathBlockEntityFirstMode";
             public static final String CHUNK_HOTSPOT_PATH_STOP_AFTER_SECTION =
                     "bandwidthoptimizer.experient.chunkHotspotPathStopAfterSection";
             public static final String CHUNK_HOTSPOT_PATH_STOP_AFTER_BLOCK_ENTITY =

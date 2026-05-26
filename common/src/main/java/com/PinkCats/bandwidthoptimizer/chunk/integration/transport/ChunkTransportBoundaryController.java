@@ -1,6 +1,7 @@
-package com.PinkCats.bandwidthoptimizer.chunk.integration.transport;
+﻿package com.PinkCats.bandwidthoptimizer.chunk.integration.transport;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
@@ -93,7 +94,7 @@ public final class ChunkTransportBoundaryController {
                     boundaryTrigger.reason()
             );
         }
-        if (boundaryTrigger.requiresOutboundBarrierAck()) {
+        if (boundaryTrigger.requiresOutboundBarrierAck() && isBoundaryBarrierEnabled()) {
             barrierId = boundaryState.armOutboundBarrier(boundaryTrigger.reason());
         }
         if (packet instanceof ClientboundLoginPacket) {
@@ -174,7 +175,7 @@ public final class ChunkTransportBoundaryController {
         getOrCreateBoundaryState(channel).recordRuntimeFailure(coordinate, reason);
     }
 
-    // 重置当前连接的区块传输边界状态，让 Velocity 切到新后端后从新的 epoch 重新开始接收区块帧。
+    // Reset per-channel chunk transport state after backend switches.
     public static void resetChannelState(ChannelHandlerContext context, String reason) {
         if (context == null || context.channel() == null) {
             return;
@@ -292,6 +293,13 @@ public final class ChunkTransportBoundaryController {
 
     private static boolean isImmediateTransportListenerPacket(Packet<?> packet) {
         return packetClassName(packet).endsWith("ClientboundUpdateRecipesPacket");
+    }
+
+    private static boolean isBoundaryBarrierEnabled() {
+        return Boolean.parseBoolean(System.getProperty(
+                Config.RuntimeProperty.Chunk.BOUNDARY_BARRIER_ENABLED,
+                Boolean.toString(Config.RuntimeProperty.Chunk.DEFAULT_BOUNDARY_BARRIER_ENABLED)
+        ));
     }
 
     private static String packetClassName(Packet<?> packet) {
