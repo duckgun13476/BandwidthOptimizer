@@ -13,7 +13,8 @@
     "minecraft.PacketOutPipeMixin",
     "minecraft.PacketInPipeMixin",
     "minecraft.ServerboundCustomPayloadPacketAccessor",
-    "minecraft.ServerGamePacketListenerImplAccessor"
+    "minecraft.ServerGamePacketListenerImplAccessor",
+    "minecraft.ServerGamePacketListenerCommandMixin"
   ],
   "client": [
     "minecraft.ClientPacketListenerChunkHandleMixin"

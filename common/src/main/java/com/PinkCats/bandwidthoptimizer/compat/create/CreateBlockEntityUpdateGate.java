@@ -318,6 +318,16 @@ public final class CreateBlockEntityUpdateGate {
         state.markChunkBootstrap(System.nanoTime(), chunkBootstrapNanos());
     }
 
+    // TP commands can enqueue the position packet after Create has already filled the send path.
+    public static void markCommandTeleportBootstrap(ServerPlayer player) {
+        if (!isEnabled() || player == null) {
+            return;
+        }
+        PlayerState state = PLAYER_STATES.computeIfAbsent(player.getUUID(), ignored -> new PlayerState());
+        state.bind(player, currentChannelId(player));
+        state.markChunkBootstrap(System.nanoTime(), chunkBootstrapNanos());
+    }
+
     public static void onServerTick() {
         if (!isEnabled() || PLAYER_STATES.isEmpty()) {
             return;
@@ -442,6 +452,11 @@ public final class CreateBlockEntityUpdateGate {
         }
         PlayerState state = PLAYER_STATES.get(playerId);
         return state == null ? null : state.player();
+    }
+
+    private static String currentChannelId(ServerPlayer player) {
+        Channel channel = ChunkPeerStateManager.findPlayerChannel(player);
+        return channel == null ? "" : com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel);
     }
 
     private static boolean shouldSendImmediately(ServerPlayer player, Vec3 target, boolean allowLookDirection) {
