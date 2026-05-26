@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.experient;
+﻿package com.PinkCats.bandwidthoptimizer.experient;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import it.unimi.dsi.fastutil.shorts.ShortOpenHashSet;
@@ -208,6 +208,10 @@ public final class ExperientChunkHotspotPathController {
             return state.withDelayTicksRemaining(state.delayTicksRemaining() - 1);
         }
 
+        if (shouldWaitForClientCommandTarget(serverPlayer, state)) {
+            return state.withDelayTicksRemaining(1);
+        }
+
         if (ExperientChunkHotspotPathRuntimeConfig.isDimensionHopMode()) {
             return advanceDimensionHopPath(serverPlayer, state);
         }
@@ -235,6 +239,7 @@ public final class ExperientChunkHotspotPathController {
                     "[ExperientChunkPath] Completed block-entity-first scripted path for player={}",
                     serverPlayer.getGameProfile().getName()
             );
+            disconnectPlayerAfterPathCompletion(serverPlayer);
             return null;
         }
 
@@ -263,6 +268,7 @@ public final class ExperientChunkHotspotPathController {
                     "[ExperientChunkPath] Completed block-entity-only scripted path for player={}",
                     serverPlayer.getGameProfile().getName()
             );
+            disconnectPlayerAfterPathCompletion(serverPlayer);
             return null;
         }
 
@@ -644,6 +650,22 @@ public final class ExperientChunkHotspotPathController {
                 state.nextWaypointIndex(),
                 nextDelayTicks
         );
+    }
+
+    // Wait for the real teleport command before probing block entities.
+    private static boolean shouldWaitForClientCommandTarget(ServerPlayer serverPlayer, PathState state) {
+        return ExperientChunkHotspotPathRuntimeConfig.isClientCommandMode()
+                && ExperientChunkHotspotPathRuntimeConfig.shouldWaitForClientCommandTarget()
+                && !hasReachedClientCommandTarget(serverPlayer, state);
+    }
+
+    private static boolean hasReachedClientCommandTarget(ServerPlayer serverPlayer, PathState state) {
+        if (serverPlayer == null || state == null) {
+            return false;
+        }
+        return Math.abs(serverPlayer.getX() - state.originX()) <= 1.0D
+                && Math.abs(serverPlayer.getY() - state.originY()) <= 1.0D
+                && Math.abs(serverPlayer.getZ() - state.originZ()) <= 1.0D;
     }
 
     private static void emitBeforeAckProbeBurst(ServerPlayer serverPlayer, double baseX, double baseY, double baseZ) {
@@ -1234,6 +1256,10 @@ public final class ExperientChunkHotspotPathController {
 
     private static void disconnectPlayerAfterPathCompletion(ServerPlayer serverPlayer) {
         if (serverPlayer == null || serverPlayer.connection == null) {
+            return;
+        }
+        RunAllProbeFiles.markChunkHotspotPathCompleted(serverPlayer);
+        if (ExperientChunkHotspotPathRuntimeConfig.shouldUseRunAllMarkerExit()) {
             return;
         }
         serverPlayer.connection.disconnect(Component.literal("BandwidthOptimizer experient path completed"));

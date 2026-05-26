@@ -110,6 +110,7 @@ def applySharedBandwidthOptimizerRunProperties = { Project projectRef, def runCo
             ['boExperientChunkHotspotPathEnabled', 'bandwidthoptimizer.experient.chunkHotspotPathEnabled'],
             ['boExperientChunkHotspotPathClientCommandMode', 'bandwidthoptimizer.experient.chunkHotspotPathClientCommandMode'],
             ['boExperientChunkHotspotPathBlockEntityFirstMode', 'bandwidthoptimizer.experient.chunkHotspotPathBlockEntityFirstMode'],
+            ['boExperientChunkHotspotPathWaitForClientCommandTarget', 'bandwidthoptimizer.experient.chunkHotspotPathWaitForClientCommandTarget'],
             ['boExperientChunkHotspotPathStopAfterSection', 'bandwidthoptimizer.experient.chunkHotspotPathStopAfterSection'],
             ['boExperientChunkHotspotPathStopAfterBlockEntity', 'bandwidthoptimizer.experient.chunkHotspotPathStopAfterBlockEntity'],
             ['boExperientChunkHotspotPathTwoPointReuseMode', 'bandwidthoptimizer.experient.chunkHotspotPathTwoPointReuseMode'],
@@ -409,6 +410,7 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathInitialDelayTicks')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathClientCommandMode')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathBlockEntityFirstMode')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathWaitForClientCommandTarget')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathStopAfterSection')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathStopAfterBlockEntity')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathTwoPointReuseMode')

@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.experient;
+﻿package com.PinkCats.bandwidthoptimizer.experient;
 
 import com.PinkCats.bandwidthoptimizer.Config;
 
@@ -26,6 +26,11 @@ public final class ExperientChunkHotspotPathRuntimeConfig {
 
     public static boolean isBlockEntityFirstMode() {
         return readBooleanProperty(Config.RuntimeProperty.Experient.CHUNK_HOTSPOT_PATH_BLOCK_ENTITY_FIRST_MODE);
+    }
+
+    // Delay probes until the server confirms the target position.
+    public static boolean shouldWaitForClientCommandTarget() {
+        return readBooleanProperty(Config.RuntimeProperty.Experient.CHUNK_HOTSPOT_PATH_WAIT_FOR_CLIENT_COMMAND_TARGET);
     }
 
     public static boolean shouldStopAfterSection() {

@@ -467,6 +467,15 @@ public class Config {
                     "bandwidthoptimizer.experient.runAllMarkerExit";
             public static final String CHUNK_HOTSPOT_PATH_ENABLED =
                     "bandwidthoptimizer.experient.chunkHotspotPathEnabled";
+            public static final String CHUNK_HOTSPOT_PATH_INITIAL_DELAY_TICKS =
+                    "bandwidthoptimizer.experient.chunkHotspotPathInitialDelayTicks";
+            public static final int DEFAULT_CHUNK_HOTSPOT_PATH_INITIAL_DELAY_TICKS = 80;
+            public static final String CHUNK_HOTSPOT_PATH_CLIENT_COMMAND_MODE =
+                    "bandwidthoptimizer.experient.chunkHotspotPathClientCommandMode";
+            public static final String CHUNK_HOTSPOT_PATH_BLOCK_ENTITY_FIRST_MODE =
+                    "bandwidthoptimizer.experient.chunkHotspotPathBlockEntityFirstMode";
+            public static final String CHUNK_HOTSPOT_PATH_WAIT_FOR_CLIENT_COMMAND_TARGET =
+                    "bandwidthoptimizer.experient.chunkHotspotPathWaitForClientCommandTarget";
             public static final String CHUNK_HOTSPOT_PATH_STOP_AFTER_SECTION =
                     "bandwidthoptimizer.experient.chunkHotspotPathStopAfterSection";
             public static final String CHUNK_HOTSPOT_PATH_STOP_AFTER_BLOCK_ENTITY =
