@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.channel.algorithm.mapping;
 
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
 
@@ -18,7 +19,7 @@ final class KineticTemplateMappingCodec {
     private static final int MAX_ADDITION_COUNT = 8192;
     private static final int MAX_REMOVAL_COUNT = 8192;
     private static final int MAX_TEMPLATE_SEGMENT_COUNT = 4096;
-    private static final int MAX_MAPPING_PAYLOAD_BYTES = 8 * 1024 * 1024;
+    private static final int MAX_MAPPING_PAYLOAD_BYTES = ChannelTransportPayloadLimits.MAX_BATCH_PAYLOAD_BYTES;
 
     private KineticTemplateMappingCodec() {
     }

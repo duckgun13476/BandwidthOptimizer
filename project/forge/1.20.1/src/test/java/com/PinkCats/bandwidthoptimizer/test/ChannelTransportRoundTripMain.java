@@ -36,6 +36,7 @@ public final class ChannelTransportRoundTripMain {
         }
 
         verifyLightBatchRoundTrip();
+        verifyLargeLightBatchRoundTrip();
         verifyNonTransportPassThrough(receiverSession);
         System.out.println("All channel transport round trips passed.");
     }
@@ -125,6 +126,30 @@ public final class ChannelTransportRoundTripMain {
         }
     }
 
+    private static void verifyLargeLightBatchRoundTrip() {
+        ChannelTransportSession senderSession = new ChannelTransportSession();
+        ChannelTransportSession receiverSession = new ChannelTransportSession();
+        List<byte[]> packetBytesList = List.of(
+                repeatedLargeBytes(4 * 1024 * 1024 + 256 * 1024, 0x41),
+                repeatedLargeBytes(4 * 1024 * 1024 + 256 * 1024, 0x42)
+        );
+
+        var wrappedFrame = ChannelTransportPacketCodec.wrapBatchPacketsLight(senderSession, packetBytesList);
+        if (wrappedFrame == null || wrappedFrame.frameKind() != ChannelTransportPacketCodec.FrameKind.BATCH) {
+            throw new IllegalStateException("Large light batch wrap did not produce a batch transport frame.");
+        }
+
+        var unwrappedFrame = KineticChannel.tryUnpackInboundPacket(receiverSession, wrappedFrame.transportFrameBytes());
+        if (unwrappedFrame == null || unwrappedFrame.restoredPacketCount() != packetBytesList.size()) {
+            throw new IllegalStateException("Large light batch did not restore the expected packet count.");
+        }
+        for (int index = 0; index < packetBytesList.size(); index++) {
+            if (!Arrays.equals(packetBytesList.get(index), unwrappedFrame.restoredPacketBytesList().get(index))) {
+                throw new IllegalStateException("Large light batch payload mismatch at index " + index);
+            }
+        }
+    }
+
 
     private static String ratioText(long currentBytes, long baselineBytes) {
         if (baselineBytes <= 0L) {
@@ -150,6 +175,12 @@ public final class ChannelTransportRoundTripMain {
         for (int index = 0; index < 1024; index++) {
             bytes[index] = (byte) ((index * 31 + 17) & 0xFF);
         }
+        return bytes;
+    }
+
+    private static byte[] repeatedLargeBytes(int length, int seed) {
+        byte[] bytes = new byte[length];
+        Arrays.fill(bytes, (byte) seed);
         return bytes;
     }
 

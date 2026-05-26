@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd;
 
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
 
@@ -7,7 +8,7 @@ import net.minecraft.network.FriendlyByteBuf;
 final class ChannelStreamingPacketCodec {
 
     private static final int SINGLE_PACKET_COUNT = 1;
-    static final int MAX_DECODED_PACKET_BATCH_BYTES = 8 * 1024 * 1024;
+    static final int MAX_DECODED_PACKET_BATCH_BYTES = ChannelTransportPayloadLimits.MAX_STREAMING_FRAME_PAYLOAD_BYTES;
 
     private ChannelStreamingPacketCodec() {}
 

@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel.algorithm.batch;
 
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.header.KineticPacketIdMappingLayer;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.TransportLayer;
 import io.netty.buffer.Unpooled;
@@ -16,8 +17,8 @@ public final class KineticBatchLayer implements TransportLayer {
     private static final int BATCH_PAYLOAD_VERSION = 1;
     private static final int MAX_BATCH_PACKET_COUNT = 4096;
     private static final int MAX_PACKET_ID_TABLE_ENTRIES = 4096;
-    private static final int MAX_BATCH_ENTRY_BYTES = 8 * 1024 * 1024;
-    private static final int MAX_BATCH_TOTAL_BYTES = 16 * 1024 * 1024;
+    private static final int MAX_BATCH_ENTRY_BYTES = ChannelTransportPayloadLimits.MAX_SINGLE_PACKET_BYTES;
+    private static final int MAX_BATCH_TOTAL_BYTES = ChannelTransportPayloadLimits.MAX_BATCH_PAYLOAD_BYTES;
 
     private final KineticPacketIdMappingLayer packetIdMappingLayer = new KineticPacketIdMappingLayer();
 
