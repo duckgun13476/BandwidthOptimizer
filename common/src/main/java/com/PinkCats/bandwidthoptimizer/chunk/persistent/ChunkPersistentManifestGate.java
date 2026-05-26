@@ -18,15 +18,18 @@ public final class ChunkPersistentManifestGate {
     public static final String WAIT_REASON = "await_persistent_client_cache_manifest";
     private static final AttributeKey<ManifestGateState> GATE_STATE_KEY =
             AttributeKey.valueOf("bandwidthoptimizer:persistent_manifest_gate");
+    private static final String ENABLED_PROPERTY =
+            "bandwidthoptimizer.chunk.persistentManifestGateEnabled";
     private static final String TIMEOUT_MILLIS_PROPERTY =
             "bandwidthoptimizer.chunk.persistentManifestGateTimeoutMillis";
+    private static final boolean DEFAULT_ENABLED = false;
     private static final long DEFAULT_TIMEOUT_MILLIS = 1_000L;
     private static final int MAX_QUEUED_CHUNK_PACKETS = 2048;
 
     private ChunkPersistentManifestGate() {}
 
     public static void arm(Channel channel, String reason) {
-        if (channel == null || !channel.isOpen()) {
+        if (!isEnabled() || channel == null || !channel.isOpen()) {
             return;
         }
 
@@ -49,7 +52,8 @@ public final class ChunkPersistentManifestGate {
     }
 
     public static boolean shouldWaitForManifest(ChannelHandlerContext context, ChunkPacketDescriptor descriptor) {
-        if (context == null
+        if (!isEnabled()
+                || context == null
                 || context.channel() == null
                 || descriptor == null
                 || descriptor.coordinate() == null
@@ -73,7 +77,8 @@ public final class ChunkPersistentManifestGate {
             Packet<?> packet,
             String traceReason
     ) {
-        if (!WAIT_REASON.equals(traceReason)
+        if (!isEnabled()
+                || !WAIT_REASON.equals(traceReason)
                 || context == null
                 || context.channel() == null
                 || packet == null) {
@@ -103,7 +108,7 @@ public final class ChunkPersistentManifestGate {
     }
 
     public static void complete(Channel channel, String reason) {
-        if (channel == null) {
+        if (!isEnabled() || channel == null) {
             return;
         }
         release(channel, reason == null || reason.isBlank() ? "persistent_manifest_complete" : reason);
@@ -168,6 +173,10 @@ public final class ChunkPersistentManifestGate {
         } catch (NumberFormatException ignored) {
             return DEFAULT_TIMEOUT_MILLIS;
         }
+    }
+
+    private static boolean isEnabled() {
+        return Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, Boolean.toString(DEFAULT_ENABLED)));
     }
 
     private static String safeText(String text, String fallback) {
