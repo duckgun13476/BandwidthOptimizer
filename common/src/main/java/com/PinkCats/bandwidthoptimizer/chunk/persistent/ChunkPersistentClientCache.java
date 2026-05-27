@@ -48,6 +48,7 @@ public final class ChunkPersistentClientCache {
     private static final String MANIFEST_BATCH_ENTRIES_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheManifestBatchEntries";
     private static final String MANIFEST_REFRESH_ENABLED_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheManifestRefreshEnabled";
     private static final String MANIFEST_REFRESH_INTERVAL_MILLIS_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheManifestRefreshMillis";
+    private static final String MANIFEST_REFRESH_QUIET_MILLIS_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheManifestRefreshQuietMillis";
     private static final String ZIP_LEVEL_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheZipLevel";
     private static final String CHECKPOINT_INTERVAL_MILLIS_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheCheckpointMillis";
     private static final String CHECKPOINT_DIRTY_BLOBS_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheCheckpointDirtyBlobs";
@@ -59,6 +60,7 @@ public final class ChunkPersistentClientCache {
     private static final int DEFAULT_MANIFEST_BATCH_ENTRIES = 512;
     private static final boolean DEFAULT_MANIFEST_REFRESH_ENABLED = true;
     private static final long DEFAULT_MANIFEST_REFRESH_INTERVAL_MILLIS = 5_000L;
+    private static final long DEFAULT_MANIFEST_REFRESH_QUIET_MILLIS = 8_000L;
     private static final int DEFAULT_ZIP_LEVEL = 2;
     private static final long DEFAULT_CHECKPOINT_INTERVAL_MILLIS = 5_000L;
     private static final int DEFAULT_CHECKPOINT_DIRTY_BLOBS = 16;
@@ -89,6 +91,7 @@ public final class ChunkPersistentClientCache {
     private static long manifestRefreshDirtyGeneration;
     private static long manifestRefreshInFlightGeneration;
     private static long manifestRefreshSentGeneration;
+    private static long manifestRefreshLastDirtyMillis;
 
 
     // Chunk local client side
@@ -936,6 +939,26 @@ public final class ChunkPersistentClientCache {
                     || !isSafeScopeHash(activeServerScopeHash)) {
                 return;
             }
+            // Keep background manifest refresh out of active chunk bursts.
+            long nowMillis = System.currentTimeMillis();
+            long quietMillis = manifestRefreshQuietMillis();
+            long millisSinceDirty = manifestRefreshLastDirtyMillis <= 0L
+                    ? quietMillis
+                    : nowMillis - manifestRefreshLastDirtyMillis;
+            if (millisSinceDirty < quietMillis) {
+                ChunkLoadDelayProbe.logStage(
+                        activeManifestRefreshChannel,
+                        null,
+                        "client",
+                        "persistent_manifest_refresh_defer_active_chunk_wave",
+                        0,
+                        0,
+                        "generation=" + manifestRefreshDirtyGeneration
+                                + ", millisSinceDirty=" + millisSinceDirty
+                                + ", quietMillis=" + quietMillis
+                );
+                return;
+            }
             channel = activeManifestRefreshChannel;
             channelId = activeManifestRefreshChannelId;
             serverScopeHash = activeServerScopeHash;
@@ -1041,6 +1064,7 @@ public final class ChunkPersistentClientCache {
 
     private static void markManifestRefreshDirty() {
         manifestRefreshDirtyGeneration++;
+        manifestRefreshLastDirtyMillis = System.currentTimeMillis();
     }
 
     private static void queueAsyncFlush(String reason) {
@@ -1163,6 +1187,13 @@ public final class ChunkPersistentClientCache {
         );
     }
 
+    private static long manifestRefreshQuietMillis() {
+        return Math.max(
+                readLongProperty(MANIFEST_REFRESH_QUIET_MILLIS_PROPERTY, DEFAULT_MANIFEST_REFRESH_QUIET_MILLIS),
+                0L
+        );
+    }
+
     private static long checkpointDirtyBytes() {
         return Math.max(readLongProperty(CHECKPOINT_DIRTY_BYTES_PROPERTY, DEFAULT_CHECKPOINT_DIRTY_BYTES), 64L * 1024L);
     }
@@ -1189,6 +1220,7 @@ public final class ChunkPersistentClientCache {
             manifestRefreshDirtyGeneration = 0L;
             manifestRefreshInFlightGeneration = 0L;
             manifestRefreshSentGeneration = 0L;
+            manifestRefreshLastDirtyMillis = 0L;
         }
         if (channel != null) {
             MANIFEST_SENT_CHANNELS.removeIf(key -> key.startsWith(com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel) + "|"));
