@@ -13,7 +13,6 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.channel.debug.NettySpikeProbe;
 import com.PinkCats.bandwidthoptimizer.channel.packet.ChannelTransportBypassPacketList;
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkOutboundObservationService;
 import com.PinkCats.bandwidthoptimizer.chunk.debug.ChunkLoadDelayProbe;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkInboundDecodeResult;
@@ -781,12 +780,6 @@ public final class ChannelTransportHooks {
                 out.add(restoredPacket);
 
                 long observeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
-                ChunkInboundObservationService.observeInboundDecodedPackets(
-                        context,
-                        pendingInboundFrame,
-                        out,
-                        outputSizeBeforeDecode
-                );
                 ChannelCaptureHooks.finishInboundDecode(context, pendingInboundFrame, out, outputSizeBeforeDecode);
                 ChunkLoadDelayProbe.logStage(
                         context,

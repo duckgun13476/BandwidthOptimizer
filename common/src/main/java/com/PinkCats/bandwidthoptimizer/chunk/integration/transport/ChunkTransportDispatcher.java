@@ -420,9 +420,17 @@ public final class ChunkTransportDispatcher {
                     restoredPacketBytes.length,
                     ""
             );
-            // The restored packet is passed back into the normal inbound decoder, where
-            // ChunkInboundObservationService persists it once. Persisting here as well
-            // doubled fingerprint/cache work on the Netty client thread during TP floods.
+            // Restored packets skip decoded observation, so persist full chunks from the transport frame.
+            ChunkPersistentClientCache.storeInboundFullChunkAsync(
+                    envelope.frame().protocolName(),
+                    envelope.frame().epoch(),
+                    envelope.frame().packetClassName(),
+                    envelope.frame().hotspotKind(),
+                    envelope.frame().laneKind(),
+                    envelope.frame().coordinate(),
+                    restoredPacketBytes,
+                    "persistent_cache_from_restored_transport_full"
+            );
             long runtimeStoreStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
             ChunkRuntimeReferenceStore.storePacketBytes(
                     readChannelId(context),

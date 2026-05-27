@@ -12,7 +12,6 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.channel.packet.ChannelTransportBypassPacketList;
-import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkOutboundObservationService;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkInboundDecodeResult;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportBoundaryController;
@@ -703,12 +702,6 @@ public final class ChannelTransportHooks {
             logRestoredPacketTrace(context, packetDecoderFlowAccess, restoredPacketBytes, restoredPacket);
             out.add(restoredPacket);
 
-            ChunkInboundObservationService.observeInboundDecodedPackets(
-                    context,
-                    pendingInboundFrame,
-                    out,
-                    outputSizeBeforeDecode
-            );
             ChannelCaptureHooks.finishInboundDecode(context, pendingInboundFrame, out, outputSizeBeforeDecode);
         }
     }
