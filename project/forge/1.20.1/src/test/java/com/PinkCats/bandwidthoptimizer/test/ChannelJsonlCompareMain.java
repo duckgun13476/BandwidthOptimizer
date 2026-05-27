@@ -17,6 +17,8 @@ public final class ChannelJsonlCompareMain {
 
     private static final int MAX_MISMATCHES_TO_PRINT = 5;
     private static final String INTERNAL_TRANSPORT_CHANNEL_PREFIX = "bandwidthoptimizer:transport_";
+    private static final String ALLOW_TRAILING_PACKET_STREAM_FRAMES_PROPERTY =
+            "bandwidthoptimizer.compare.allowTrailingPacketStreamFrames";
     private static final Path DEFAULT_SERVER_SEND = Path.of("run", "server", "bandwidthoptimizer-native", "send.jsonl");
     private static final Path DEFAULT_CLIENT_RECEIVE = Path.of("run", "client", "bandwidthoptimizer-native", "receive.jsonl");
     private static final Path DEFAULT_CLIENT_SEND = Path.of("run", "client", "bandwidthoptimizer-native", "send.jsonl");
@@ -54,11 +56,12 @@ public final class ChannelJsonlCompareMain {
 
     private static int runComparison(String[] args) throws IOException {
         List<ComparisonTarget> targets = createTargets(args);
+        boolean allowTrailingPacketStreamFrames = Boolean.getBoolean(ALLOW_TRAILING_PACKET_STREAM_FRAMES_PROPERTY);
         List<ComparisonReport> reports = new ArrayList<>();
         boolean allMatched = true;
 
         for (ComparisonTarget target : targets) {
-            ComparisonReport report = comparePair(target);
+            ComparisonReport report = comparePair(target, allowTrailingPacketStreamFrames);
             reports.add(report);
             if (!report.matched()) {
                 allMatched = false;
@@ -99,7 +102,10 @@ public final class ChannelJsonlCompareMain {
     }
 
     // compare jsonl
-    private static ComparisonReport comparePair(ComparisonTarget target) throws IOException {
+    private static ComparisonReport comparePair(
+            ComparisonTarget target,
+            boolean allowTrailingPacketStreamFrames
+    ) throws IOException {
         ensureFileExists(target.leftPath());
         ensureFileExists(target.rightPath());
 
@@ -125,6 +131,9 @@ public final class ChannelJsonlCompareMain {
                 comparedLines++;
 
                 if (leftLine == null || rightLine == null) {
+                    if (allowTrailingPacketStreamFrames) {
+                        break;
+                    }
                     mismatches.add(new MismatchDetail(
                             comparedLines,
                             describeLengthMismatch(leftLine, rightLine)
@@ -294,7 +303,7 @@ public final class ChannelJsonlCompareMain {
         return value.substring(0, 96) + "...(len=" + value.length() + ")";
     }
 
-    // 这个函数把 jsonl 等价性结果和 chunk 特化层统计对齐结果一起输出，形成统一的主验证出口。
+    // Print packet-stream and chunk stats verification together.
     private static void printReports(
             List<ComparisonReport> reports,
             ChunkHotspotVerificationReport chunkHotspotVerificationReport,

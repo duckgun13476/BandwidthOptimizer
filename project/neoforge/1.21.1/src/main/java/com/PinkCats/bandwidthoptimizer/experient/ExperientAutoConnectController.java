@@ -83,7 +83,7 @@ public final class ExperientAutoConnectController {
             return;
         }
 
-        if (!isRetryEligibleScreen(currentScreen)) {
+        if (!isRetryEligibleScreen(minecraft, currentScreen)) {
             return;
         }
 
@@ -211,10 +211,16 @@ public final class ExperientAutoConnectController {
         return true;
     }
 
-    private static boolean isRetryEligibleScreen(Screen currentScreen) {
-        return currentScreen instanceof TitleScreen
-                || currentScreen instanceof DisconnectedScreen
-                || currentScreen instanceof JoinMultiplayerScreen;
+    // Wait for resource overlays before auto-connect.
+    private static boolean isRetryEligibleScreen(Minecraft minecraft, Screen currentScreen) {
+        if (minecraft.getOverlay() != null) {
+            return false;
+        }
+
+        if (currentScreen instanceof ConnectScreen) {
+            return false;
+        }
+        return true;
     }
 
     private static ConnectOnceResult connectOnceWhenServerReady(
@@ -240,6 +246,8 @@ public final class ExperientAutoConnectController {
         waitingForServerLogged = false;
         String serverName = readAutoConnectName();
         ServerData serverData = new ServerData(serverName, autoConnectAddress, ServerData.Type.OTHER);
+        // Use a fallback parent when no screen is active.
+        Screen parentScreen = currentScreen == null ? new TitleScreen() : currentScreen;
         startedAttemptCount++;
         phase = AutoConnectPhase.CONNECTING;
         Bandwidthoptimizer.LOGGER.info(
@@ -248,7 +256,7 @@ public final class ExperientAutoConnectController {
                 maxAttempts,
                 autoConnectAddress
         );
-        ConnectScreen.startConnecting(currentScreen, minecraft, serverAddress, serverData, false, null);
+        ConnectScreen.startConnecting(parentScreen, minecraft, serverAddress, serverData, false, null);
         return ConnectOnceResult.STARTED;
     }
 

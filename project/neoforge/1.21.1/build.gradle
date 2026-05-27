@@ -596,6 +596,7 @@ tasks.register('runAll') {
                     javaexec {
                         classpath = sourceSets.test.runtimeClasspath
                         mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
+                        systemProperty 'bandwidthoptimizer.compare.allowTrailingPacketStreamFrames', 'true'
                     }
                 } else {
                     println 'runAll: 跳过 NeoForge jsonl compare，因为当前是多次退出重进场景。'
@@ -625,6 +626,7 @@ tasks.register('runAll') {
                 javaexec {
                     classpath = sourceSets.test.runtimeClasspath
                     mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
+                    systemProperty 'bandwidthoptimizer.compare.allowTrailingPacketStreamFrames', 'true'
                 }
             } else {
                 println 'runAll: 跳过 NeoForge jsonl compare，因为当前是多次退出重进场景。'

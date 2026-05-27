@@ -540,6 +540,7 @@ def runChannelJsonlCompareNow(Project projectRef) {
     projectRef.javaexec {
         classpath = sourceSets.test.runtimeClasspath
         mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
+        systemProperty 'bandwidthoptimizer.compare.allowTrailingPacketStreamFrames', 'true'
     }
 }
 
