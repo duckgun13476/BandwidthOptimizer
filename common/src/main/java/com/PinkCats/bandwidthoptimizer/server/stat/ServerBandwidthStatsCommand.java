@@ -59,6 +59,9 @@ public final class ServerBandwidthStatsCommand {
                         + "/" + totals.outboundBypassPackets() + " packets"
                         + ", outWire=" + formatBytes(totals.outboundWireBytes())
                         + ", inWire=" + formatBytes(totals.inboundWireBytes())
+                        + ", sessionOutWire=" + formatBytes(sessionTotals.outboundWireBytes())
+                        + ", sessionInWire=" + formatBytes(sessionTotals.inboundWireBytes())
+                        + ", sessionOutRaw=" + formatBytes(sessionTotals.outboundRawEncodedBytes())
                         + ", estSaved=" + formatBytes(totals.outboundSavedBytes())
                         + ", vanillaEstimate=" + onOff(VanillaCompressionEstimator.isEnabled())
                         + ", sessionOfflineReuse=" + formatBytes(sessionTotals.serverOfflineReuseConfirmedSavedBytes())
