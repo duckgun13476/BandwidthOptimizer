@@ -38,6 +38,7 @@ public final class ChannelTransportRoundTripMain {
         verifyDefaultBatchUsesStatelessMapping();
         verifyLightBatchRoundTrip();
         verifyLargeLightBatchRoundTrip();
+        verifyManySmallPacketBatchRoundTrip();
         verifyNonTransportPassThrough(receiverSession);
         System.out.println("All channel transport round trips passed.");
     }
@@ -187,6 +188,32 @@ public final class ChannelTransportRoundTripMain {
         }
     }
 
+    // Keep the legal small-packet ceiling covered.
+    private static void verifyManySmallPacketBatchRoundTrip() {
+        ChannelTransportSession senderSession = new ChannelTransportSession();
+        ChannelTransportSession receiverSession = new ChannelTransportSession();
+        byte[] firstPacket = smallCustomPayloadPacket(0);
+        byte[] secondPacket = smallCustomPayloadPacket(1);
+        List<byte[]> packetBytesList = java.util.stream.IntStream.range(0, 40_960)
+                .mapToObj(index -> index % 2 == 0 ? firstPacket : secondPacket)
+                .toList();
+
+        var wrappedFrame = ChannelTransportPacketCodec.wrapBatchPacketsLight(senderSession, packetBytesList);
+        if (wrappedFrame == null || wrappedFrame.frameKind() != ChannelTransportPacketCodec.FrameKind.BATCH) {
+            throw new IllegalStateException("Many-small-packet batch wrap did not produce a batch transport frame.");
+        }
+
+        var unwrappedFrame = KineticChannel.tryUnpackInboundPacket(receiverSession, wrappedFrame.transportFrameBytes());
+        if (unwrappedFrame == null || unwrappedFrame.restoredPacketCount() != packetBytesList.size()) {
+            throw new IllegalStateException("Many-small-packet batch did not restore the expected packet count.");
+        }
+        for (int index = 0; index < packetBytesList.size(); index++) {
+            if (!Arrays.equals(packetBytesList.get(index), unwrappedFrame.restoredPacketBytesList().get(index))) {
+                throw new IllegalStateException("Many-small-packet batch payload mismatch at index " + index);
+            }
+        }
+    }
+
 
     private static String ratioText(long currentBytes, long baselineBytes) {
         if (baselineBytes <= 0L) {
@@ -218,6 +245,12 @@ public final class ChannelTransportRoundTripMain {
     private static byte[] repeatedLargeBytes(int length, int seed) {
         byte[] bytes = new byte[length];
         Arrays.fill(bytes, (byte) seed);
+        return bytes;
+    }
+
+    private static byte[] smallCustomPayloadPacket(int variant) {
+        byte[] bytes = ("aether:main:setLifeShardCount:" + variant).getBytes(StandardCharsets.UTF_8);
+        bytes[0] = 0x2D;
         return bytes;
     }
 

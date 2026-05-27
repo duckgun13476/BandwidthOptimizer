@@ -15,7 +15,7 @@ import java.util.List;
 public final class KineticBatchLayer implements TransportLayer {
 
     private static final int BATCH_PAYLOAD_VERSION = 1;
-    private static final int MAX_BATCH_PACKET_COUNT = 4096;
+    private static final int MAX_BATCH_PACKET_COUNT = 40960;
     private static final int MAX_PACKET_ID_TABLE_ENTRIES = 4096;
     private static final int MAX_BATCH_ENTRY_BYTES = ChannelTransportPayloadLimits.MAX_SINGLE_PACKET_BYTES;
     private static final int MAX_BATCH_TOTAL_BYTES = ChannelTransportPayloadLimits.MAX_BATCH_PAYLOAD_BYTES;
@@ -116,7 +116,7 @@ public final class KineticBatchLayer implements TransportLayer {
     private static int readBoundedVarInt(FriendlyByteBuf buffer, int maxValue, String fieldName) {
         int value = buffer.readVarInt();
         if (value < 0 || value > maxValue) {
-            throw new IllegalStateException(fieldName + " out of range: " + value);
+            throw new IllegalStateException(fieldName + " out of range: " + value + " > " + maxValue);
         }
         return value;
     }
