@@ -513,13 +513,15 @@ public final class ChunkTransportBoundaryController {
         }
 
         private synchronized InboundRuntimeFrameDecision evaluateInboundRuntimeFrame(long frameEpoch) {
-            long currentEpoch = Math.max(this.inboundChunkEpoch, this.highestAcceptedInboundRuntimeEpoch);
+            long highestAcceptedEpoch = this.highestAcceptedInboundRuntimeEpoch;
+            long currentEpoch = Math.max(this.inboundChunkEpoch, highestAcceptedEpoch);
             if (frameEpoch > 0L
-                    && currentEpoch > 0L
-                    && frameEpoch < currentEpoch) {
-                return InboundRuntimeFrameDecision.reject("stale_inbound_runtime_epoch", currentEpoch);
+                    && highestAcceptedEpoch > 0L
+                    && frameEpoch < highestAcceptedEpoch) {
+                return InboundRuntimeFrameDecision.reject("stale_inbound_runtime_epoch", highestAcceptedEpoch);
             }
             if (frameEpoch > 0L) {
+                // Login or respawn resets local state; stale runtime frames still compare against the accepted epoch.
                 this.highestAcceptedInboundRuntimeEpoch = Math.max(this.highestAcceptedInboundRuntimeEpoch, frameEpoch);
                 currentEpoch = Math.max(currentEpoch, frameEpoch);
             }

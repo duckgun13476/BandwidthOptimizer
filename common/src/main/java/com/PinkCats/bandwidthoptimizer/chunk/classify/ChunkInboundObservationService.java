@@ -10,6 +10,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketClassifi
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceStore;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportBoundaryController;
+import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.chunk.packet.ClientboundPlayPacketCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
@@ -38,6 +39,9 @@ public final class ChunkInboundObservationService {
             int outputSizeBeforeDecode
     ) {
         if (context == null || pendingFrame == null || out == null) {
+            return;
+        }
+        if (!ChunkTransportRuntimeConfig.isEnabled()) {
             return;
         }
 
@@ -110,6 +114,7 @@ public final class ChunkInboundObservationService {
 
         String reason = "clientbound_login_server_switch_boundary";
         String channelId = com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel());
+        ChannelTransportStateManager.endProxyServerSwitchBoundary(context.channel(), reason);
         ChannelTransportBatchManager.clearChannelState(context.channel(), reason);
         ChannelTransportStateManager.clearSession(context.channel(), reason);
         ChunkTransportBoundaryController.resetChannelState(context, reason);

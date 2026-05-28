@@ -615,13 +615,16 @@ public final class ChannelTransportHooks {
                 || in == null
                 || out == null
                 || packetDecoderFlowAccess == null
-                || !in.isReadable()
-                || !ChannelTransportRuntimeGuard.isTransportAvailable()
-                || !shouldUseTransportForCurrentProtocol(readProtocolName(context))) {
+                || !in.isReadable()) {
             return false;
         }
 
         byte[] inboundPacketBytes = ByteBufUtil.getBytes(in, in.readerIndex(), in.readableBytes(), false);
+        if (!ChannelTransportRuntimeGuard.isTransportAvailable()
+                || !shouldUseTransportForCurrentProtocol(readProtocolName(context))) {
+            return false;
+        }
+
         if (ChunkTransportDispatcher.looksLikeChunkTransportEnvelope(inboundPacketBytes)) {
             ChannelTransportPacketCodec.UnwrappedTransportFrame directEnvelopeFrame =
                     new ChannelTransportPacketCodec.UnwrappedTransportFrame(
@@ -662,8 +665,10 @@ public final class ChannelTransportHooks {
         if (context == null
                 || out == null
                 || packetDecoderFlowAccess == null
-                || out.size() <= outputSizeBeforeDecode
-                || !ChannelTransportRuntimeGuard.isTransportAvailable()
+                || out.size() <= outputSizeBeforeDecode) {
+            return false;
+        }
+        if (!ChannelTransportRuntimeGuard.isTransportAvailable()
                 || !shouldUseTransportForCurrentProtocol(readProtocolName(context))) {
             return false;
         }

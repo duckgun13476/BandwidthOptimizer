@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.compat.trueuuid;
+﻿package com.PinkCats.bandwidthoptimizer.compat.trueuuid;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.ConnectionProtocolNameCompat;
@@ -22,6 +22,7 @@ public final class TrueUuidLateLoginQueryGuard {
     private static final int MAX_TRUEUUID_ACK_BODY_BYTES = 32;
     private static final AtomicLong DROPPED_INBOUND_PLAY_ACKS = new AtomicLong();
     private static final AtomicLong DROPPED_OUTBOUND_LATE_ACKS = new AtomicLong();
+    private static final AtomicLong DROPPED_OUTBOUND_WRONG_PROTOCOL_ACKS = new AtomicLong();
 
     private TrueUuidLateLoginQueryGuard() {}
 
@@ -80,6 +81,34 @@ public final class TrueUuidLateLoginQueryGuard {
         Bandwidthoptimizer.LOGGER.warn(
                 "[TrueUUIDCompat] Dropped late outbound LOGIN custom query ack after login finished. channel={}, droppedOutboundLateAcks={}",
                 channelIdText(context.channel()),
+                dropped
+        );
+        return true;
+    }
+
+    // Drop late login query replies before the wrong encoder state can disconnect.
+    public static boolean tryDropOutboundLoginCustomQueryOnWrongProtocol(
+            ChannelHandlerContext context,
+            Packet<?> packet,
+            PacketFlow packetFlow
+    ) {
+        if (context == null || packet == null) {
+            return false;
+        }
+        if (!isServerboundLoginCustomQueryPacket(packet)) {
+            return false;
+        }
+        String protocolName = ConnectionProtocolNameCompat.readProtocolName(context.channel());
+        if (packetFlow == PacketFlow.SERVERBOUND && "LOGIN".equalsIgnoreCase(protocolName)) {
+            return false;
+        }
+
+        long dropped = DROPPED_OUTBOUND_WRONG_PROTOCOL_ACKS.incrementAndGet();
+        Bandwidthoptimizer.LOGGER.warn(
+                "[TrueUUIDCompat] Dropped outbound LOGIN custom query ack on wrong encoder state. channel={}, flow={}, protocol={}, droppedOutboundWrongProtocolAcks={}",
+                channelIdText(context.channel()),
+                packetFlow,
+                protocolName,
                 dropped
         );
         return true;

@@ -1,9 +1,11 @@
-﻿package com.PinkCats.bandwidthoptimizer.test;
+package com.PinkCats.bandwidthoptimizer.test;
 
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStateManager;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorithmId;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.KineticChannel;
+import io.netty.channel.embedded.EmbeddedChannel;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -39,6 +41,7 @@ public final class ChannelTransportRoundTripMain {
         verifyLightBatchRoundTrip();
         verifyLargeLightBatchRoundTrip();
         verifyManySmallPacketBatchRoundTrip();
+        verifyProxySwitchBoundaryKeepsInboundTransportEnabled();
         verifyNonTransportPassThrough(receiverSession);
         System.out.println("All channel transport round trips passed.");
     }
@@ -211,6 +214,31 @@ public final class ChannelTransportRoundTripMain {
             if (!Arrays.equals(packetBytesList.get(index), unwrappedFrame.restoredPacketBytesList().get(index))) {
                 throw new IllegalStateException("Many-small-packet batch payload mismatch at index " + index);
             }
+        }
+    }
+
+    // Proxy switch guards must not block inbound transport decode.
+    private static void verifyProxySwitchBoundaryKeepsInboundTransportEnabled() {
+        EmbeddedChannel channel = new EmbeddedChannel();
+        try {
+            ChannelTransportSession senderSession = new ChannelTransportSession();
+            ChannelTransportStateManager.beginProxyServerSwitchBoundary(channel, "round_trip_regression", 15_000L);
+            if (!ChannelTransportStateManager.isProxyServerSwitchBoundaryActive(channel)) {
+                throw new IllegalStateException("Proxy switch boundary should be active for outbound compatibility guards.");
+            }
+
+            byte[] expectedBytes = utf8Bytes("transport-after-proxy-switch-boundary");
+            var wrappedFrame = ChannelTransportPacketCodec.wrapPacket(senderSession, expectedBytes);
+            ChannelTransportSession receiverSession = ChannelTransportStateManager.getOrCreateSession(channel);
+            var unwrappedFrame = ChannelTransportPacketCodec.tryUnwrapPacket(receiverSession, wrappedFrame.transportFrameBytes());
+            if (unwrappedFrame == null
+                    || unwrappedFrame.restoredPacketCount() != 1
+                    || !Arrays.equals(expectedBytes, unwrappedFrame.restoredPacketBytesList().get(0))) {
+                throw new IllegalStateException("Proxy switch boundary should not block inbound transport decode.");
+            }
+        } finally {
+            ChannelTransportStateManager.endProxyServerSwitchBoundary(channel, "round_trip_regression_cleanup");
+            channel.close();
         }
     }
 

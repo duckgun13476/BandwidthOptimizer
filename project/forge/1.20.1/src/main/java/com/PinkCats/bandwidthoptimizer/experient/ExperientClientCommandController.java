@@ -14,6 +14,7 @@ import java.lang.reflect.Method;
 @Mod.EventBusSubscriber(modid = Bandwidthoptimizer.MODID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class ExperientClientCommandController {
     private static boolean commandSent;
+    private static int commandIndex;
     private static int delayTicksRemaining = -1;
     private static String activeConnectionKey = "";
 
@@ -48,22 +49,47 @@ public final class ExperientClientCommandController {
             return;
         }
 
-        String command = normalizeCommand(ExperientClientCommandRuntimeConfig.readCommand());
-        if (command.isBlank()) {
+        String[] commands = readCommandSequence();
+        if (commandIndex >= commands.length) {
             commandSent = true;
+            return;
+        }
+
+        String command = commands[commandIndex];
+        if (command.isBlank()) {
+            commandIndex++;
+            delayTicksRemaining = 0;
             return;
         }
 
         long sentMillis = System.currentTimeMillis();
         int sequence = ExperientClientCommandTiming.recordSent(command, sentMillis);
         sendClientCommand(connection, command);
-        commandSent = true;
+        commandIndex++;
+        commandSent = commandIndex >= commands.length;
+        delayTicksRemaining = ExperientClientCommandRuntimeConfig.readDelayTicks();
         Bandwidthoptimizer.LOGGER.info(
-                "[ExperientClientCommand] sent sequence={}, command={}, sentMillis={}",
+                "[ExperientClientCommand] sent sequence={}, commandIndex={}, commandCount={}, command={}, sentMillis={}",
                 sequence,
+                commandIndex,
+                commands.length,
                 command,
                 sentMillis
         );
+    }
+
+    // Split configured client commands while preserving single-command behavior.
+    private static String[] readCommandSequence() {
+        String rawCommand = ExperientClientCommandRuntimeConfig.readCommand();
+        if (rawCommand.isBlank()) {
+            return new String[0];
+        }
+        String[] rawCommands = rawCommand.split("[;\\r\\n]+");
+        String[] normalizedCommands = new String[rawCommands.length];
+        for (int index = 0; index < rawCommands.length; index++) {
+            normalizedCommands[index] = normalizeCommand(rawCommands[index]);
+        }
+        return normalizedCommands;
     }
 
     // Reconnects reuse the client process, so command state must reopen per connection.
@@ -73,16 +99,33 @@ public final class ExperientClientCommandController {
             return;
         }
         activeConnectionKey = connectionKey;
+        String[] commands = readCommandSequence();
+        if (commands.length > 1 && commandIndex > 0) {
+            // Velocity replaces the connection; keep the command index across reset.
+            commandSent = commandIndex >= commands.length;
+            return;
+        }
         commandSent = false;
+        commandIndex = 0;
         delayTicksRemaining = -1;
     }
 
     private static void resetCommandState() {
+        String[] commands = readCommandSequence();
+        if (commands.length > 1 && commandIndex > 0) {
+            // Missing player or level during reset must not restart the command sequence.
+            activeConnectionKey = "";
+            commandSent = commandIndex >= commands.length;
+            delayTicksRemaining = -1;
+            return;
+        }
         activeConnectionKey = "";
         commandSent = false;
+        commandIndex = 0;
         delayTicksRemaining = -1;
     }
 
+    // ClientPacketListener.sendCommand expects no leading slash.
     private static String normalizeCommand(String command) {
         if (command == null) {
             return "";
