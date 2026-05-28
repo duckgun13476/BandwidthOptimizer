@@ -41,6 +41,7 @@ public final class ChannelTransportRoundTripMain {
         verifyLightBatchRoundTrip();
         verifyLargeLightBatchRoundTrip();
         verifyManySmallPacketBatchRoundTrip();
+        verifyOversizedBatchRejectedAtEncode();
         verifyProxySwitchBoundaryKeepsInboundTransportEnabled();
         verifyNonTransportPassThrough(receiverSession);
         System.out.println("All channel transport round trips passed.");
@@ -215,6 +216,25 @@ public final class ChannelTransportRoundTripMain {
                 throw new IllegalStateException("Many-small-packet batch payload mismatch at index " + index);
             }
         }
+    }
+
+    // Sender-side batch limits must match receiver-side limits.
+    private static void verifyOversizedBatchRejectedAtEncode() {
+        ChannelTransportSession senderSession = new ChannelTransportSession();
+        byte[] packet = smallCustomPayloadPacket(7);
+        List<byte[]> packetBytesList = java.util.stream.IntStream.range(0, 40_961)
+                .mapToObj(index -> packet)
+                .toList();
+
+        try {
+            ChannelTransportPacketCodec.wrapBatchPacketsLight(senderSession, packetBytesList);
+        } catch (IllegalArgumentException exception) {
+            if (exception.getMessage() != null && exception.getMessage().contains("batch packet count")) {
+                return;
+            }
+            throw new IllegalStateException("Oversized batch was rejected with an unexpected message: " + exception.getMessage(), exception);
+        }
+        throw new IllegalStateException("Oversized batch should be rejected by the encoder before it reaches the decoder.");
     }
 
     // Proxy switch guards must not block inbound transport decode.

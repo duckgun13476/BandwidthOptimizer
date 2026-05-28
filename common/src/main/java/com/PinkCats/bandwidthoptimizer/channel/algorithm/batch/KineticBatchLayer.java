@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.channel.algorithm.batch;
+﻿package com.PinkCats.bandwidthoptimizer.channel.algorithm.batch;
 
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits;
@@ -35,6 +35,7 @@ public final class KineticBatchLayer implements TransportLayer {
     // Batch as a cargo
     public byte[] encodePacketBatch(List<byte[]> packetBytesList) {
         List<byte[]> safePacketBytesList = copyPacketBytesList(packetBytesList);
+        validateOutboundBatchEntries(safePacketBytesList, "outbound batch packet");
         boolean packetIdMappingEnabled = ChannelTransportLayerRuntimeConfig.isPacketIdMappingEnabled();
         KineticPacketIdMappingLayer.EncodedPacketIdBatch encodedPacketIdBatch = packetIdMappingEnabled
                 ? this.packetIdMappingLayer.encodeBatchPacketHeaders(safePacketBytesList)
@@ -42,6 +43,7 @@ public final class KineticBatchLayer implements TransportLayer {
         List<byte[]> batchEntryBytesList = packetIdMappingEnabled
                 ? encodedPacketIdBatch.mappedEntryBytesList()
                 : safePacketBytesList;
+        validateOutboundBatchEntries(batchEntryBytesList, "outbound mapped batch packet");
         FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
         try {
             buffer.writeVarInt(BATCH_PAYLOAD_VERSION);
@@ -64,6 +66,24 @@ public final class KineticBatchLayer implements TransportLayer {
             return encodedBytes;
         } finally {
             buffer.release();
+        }
+    }
+
+    // Sender and receiver must enforce the same batch limits.
+    private static void validateOutboundBatchEntries(List<byte[]> packetBytesList, String fieldName) {
+        if (packetBytesList.size() > MAX_BATCH_PACKET_COUNT) {
+            throw new IllegalArgumentException("batch packet count out of range: " + packetBytesList.size() + " > " + MAX_BATCH_PACKET_COUNT);
+        }
+        int totalBytes = 0;
+        for (byte[] packetBytes : packetBytesList) {
+            int packetLength = packetBytes == null ? 0 : packetBytes.length;
+            if (packetLength > MAX_BATCH_ENTRY_BYTES) {
+                throw new IllegalArgumentException(fieldName + " bytes out of range: " + packetLength + " > " + MAX_BATCH_ENTRY_BYTES);
+            }
+            totalBytes += packetLength;
+            if (totalBytes < 0 || totalBytes > MAX_BATCH_TOTAL_BYTES) {
+                throw new IllegalArgumentException("batch total bytes out of range: " + totalBytes + " > " + MAX_BATCH_TOTAL_BYTES);
+            }
         }
     }
 
