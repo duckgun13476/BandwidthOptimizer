@@ -46,6 +46,7 @@ public final class ChannelTransportRoundTripMain {
         verifyOversizedBatchRejectedAtEncode();
         verifyOversizedSinglePacketRejectedAtEncode();
         verifyStreamingRejectsMergedCarrierFrames();
+        verifyStreamingRecoversAfterIncompleteCarrier();
         verifyProxySwitchBoundaryKeepsInboundTransportEnabled();
         verifyNonTransportPassThrough(receiverSession);
         System.out.println("All channel transport round trips passed.");
@@ -278,6 +279,25 @@ public final class ChannelTransportRoundTripMain {
             throw new IllegalStateException("Merged carrier frame left a smuggled packet pending for the next decode.");
         }
         throw new IllegalStateException("Merged carrier frame should be rejected before any pending packet can leak.");
+    }
+
+    // Failed carrier decode must not poison the next carrier.
+    private static void verifyStreamingRecoversAfterIncompleteCarrier() {
+        KineticStreamingLayer senderLayer = new KineticStreamingLayer(4);
+        KineticStreamingLayer receiverLayer = new KineticStreamingLayer(4);
+        byte[] incompleteFrame = Arrays.copyOf(senderLayer.encode(utf8Bytes("incomplete-source-frame")), 8);
+
+        try {
+            receiverLayer.decode(incompleteFrame);
+        } catch (RuntimeException ignored) {
+            byte[] expectedBytes = utf8Bytes("after-incomplete-frame");
+            byte[] decodedBytes = receiverLayer.decode(senderLayer.encode(expectedBytes));
+            if (!Arrays.equals(expectedBytes, decodedBytes)) {
+                throw new IllegalStateException("Streaming decoder returned stale bytes after incomplete carrier.");
+            }
+            return;
+        }
+        throw new IllegalStateException("Incomplete carrier should be rejected before the next frame.");
     }
 
     // Proxy switch guards must not block inbound transport decode.

@@ -29,20 +29,30 @@ public final class KineticStreamingLayer implements TransportLayer {
 
     @Override
     public byte[] decode(byte[] inputBytes) {
-        byte[] safeInputBytes = copyBytesOrEmpty(inputBytes);
-        appendDecodedBytes(decompressStreaming(safeInputBytes));
-        byte[] nextPacketBatch = extractNextPacketBatch();
-        if (nextPacketBatch == null) {
-            throw new IllegalStateException("Channel streaming zstd decode produced no complete packet frame");
+        try {
+            byte[] safeInputBytes = copyBytesOrEmpty(inputBytes);
+            appendDecodedBytes(decompressStreaming(safeInputBytes));
+            byte[] nextPacketBatch = extractNextPacketBatch();
+            if (nextPacketBatch == null) {
+                throw new IllegalStateException("Channel streaming zstd decode produced no complete packet frame");
+            }
+            rejectTrailingDecodedBytesAfterFrame();
+            return ChannelStreamingPacketCodec.decodeSinglePacketBatch(nextPacketBatch);
+        } catch (RuntimeException exception) {
+            resetAfterDecodeFailure();
+            throw exception;
         }
-        rejectTrailingDecodedBytesAfterFrame();
-        return ChannelStreamingPacketCodec.decodeSinglePacketBatch(nextPacketBatch);
     }
 
     @Override
     public void reset() {
         this.zstdContext.reset(this.compressionLevel);
         this.pendingDecodedBytes = new byte[0];
+    }
+
+    // Decode failures must not poison the next carrier.
+    private void resetAfterDecodeFailure() {
+        reset();
     }
 
     // This function compresses one framed packet batch into a complete zstd stream chunk.
