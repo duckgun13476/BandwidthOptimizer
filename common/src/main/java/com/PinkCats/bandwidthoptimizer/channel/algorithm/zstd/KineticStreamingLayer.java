@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd;
+﻿package com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd;
 
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.TransportLayer;
 
@@ -35,6 +35,7 @@ public final class KineticStreamingLayer implements TransportLayer {
         if (nextPacketBatch == null) {
             throw new IllegalStateException("Channel streaming zstd decode produced no complete packet frame");
         }
+        rejectTrailingDecodedBytesAfterFrame();
         return ChannelStreamingPacketCodec.decodeSinglePacketBatch(nextPacketBatch);
     }
 
@@ -132,6 +133,17 @@ public final class KineticStreamingLayer implements TransportLayer {
         byte[] packetBatchBytes = Arrays.copyOfRange(this.pendingDecodedBytes, packetBatchStart, packetBatchEnd);
         this.pendingDecodedBytes = Arrays.copyOfRange(this.pendingDecodedBytes, packetBatchEnd, this.pendingDecodedBytes.length);
         return packetBatchBytes;
+    }
+
+    // One transport body may deliver only one clear-text frame.
+    private void rejectTrailingDecodedBytesAfterFrame() {
+        int trailingBytes = this.pendingDecodedBytes.length;
+        if (trailingBytes <= 0) {
+            return;
+        }
+
+        this.pendingDecodedBytes = new byte[0];
+        throw new IllegalStateException("Channel streaming frame left trailing decoded bytes: " + trailingBytes);
     }
 
 

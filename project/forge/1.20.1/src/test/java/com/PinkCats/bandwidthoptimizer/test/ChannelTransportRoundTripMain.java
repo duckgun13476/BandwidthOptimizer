@@ -6,6 +6,7 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStateManager;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorithmId;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.KineticChannel;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.KineticStreamingLayer;
 import io.netty.channel.embedded.EmbeddedChannel;
 
 import java.nio.charset.StandardCharsets;
@@ -44,6 +45,7 @@ public final class ChannelTransportRoundTripMain {
         verifyManySmallPacketBatchRoundTrip();
         verifyOversizedBatchRejectedAtEncode();
         verifyOversizedSinglePacketRejectedAtEncode();
+        verifyStreamingRejectsMergedCarrierFrames();
         verifyProxySwitchBoundaryKeepsInboundTransportEnabled();
         verifyNonTransportPassThrough(receiverSession);
         System.out.println("All channel transport round trips passed.");
@@ -255,6 +257,29 @@ public final class ChannelTransportRoundTripMain {
         throw new IllegalStateException("Oversized single packet should be rejected by the encoder before it reaches the decoder.");
     }
 
+    // A transport body may deliver only one clear-text frame.
+    private static void verifyStreamingRejectsMergedCarrierFrames() {
+        KineticStreamingLayer senderLayer = new KineticStreamingLayer(4);
+        KineticStreamingLayer receiverLayer = new KineticStreamingLayer(4);
+        byte[] firstFrame = senderLayer.encode(utf8Bytes("first-frame"));
+        byte[] smuggledFrame = senderLayer.encode(utf8Bytes("smuggled-frame"));
+        byte[] mergedFrame = concatBytes(firstFrame, smuggledFrame);
+
+        try {
+            receiverLayer.decode(mergedFrame);
+        } catch (IllegalStateException exception) {
+            if (exception.getMessage() != null && exception.getMessage().contains("trailing decoded bytes")) {
+                return;
+            }
+            throw new IllegalStateException("Merged carrier frame was rejected with an unexpected message: " + exception.getMessage(), exception);
+        }
+        byte[] decodedNext = receiverLayer.decode(senderLayer.encode(utf8Bytes("legit-next-frame")));
+        if (Arrays.equals(decodedNext, utf8Bytes("smuggled-frame"))) {
+            throw new IllegalStateException("Merged carrier frame left a smuggled packet pending for the next decode.");
+        }
+        throw new IllegalStateException("Merged carrier frame should be rejected before any pending packet can leak.");
+    }
+
     // Proxy switch guards must not block inbound transport decode.
     private static void verifyProxySwitchBoundaryKeepsInboundTransportEnabled() {
         EmbeddedChannel channel = new EmbeddedChannel();
@@ -320,6 +345,11 @@ public final class ChannelTransportRoundTripMain {
         return bytes;
     }
 
+    private static byte[] concatBytes(byte[] first, byte[] second) {
+        byte[] result = Arrays.copyOf(first, first.length + second.length);
+        System.arraycopy(second, 0, result, first.length, second.length);
+        return result;
+    }
 
     private static byte[] templateLikeBytes(int leftMarker, int rightMarker) {
         byte[] bytes = new byte[192];
