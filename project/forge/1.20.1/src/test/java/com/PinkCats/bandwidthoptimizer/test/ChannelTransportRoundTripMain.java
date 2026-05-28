@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStateManager;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorithmId;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.KineticChannel;
 import io.netty.channel.embedded.EmbeddedChannel;
 
@@ -42,6 +43,7 @@ public final class ChannelTransportRoundTripMain {
         verifyLargeLightBatchRoundTrip();
         verifyManySmallPacketBatchRoundTrip();
         verifyOversizedBatchRejectedAtEncode();
+        verifyOversizedSinglePacketRejectedAtEncode();
         verifyProxySwitchBoundaryKeepsInboundTransportEnabled();
         verifyNonTransportPassThrough(receiverSession);
         System.out.println("All channel transport round trips passed.");
@@ -235,6 +237,22 @@ public final class ChannelTransportRoundTripMain {
             throw new IllegalStateException("Oversized batch was rejected with an unexpected message: " + exception.getMessage(), exception);
         }
         throw new IllegalStateException("Oversized batch should be rejected by the encoder before it reaches the decoder.");
+    }
+
+    // Single packet limits must fail on the sender side.
+    private static void verifyOversizedSinglePacketRejectedAtEncode() {
+        ChannelTransportSession senderSession = new ChannelTransportSession();
+        byte[] packetBytes = repeatedLargeBytes(ChannelTransportPayloadLimits.MAX_SINGLE_PACKET_BYTES + 1, 0x51);
+
+        try {
+            ChannelTransportPacketCodec.wrapPacket(senderSession, packetBytes);
+        } catch (IllegalArgumentException exception) {
+            if (exception.getMessage() != null && exception.getMessage().contains("single packet bytes")) {
+                return;
+            }
+            throw new IllegalStateException("Oversized single packet was rejected with an unexpected message: " + exception.getMessage(), exception);
+        }
+        throw new IllegalStateException("Oversized single packet should be rejected by the encoder before it reaches the decoder.");
     }
 
     // Proxy switch guards must not block inbound transport decode.

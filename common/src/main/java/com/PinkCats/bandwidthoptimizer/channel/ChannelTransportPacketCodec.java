@@ -1,6 +1,7 @@
 ﻿package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.batch.KineticBatchLayer;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.ChannelTransportOperationTelemetry;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
@@ -24,6 +25,7 @@ public final class ChannelTransportPacketCodec {
         }
 
         byte[] safePacketBytes = Arrays.copyOf(originalPacketBytes, originalPacketBytes.length);
+        validateSinglePacketBytes(safePacketBytes.length);
         ChannelTransportSession.PacketResult packetResult = transportSession.encodeSinglePacketWithTelemetry(safePacketBytes);
         return wrapTransportBody(
                 FrameKind.SINGLE,
@@ -91,7 +93,11 @@ public final class ChannelTransportPacketCodec {
             buffer.readBytes(transportBodyBytes);
             ChannelTransportSession.PacketResult packetResult = transportSession.decodeSinglePacketWithTelemetry(transportBodyBytes);
             List<byte[]> restoredPacketBytesList = switch (frameKind) {
-                case SINGLE -> List.of(copyBytesOrEmpty(packetResult.bytes()));
+                case SINGLE -> {
+                    byte[] packetBytes = copyBytesOrEmpty(packetResult.bytes());
+                    validateSinglePacketBytes(packetBytes.length);
+                    yield List.of(packetBytes);
+                }
                 case BATCH -> BATCH_LAYER.decodePacketBatch(packetResult.bytes());
             };
             return new UnwrappedTransportFrame(
@@ -143,6 +149,18 @@ public final class ChannelTransportPacketCodec {
             totalBytes += packetBytes == null ? 0 : packetBytes.length;
         }
         return totalBytes;
+    }
+
+    // Keep SINGLE limits aligned with batch entry limits.
+    private static void validateSinglePacketBytes(int packetBytes) {
+        if (packetBytes < 0 || packetBytes > ChannelTransportPayloadLimits.MAX_SINGLE_PACKET_BYTES) {
+            throw new IllegalArgumentException(
+                    "single packet bytes out of range: "
+                            + packetBytes
+                            + " > "
+                            + ChannelTransportPayloadLimits.MAX_SINGLE_PACKET_BYTES
+            );
+        }
     }
 
     private static List<byte[]> copyPacketBytesList(List<byte[]> packetBytesList) {
