@@ -1,4 +1,4 @@
-﻿package com.PinkCats.bandwidthoptimizer.compat.trueuuid;
+package com.PinkCats.bandwidthoptimizer.compat.trueuuid;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.ConnectionProtocolNameCompat;

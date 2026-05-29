@@ -1,4 +1,4 @@
-﻿package com.PinkCats.bandwidthoptimizer.compat.create;
+package com.PinkCats.bandwidthoptimizer.compat.create;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;

@@ -30,6 +30,8 @@ public final class ChannelFrameJsonlLogger {
     private static boolean shutdownHookInstalled;
     private static boolean shutdownInProgress;
 
+    private static final char[] HEX_DIGITS = "0123456789abcdef".toCharArray();
+
     private ChannelFrameJsonlLogger() {
     }
 
@@ -169,11 +171,14 @@ public final class ChannelFrameJsonlLogger {
 
     private static String hex(byte[] bytes) {
         byte[] safeBytes = bytes == null ? new byte[0] : bytes;
-        StringBuilder builder = new StringBuilder(safeBytes.length * 2);
-        for (byte value : safeBytes) {
-            builder.append(String.format("%02x", value & 0xFF));
+        char[] encoded = new char[safeBytes.length * 2];
+        for (int index = 0; index < safeBytes.length; index++) {
+            int value = safeBytes[index] & 0xFF;
+            int outputIndex = index * 2;
+            encoded[outputIndex] = HEX_DIGITS[value >>> 4];
+            encoded[outputIndex + 1] = HEX_DIGITS[value & 0x0F];
         }
-        return builder.toString();
+        return new String(encoded);
     }
 
     private static String sha256(String value) {

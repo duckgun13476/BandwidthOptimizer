@@ -1,4 +1,4 @@
-﻿package com.PinkCats.bandwidthoptimizer.chunk.integration.transport;
+package com.PinkCats.bandwidthoptimizer.chunk.integration.transport;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;

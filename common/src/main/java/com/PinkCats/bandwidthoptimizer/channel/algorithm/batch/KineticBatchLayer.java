@@ -1,4 +1,4 @@
-﻿package com.PinkCats.bandwidthoptimizer.channel.algorithm.batch;
+package com.PinkCats.bandwidthoptimizer.channel.algorithm.batch;
 
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits;

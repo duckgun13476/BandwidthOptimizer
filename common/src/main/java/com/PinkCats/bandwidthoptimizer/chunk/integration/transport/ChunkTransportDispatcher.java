@@ -1,4 +1,4 @@
-﻿package com.PinkCats.bandwidthoptimizer.chunk.integration.transport;
+package com.PinkCats.bandwidthoptimizer.chunk.integration.transport;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.budget.ChunkClientCacheBudgetManager;
@@ -1457,8 +1457,12 @@ public final class ChunkTransportDispatcher {
             return;
         }
 
-        Packet<ClientGamePacketListener> restoredPacket = decodeClientboundPlayPacket(restoredPacketBytes);
-        ChunkPacketDescriptor descriptor = ChunkPacketClassifier.classifyOutboundPlayPacket("PLAY", restoredPacket);
+        ChunkPacketDescriptor descriptor = descriptorFromTransportFrame(frame);
+        Packet<ClientGamePacketListener> restoredPacket = null;
+        if (descriptor == null) {
+            restoredPacket = decodeClientboundPlayPacket(restoredPacketBytes);
+            descriptor = ChunkPacketClassifier.classifyOutboundPlayPacket("PLAY", restoredPacket);
+        }
         if (descriptor == null) {
             return;
         }
@@ -1471,6 +1475,22 @@ public final class ChunkTransportDispatcher {
                 restoredPacketBytes
         );
         ChunkClientCacheBudgetManager.enforceInboundBudget(context, "client_chunk_transport_budget");
+    }
+
+    private static ChunkPacketDescriptor descriptorFromTransportFrame(ChunkHotspotFrame frame) {
+        if (frame == null
+                || frame.hotspotKind() != ChunkHotspotKind.FULL_CHUNK
+                || frame.coordinate() == null
+                || !frame.coordinate().present()) {
+            return null;
+        }
+        return new ChunkPacketDescriptor(
+                frame.protocolName() == null || frame.protocolName().isBlank() ? "PLAY" : frame.protocolName(),
+                frame.packetClassName() == null ? "" : frame.packetClassName(),
+                frame.hotspotKind(),
+                frame.laneKind(),
+                frame.coordinate()
+        );
     }
 
     private static void acknowledgeFullChunkPatchIfNeeded(

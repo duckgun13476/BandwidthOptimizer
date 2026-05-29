@@ -1,4 +1,4 @@
-﻿package com.PinkCats.bandwidthoptimizer.channel;
+package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
@@ -604,7 +604,7 @@ public final class ChannelTransportHooks {
     }
 
     // Decode direct transport frames before vanilla packet id decoding.
-        public static <T extends PacketListener> boolean tryDecodeInboundTransportFrame(
+    public static <T extends PacketListener> boolean tryDecodeInboundTransportFrame(
             ChannelHandlerContext context,
             ByteBuf in,
             List<Object> out,
@@ -704,7 +704,7 @@ public final class ChannelTransportHooks {
     }
 
     // Preserve output order when replacing a carrier with restored packets.
-        private static int replaceDecodedCarrierWithRestoredPackets(List<Object> out, int index, List<Object> restoredPackets) {
+    private static int replaceDecodedCarrierWithRestoredPackets(List<Object> out, int index, List<Object> restoredPackets) {
         Object carrierPacket = out.remove(index);
         releaseTransportPayloadBuffer(carrierPacket);
         List<Object> tailPackets = new ArrayList<>();
@@ -737,7 +737,7 @@ public final class ChannelTransportHooks {
                 long packetStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
                 long chunkRestoreStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
                 // Chunk envelopes restore before vanilla packet decoding.
-                                ChunkInboundDecodeResult inboundDecodeResult =
+                ChunkInboundDecodeResult inboundDecodeResult =
                         ChunkTransportDispatcher.tryDecodeInboundPacket(context, transportRestoredPacketBytes);
                 ChunkLoadDelayProbe.logStage(
                         context,

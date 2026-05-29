@@ -1,4 +1,4 @@
-﻿package com.PinkCats.bandwidthoptimizer.experient;
+package com.PinkCats.bandwidthoptimizer.experient;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import net.minecraft.client.Minecraft;

@@ -1,4 +1,4 @@
-﻿package com.PinkCats.bandwidthoptimizer.channel;
+package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.batch.KineticBatchLayer;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits;

@@ -1,4 +1,4 @@
-﻿import groovy.json.JsonOutput
+import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files

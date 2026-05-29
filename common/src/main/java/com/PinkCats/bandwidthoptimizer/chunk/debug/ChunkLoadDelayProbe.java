@@ -1,4 +1,4 @@
-﻿package com.PinkCats.bandwidthoptimizer.chunk.debug;
+package com.PinkCats.bandwidthoptimizer.chunk.debug;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;

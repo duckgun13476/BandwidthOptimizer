@@ -1,4 +1,4 @@
-﻿package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
+package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
 
 import net.minecraft.server.level.DistanceManager;
 import org.spongepowered.asm.mixin.Mixin;

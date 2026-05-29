@@ -1,4 +1,4 @@
-﻿package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
+package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;

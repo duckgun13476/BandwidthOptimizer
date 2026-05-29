@@ -1,4 +1,4 @@
-﻿package com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd;
+package com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd;
 
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.TransportLayer;
 
