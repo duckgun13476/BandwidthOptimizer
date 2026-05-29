@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.test;
 
 import com.PinkCats.bandwidthoptimizer.compat.sable.SableDynamicStructureCompat;
 import com.PinkCats.bandwidthoptimizer.compat.valkyrienskies.ValkyrienSkiesDynamicStructureCompat;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 
 import java.lang.reflect.Method;
@@ -29,6 +30,28 @@ public final class OptionalDynamicCompatAbsentRegressionMain {
         require(valkyrienTarget.target() == fallback && !valkyrienTarget.transformed() && !valkyrienTarget.forceImmediate(),
                 "Valkyrien Skies absent target should be vanilla");
 
+        for (String dynamicController : new String[] {
+                "mechanical_piston",
+                "windmill_bearing",
+                "mechanical_bearing",
+                "clockwork_bearing",
+                "rope_pulley",
+                "hose_pulley",
+                "elevator_pulley",
+                "gantry_pinion",
+                "cart_assembler",
+                "contraption_controls"
+        }) {
+            require(!shouldGateCreateBlockEntity(dynamicController, false),
+                    "Create dynamic structure controllers should bypass normal delayed gate: " + dynamicController);
+            require(!shouldGateCreateBlockEntity(dynamicController, true),
+                    "Create dynamic structure controllers should bypass bootstrap delayed gate: " + dynamicController);
+        }
+        require(shouldGateCreateBlockEntity("belt", false),
+                "Create mechanical block entities should still use the delayed gate");
+        require(shouldGateCreateBlockEntity("belt", true),
+                "Create mechanical block entities should still use the bootstrap gate");
+
         System.out.println("Optional dynamic compat absent regression matched");
     }
 
@@ -37,6 +60,19 @@ public final class OptionalDynamicCompatAbsentRegressionMain {
         Method method = targetClass.getDeclaredMethod(methodName);
         method.setAccessible(true);
         return method.invoke(null);
+    }
+
+    private static boolean shouldGateCreateBlockEntity(String path, boolean chunkBootstrapActive) throws Exception {
+        Class<?> targetClass = Class.forName("com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate");
+        Method method = targetClass.getDeclaredMethod(
+                "shouldGateCreateBlockEntity",
+                ResourceLocation.class,
+                boolean.class
+        );
+        method.setAccessible(true);
+        ResourceLocation typeKey = ResourceLocation.tryParse("create:" + path);
+        require(typeKey != null, "Create block entity type key should parse: " + path);
+        return (Boolean) method.invoke(null, typeKey, chunkBootstrapActive);
     }
 
     private static boolean isClassPresent(String className) {

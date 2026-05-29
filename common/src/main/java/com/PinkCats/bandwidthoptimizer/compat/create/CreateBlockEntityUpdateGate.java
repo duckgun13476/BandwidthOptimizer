@@ -121,6 +121,18 @@ public final class CreateBlockEntityUpdateGate {
             "mechanical_press",
             "steam_whistle"
     );
+    private static final Set<String> DYNAMIC_STRUCTURE_CONTROLLER_BLOCK_ENTITY_TYPES = Set.of(
+            "mechanical_piston",
+            "windmill_bearing",
+            "mechanical_bearing",
+            "clockwork_bearing",
+            "rope_pulley",
+            "hose_pulley",
+            "elevator_pulley",
+            "gantry_pinion",
+            "cart_assembler",
+            "contraption_controls"
+    );
 
     private CreateBlockEntityUpdateGate() {}
 
@@ -486,9 +498,17 @@ public final class CreateBlockEntityUpdateGate {
                 && MECHANICAL_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
     }
 
+    private static boolean isCreateDynamicStructureControllerBlockEntity(ResourceLocation typeKey) {
+        return isCreateBlockEntity(typeKey)
+                && DYNAMIC_STRUCTURE_CONTROLLER_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
+    }
+
     // During bootstrap, protect the teleport critical path first.
     private static boolean shouldGateCreateBlockEntity(ResourceLocation typeKey, boolean chunkBootstrapActive) {
         if (!isCreateBlockEntity(typeKey)) {
+            return false;
+        }
+        if (isCreateDynamicStructureControllerBlockEntity(typeKey)) {
             return false;
         }
         return chunkBootstrapActive || isCreateMechanicalBlockEntity(typeKey);
