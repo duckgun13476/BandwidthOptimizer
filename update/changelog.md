@@ -1,3 +1,18 @@
+#### v2.8.11.29-release
+
+Important fixes:
+1. Fixed proxy server-switch reset windows so stale transport frames and PLAY payloads no longer cross into the new backend login or chunk stream.
+2. Fixed player floating after TP triggered by reset-style mods.
+3. Fixed chunk restore stalls during fast map traversal.
+4. Reduced player TP chunk-load latency; the BO path can now reach a usable state faster than vanilla loading in tested cases.
+
+Other fixes:
+1. Added sender-side limits for batch and single transport carriers to prevent frames that the receiver would reject.
+2. Fixed streaming carrier frame smuggling and bad-carrier state poisoning.
+3. Improved persistent manifest and chunk cache synchronization, refresh, and restore stability.
+4. Improved Create dynamic-structure block entity bypassing and TP critical-path protection.
+5. Fixed server HUD session bandwidth accounting so live stats no longer include persisted historical totals.
+
 #### v2.7.8.18-beta
 1. Improved Sable dynamic structure chunk sync compatibility.
 2. Added Valkyrien Skies dynamic structure payload boundary handling.

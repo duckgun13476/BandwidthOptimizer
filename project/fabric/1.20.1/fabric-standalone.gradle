@@ -151,6 +151,12 @@ tasks.named('jar', Jar).configure {
     }
 }
 
+tasks.withType(Jar).configureEach {
+    if (name == 'sourcesJar') {
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    }
+}
+
 tasks.named('remapJar').configure {
     archiveFileName = "${package_name}-${mod_version}-fabric-1.20.1.jar"
 }
