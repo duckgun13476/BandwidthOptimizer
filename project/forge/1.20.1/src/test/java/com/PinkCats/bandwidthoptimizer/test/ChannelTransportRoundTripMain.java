@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.test;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStateManager;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorithmId;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.KineticChannel;
@@ -43,6 +44,7 @@ public final class ChannelTransportRoundTripMain {
         verifyLightBatchRoundTrip();
         verifyLargeLightBatchRoundTrip();
         verifyManySmallPacketBatchRoundTrip();
+        verifyPostWrapBypassDisabled();
         verifyOversizedBatchRejectedAtEncode();
         verifyOversizedSinglePacketRejectedAtEncode();
         verifyStreamingRejectsMergedCarrierFrames();
@@ -220,6 +222,15 @@ public final class ChannelTransportRoundTripMain {
             if (!Arrays.equals(packetBytesList.get(index), unwrappedFrame.restoredPacketBytesList().get(index))) {
                 throw new IllegalStateException("Many-small-packet batch payload mismatch at index " + index);
             }
+        }
+    }
+
+    // Post-wrap bypass would desync state.
+    private static void verifyPostWrapBypassDisabled() {
+        ChannelTransportSession senderSession = new ChannelTransportSession();
+        var wrappedFrame = ChannelTransportPacketCodec.wrapPacket(senderSession, utf8Bytes("small-carrier"));
+        if (ChannelTransportHooks.shouldBypassUnprofitableCarrier(wrappedFrame)) {
+            throw new IllegalStateException("Stateful carrier must not be bypassed after wrap.");
         }
     }
 

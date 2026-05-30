@@ -269,6 +269,7 @@ public final class ChannelTransportHooks {
                         chunkTransportEncodedBytes != null
                 );
 
+        boolean statefulTransportAttempted = false;
         try {
             if (shouldBypassServerboundCarrierByInputSize(outboundPacketFlow, transportInputPacketBytes.length)) {
                 out.writerIndex(startIndexInclusive);
@@ -335,61 +336,11 @@ public final class ChannelTransportHooks {
             }
 
             ChannelTransportSession transportSession = ChannelTransportStateManager.getOrCreateSession(context.channel());
+            statefulTransportAttempted = true;
             ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame =
                     KineticChannel.processOutboundPacket(transportSession, transportInputPacketBytes);
             if (wrappedFrame == null) {
-                recordCommittedOutboundPacketStream(context, packet, originalPacketBytes);
-                if (forceImmediateTransport) {
-                    if (DebugRuntimeConfig.isDiagnoseEnabled()) {
-                        Bandwidthoptimizer.LOGGER.info(
-                                "[Transport][ImmediatePolicy][Fallback] reason=wrap_unavailable, packetClass={}, inputBytes={}, channel={}",
-                                packetClassName(packet),
-                                transportInputPacketBytes.length,
-                                channelIdText(context)
-                        );
-                    }
-                    recordDirectPacketTrace(
-                            context,
-                            "immediate_wrap_unavailable",
-                            protocolName,
-                            packet,
-                            outboundPacketFlow,
-                            directFallbackPacketBytes
-                    );
-                    recordOutboundBypassStats(context, protocolName, directFallbackPacketBytes.length, 1);
-                    ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
-                            outboundPacketCapture,
-                            directFallbackPacketBytes.length
-                    );
-                    ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
-                            boundaryPacketTrace,
-                            "DIRECT_PASSTHROUGH",
-                            "DIRECT",
-                            directFallbackPacketBytes.length,
-                            chunkProtocolApplied,
-                            1
-                    );
-                }
-                return;
-            }
-            if (shouldBypassUnprofitableCarrier(wrappedFrame)) {
-                out.writerIndex(startIndexInclusive);
-                out.writeBytes(directFallbackPacketBytes);
-                recordCommittedOutboundPacketStream(context, packet, directFallbackPacketBytes);
-                recordOutboundBypassStats(context, protocolName, directFallbackPacketBytes.length, 1);
-                ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
-                        outboundPacketCapture,
-                        directFallbackPacketBytes.length
-                );
-                ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
-                        boundaryPacketTrace,
-                        "DIRECT_PASSTHROUGH",
-                        "DIRECT",
-                        directFallbackPacketBytes.length,
-                        chunkProtocolApplied,
-                        1
-                );
-                return;
+                throw new IllegalStateException("Stateful transport wrap returned no carrier");
             }
             logOutboundTransportTrace(
                     context,
@@ -405,37 +356,7 @@ public final class ChannelTransportHooks {
             out.writerIndex(startIndexInclusive);
             recordCommittedOutboundPacketStream(context, packet, originalPacketBytes);
             if (!writeTransportCarrierPacket(context, outboundPacketFlow, out, wrappedFrame.transportFrameBytes(), packetEncoderFlowAccess)) {
-                out.writeBytes(directFallbackPacketBytes);
-                if (forceImmediateTransport && DebugRuntimeConfig.isDiagnoseEnabled()) {
-                    Bandwidthoptimizer.LOGGER.info(
-                            "[Transport][ImmediatePolicy][Fallback] reason=carrier_write_failed, packetClass={}, inputBytes={}, channel={}",
-                            packetClassName(packet),
-                            transportInputPacketBytes.length,
-                            channelIdText(context)
-                    );
-                }
-                recordDirectPacketTrace(
-                        context,
-                        "carrier_write_failed",
-                        protocolName,
-                        packet,
-                        outboundPacketFlow,
-                        directFallbackPacketBytes
-                );
-                recordOutboundBypassStats(context, protocolName, directFallbackPacketBytes.length, 1);
-                ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
-                        outboundPacketCapture,
-                        directFallbackPacketBytes.length
-                );
-                ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
-                        boundaryPacketTrace,
-                        "DIRECT_PASSTHROUGH",
-                        "DIRECT",
-                        directFallbackPacketBytes.length,
-                        chunkProtocolApplied,
-                        1
-                );
-                return;
+                throw new IllegalStateException("Stateful transport carrier was not committed");
             }
             if (forceImmediateTransport && DebugRuntimeConfig.isDiagnoseEnabled()) {
                 Bandwidthoptimizer.LOGGER.info(
@@ -461,6 +382,10 @@ public final class ChannelTransportHooks {
                     Math.max(wrappedFrame.originalPacketCount(), 1)
             );
         } catch (Throwable throwable) {
+            if (statefulTransportAttempted) {
+                out.writerIndex(startIndexInclusive);
+                throw failStatefulCarrierCommit(context, throwable);
+            }
             if (out.writerIndex() < endIndexExclusive || chunkProtocolApplied) {
                 out.writerIndex(startIndexInclusive);
                 out.writeBytes(directFallbackPacketBytes);
@@ -792,19 +717,20 @@ public final class ChannelTransportHooks {
                 && transportInputBytes > SERVERBOUND_CUSTOM_PAYLOAD_SAFE_INPUT_BYTES;
     }
 
-    // Mapping packet can't bypass
+    // Stateful wraps must be committed.
     public static boolean shouldBypassUnprofitableCarrier(ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame) {
-        if (wrappedFrame == null
-                || wrappedFrame.originalPacketBytes() <= 0
-                || wrappedFrame.transportFrameLength() < wrappedFrame.originalPacketBytes()) {
-            return false;
+        return false;
+    }
+
+    private static IllegalStateException failStatefulCarrierCommit(ChannelHandlerContext context, Throwable throwable) {
+        IllegalStateException failure = throwable instanceof IllegalStateException
+                ? (IllegalStateException) throwable
+                : new IllegalStateException("Stateful transport output was not committed", throwable);
+        ChannelTransportRuntimeGuard.disableTransport("outbound-carrier-commit", failure);
+        if (context != null) {
+            context.close();
         }
-        ChannelTransportOperationTelemetry telemetry = wrappedFrame.telemetry();
-        return telemetry != null
-                && telemetry.exactAdditionCount() == 0
-                && telemetry.templateAdditionCount() == 0
-                && telemetry.exactRemovalCount() == 0
-                && telemetry.templateRemovalCount() == 0;
+        return failure;
     }
 
 
