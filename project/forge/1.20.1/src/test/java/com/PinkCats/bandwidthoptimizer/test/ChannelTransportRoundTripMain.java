@@ -4,11 +4,19 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStateManager;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportAdaptiveBypass;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorithmId;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.KineticChannel;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.ChannelTransportOperationTelemetry;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.KineticStreamingLayer;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.PacketFlow;
+import net.minecraft.network.protocol.game.ServerboundCustomPayloadPacket;
+import net.minecraft.resources.ResourceLocation;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -45,6 +53,7 @@ public final class ChannelTransportRoundTripMain {
         verifyLargeLightBatchRoundTrip();
         verifyManySmallPacketBatchRoundTrip();
         verifyPostWrapBypassDisabled();
+        verifyAdaptiveBypassLearnsAfterSixteenUnprofitableCarriers();
         verifyOversizedBatchRejectedAtEncode();
         verifyOversizedSinglePacketRejectedAtEncode();
         verifyStreamingRejectsMergedCarrierFrames();
@@ -231,6 +240,35 @@ public final class ChannelTransportRoundTripMain {
         var wrappedFrame = ChannelTransportPacketCodec.wrapPacket(senderSession, utf8Bytes("small-carrier"));
         if (ChannelTransportHooks.shouldBypassUnprofitableCarrier(wrappedFrame)) {
             throw new IllegalStateException("Stateful carrier must not be bypassed after wrap.");
+        }
+    }
+
+    // Sixteen bad samples enable only the next pre-wrap bypass.
+    private static void verifyAdaptiveBypassLearnsAfterSixteenUnprofitableCarriers() {
+        byte[] packetBytes = utf8Bytes("tiny");
+        Packet<?> packet = new ServerboundCustomPayloadPacket(
+                new ResourceLocation("watut", "main"),
+                new FriendlyByteBuf(Unpooled.buffer())
+        );
+        var unprofitableFrame = new ChannelTransportPacketCodec.WrappedTransportFrame(
+                ChannelTransportPacketCodec.FrameKind.SINGLE,
+                new byte[32],
+                packetBytes.length,
+                1,
+                32,
+                ChannelTransportOperationTelemetry.passthrough(ChannelTransportAlgorithmId.TDA_SZA, true, true, 32)
+        );
+        for (int index = 0; index < 16; index++) {
+            ChannelTransportAdaptiveBypass.recordCarrierResult(
+                    "PLAY",
+                    PacketFlow.SERVERBOUND,
+                    packet,
+                    packetBytes,
+                    unprofitableFrame
+            );
+        }
+        if (!ChannelTransportAdaptiveBypass.shouldBypassBeforeWrap("PLAY", PacketFlow.SERVERBOUND, packet, packetBytes)) {
+            throw new IllegalStateException("Adaptive bypass should learn after sixteen unprofitable carriers.");
         }
     }
 

@@ -335,6 +335,40 @@ public final class ChannelTransportHooks {
                 return;
             }
 
+            if (!chunkProtocolApplied && ChannelTransportAdaptiveBypass.shouldBypassBeforeWrap(
+                    protocolName,
+                    outboundPacketFlow,
+                    packet,
+                    transportInputPacketBytes
+            )) {
+                ChannelTransportBatchManager.flushOutboundBatchNow(context);
+                out.writerIndex(startIndexInclusive);
+                out.writeBytes(directFallbackPacketBytes);
+                recordCommittedOutboundPacketStream(context, packet, directFallbackPacketBytes);
+                recordDirectPacketTrace(
+                        context,
+                        "adaptive_unprofitable_carrier",
+                        protocolName,
+                        packet,
+                        outboundPacketFlow,
+                        directFallbackPacketBytes
+                );
+                recordOutboundBypassStats(context, protocolName, directFallbackPacketBytes.length, 1);
+                ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
+                        outboundPacketCapture,
+                        directFallbackPacketBytes.length
+                );
+                ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
+                        boundaryPacketTrace,
+                        "DIRECT_PASSTHROUGH",
+                        "DIRECT",
+                        directFallbackPacketBytes.length,
+                        false,
+                        1
+                );
+                return;
+            }
+
             ChannelTransportSession transportSession = ChannelTransportStateManager.getOrCreateSession(context.channel());
             statefulTransportAttempted = true;
             ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame =
@@ -381,6 +415,15 @@ public final class ChannelTransportHooks {
                     false,
                     Math.max(wrappedFrame.originalPacketCount(), 1)
             );
+            if (!chunkProtocolApplied) {
+                ChannelTransportAdaptiveBypass.recordCarrierResult(
+                        protocolName,
+                        outboundPacketFlow,
+                        packet,
+                        transportInputPacketBytes,
+                        wrappedFrame
+                );
+            }
         } catch (Throwable throwable) {
             if (statefulTransportAttempted) {
                 out.writerIndex(startIndexInclusive);
