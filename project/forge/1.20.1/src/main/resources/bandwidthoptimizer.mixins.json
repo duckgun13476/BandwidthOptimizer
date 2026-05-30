@@ -19,7 +19,8 @@
     "minecraft.ServerGamePacketListenerCommandMixin"
   ],
   "client": [
-    "minecraft.ClientPacketListenerChunkHandleMixin"
+    "minecraft.ClientPacketListenerChunkHandleMixin",
+    "watut.WatutPlayerStatusManagerClientMixin"
   ],
   "injectors": {
     "defaultRequire": 1
