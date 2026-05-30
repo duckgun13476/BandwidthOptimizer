@@ -6,10 +6,12 @@ import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.List;
 
 public final class ValkyrienSkiesDynamicStructureCompat {
 
@@ -52,16 +54,13 @@ public final class ValkyrienSkiesDynamicStructureCompat {
             }
             lookupAttempted = true;
             try {
-                Class<?> utilsClass = Class.forName("org.valkyrienskies.mod.common.VSGameUtilsKt");
-                for (Method method : utilsClass.getMethods()) {
-                    if (!Modifier.isStatic(method.getModifiers())
-                            || !"toWorldCoordinates".equals(method.getName())
-                            || method.getParameterCount() != 2
-                            || !Vec3.class.isAssignableFrom(method.getReturnType())) {
-                        continue;
-                    }
-                    Class<?>[] parameterTypes = method.getParameterTypes();
-                    if (parameterTypes[1].isAssignableFrom(Vec3.class)) {
+                Class<?> utilsClass = Class.forName(
+                        "org.valkyrienskies.mod.common.VSGameUtilsKt",
+                        false,
+                        ValkyrienSkiesDynamicStructureCompat.class.getClassLoader());
+                for (Class<?> levelType : List.of(Level.class, ServerLevel.class)) {
+                    Method method = findServerToWorldCoordinatesMethod(utilsClass, levelType);
+                    if (method != null) {
                         toWorldCoordinatesMethod = method;
                         return method;
                     }
@@ -69,6 +68,20 @@ public final class ValkyrienSkiesDynamicStructureCompat {
             } catch (ReflectiveOperationException | LinkageError ignored) {
                 return null;
             }
+            return null;
+        }
+    }
+
+    // Server-safe lookup only.
+    private static Method findServerToWorldCoordinatesMethod(Class<?> utilsClass, Class<?> levelType) throws ReflectiveOperationException {
+        try {
+            Method method = utilsClass.getDeclaredMethod("toWorldCoordinates", levelType, Vec3.class);
+            if (Modifier.isStatic(method.getModifiers()) && Vec3.class.isAssignableFrom(method.getReturnType())) {
+                method.setAccessible(true);
+                return method;
+            }
+            return null;
+        } catch (NoSuchMethodException ignored) {
             return null;
         }
     }
