@@ -118,6 +118,9 @@ tasks.named('compileJava', JavaCompile).configure {
 }
 
 loom {
+    mixin {
+        defaultRefmapName = 'bandwidthoptimizer.refmap.json'
+    }
     runs {
         client {
             client()

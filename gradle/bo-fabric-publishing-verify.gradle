@@ -38,6 +38,20 @@ tasks.register('verifyFabricPublishJarContents') {
                 missing.add('META-INF/jars/zstd-jni-*.jar')
             }
 
+            Set<String> declaredRefmaps = []
+            entries.findAll { it.endsWith('.mixins.json') }.each { mixinConfig ->
+                def entry = zipFile.getEntry(mixinConfig)
+                def json = new groovy.json.JsonSlurper().parse(zipFile.getInputStream(entry))
+                if (json.refmap instanceof String && !json.refmap.isBlank()) {
+                    declaredRefmaps.add(json.refmap)
+                }
+            }
+            declaredRefmaps.each { refmap ->
+                if (!entries.contains(refmap)) {
+                    missing.add(refmap)
+                }
+            }
+
             if (!missing.isEmpty()) {
                 throw new GradleException("Fabric publish artifact is missing required entries: ${missing.join(', ')}")
             }

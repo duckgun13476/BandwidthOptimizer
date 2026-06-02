@@ -104,6 +104,9 @@ sourceSets {
 }
 
 loom {
+    mixin {
+        defaultRefmapName = 'bandwidthoptimizer.refmap.json'
+    }
     runs {
         client {
             client()
