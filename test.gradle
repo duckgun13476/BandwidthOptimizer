@@ -305,6 +305,17 @@ def readRunAllLatencyTargetHost(Project projectRef) {
     return (rawHost == null || rawHost.isEmpty()) ? '127.0.0.1' : rawHost
 }
 
+def readRunAllDirectClientHost(Project projectRef) {
+
+    String rawHost = projectRef.findProperty('boRunAllClientHost')?.toString()?.trim()
+    return (rawHost == null || rawHost.isEmpty()) ? '127.0.0.1' : rawHost
+}
+
+def readRunAllDirectServerPort(Project projectRef) {
+
+    return readRunAllTcpPort(projectRef, 'boRunAllServerPort', 25565)
+}
+
 def readRunAllLatencyListenPort(Project projectRef) {
 
     return readRunAllTcpPort(projectRef, 'boRunAllLatencyListenPort', 25566)
@@ -312,18 +323,21 @@ def readRunAllLatencyListenPort(Project projectRef) {
 
 def readRunAllLatencyTargetPort(Project projectRef) {
 
-    return readRunAllTcpPort(projectRef, 'boRunAllLatencyTargetPort', 25567)
+    int defaultTargetPort = projectRef.hasProperty('boRunAllServerPort')
+            ? readRunAllDirectServerPort(projectRef)
+            : 25567
+    return readRunAllTcpPort(projectRef, 'boRunAllLatencyTargetPort', defaultTargetPort)
 }
 
 def readRunAllServerPort(Project projectRef) {
 
-    return isRunAllLatencyProxyEnabled(projectRef) ? readRunAllLatencyTargetPort(projectRef) : 25565
+    return isRunAllLatencyProxyEnabled(projectRef) ? readRunAllLatencyTargetPort(projectRef) : readRunAllDirectServerPort(projectRef)
 }
 
 def readRunAllClientAddress(Project projectRef) {
 
     if (!isRunAllLatencyProxyEnabled(projectRef)) {
-        return '127.0.0.1:25565'
+        return "${readRunAllDirectClientHost(projectRef)}:${readRunAllDirectServerPort(projectRef)}"
     }
     return "${readRunAllLatencyListenHost(projectRef)}:${readRunAllLatencyListenPort(projectRef)}"
 }
