@@ -16,8 +16,9 @@ public final class NettySpikeProbe {
     private static final String THRESHOLD_MILLIS_PROPERTY = "bandwidthoptimizer.netty.spikeThresholdMillis";
     private static final String WATCHDOG_INTERVAL_MILLIS_PROPERTY = "bandwidthoptimizer.netty.watchdogIntervalMillis";
     private static final String LOG_COOLDOWN_MILLIS_PROPERTY = "bandwidthoptimizer.netty.spikeLogCooldownMillis";
-    private static final boolean DEFAULT_ENABLED = false;
-    private static final long DEFAULT_THRESHOLD_MILLIS = 2_000L;
+    // Low-frequency probe; keep enabled by default and allow a system-property override.
+    private static final boolean DEFAULT_ENABLED = true;
+    private static final long DEFAULT_THRESHOLD_MILLIS = 1_000L;
     private static final long DEFAULT_WATCHDOG_INTERVAL_MILLIS = 500L;
     private static final long DEFAULT_LOG_COOLDOWN_MILLIS = 30_000L;
     private static final boolean ENABLED = readBoolean(ENABLED_PROPERTY, DEFAULT_ENABLED);
@@ -37,7 +38,7 @@ public final class NettySpikeProbe {
         return ENABLED;
     }
 
-    // Starts the per-channel watchdog only when the startup probe flag is enabled.
+    // Starts the per-channel event-loop watchdog.
     public static void ensureWatchdog(ChannelHandlerContext context) {
         if (!ENABLED || context == null || context.channel() == null) {
             return;
@@ -46,7 +47,7 @@ public final class NettySpikeProbe {
         state.ensureWatchdog(context.channel());
     }
 
-    // Marks a Netty operation so a later spike log can name the active BO stage.
+    // Marks the active BO Netty stage for spike attribution.
     public static long beginOperation(ChannelHandlerContext context, String operation, String detail) {
         if (!ENABLED || context == null || context.channel() == null) {
             return 0L;
@@ -57,7 +58,7 @@ public final class NettySpikeProbe {
         return nowNanos;
     }
 
-    // Finishes an operation and emits one slow-operation record above the configured threshold.
+    // Logs slow BO operations above the configured threshold.
     public static void finishOperation(ChannelHandlerContext context, String operation, long startNanos, String detail) {
         if (!ENABLED || context == null || context.channel() == null || startNanos <= 0L) {
             return;
@@ -67,6 +68,7 @@ public final class NettySpikeProbe {
         ProbeState state = getOrCreateState(context.channel());
         state.recordFinish(nowNanos, safeText(operation), safeText(detail), durationMillis);
         if (durationMillis >= THRESHOLD_MILLIS) {
+            state.operationSlowCounter.incrementAndGet();
             state.logSpike(context.channel(), "operation_slow", durationMillis, safeText(operation));
         }
     }
@@ -117,12 +119,17 @@ public final class NettySpikeProbe {
 
         private final String[] recentOperations = new String[RECENT_OPERATION_LIMIT];
         private final AtomicLong operationCounter = new AtomicLong();
+        private final AtomicLong eventLoopDelayCounter = new AtomicLong();
+        private final AtomicLong operationSlowCounter = new AtomicLong();
         private volatile boolean closed;
         private volatile boolean watchdogScheduled;
         private volatile long expectedWatchdogAtNanos;
-        private volatile long lastOperationStartedAtNanos;
-        private volatile String lastOperationName = "<none>";
-        private volatile String lastOperationDetail = "<none>";
+        private volatile long activeOperationStartedAtNanos;
+        private volatile String activeOperationName = "<none>";
+        private volatile String activeOperationDetail = "<none>";
+        private volatile long lastCompletedOperationAtMillis;
+        private volatile String lastCompletedOperationName = "<none>";
+        private volatile String lastCompletedOperationDetail = "<none>";
         private volatile long lastSpikeLoggedAtMillis;
         private int recentOperationCursor;
 
@@ -151,6 +158,7 @@ public final class NettySpikeProbe {
             long nowNanos = System.nanoTime();
             long delayMillis = TimeUnit.NANOSECONDS.toMillis(Math.max(nowNanos - this.expectedWatchdogAtNanos, 0L));
             if (delayMillis >= THRESHOLD_MILLIS) {
+                this.eventLoopDelayCounter.incrementAndGet();
                 logSpike(channel, "event_loop_delay", delayMillis, "watchdog");
             }
             scheduleNextWatchdog(channel);
@@ -158,17 +166,23 @@ public final class NettySpikeProbe {
 
         private void recordStart(long nowNanos, String operation, String detail) {
             this.operationCounter.incrementAndGet();
-            this.lastOperationStartedAtNanos = nowNanos;
-            this.lastOperationName = operation;
-            this.lastOperationDetail = detail;
+            this.activeOperationStartedAtNanos = nowNanos;
+            this.activeOperationName = operation;
+            this.activeOperationDetail = detail;
         }
 
         private void recordFinish(long nowNanos, String operation, String detail, long durationMillis) {
             if (durationMillis >= 50L) {
                 addRecentOperation(nowNanos, operation, detail, durationMillis);
             }
-            this.lastOperationName = operation + ":idle";
-            this.lastOperationDetail = detail;
+            this.lastCompletedOperationName = operation;
+            this.lastCompletedOperationDetail = detail;
+            this.lastCompletedOperationAtMillis = System.currentTimeMillis();
+            if (operation.equals(this.activeOperationName)) {
+                this.activeOperationStartedAtNanos = 0L;
+                this.activeOperationName = "<none>";
+                this.activeOperationDetail = "<none>";
+            }
         }
 
         private synchronized void addRecentOperation(long nowNanos, String operation, String detail, long durationMillis) {
@@ -187,21 +201,31 @@ public final class NettySpikeProbe {
                 return;
             }
             this.lastSpikeLoggedAtMillis = nowMillis;
-            long activeForMillis = this.lastOperationStartedAtNanos <= 0L
+            boolean boActive = this.activeOperationStartedAtNanos > 0L;
+            long activeForMillis = !boActive
                     ? -1L
-                    : TimeUnit.NANOSECONDS.toMillis(Math.max(System.nanoTime() - this.lastOperationStartedAtNanos, 0L));
+                    : TimeUnit.NANOSECONDS.toMillis(Math.max(System.nanoTime() - this.activeOperationStartedAtNanos, 0L));
+            long lastCompletedAgoMillis = this.lastCompletedOperationAtMillis <= 0L
+                    ? -1L
+                    : Math.max(nowMillis - this.lastCompletedOperationAtMillis, 0L);
             Bandwidthoptimizer.LOGGER.warn(
-                    "[NettySpike] type={}, delayMs={}, thresholdMs={}, channel={}, eventLoop={}, operation={}, activeOperation={}, activeForMs={}, detail={}, totalOperations={}, recent={}",
+                    "[NettySpike] type={}, boActive={}, delayMs={}, thresholdMs={}, channel={}, eventLoop={}, operation={}, activeOperation={}, activeForMs={}, activeDetail={}, lastCompletedOperation={}, lastCompletedAgoMs={}, lastCompletedDetail={}, totalOperations={}, eventLoopDelays={}, operationSlows={}, recent={}",
                     type,
+                    boActive,
                     delayMillis,
                     THRESHOLD_MILLIS,
                     ChannelIdentity.longText(channel),
                     channel == null || channel.eventLoop() == null ? "<unknown>" : channel.eventLoop().toString(),
                     operation,
-                    this.lastOperationName,
+                    this.activeOperationName,
                     activeForMillis,
-                    this.lastOperationDetail,
+                    this.activeOperationDetail,
+                    this.lastCompletedOperationName,
+                    lastCompletedAgoMillis,
+                    this.lastCompletedOperationDetail,
                     this.operationCounter.get(),
+                    this.eventLoopDelayCounter.get(),
+                    this.operationSlowCounter.get(),
                     recentOperationsText()
             );
         }
