@@ -1,3 +1,15 @@
+#### v2.8.14.29-release
+
+Important fixes:
+1. Fixed Valkyrien server-side crash mistake.
+2. Added WATUT dynamic GUI compatibility throttling to reduce noisy GUI status traffic.
+3. Fixed stateful transport carrier commit handling and added adaptive pre-wrap bypass for oversized or risky payloads.
+
+Other fixes:
+1. Fixed Fabric refmap publishing for release jars.
+2. Added default low-overhead Netty spike diagnostics for overloaded network paths.
+3. Added custom runAll test ports for cleaner regression validation.
+
 #### v2.8.11.29-release
 
 Important fixes:
