@@ -1,7 +1,7 @@
 #### v2.8.14.29-release
 
 Important fixes:
-1. Fixed Valkyrien server-side crash mistake.
+1. Fixed Valkyrien server-side inject crash mistake.
 2. Added WATUT dynamic GUI compatibility throttling to reduce noisy GUI status traffic.
 3. Fixed stateful transport carrier commit handling and added adaptive pre-wrap bypass for oversized or risky payloads.
 

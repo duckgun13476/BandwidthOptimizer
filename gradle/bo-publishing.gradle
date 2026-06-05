@@ -1,3 +1,11 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+
+import java.net.HttpURLConnection
+import java.net.URI
+import java.net.URLEncoder
+import java.security.MessageDigest
+
 // BandwidthOptimizer publish mission
 
 def boResolvePublishingRepositoryRoot = {
@@ -51,6 +59,33 @@ ext.boReadStringListProperty = { String name, List<String> defaultValue = [] ->
             .split(',')
             .collect { it.trim() }
             .findAll { !it.isEmpty() }
+}
+
+ext.boReadBooleanProperty = { String name, boolean defaultValue = false ->
+    def value = project.findProperty(name)
+    if (value == null) {
+        return defaultValue
+    }
+    String normalized = value.toString().trim().toLowerCase(Locale.ROOT)
+    if (normalized in ['1', 'true', 'yes', 'y', 'on']) {
+        return true
+    }
+    if (normalized in ['0', 'false', 'no', 'n', 'off']) {
+        return false
+    }
+    return defaultValue
+}
+
+ext.boPublishRemoteCheckEnabled = {
+    return !boReadBooleanProperty('bo_publish_remote_check_disabled', false)
+}
+
+ext.boPublishCurseForgeRemoteCheckEnabled = {
+    return boPublishRemoteCheckEnabled() && !boReadBooleanProperty('bo_publish_curseforge_remote_check_disabled', false)
+}
+
+ext.boPublishModrinthRemoteCheckEnabled = {
+    return boPublishRemoteCheckEnabled() && !boReadBooleanProperty('bo_publish_modrinth_remote_check_disabled', false)
 }
 
 ext.boReadPublishArtifactTaskName = {
@@ -130,6 +165,299 @@ ext.boVerifyPublishArtifactFile = {
     return artifactFile
 }
 
+ext.boReadPublishLedgerFile = {
+    return new File(boPublishingRepositoryRootDir, 'update/publish-ledger.json')
+}
+
+ext.boReadPublishLedgerEntries = {
+    File ledgerFile = boReadPublishLedgerFile()
+    if (!ledgerFile.isFile()) {
+        return []
+    }
+    def parsed = new JsonSlurper().parse(ledgerFile, 'UTF-8')
+    if (parsed instanceof Map && parsed.entries instanceof Collection) {
+        return parsed.entries.findAll { it instanceof Map }.collect { it as Map }
+    }
+    if (parsed instanceof Collection) {
+        return parsed.findAll { it instanceof Map }.collect { it as Map }
+    }
+    return []
+}
+
+ext.boSha256Hex = { File file ->
+    MessageDigest digest = MessageDigest.getInstance('SHA-256')
+    file.withInputStream { InputStream input ->
+        byte[] buffer = new byte[8192]
+        int read
+        while ((read = input.read(buffer)) > 0) {
+            digest.update(buffer, 0, read)
+        }
+    }
+    return digest.digest().collect { String.format('%02x', it & 0xff) }.join('')
+}
+
+ext.boWritePublishLedgerSuccessEntry = { String platform, Map extra = [:] ->
+    File ledgerFile = boReadPublishLedgerFile()
+    File artifactFile = boReadPublishArtifactFile()
+    Map ledger = [
+            schemaVersion: 1,
+            entries      : []
+    ]
+    if (ledgerFile.isFile()) {
+        def parsed = new JsonSlurper().parse(ledgerFile, 'UTF-8')
+        if (parsed instanceof Map) {
+            ledger.putAll(parsed as Map)
+            if (!(ledger.entries instanceof Collection)) {
+                ledger.entries = []
+            }
+        } else if (parsed instanceof Collection) {
+            ledger.entries = parsed
+        }
+    }
+
+    Map entry = [
+            platform        : platform,
+            projectId       : curseforge_id.toString(),
+            minecraftVersion: minecraft_version.toString(),
+            loader          : boReadPublishLoaderId(),
+            versionId       : boReadPublishVersionId(),
+            displayName     : boReadPublishDisplayName(),
+            artifactFileName: artifactFile.name,
+            artifactSha256  : artifactFile.isFile() ? boSha256Hex(artifactFile) : null,
+            status          : 'success',
+            source          : 'gradle-publish-success',
+            confirmedAt     : new Date().format("yyyy-MM-dd'T'HH:mm:ssXXX")
+    ] + extra.findAll { it.value != null }
+
+    List<Map> retainedEntries = (ledger.entries as Collection)
+            .findAll { it instanceof Map }
+            .collect { it as Map }
+            .findAll { Map existing ->
+                !(existing.platform?.toString() == entry.platform?.toString()
+                        && existing.projectId?.toString() == entry.projectId?.toString()
+                        && existing.minecraftVersion?.toString() == entry.minecraftVersion?.toString()
+                        && existing.loader?.toString() == entry.loader?.toString()
+                        && existing.versionId?.toString() == entry.versionId?.toString()
+                        && existing.displayName?.toString() == entry.displayName?.toString())
+            }
+    retainedEntries.add(entry)
+    ledger.entries = retainedEntries
+
+    ledgerFile.parentFile.mkdirs()
+    ledgerFile.setText(JsonOutput.prettyPrint(JsonOutput.toJson(ledger)) + System.lineSeparator(), 'UTF-8')
+    println "Recorded ${platform} publish success in ${ledgerFile.absolutePath}: version=${entry.versionId} loader=${entry.loader}"
+}
+
+ext.boPublishLedgerEntryMatchesCurrentTarget = { Map entry, String platform ->
+    String artifactFileName = boReadPublishArtifactFile().name
+    return entry.status?.toString() == 'success'
+            && entry.platform?.toString() == platform
+            && entry.projectId?.toString() == curseforge_id.toString()
+            && entry.minecraftVersion?.toString() == minecraft_version.toString()
+            && entry.loader?.toString() == boReadPublishLoaderId()
+            && entry.versionId?.toString() == boReadPublishVersionId()
+            && entry.displayName?.toString() == boReadPublishDisplayName()
+            && (!entry.containsKey('artifactFileName') || entry.artifactFileName?.toString() == artifactFileName)
+}
+
+ext.boFindPublishLedgerSuccessEntry = { String platform ->
+    return boReadPublishLedgerEntries().find { Map entry ->
+        boPublishLedgerEntryMatchesCurrentTarget(entry, platform)
+    }
+}
+
+ext.boPublishRemoteStatus = [:]
+
+ext.boPublishUserAgent = {
+    return project.findProperty('bo_publish_user_agent')?.toString()?.trim() ?: 'duckgun13476/BandwidthOptimizer-publish-check'
+}
+
+ext.boPublishHttpTimeoutMillis = {
+    return (project.findProperty('bo_publish_remote_check_timeout_ms')?.toString()?.trim() ?: '20000') as int
+}
+
+ext.boUrlEncode = { String value ->
+    return URLEncoder.encode(value, 'UTF-8')
+}
+
+ext.boHttpGetJson = { String url, Map<String, String> headers = [:], boolean notFoundAsNull = false ->
+    HttpURLConnection connection = (HttpURLConnection) URI.create(url).toURL().openConnection()
+    connection.setRequestMethod('GET')
+    connection.setConnectTimeout(boPublishHttpTimeoutMillis())
+    connection.setReadTimeout(boPublishHttpTimeoutMillis())
+    connection.setRequestProperty('Accept', 'application/json')
+    connection.setRequestProperty('User-Agent', boPublishUserAgent())
+    headers.each { String key, String value ->
+        if (value != null && !value.trim().isEmpty()) {
+            connection.setRequestProperty(key, value)
+        }
+    }
+
+    int responseCode = connection.getResponseCode()
+    InputStream stream = responseCode >= 400 ? connection.getErrorStream() : connection.getInputStream()
+    String body = stream == null ? '' : stream.getText('UTF-8')
+    if (responseCode == 404 && notFoundAsNull) {
+        return null
+    }
+    if (responseCode < 200 || responseCode >= 300) {
+        String bodySummary = body == null ? '' : body.replaceAll(/\s+/, ' ').take(240)
+        throw new GradleException("Publishing remote check failed for ${project.path}: GET ${url} returned HTTP ${responseCode}${bodySummary.isEmpty() ? '' : " (${bodySummary})"}")
+    }
+    return body.trim().isEmpty() ? null : new JsonSlurper().parseText(body)
+}
+
+ext.boReadCurseForgeApiKey = {
+    def properties = boReadPublishingProperties()
+    return properties?.getProperty('CF_CORE_API_KEY')
+            ?: properties?.getProperty('CF_API_KEY')
+            ?: properties?.getProperty('CURSEFORGE_API_KEY')
+            ?: properties?.getProperty('CF_TOKEN')
+}
+
+ext.boReadCurseForgeApiKeySource = {
+    def properties = boReadPublishingProperties()
+    if (properties?.getProperty('CF_CORE_API_KEY') != null) {
+        return 'CF_CORE_API_KEY'
+    }
+    if (properties?.getProperty('CF_API_KEY') != null) {
+        return 'CF_API_KEY'
+    }
+    if (properties?.getProperty('CURSEFORGE_API_KEY') != null) {
+        return 'CURSEFORGE_API_KEY'
+    }
+    if (properties?.getProperty('CF_TOKEN') != null) {
+        return 'CF_TOKEN fallback'
+    }
+    return null
+}
+
+ext.boReadCurseForgeApiHeaders = {
+    String apiKey = boReadCurseForgeApiKey()
+    if (apiKey == null || apiKey.trim().isEmpty()) {
+        return [:]
+    }
+    String trimmedKey = apiKey.trim()
+    if (trimmedKey.startsWith('cfc_pat_')) {
+        return ['Authorization': "Key ${trimmedKey}"]
+    }
+    return ['x-api-key': trimmedKey]
+}
+
+ext.boReadCurseForgeModLoaderTypeIds = {
+    Map<String, Integer> loaderTypeIds = [
+            'forge'   : 1,
+            'fabric'  : 4,
+            'quilt'   : 5,
+            'neoforge': 6
+    ]
+    return boReadPublishCurseForgeLoaders()
+            .collect { loaderName -> loaderTypeIds[loaderName.toString().trim().toLowerCase(Locale.ROOT)] }
+            .findAll { it != null }
+            .unique()
+}
+
+ext.boCurseForgeFileMatchesPublishTarget = { Map file ->
+    String expectedDisplayName = boReadPublishDisplayName()
+    String expectedFileName = boReadPublishArtifactFile().name
+    def gameVersions = file.gameVersions instanceof Collection ? file.gameVersions.collect { it.toString() } : []
+    return (file.displayName?.toString() == expectedDisplayName || file.fileName?.toString() == expectedFileName)
+            && gameVersions.contains(minecraft_version.toString())
+}
+
+ext.boCheckCurseForgePublished = {
+    if (boReadBooleanProperty('bo_publish_force', false)) {
+        boPublishRemoteStatus.curseforgeExists = false
+        boPublishRemoteStatus.curseforgeLedgerIgnored = true
+        return false
+    }
+
+    Map ledgerEntry = boFindPublishLedgerSuccessEntry('curseforge') as Map
+    if (ledgerEntry != null) {
+        boPublishRemoteStatus.curseforgeExists = true
+        boPublishRemoteStatus.curseforgeLedgerMatch = ledgerEntry
+        return true
+    }
+
+    if (!boPublishCurseForgeRemoteCheckEnabled()) {
+        boPublishRemoteStatus.curseforgeExists = false
+        boPublishRemoteStatus.curseforgeCheckDisabled = true
+        return false
+    }
+
+    String apiKey = boReadCurseForgeApiKey()
+    if (apiKey == null || apiKey.trim().isEmpty()) {
+        boPublishRemoteStatus.curseforgeExists = false
+        boPublishRemoteStatus.curseforgeRemoteUnknown = true
+        boPublishRemoteStatus.curseforgeRemoteCheckError = "missing CurseForge Core API key"
+        return false
+    }
+
+    String baseUrl = "https://api.curseforge.com/v1/mods/${boUrlEncode(curseforge_id.toString())}/files"
+    List<Integer> loaderTypeIds = boReadCurseForgeModLoaderTypeIds()
+    if (loaderTypeIds.isEmpty()) {
+        throw new GradleException("No CurseForge modLoaderType mapping for ${project.path}: ${boReadPublishCurseForgeLoaders()}")
+    }
+
+    List<Map> matches = []
+    try {
+        loaderTypeIds.each { Integer loaderTypeId ->
+            String query = [
+                    "gameVersion=${boUrlEncode(minecraft_version.toString())}",
+                    "modLoaderType=${loaderTypeId}",
+                    'pageSize=50'
+            ].join('&')
+            def response = boHttpGetJson("${baseUrl}?${query}", boReadCurseForgeApiHeaders(), false)
+            def files = response?.data instanceof Collection ? response.data : []
+            files.findAll { file -> file instanceof Map && boCurseForgeFileMatchesPublishTarget(file as Map) }
+                    .each { file -> matches.add(file as Map) }
+        }
+    } catch (Throwable error) {
+        boPublishRemoteStatus.curseforgeExists = false
+        boPublishRemoteStatus.curseforgeRemoteUnknown = true
+        boPublishRemoteStatus.curseforgeRemoteCheckError = error.message
+        return false
+    }
+
+    boolean exists = !matches.isEmpty()
+    boPublishRemoteStatus.curseforgeExists = exists
+    boPublishRemoteStatus.curseforgeMatches = matches
+    return exists
+}
+
+ext.boCheckModrinthPublished = {
+    if (!boPublishModrinthRemoteCheckEnabled()) {
+        boPublishRemoteStatus.modrinthExists = false
+        boPublishRemoteStatus.modrinthCheckDisabled = true
+        return false
+    }
+    if (boReadBooleanProperty('bo_publish_force', false)) {
+        boPublishRemoteStatus.modrinthExists = false
+        return false
+    }
+
+    String versionId = boReadPublishVersionId()
+    String url = "https://api.modrinth.com/v2/project/${boUrlEncode(modrinth_id.toString())}/version/${boUrlEncode(versionId)}"
+    Map<String, String> headers = [:]
+    String token = boReadPublishingProperties()?.getProperty('MODRINTH_TOKEN')
+    if (token != null && !token.trim().isEmpty()) {
+        headers['Authorization'] = token
+    }
+
+    def version = boHttpGetJson(url, headers, true)
+    boolean exists = false
+    if (version instanceof Map) {
+        List<String> loaders = version.loaders instanceof Collection ? version.loaders.collect { it.toString() } : []
+        List<String> gameVersions = version.game_versions instanceof Collection ? version.game_versions.collect { it.toString() } : []
+        exists = version.version_number?.toString() == versionId
+                && gameVersions.contains(minecraft_version.toString())
+                && !Collections.disjoint(loaders, boReadPublishModrinthLoaders())
+    }
+
+    boPublishRemoteStatus.modrinthExists = exists
+    boPublishRemoteStatus.modrinthMatch = exists ? version : null
+    return exists
+}
+
 def appliedCurseForgePlugin = project.plugins.find { plugin ->
     plugin != null && plugin.getClass().getName() == 'net.darkhax.curseforgegradle.CurseForgeGradlePlugin'
 }
@@ -164,11 +492,60 @@ tasks.register('PublishInfo') {
         def properties = boReadPublishingProperties()
         if (properties != null) {
             println "CF_TOKEN: ${properties.getProperty('CF_TOKEN') == null ? 'missing' : 'present'}"
+            println "CurseForge Core API key source: ${boReadCurseForgeApiKeySource() ?: 'missing'}"
             println "MODRINTH_TOKEN: ${properties.getProperty('MODRINTH_TOKEN') == null ? 'missing' : 'present'}"
         } else {
             println "api.properties not exist"
         }
     }
+}
+
+tasks.register('checkCurseForgePublishStatus') {
+    group = 'Publishing'
+    description = 'Checks CurseForge for an existing file matching this publish target.'
+
+    doLast {
+        boolean exists = boCheckCurseForgePublished()
+        if (boPublishRemoteStatus.curseforgeLedgerIgnored) {
+            println "CurseForge publish ledger ignored for ${project.path} because -Pbo_publish_force=true was set."
+        } else if (boPublishRemoteStatus.curseforgeLedgerMatch) {
+            def match = boPublishRemoteStatus.curseforgeLedgerMatch
+            println "CurseForge local ledger has successful upload for ${project.path}; skipping upload. version=${match.versionId} loader=${match.loader} source=${match.source ?: 'ledger'}"
+        } else if (boPublishRemoteStatus.curseforgeCheckDisabled) {
+            println "CurseForge remote publish check disabled for ${project.path}; no successful local ledger entry found, so upload will be attempted."
+        } else if (boPublishRemoteStatus.curseforgeRemoteUnknown) {
+            println "CurseForge remote publish check is unavailable for ${project.path}; no successful local ledger entry found, so upload will be attempted. reason=${boPublishRemoteStatus.curseforgeRemoteCheckError ?: 'unknown'}"
+        } else if (exists) {
+            def match = (boPublishRemoteStatus.curseforgeMatches ?: [[:]])[0]
+            println "CurseForge already has ${project.path} target; skipping upload if requested. id=${match.id ?: 'unknown'} displayName=${match.displayName ?: 'unknown'} fileName=${match.fileName ?: 'unknown'} fileStatus=${match.fileStatus ?: 'unknown'}"
+        } else {
+            println "CurseForge does not have ${project.path} target: displayName=${boReadPublishDisplayName()} fileName=${boReadPublishArtifactFile().name}"
+        }
+    }
+}
+
+tasks.register('checkModrinthPublishStatus') {
+    group = 'Publishing'
+    description = 'Checks Modrinth for an existing version matching this publish target.'
+
+    doLast {
+        boolean exists = boCheckModrinthPublished()
+        if (boPublishRemoteStatus.modrinthCheckDisabled) {
+            println "Modrinth remote publish check disabled for ${project.path}; upload task will not be skipped by remote status."
+        } else if (exists) {
+            def match = boPublishRemoteStatus.modrinthMatch ?: [:]
+            println "Modrinth already has ${project.path} target; skipping upload if requested. id=${match.id ?: 'unknown'} version=${match.version_number ?: boReadPublishVersionId()} status=${match.status ?: 'unknown'}"
+        } else {
+            println "Modrinth does not have ${project.path} target: version=${boReadPublishVersionId()}"
+        }
+    }
+}
+
+tasks.register('checkPublishRemoteStatus') {
+    group = 'Publishing'
+    description = 'Checks remote publishing platforms for existing targets before upload.'
+    dependsOn 'checkCurseForgePublishStatus'
+    dependsOn 'checkModrinthPublishStatus'
 }
 
 tasks.register('publishInfo') {
@@ -180,6 +557,7 @@ tasks.register('publishInfo') {
 tasks.register('publishAll') {
     dependsOn 'publishCurseForge'
     dependsOn 'publishMods'
+    dependsOn 'checkPublishRemoteStatus'
     dependsOn 'verifyPublishArtifact'
     group = 'Publishing'
 }
@@ -216,9 +594,21 @@ tasks.register('verifyPublishArtifact') {
 tasks.register('publishCurseForge', curseForgeTaskClass) {
     dependsOn boReadPublishArtifactTaskName()
     dependsOn 'verifyPublishArtifact'
+    dependsOn 'checkCurseForgePublishStatus'
 
     def properties = boReadPublishingProperties()
     apiToken = properties?.getProperty('CF_TOKEN')
+
+    onlyIf {
+        boolean exists = boPublishRemoteStatus.containsKey('curseforgeExists')
+                ? (boPublishRemoteStatus.curseforgeExists as boolean)
+                : boCheckCurseForgePublished()
+        if (exists) {
+            println "Skipping CurseForge upload for ${project.path}: successful local ledger or remote target already exists. Use -Pbo_publish_force=true to upload anyway."
+            return false
+        }
+        return true
+    }
 
     def mainFile = upload(curseforge_id, boReadPublishArtifactFile())
     mainFile.changelog = boReadPrimaryChangelog()
@@ -236,6 +626,12 @@ tasks.register('publishCurseForge', curseForgeTaskClass) {
     mainFile.displayName = boReadPublishDisplayName()
     mainFile.releaseType = publish_version
     disableVersionDetection()
+
+    doLast {
+        boWritePublishLedgerSuccessEntry('curseforge', [
+                fileId: mainFile.hasProperty('curseFileId') ? mainFile.curseFileId : null
+        ])
+    }
 }
 
 publishMods {
@@ -270,4 +666,16 @@ publishMods {
 tasks.matching { it.name in ['publishMods', 'publishModrinth'] }.configureEach {
     dependsOn boReadPublishArtifactTaskName()
     dependsOn 'verifyPublishArtifact'
+    dependsOn 'checkModrinthPublishStatus'
+
+    onlyIf {
+        boolean exists = boPublishRemoteStatus.containsKey('modrinthExists')
+                ? (boPublishRemoteStatus.modrinthExists as boolean)
+                : boCheckModrinthPublished()
+        if (exists) {
+            println "Skipping Modrinth upload for ${project.path}: remote target already exists. Use -Pbo_publish_force=true to upload anyway."
+            return false
+        }
+        return true
+    }
 }

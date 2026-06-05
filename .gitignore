@@ -24,3 +24,4 @@ logs
 /api.properties
 /COMPAT/
 /tools/
+/update/publish-ledger.json
