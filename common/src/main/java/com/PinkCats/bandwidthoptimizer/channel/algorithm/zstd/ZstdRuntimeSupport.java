@@ -26,17 +26,17 @@ public final class ZstdRuntimeSupport {
             );
         }
 
-        String configured = System.getProperty(TEMP_FOLDER_PROPERTY);
-        if (configured != null && !configured.isBlank()) {
-            Bandwidthoptimizer.LOGGER.info("Using preconfigured zstd native temp folder: {}", configured);
-            return;
-        }
-
         Path tempFolder = ZstdNativeTempFolderCompat.nativeTempFolder();
         try {
             Files.createDirectories(tempFolder);
-            System.setProperty(TEMP_FOLDER_PROPERTY, tempFolder.toAbsolutePath().toString());
-            Bandwidthoptimizer.LOGGER.info("Configured zstd native temp folder: {}", tempFolder.toAbsolutePath());
+            String configured = System.getProperty(TEMP_FOLDER_PROPERTY);
+            if (configured != null && !configured.isBlank()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "Preserving preconfigured zstd native temp folder: {}",
+                        configured
+                );
+            }
+            Bandwidthoptimizer.LOGGER.info("Prepared BandwidthOptimizer zstd native folder: {}", tempFolder.toAbsolutePath());
         } catch (IOException exception) {
             Bandwidthoptimizer.LOGGER.warn(
                     "Failed to create zstd native temp folder at {}, runtime may fall back to non-zstd algorithm.",

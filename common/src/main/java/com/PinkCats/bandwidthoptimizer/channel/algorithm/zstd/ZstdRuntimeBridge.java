@@ -60,12 +60,12 @@ final class ZstdRuntimeBridge {
         }
 
         try {
-            Bindings bindings = bind(createEmbeddedClassLoader(false));
+            Bindings bindings = bindEmbedded(false);
             cleanupDriversAfterPrimarySuccess();
             return bindings;
         } catch (Throwable primaryEmbeddedFailure) {
             try {
-                return bind(createEmbeddedClassLoader(true));
+                return bindEmbedded(true);
             } catch (Throwable backupEmbeddedFailure) {
                 primaryEmbeddedFailure.addSuppressed(backupEmbeddedFailure);
                 Throwable throwable = primaryEmbeddedFailure;
@@ -112,12 +112,27 @@ final class ZstdRuntimeBridge {
         );
     }
 
-    private static ClassLoader createEmbeddedClassLoader(boolean backupDriver) throws IOException {
-        ClassLoader sourceClassLoader = ZstdRuntimeBridge.class.getClassLoader();
-        Path driverDirectory = backupDriver ? backupDriverDirectory() : configuredTempFolder();
-        if (backupDriver) {
-            System.setProperty(ZSTD_TEMP_FOLDER_PROPERTY, driverDirectory.toAbsolutePath().toString());
+    private static Bindings bindEmbedded(boolean backupDriver) throws IOException, ReflectiveOperationException {
+        Path driverDirectory = backupDriver ? backupDriverDirectory() : BandwidthOptimizerOutputPaths.nativeDriveDirectory();
+        String previousTempFolder = System.getProperty(ZSTD_TEMP_FOLDER_PROPERTY);
+        System.setProperty(ZSTD_TEMP_FOLDER_PROPERTY, driverDirectory.toAbsolutePath().toString());
+        try {
+            return bind(createEmbeddedClassLoader(driverDirectory, backupDriver));
+        } finally {
+            restoreZstdTempFolder(previousTempFolder);
         }
+    }
+
+    private static void restoreZstdTempFolder(String previousTempFolder) {
+        if (previousTempFolder == null) {
+            System.clearProperty(ZSTD_TEMP_FOLDER_PROPERTY);
+            return;
+        }
+        System.setProperty(ZSTD_TEMP_FOLDER_PROPERTY, previousTempFolder);
+    }
+
+    private static ClassLoader createEmbeddedClassLoader(Path driverDirectory, boolean backupDriver) throws IOException {
+        ClassLoader sourceClassLoader = ZstdRuntimeBridge.class.getClassLoader();
         Path embeddedJarPath = writeEmbeddedJar(sourceClassLoader, driverDirectory, backupDriver);
         URL embeddedJarUrl = embeddedJarPath.toUri().toURL();
         return new URLClassLoader(new URL[]{embeddedJarUrl}, ClassLoader.getPlatformClassLoader());
@@ -156,13 +171,6 @@ final class ZstdRuntimeBridge {
         return driverDirectory.resolve(EMBEDDED_LIBS_DIRECTORY).resolve(fileName);
     }
 
-    private static Path configuredTempFolder() {
-        String configuredTempFolder = System.getProperty(ZSTD_TEMP_FOLDER_PROPERTY);
-        return configuredTempFolder == null || configuredTempFolder.isBlank()
-                ? BandwidthOptimizerOutputPaths.nativeDriveDirectory()
-                : Path.of(configuredTempFolder);
-    }
-
     // 主驱动目录被旧进程占用时，退到独立 backup 目录，让 jar 与 native dll 都从新路径加载。
     private static Path backupDriverDirectory() throws IOException {
         Path backupRoot = BandwidthOptimizerOutputPaths.nativeDriveDirectory().resolve(DRIVER_BACKUP_DIRECTORY);
@@ -183,7 +191,7 @@ final class ZstdRuntimeBridge {
 
     // 主驱动目录可用时，清理旧的 zstd native dll/so/dylib；当前被加载的文件删除失败会自动保留。
     private static void cleanupPrimaryNativeDrivers() {
-        Path driverDirectory = configuredTempFolder();
+        Path driverDirectory = BandwidthOptimizerOutputPaths.nativeDriveDirectory();
         if (!Files.isDirectory(driverDirectory)) {
             return;
         }
@@ -208,7 +216,7 @@ final class ZstdRuntimeBridge {
             return false;
         }
         String fileName = path.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
-        return fileName.matches("libzstd-jni(_dh)?-1\\.5\\.7-\\d+\\.(dll|so|dylib)");
+        return fileName.matches("libzstd-jni-1\\.5\\.7-\\d+\\.(dll|so|dylib)");
     }
 
     private static boolean isEmbeddedZstdJarFile(Path path) {
