@@ -169,12 +169,20 @@ ext.boReadPublishLedgerFile = {
     return new File(boPublishingRepositoryRootDir, 'update/publish-ledger.json')
 }
 
+ext.boReadJsonFile = { File jsonFile ->
+    String text = jsonFile.getText('UTF-8')
+    if (!text.isEmpty() && text.charAt(0) == '\uFEFF' as char) {
+        text = text.substring(1)
+    }
+    return new JsonSlurper().parseText(text)
+}
+
 ext.boReadPublishLedgerEntries = {
     File ledgerFile = boReadPublishLedgerFile()
     if (!ledgerFile.isFile()) {
         return []
     }
-    def parsed = new JsonSlurper().parse(ledgerFile, 'UTF-8')
+    def parsed = boReadJsonFile(ledgerFile)
     if (parsed instanceof Map && parsed.entries instanceof Collection) {
         return parsed.entries.findAll { it instanceof Map }.collect { it as Map }
     }
@@ -204,7 +212,7 @@ ext.boWritePublishLedgerSuccessEntry = { String platform, Map extra = [:] ->
             entries      : []
     ]
     if (ledgerFile.isFile()) {
-        def parsed = new JsonSlurper().parse(ledgerFile, 'UTF-8')
+        def parsed = boReadJsonFile(ledgerFile)
         if (parsed instanceof Map) {
             ledger.putAll(parsed as Map)
             if (!(ledger.entries instanceof Collection)) {
