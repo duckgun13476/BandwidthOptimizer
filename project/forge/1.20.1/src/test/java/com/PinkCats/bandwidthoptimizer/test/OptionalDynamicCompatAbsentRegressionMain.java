@@ -42,15 +42,35 @@ public final class OptionalDynamicCompatAbsentRegressionMain {
                 "cart_assembler",
                 "contraption_controls"
         }) {
-            require(!shouldGateCreateBlockEntity(dynamicController, false),
-                    "Create dynamic structure controllers should bypass normal delayed gate: " + dynamicController);
-            require(!shouldGateCreateBlockEntity(dynamicController, true),
-                    "Create dynamic structure controllers should bypass bootstrap delayed gate: " + dynamicController);
+            require(shouldGateCreateBlockEntity(dynamicController, false),
+                    "Create dynamic structure controllers must use the normal delayed gate: " + dynamicController);
+            require(shouldGateCreateBlockEntity(dynamicController, true),
+                    "Create dynamic structure controllers must use the bootstrap delayed gate: " + dynamicController);
         }
         require(shouldGateCreateBlockEntity("belt", false),
                 "Create mechanical block entities should still use the delayed gate");
         require(shouldGateCreateBlockEntity("belt", true),
                 "Create mechanical block entities should still use the bootstrap gate");
+        require(!shouldGateCreateBlockEntity("display_link", false),
+                "Non-mechanical Create block entities should bypass the normal delayed gate");
+        require(shouldGateCreateBlockEntity("display_link", true),
+                "Non-mechanical Create block entities should still use the bootstrap gate");
+        require(isAnyPointInImmediateView(
+                        new Vec3(0.0D, 0.0D, 0.0D),
+                        new Vec3(0.0D, 0.0D, 1.0D),
+                        new Vec3[] {new Vec3(-20.0D, 0.0D, 20.0D), new Vec3(0.0D, 0.0D, 20.0D)},
+                        0.0D,
+                        true,
+                        0.99D),
+                "Create visibility gate should release when any block-entity corner enters view");
+        require(!isAnyPointInImmediateView(
+                        new Vec3(0.0D, 0.0D, 0.0D),
+                        new Vec3(0.0D, 0.0D, 1.0D),
+                        new Vec3[] {new Vec3(0.0D, 0.0D, 20.0D)},
+                        0.0D,
+                        false,
+                        0.99D),
+                "Create bootstrap gate should not release from look direction alone");
 
         System.out.println("Optional dynamic compat absent regression matched");
     }
@@ -73,6 +93,28 @@ public final class OptionalDynamicCompatAbsentRegressionMain {
         ResourceLocation typeKey = ResourceLocation.tryParse("create:" + path);
         require(typeKey != null, "Create block entity type key should parse: " + path);
         return (Boolean) method.invoke(null, typeKey, chunkBootstrapActive);
+    }
+
+    private static boolean isAnyPointInImmediateView(
+            Vec3 eyePosition,
+            Vec3 lookAngle,
+            Vec3[] points,
+            double nearDistance,
+            boolean allowLookDirection,
+            double dotThreshold
+    ) throws Exception {
+        Class<?> targetClass = Class.forName("com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate");
+        Method method = targetClass.getDeclaredMethod(
+                "isAnyPointInImmediateView",
+                Vec3.class,
+                Vec3.class,
+                Vec3[].class,
+                double.class,
+                boolean.class,
+                double.class
+        );
+        method.setAccessible(true);
+        return (Boolean) method.invoke(null, eyePosition, lookAngle, points, nearDistance, allowLookDirection, dotThreshold);
     }
 
     private static boolean isClassPresent(String className) {

@@ -121,19 +121,6 @@ public final class CreateBlockEntityUpdateGate {
             "mechanical_press",
             "steam_whistle"
     );
-    private static final Set<String> DYNAMIC_STRUCTURE_CONTROLLER_BLOCK_ENTITY_TYPES = Set.of(
-            "mechanical_piston",
-            "windmill_bearing",
-            "mechanical_bearing",
-            "clockwork_bearing",
-            "rope_pulley",
-            "hose_pulley",
-            "elevator_pulley",
-            "gantry_pinion",
-            "cart_assembler",
-            "contraption_controls"
-    );
-
     private CreateBlockEntityUpdateGate() {}
 
     public static void bindPlayer(ServerPlayer player) {
@@ -235,7 +222,7 @@ public final class CreateBlockEntityUpdateGate {
         boolean soundCritical = state.rememberSoundStateAndShouldFlush(key, blockEntityDataPacket.getTag());
         DynamicTarget dynamicTarget = resolveDynamicTarget(player, blockEntityDataPacket.getPos());
         if (dynamicTarget.forceImmediate()
-                || shouldSendImmediately(player, dynamicTarget.target(), !chunkBootstrapActive)
+                || shouldSendImmediately(player, dynamicTarget.points(), !chunkBootstrapActive)
                 || soundCritical && isWithinSoundSendDistance(player, dynamicTarget.target(), blockEntityTypeKey)) {
             recordDropped(state.forgetPending(key));
             return false;
@@ -422,7 +409,7 @@ public final class CreateBlockEntityUpdateGate {
         boolean soundCritical = state.rememberSoundStateAndShouldFlush(key, blockEntityDataPacket.getTag());
         DynamicTarget dynamicTarget = resolveDynamicTarget(player, blockEntityDataPacket.getPos());
         if (dynamicTarget.forceImmediate()
-                || shouldSendImmediately(player, dynamicTarget.target(), !chunkBootstrapActive)
+                || shouldSendImmediately(player, dynamicTarget.points(), !chunkBootstrapActive)
                 || soundCritical && isWithinSoundSendDistance(player, dynamicTarget.target(), blockEntityTypeKey)) {
             recordDropped(state.forgetPending(key));
             return false;
@@ -471,26 +458,56 @@ public final class CreateBlockEntityUpdateGate {
         return channel == null ? "" : com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel);
     }
 
-    private static boolean shouldSendImmediately(ServerPlayer player, Vec3 target, boolean allowLookDirection) {
-        if (player == null || target == null) {
+    private static boolean shouldSendImmediately(ServerPlayer player, Vec3[] points, boolean allowLookDirection) {
+        if (player == null || points == null || points.length == 0) {
             return true;
         }
-        Vec3 eyePosition = player.getEyePosition();
-        Vec3 offset = target.subtract(eyePosition);
-        double distanceSqr = offset.lengthSqr();
-        double nearDistance = alwaysSendDistanceBlocks();
-        if (distanceSqr <= nearDistance * nearDistance) {
+        return isAnyPointInImmediateView(
+                player.getEyePosition(),
+                player.getLookAngle(),
+                points,
+                alwaysSendDistanceBlocks(),
+                allowLookDirection,
+                lookDotThreshold());
+    }
+
+    private static boolean isAnyPointInImmediateView(
+            Vec3 eyePosition,
+            Vec3 lookAngle,
+            Vec3[] points,
+            double nearDistance,
+            boolean allowLookDirection,
+            double dotThreshold
+    ) {
+        if (eyePosition == null || points == null || points.length == 0) {
             return true;
         }
-        if (!allowLookDirection) {
-            return false;
+        Vec3 normalizedLook = lookAngle == null ? Vec3.ZERO : lookAngle.normalize();
+        double nearDistanceSqr = nearDistance * nearDistance;
+        boolean hadPoint = false;
+        for (Vec3 point : points) {
+            if (point == null) {
+                continue;
+            }
+            hadPoint = true;
+            Vec3 offset = point.subtract(eyePosition);
+            double distanceSqr = offset.lengthSqr();
+            if (distanceSqr <= nearDistanceSqr) {
+                return true;
+            }
+            if (!allowLookDirection) {
+                continue;
+            }
+            double length = Math.sqrt(distanceSqr);
+            if (length <= 0.0001D) {
+                return true;
+            }
+            double dot = normalizedLook.dot(offset.scale(1.0D / length));
+            if (dot >= dotThreshold) {
+                return true;
+            }
         }
-        double length = Math.sqrt(distanceSqr);
-        if (length <= 0.0001D) {
-            return true;
-        }
-        double dot = player.getLookAngle().normalize().dot(offset.scale(1.0D / length));
-        return dot >= lookDotThreshold();
+        return !hadPoint;
     }
 
     private static boolean isCreateMechanicalBlockEntity(ResourceLocation typeKey) {
@@ -498,17 +515,9 @@ public final class CreateBlockEntityUpdateGate {
                 && MECHANICAL_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
     }
 
-    private static boolean isCreateDynamicStructureControllerBlockEntity(ResourceLocation typeKey) {
-        return isCreateBlockEntity(typeKey)
-                && DYNAMIC_STRUCTURE_CONTROLLER_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
-    }
-
     // During bootstrap, protect the teleport critical path first.
     private static boolean shouldGateCreateBlockEntity(ResourceLocation typeKey, boolean chunkBootstrapActive) {
         if (!isCreateBlockEntity(typeKey)) {
-            return false;
-        }
-        if (isCreateDynamicStructureControllerBlockEntity(typeKey)) {
             return false;
         }
         return chunkBootstrapActive || isCreateMechanicalBlockEntity(typeKey);
@@ -597,14 +606,29 @@ public final class CreateBlockEntityUpdateGate {
 
     private static DynamicTarget resolveDynamicTarget(ServerPlayer player, BlockPos pos) {
         Vec3 vanillaTarget = centerOf(pos);
+        Vec3[] vanillaPoints = cornersOf(pos);
         SableDynamicStructureCompat.DynamicTarget sableTarget =
                 SableDynamicStructureCompat.resolveTarget(player, pos, vanillaTarget);
-        if (sableTarget.forceImmediate() || sableTarget.transformed()) {
-            return new DynamicTarget(sableTarget.target(), sableTarget.forceImmediate());
+        if (sableTarget.forceImmediate()) {
+            return new DynamicTarget(sableTarget.target(), vanillaPoints, true);
+        }
+        if (sableTarget.transformed()) {
+            ResolvedPoints resolvedPoints = resolveSablePoints(player, pos, vanillaPoints);
+            return new DynamicTarget(sableTarget.target(), resolvedPoints.points(), resolvedPoints.forceImmediate());
         }
         ValkyrienSkiesDynamicStructureCompat.DynamicTarget valkyrienSkiesTarget =
                 ValkyrienSkiesDynamicStructureCompat.resolveTarget(player, pos, vanillaTarget);
-        return new DynamicTarget(valkyrienSkiesTarget.target(), valkyrienSkiesTarget.forceImmediate());
+        if (valkyrienSkiesTarget.forceImmediate()) {
+            return new DynamicTarget(valkyrienSkiesTarget.target(), vanillaPoints, true);
+        }
+        if (valkyrienSkiesTarget.transformed()) {
+            ResolvedPoints resolvedPoints = resolveValkyrienSkiesPoints(player, pos, vanillaPoints);
+            return new DynamicTarget(
+                    valkyrienSkiesTarget.target(),
+                    resolvedPoints.points(),
+                    resolvedPoints.forceImmediate());
+        }
+        return new DynamicTarget(vanillaTarget, vanillaPoints, false);
     }
 
     private static Vec3 centerOf(BlockPos pos) {
@@ -612,6 +636,54 @@ public final class CreateBlockEntityUpdateGate {
             return null;
         }
         return new Vec3(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D);
+    }
+
+    private static Vec3[] cornersOf(BlockPos pos) {
+        if (pos == null) {
+            return new Vec3[0];
+        }
+        double minX = pos.getX();
+        double minY = pos.getY();
+        double minZ = pos.getZ();
+        double maxX = minX + 1.0D;
+        double maxY = minY + 1.0D;
+        double maxZ = minZ + 1.0D;
+        return new Vec3[] {
+                new Vec3(minX, minY, minZ),
+                new Vec3(maxX, minY, minZ),
+                new Vec3(minX, maxY, minZ),
+                new Vec3(maxX, maxY, minZ),
+                new Vec3(minX, minY, maxZ),
+                new Vec3(maxX, minY, maxZ),
+                new Vec3(minX, maxY, maxZ),
+                new Vec3(maxX, maxY, maxZ)
+        };
+    }
+
+    private static ResolvedPoints resolveSablePoints(ServerPlayer player, BlockPos pos, Vec3[] vanillaPoints) {
+        Vec3[] resolved = new Vec3[vanillaPoints.length];
+        for (int index = 0; index < vanillaPoints.length; index++) {
+            SableDynamicStructureCompat.DynamicTarget pointTarget =
+                    SableDynamicStructureCompat.resolveTarget(player, pos, vanillaPoints[index]);
+            if (pointTarget.forceImmediate()) {
+                return new ResolvedPoints(vanillaPoints, true);
+            }
+            resolved[index] = pointTarget.target();
+        }
+        return new ResolvedPoints(resolved, false);
+    }
+
+    private static ResolvedPoints resolveValkyrienSkiesPoints(ServerPlayer player, BlockPos pos, Vec3[] vanillaPoints) {
+        Vec3[] resolved = new Vec3[vanillaPoints.length];
+        for (int index = 0; index < vanillaPoints.length; index++) {
+            ValkyrienSkiesDynamicStructureCompat.DynamicTarget pointTarget =
+                    ValkyrienSkiesDynamicStructureCompat.resolveTarget(player, pos, vanillaPoints[index]);
+            if (pointTarget.forceImmediate()) {
+                return new ResolvedPoints(vanillaPoints, true);
+            }
+            resolved[index] = pointTarget.target();
+        }
+        return new ResolvedPoints(resolved, false);
     }
 
     private static double soundSendDistanceBlocks(ResourceLocation typeKey) {
@@ -678,7 +750,9 @@ public final class CreateBlockEntityUpdateGate {
         }
     }
 
-    private record DynamicTarget(Vec3 target, boolean forceImmediate) {}
+    private record DynamicTarget(Vec3 target, Vec3[] points, boolean forceImmediate) {}
+
+    private record ResolvedPoints(Vec3[] points, boolean forceImmediate) {}
 
     public record Snapshot(
             long delayedPackets,
@@ -940,7 +1014,7 @@ public final class CreateBlockEntityUpdateGate {
                 PendingUpdate pendingUpdate = entry.getValue();
                 DynamicTarget dynamicTarget = resolveDynamicTarget(player, pendingUpdate.key().pos());
                 boolean visible = dynamicTarget.forceImmediate()
-                        || shouldSendImmediately(player, dynamicTarget.target(), !chunkBootstrapActive);
+                        || shouldSendImmediately(player, dynamicTarget.points(), !chunkBootstrapActive);
                 boolean expired = !chunkBootstrapActive
                         && nowNanos - pendingUpdate.firstQueuedNanos() >= maxDelayNanos;
                 if (!visible && !expired) {
