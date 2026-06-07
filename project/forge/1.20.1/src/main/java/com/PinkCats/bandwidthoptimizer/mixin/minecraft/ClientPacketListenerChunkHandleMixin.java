@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.chunk.debug.ChunkClientGapProbe;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.BlockEntityTypeKeyCompat;
 import com.PinkCats.bandwidthoptimizer.experient.ExperientClientCommandTiming;
 import net.minecraft.core.BlockPos;
@@ -73,6 +74,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         }
         bandwidthoptimizer$cacheCenterX = packet.getX();
         bandwidthoptimizer$cacheCenterZ = packet.getZ();
+        ChunkClientGapProbe.recordCacheCenter(packet.getX(), packet.getZ());
         Bandwidthoptimizer.LOGGER.info(
                 "[ChunkLoadProbe] cache_center round={}, chunk=({}, {}), sinceTpMs={}",
                 bandwidthoptimizer$currentRound,
@@ -93,6 +95,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
             return;
         }
         bandwidthoptimizer$cacheRadius = Math.max(1, Math.min(packet.getRadius(), 32));
+        ChunkClientGapProbe.recordCacheRadius(bandwidthoptimizer$cacheRadius);
         Bandwidthoptimizer.LOGGER.info(
                 "[ChunkLoadProbe] cache_radius round={}, radius={}, totalWindow={}, sinceTpMs={}",
                 bandwidthoptimizer$currentRound,
@@ -109,6 +112,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         }
         int count = ++bandwidthoptimizer$roundChunkCount;
         bandwidthoptimizer$roundReceivedChunks.add(bandwidthoptimizer$chunkKey(packet.getX(), packet.getZ()));
+        ChunkClientGapProbe.recordHandledChunk(packet.getX(), packet.getZ());
         long now = System.currentTimeMillis();
         if (bandwidthoptimizer$firstChunkMillis <= 0L) {
             bandwidthoptimizer$firstChunkMillis = now;
@@ -249,6 +253,10 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         bandwidthoptimizer$roundReceivedChunks.clear();
         LocalPlayer player = Minecraft.getInstance().player;
         ChunkPos playerChunk = player == null ? null : player.chunkPosition();
+        ChunkPos packetChunk = packet == null
+                ? playerChunk
+                : new ChunkPos(((int) Math.floor(packet.getX())) >> 4, ((int) Math.floor(packet.getZ())) >> 4);
+        ChunkClientGapProbe.recordTeleport(packetChunk);
         long now = bandwidthoptimizer$roundStartMillis;
         Bandwidthoptimizer.LOGGER.info(
                 "[ChunkLoadProbe] tp_start round={}, sinceCommandMs={}, commandSequence={}, command={}, packetPos=({}, {}, {}), packetId={}, relative={}, playerPos=({}, {}, {}), playerChunk=({}, {}), center=({}, {}), radius={}",
