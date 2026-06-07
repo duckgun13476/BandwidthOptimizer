@@ -1,3 +1,13 @@
+#### v2.8.15.32-release
+
+Important fixes:
+1. Fixed runtime transport failures disabling optimization globally.
+2. Preserved the real carrier write failure reason when transport carrier creation or payload limits fail (protect method but useless).
+3. Restored Create dynamic-structure block entity updates to the merge gate for moving entity (8 point instead of 1 center).
+
+Other fixes:
+1. Added Forge 1.20.1 client chunk-gap diagnostics for missing chunk.
+
 #### v2.8.14.29-release
 
 Important fixes:
