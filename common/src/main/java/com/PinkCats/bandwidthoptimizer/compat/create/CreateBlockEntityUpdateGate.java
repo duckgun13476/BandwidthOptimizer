@@ -11,6 +11,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
@@ -275,7 +276,13 @@ public final class CreateBlockEntityUpdateGate {
         if (!shouldGateCreateBlockEntity(blockEntityTypeKey, chunkBootstrapActive)) {
             return false;
         }
-        return tryRememberDelayedBlockEntity(player, state, blockEntityDataPacket, blockEntityTypeKey, packet, 0);
+        return tryRememberDelayedBlockEntity(
+                player,
+                state,
+                blockEntityDataPacket,
+                blockEntityTypeKey,
+                packet,
+                estimateBlockEntityDataPacketBytes(blockEntityDataPacket));
     }
 
     // Start bootstrap gating before packets enter Netty.
@@ -515,12 +522,12 @@ public final class CreateBlockEntityUpdateGate {
                 && MECHANICAL_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
     }
 
-    // During bootstrap, protect the teleport critical path first.
+    // Let every Create block entity use the same distance and critical-state gate.
     private static boolean shouldGateCreateBlockEntity(ResourceLocation typeKey, boolean chunkBootstrapActive) {
         if (!isCreateBlockEntity(typeKey)) {
             return false;
         }
-        return chunkBootstrapActive || isCreateMechanicalBlockEntity(typeKey);
+        return true;
     }
 
     private static boolean isSoundClassifiedBlockEntity(ResourceLocation typeKey) {
@@ -732,6 +739,51 @@ public final class CreateBlockEntityUpdateGate {
 
     private static int lengthOf(byte[] bytes) {
         return bytes == null ? 0 : bytes.length;
+    }
+
+    private static int estimateBlockEntityDataPacketBytes(ClientboundBlockEntityDataPacket packet) {
+        if (packet == null) {
+            return 0;
+        }
+        return 1 // packet id varint
+                + 8 // block position long
+                + 5 // block entity type varint upper bound
+                + estimateCompoundTagBytes(packet.getTag(), 0);
+    }
+
+    private static int estimateCompoundTagBytes(CompoundTag tag, int depth) {
+        if (tag == null || tag.isEmpty()) {
+            return 1;
+        }
+        if (depth >= 4) {
+            return 64;
+        }
+        int bytes = 1; // TAG_End marker
+        for (String key : tag.getAllKeys()) {
+            bytes += 1 + 2 + key.length();
+            bytes += estimateTagPayloadBytes(tag.get(key), depth + 1);
+        }
+        return Math.max(bytes, 1);
+    }
+
+    private static int estimateTagPayloadBytes(Tag tag, int depth) {
+        if (tag == null) {
+            return 0;
+        }
+        return switch (tag.getId()) {
+            case 1 -> 1;
+            case 2 -> 2;
+            case 3, 5 -> 4;
+            case 4, 6 -> 8;
+            case 7, 11 -> 16;
+            case 8 -> 16;
+            case 9 -> 24;
+            case 10 -> tag instanceof CompoundTag compoundTag
+                    ? estimateCompoundTagBytes(compoundTag, depth)
+                    : 64;
+            case 12 -> 32;
+            default -> 8;
+        };
     }
 
     private static boolean shouldLogSample(long count) {
