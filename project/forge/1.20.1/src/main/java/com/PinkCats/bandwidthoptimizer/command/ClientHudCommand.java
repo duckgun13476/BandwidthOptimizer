@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.command;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.client.hud.BandwidthOptimizerHudOverlay;
+import com.PinkCats.bandwidthoptimizer.chunk.debug.ChunkClientGapProbe;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.CommandSourceCompat;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
@@ -30,7 +31,9 @@ public final class ClientHudCommand {
         CommandDispatcher<CommandSourceStack> dispatcher = event.getDispatcher();
         dispatcher.register(Commands.literal("bandwidthoptimizer")
                 .then(Commands.literal("hud")
-                        .executes(context -> toggle(context.getSource()))));
+                        .executes(context -> toggle(context.getSource())))
+                .then(Commands.literal("chunkgap")
+                        .executes(context -> toggleChunkGapProbe(context.getSource()))));
     }
 
     private static int toggle(CommandSourceStack source) {
@@ -48,6 +51,16 @@ public final class ClientHudCommand {
         BandwidthOptimizerHudOverlay.setEnabled(enabled);
         CommandSourceCompat.sendSuccess(source, Component.literal(
                 "Bandwidth optimizer HUD " + (enabled ? "enabled" : "disabled") + " for this client."
+        ), false);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int toggleChunkGapProbe(CommandSourceStack source) {
+        boolean enabled = !ChunkClientGapProbe.isEnabled();
+        ChunkClientGapProbe.setEnabled(enabled);
+        CommandSourceCompat.sendSuccess(source, Component.literal(
+                "Chunk gap diagnostics " + (enabled ? "enabled" : "disabled")
+                        + " for this client. Output is written to the client log."
         ), false);
         return Command.SINGLE_SUCCESS;
     }

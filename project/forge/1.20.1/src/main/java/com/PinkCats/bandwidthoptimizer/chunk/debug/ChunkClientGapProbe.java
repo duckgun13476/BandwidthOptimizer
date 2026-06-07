@@ -238,11 +238,19 @@ public final class ChunkClientGapProbe {
         return ((long) chunkX << 32) ^ (chunkZ & 0xFFFFFFFFL);
     }
 
-    private static boolean isEnabled() {
-        return Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"));
+    public static boolean isEnabled() {
+        return Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "false"));
     }
 
-    private static boolean isVerbose() {
+    public static void setEnabled(boolean enabled) {
+        System.setProperty(ENABLED_PROPERTY, Boolean.toString(enabled));
+        EVENT_COUNT.set(0);
+        RECEIVED_THIS_ROUND.clear();
+        lastSignature = "";
+        lastPlayerChunkKey = Long.MIN_VALUE;
+    }
+
+    public static boolean isVerbose() {
         return Boolean.parseBoolean(System.getProperty(VERBOSE_PROPERTY, "false"));
     }
 
