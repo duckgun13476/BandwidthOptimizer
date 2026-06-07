@@ -1,3 +1,9 @@
+#### v2.8.16.35-release
+
+1. Gated all Create block entity updates with lightweight pre-encode size accounting.
+2. Added Create transport raw and actual traffic to the server HUD.
+3. Fixed server HUD raw-flow totals to include pre-encode Create gate savings.
+
 #### v2.8.15.32-release
 
 Important fixes:
