@@ -196,8 +196,7 @@ public final class ChannelTransportBatchManager {
                 failStatefulBatchCommit(channel, "outbound-batch-flush", throwable);
                 return;
             }
-            writePendingPacketsDirectly(drainedBatch, "batch_flush_exception");
-            ChannelTransportRuntimeGuard.disableTransport("outbound-batch-flush", throwable);
+            failConnection(channel, "outbound-batch-flush", throwable);
         }
     }
 
@@ -205,7 +204,11 @@ public final class ChannelTransportBatchManager {
         Throwable failure = throwable == null
                 ? new IllegalStateException("Stateful batch carrier was not committed")
                 : throwable;
-        ChannelTransportRuntimeGuard.disableTransport(stageName, failure);
+        failConnection(channel, stageName, failure);
+    }
+
+    private static void failConnection(Channel channel, String stageName, Throwable throwable) {
+        ChannelTransportRuntimeGuard.reportRuntimeFailure(stageName, throwable);
         if (channel != null) {
             channel.close();
         }
@@ -426,7 +429,10 @@ public final class ChannelTransportBatchManager {
             captureInboundReplay(context, replayEntry.packetBytes(), replayEntry.packet());
             decoderContext.fireChannelRead(replayEntry.packet());
         } catch (Throwable throwable) {
-            ChannelTransportRuntimeGuard.disableTransport("inbound-batch-replay", throwable);
+            ChannelTransportRuntimeGuard.reportRuntimeFailure("inbound-batch-replay", throwable);
+            if (context != null) {
+                context.close();
+            }
         }
     }
 

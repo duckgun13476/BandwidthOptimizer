@@ -91,6 +91,18 @@ public final class ChannelTransportRuntimeGuard {
         );
     }
 
+    public static void reportRuntimeFailure(String stageName, Throwable throwable) {
+        Throwable failure = throwable == null
+                ? new IllegalStateException("Unknown transport runtime failure")
+                : throwable;
+        Bandwidthoptimizer.LOGGER.error(
+                "[Transport] Runtime failure on connection. stage={}, reason={}",
+                stageName,
+                failure.getClass().getSimpleName() + ": " + failure.getMessage(),
+                failure
+        );
+    }
+
 
     public static String unavailableReason() {
         if (!initialized) {

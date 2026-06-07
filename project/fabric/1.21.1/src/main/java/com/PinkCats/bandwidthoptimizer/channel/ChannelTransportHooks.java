@@ -429,44 +429,8 @@ public final class ChannelTransportHooks {
                 out.writerIndex(startIndexInclusive);
                 throw failStatefulCarrierCommit(context, throwable);
             }
-            if (out.writerIndex() < endIndexExclusive || chunkProtocolApplied) {
-                out.writerIndex(startIndexInclusive);
-                out.writeBytes(directFallbackPacketBytes);
-            }
-            if (forceImmediateTransport) {
-                if (DebugRuntimeConfig.isDiagnoseEnabled()) {
-                    Bandwidthoptimizer.LOGGER.info(
-                            "[Transport][ImmediatePolicy][Fallback] reason=wrap_exception, packetClass={}, inputBytes={}, channel={}, exception={}: {}",
-                            packetClassName(packet),
-                            transportInputPacketBytes.length,
-                            channelIdText(context),
-                            throwable.getClass().getName(),
-                            throwable.getMessage()
-                    );
-                }
-                recordDirectPacketTrace(
-                        context,
-                        "immediate_wrap_exception",
-                        protocolName,
-                        packet,
-                        outboundPacketFlow,
-                        directFallbackPacketBytes
-                );
-                recordOutboundBypassStats(context, protocolName, directFallbackPacketBytes.length, 1);
-                ChannelTransportPacketRankCaptureManager.completeSingleDirectFallbackCapture(
-                        outboundPacketCapture,
-                        directFallbackPacketBytes.length
-                );
-                ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
-                        boundaryPacketTrace,
-                        "DIRECT_PASSTHROUGH",
-                        "DIRECT",
-                        directFallbackPacketBytes.length,
-                        chunkProtocolApplied,
-                        1
-                );
-            }
-            ChannelTransportRuntimeGuard.disableTransport("outbound-wrap", throwable);
+            out.writerIndex(startIndexInclusive);
+            throw failTransportConnection(context, "outbound-wrap", throwable);
         }
     }
 
@@ -741,10 +705,10 @@ public final class ChannelTransportHooks {
             return null;
         }
         if (packetFlow == PacketFlow.CLIENTBOUND && transportFrameBytes.length > CLIENTBOUND_CUSTOM_PAYLOAD_MAX_BYTES) {
-            return null;
+            throw new IllegalStateException("Clientbound transport carrier exceeds payload limit: " + transportFrameBytes.length);
         }
         if (packetFlow == PacketFlow.SERVERBOUND && transportFrameBytes.length > SERVERBOUND_CUSTOM_PAYLOAD_MAX_BYTES) {
-            return null;
+            throw new IllegalStateException("Serverbound transport carrier exceeds payload limit: " + transportFrameBytes.length);
         }
 
         Packet<?> carrierPacket = packetFlow == PacketFlow.CLIENTBOUND
@@ -769,7 +733,22 @@ public final class ChannelTransportHooks {
         IllegalStateException failure = throwable instanceof IllegalStateException
                 ? (IllegalStateException) throwable
                 : new IllegalStateException("Stateful transport output was not committed", throwable);
-        ChannelTransportRuntimeGuard.disableTransport("outbound-carrier-commit", failure);
+        ChannelTransportRuntimeGuard.reportRuntimeFailure("outbound-carrier-commit", failure);
+        if (context != null) {
+            context.close();
+        }
+        return failure;
+    }
+
+    private static IllegalStateException failTransportConnection(
+            ChannelHandlerContext context,
+            String stageName,
+            Throwable throwable
+    ) {
+        IllegalStateException failure = throwable instanceof IllegalStateException
+                ? (IllegalStateException) throwable
+                : new IllegalStateException("Transport output failed", throwable);
+        ChannelTransportRuntimeGuard.reportRuntimeFailure(stageName, failure);
         if (context != null) {
             context.close();
         }

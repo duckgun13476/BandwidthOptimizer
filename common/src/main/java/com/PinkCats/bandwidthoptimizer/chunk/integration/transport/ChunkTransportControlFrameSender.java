@@ -399,7 +399,7 @@ public final class ChunkTransportControlFrameSender {
                     if (shouldIgnoreControlFrameSendFailure(channel, failure)) {
                         return;
                     }
-                    ChannelTransportRuntimeGuard.disableTransport("chunk-control-frame-send", failure);
+                    failConnection(channel, "chunk-control-frame-send", failure);
                 }
             });
             ChannelTransportTelemetry.recordOutboundWrap(readProtocolName(channel), wrappedFrame);
@@ -433,8 +433,15 @@ public final class ChunkTransportControlFrameSender {
             if (shouldIgnoreControlFrameSendFailure(channel, throwable)) {
                 return false;
             }
-            ChannelTransportRuntimeGuard.disableTransport("chunk-control-frame-send", throwable);
+            failConnection(channel, "chunk-control-frame-send", throwable);
             return false;
+        }
+    }
+
+    private static void failConnection(Channel channel, String stageName, Throwable throwable) {
+        ChannelTransportRuntimeGuard.reportRuntimeFailure(stageName, throwable);
+        if (channel != null) {
+            channel.close();
         }
     }
 
