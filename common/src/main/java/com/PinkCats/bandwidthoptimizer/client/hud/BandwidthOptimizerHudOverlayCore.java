@@ -223,11 +223,12 @@ final class BandwidthOptimizerHudOverlayCore {
         if (snapshot == null || !snapshot.serverStatsFresh()) {
             return;
         }
+        long serverEffectiveRawBytes = serverEffectiveRawBytes(snapshot);
         lines.add(text("hud.bandwidthoptimizer.summary"));
-        lines.add("  " + text("hud.bandwidthoptimizer.metric.raw_flow") + " " + formatBytes(snapshot.serverOutboundRawEncodedBytes())
+        lines.add("  " + text("hud.bandwidthoptimizer.metric.raw_flow") + " " + formatBytes(serverEffectiveRawBytes)
                 + " | " + text("hud.bandwidthoptimizer.metric.actual_flow") + " " + formatBytes(snapshot.serverOutboundWireBytes())
-                + " | " + text("hud.bandwidthoptimizer.metric.save") + " " + formatBytes(Math.max(snapshot.serverOutboundRawEncodedBytes() - snapshot.serverOutboundWireBytes(), 0L))
-                + " | " + text("hud.bandwidthoptimizer.metric.total_ratio") + " " + formatTrafficRatioPercent(snapshot.serverOutboundRawEncodedBytes(), snapshot.serverOutboundWireBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.save") + " " + formatBytes(Math.max(serverEffectiveRawBytes - snapshot.serverOutboundWireBytes(), 0L))
+                + " | " + text("hud.bandwidthoptimizer.metric.total_ratio") + " " + formatTrafficRatioPercent(serverEffectiveRawBytes, snapshot.serverOutboundWireBytes())
                 + " | 2 min " + formatTrafficRatioPercent(snapshot.serverRecentOutboundRawEncodedBytes(), snapshot.serverRecentOutboundWireBytes()));
         lines.add("  " + text("hud.bandwidthoptimizer.metric.realtime_speed") + " "
                 + text("hud.bandwidthoptimizer.metric.client_side") + " "
@@ -374,8 +375,16 @@ final class BandwidthOptimizerHudOverlayCore {
         if (snapshot == null) {
             return 0L;
         }
-        long baselineBytes = snapshot.serverOutboundVanillaCompressedEstimateBytes();
-        return baselineBytes > 0L ? baselineBytes : snapshot.serverOutboundRawEncodedBytes();
+        long preEncodeSavedBytes = Math.max(snapshot.serverCreateGateSavedBytes(), 0L);
+        long baselineBytes = snapshot.serverOutboundVanillaCompressedEstimateBytes() + preEncodeSavedBytes;
+        return baselineBytes > preEncodeSavedBytes ? baselineBytes : serverEffectiveRawBytes(snapshot);
+    }
+
+    private static long serverEffectiveRawBytes(BandwidthOptimizerHudStats.Snapshot snapshot) {
+        if (snapshot == null) {
+            return 0L;
+        }
+        return Math.max(snapshot.serverOutboundRawEncodedBytes() + Math.max(snapshot.serverCreateGateSavedBytes(), 0L), 0L);
     }
 
     private static String formatDirectionalRate(long inboundBytesPerSecond, long outboundBytesPerSecond) {
