@@ -53,7 +53,11 @@ public final class ClientServerBandwidthHudStats {
                 payload.serverShadowEvictedMetadataPackets(),
                 payload.serverJvmUsedBytes(),
                 payload.serverJvmMaxBytes(),
-                payload.vanillaCompressionEstimateEnabled()
+                payload.vanillaCompressionEstimateEnabled(),
+                payload.serverCreateTransportRawBytes(),
+                payload.serverCreateTransportActualBytes(),
+                payload.serverCreateTransportSavedBytes(),
+                payload.serverCreateTransportPackets()
         );
     }
 
@@ -102,11 +106,15 @@ public final class ClientServerBandwidthHudStats {
             long serverShadowEvictedMetadataPackets,
             long serverJvmUsedBytes,
             long serverJvmMaxBytes,
-            boolean vanillaCompressionEstimateEnabled
+            boolean vanillaCompressionEstimateEnabled,
+            long serverCreateTransportRawBytes,
+            long serverCreateTransportActualBytes,
+            long serverCreateTransportSavedBytes,
+            long serverCreateTransportPackets
     ) {
 
         private static Snapshot empty() {
-            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false);
+            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false, 0L, 0L, 0L, 0L);
         }
 
         public boolean fresh() {

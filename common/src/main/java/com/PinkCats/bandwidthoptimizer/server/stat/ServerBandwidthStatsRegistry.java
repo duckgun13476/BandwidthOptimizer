@@ -8,6 +8,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotReport;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkServerOfflineReuseStats;
 import com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate;
+import com.PinkCats.bandwidthoptimizer.report.ChannelTransportSourceRankCore;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
@@ -104,6 +105,7 @@ public final class ServerBandwidthStatsRegistry {
         ChunkHotspotStats.reset();
         ChunkServerOfflineReuseStats.reset();
         CreateBlockEntityUpdateGate.resetStats();
+        ChannelTransportSourceRankCore.resetCreateBlockEntityTransportStats();
         ServerBandwidthRecentWindow.reset();
     }
 

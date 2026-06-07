@@ -175,15 +175,25 @@ final class BandwidthOptimizerHudOverlayCore {
                 + formatSavedShare(serverBaselineBytes, snapshot.serverOfflineReuseConfirmedSavedBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.temporary_cache") + " "
                 + formatSavedShare(serverBaselineBytes, snapshot.serverTemporaryReuseSavedBytes()));
+        long createObservedBytes = Math.max(
+                snapshot.serverCreateTransportRawBytes() + snapshot.serverCreateGateSavedBytes(),
+                0L);
+        long createSavedBytes = Math.max(
+                snapshot.serverCreateTransportSavedBytes() + snapshot.serverCreateGateSavedBytes(),
+                0L);
+        long createInputPackets = Math.max(
+                snapshot.serverCreateTransportPackets() + snapshot.serverCreateGateSavedPackets(),
+                0L);
         lines.add("  " + text("hud.bandwidthoptimizer.metric.create_gate") + " "
-                + formatSavedShare(serverBaselineBytes, snapshot.serverCreateGateSavedBytes())
+                + formatSavedShare(serverBaselineBytes, createSavedBytes)
                 + " | " + text("hud.bandwidthoptimizer.metric.compression_ratio") + " "
                 + formatTrafficRatioPercent(
-                        snapshot.serverCreateGateObservedBytes(),
-                        Math.max(snapshot.serverCreateGateObservedBytes() - snapshot.serverCreateGateSavedBytes(), 0L)
+                        createObservedBytes,
+                        snapshot.serverCreateTransportActualBytes()
                 )
                 + " | " + text("hud.bandwidthoptimizer.metric.pkt") + " "
-                + formatCount(snapshot.serverCreateGateSavedPackets())
+                + formatCount(createInputPackets)
+                + " | gate " + formatCount(snapshot.serverCreateGateSavedPackets())
                 + " | " + text("hud.bandwidthoptimizer.metric.sent") + " "
                 + formatCount(snapshot.serverCreateGateReleasedPackets()));
         lines.add("  " + text("hud.bandwidthoptimizer.metric.optimized_flow") + " "

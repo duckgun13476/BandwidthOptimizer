@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.server.stat;
 import com.PinkCats.bandwidthoptimizer.client.hud.ClientServerBandwidthHudStats;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate;
+import com.PinkCats.bandwidthoptimizer.report.ChannelTransportSourceRankCore;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
 
@@ -39,7 +40,11 @@ public record ServerBandwidthStatsPayload(
         long serverShadowEvictedMetadataPackets,
         long serverJvmUsedBytes,
         long serverJvmMaxBytes,
-        boolean vanillaCompressionEstimateEnabled
+        boolean vanillaCompressionEstimateEnabled,
+        long serverCreateTransportRawBytes,
+        long serverCreateTransportActualBytes,
+        long serverCreateTransportSavedBytes,
+        long serverCreateTransportPackets
 ) {
 
     public static ServerBandwidthStatsPayload fromTotals(ServerBandwidthStatsRegistry.TotalsSnapshot totals) {
@@ -55,6 +60,8 @@ public record ServerBandwidthStatsPayload(
         }
         CreateBlockEntityUpdateGate.Snapshot createGateSnapshot = CreateBlockEntityUpdateGate.snapshotStats();
         ChunkShadowSnapshotManager.Snapshot shadowSnapshot = ChunkShadowSnapshotManager.snapshot();
+        ChannelTransportSourceRankCore.CreateBlockEntityTransportSnapshot createTransportSnapshot =
+                ChannelTransportSourceRankCore.snapshotCreateBlockEntityTransportStats();
         Runtime runtime = Runtime.getRuntime();
         long serverJvmUsedBytes = Math.max(runtime.totalMemory() - runtime.freeMemory(), 0L);
         long serverJvmMaxBytes = Math.max(runtime.maxMemory(), 0L);
@@ -105,13 +112,17 @@ public record ServerBandwidthStatsPayload(
                 shadowSnapshot.serverEvictedMetadataPackets(),
                 serverJvmUsedBytes,
                 serverJvmMaxBytes,
-                VanillaCompressionEstimator.isEnabled()
+                VanillaCompressionEstimator.isEnabled(),
+                createTransportSnapshot.rawBytes(),
+                createTransportSnapshot.actualBytes(),
+                createTransportSnapshot.savedBytes(),
+                createTransportSnapshot.packets()
         );
     }
 
 
     public static ServerBandwidthStatsPayload empty() {
-        return new ServerBandwidthStatsPayload(System.currentTimeMillis(), 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false);
+        return new ServerBandwidthStatsPayload(System.currentTimeMillis(), 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false, 0L, 0L, 0L, 0L);
     }
 
     public static void encode(ServerBandwidthStatsPayload payload, FriendlyByteBuf buffer) {
@@ -149,6 +160,10 @@ public record ServerBandwidthStatsPayload(
         buffer.writeVarLong(Math.max(safePayload.serverJvmUsedBytes(), 0L));
         buffer.writeVarLong(Math.max(safePayload.serverJvmMaxBytes(), 0L));
         buffer.writeBoolean(safePayload.vanillaCompressionEstimateEnabled());
+        buffer.writeVarLong(Math.max(safePayload.serverCreateTransportRawBytes(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.serverCreateTransportActualBytes(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.serverCreateTransportSavedBytes(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.serverCreateTransportPackets(), 0L));
     }
 
     public static ServerBandwidthStatsPayload decode(FriendlyByteBuf buffer) {
@@ -185,6 +200,10 @@ public record ServerBandwidthStatsPayload(
         long serverJvmUsedBytes = buffer.readableBytes() > 1 ? buffer.readVarLong() : 0L;
         long serverJvmMaxBytes = buffer.readableBytes() > 1 ? buffer.readVarLong() : 0L;
         boolean vanillaCompressionEstimateEnabled = buffer.readableBytes() > 0 && buffer.readBoolean();
+        long serverCreateTransportRawBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long serverCreateTransportActualBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long serverCreateTransportSavedBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long serverCreateTransportPackets = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         return new ServerBandwidthStatsPayload(
                 capturedAtMillis,
                 activeChannels,
@@ -218,7 +237,11 @@ public record ServerBandwidthStatsPayload(
                 serverShadowEvictedMetadataPackets,
                 serverJvmUsedBytes,
                 serverJvmMaxBytes,
-                vanillaCompressionEstimateEnabled
+                vanillaCompressionEstimateEnabled,
+                serverCreateTransportRawBytes,
+                serverCreateTransportActualBytes,
+                serverCreateTransportSavedBytes,
+                serverCreateTransportPackets
         );
     }
 

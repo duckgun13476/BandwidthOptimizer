@@ -35,6 +35,9 @@ public final class ChannelTransportSourceRankCore {
     private static final String LATEST_REPORT_FILE_NAME = "latest-source-report.md";
     private static final DateTimeFormatter REPORT_DISPLAY_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.ROOT);
     private static final ConcurrentHashMap<SourceKey, SourceCounter> COUNTERS = new ConcurrentHashMap<>();
+    private static final LongAdder CREATE_BLOCK_ENTITY_PACKET_COUNT = new LongAdder();
+    private static final LongAdder CREATE_BLOCK_ENTITY_RAW_BYTES = new LongAdder();
+    private static final LongAdder CREATE_BLOCK_ENTITY_ACTUAL_BYTES = new LongAdder();
     private static final AtomicLong NEXT_REPORT_AT_MILLIS = new AtomicLong();
     private static final AtomicLong NEXT_FAILURE_LOG_AT_MILLIS = new AtomicLong();
     private static final AtomicBoolean REPORT_SCHEDULED = new AtomicBoolean();
@@ -63,6 +66,7 @@ public final class ChannelTransportSourceRankCore {
             int batchPacketCount,
             String channelId
     ) {
+        recordCreateBlockEntityTransport(sourceKey, rawPacketBytes, actualFrameBytes);
         if (!isEnabled()) {
             return;
         }
@@ -85,6 +89,22 @@ public final class ChannelTransportSourceRankCore {
                 textOrFallback(channelId, "<no-channel>")
         );
         scheduleReportIfDue(nowMillis);
+    }
+
+    public static CreateBlockEntityTransportSnapshot snapshotCreateBlockEntityTransportStats() {
+        long rawBytes = CREATE_BLOCK_ENTITY_RAW_BYTES.sum();
+        long actualBytes = CREATE_BLOCK_ENTITY_ACTUAL_BYTES.sum();
+        return new CreateBlockEntityTransportSnapshot(
+                CREATE_BLOCK_ENTITY_PACKET_COUNT.sum(),
+                rawBytes,
+                actualBytes
+        );
+    }
+
+    public static void resetCreateBlockEntityTransportStats() {
+        CREATE_BLOCK_ENTITY_PACKET_COUNT.reset();
+        CREATE_BLOCK_ENTITY_RAW_BYTES.reset();
+        CREATE_BLOCK_ENTITY_ACTUAL_BYTES.reset();
     }
 
     public static void dumpNow(String reason) {
@@ -326,6 +346,15 @@ public final class ChannelTransportSourceRankCore {
                 .replace('`', '\'');
     }
 
+    private static void recordCreateBlockEntityTransport(String sourceKey, int rawPacketBytes, int actualFrameBytes) {
+        if (sourceKey == null || !sourceKey.startsWith("block_entity:create:")) {
+            return;
+        }
+        CREATE_BLOCK_ENTITY_PACKET_COUNT.increment();
+        CREATE_BLOCK_ENTITY_RAW_BYTES.add(Math.max(rawPacketBytes, 0));
+        CREATE_BLOCK_ENTITY_ACTUAL_BYTES.add(Math.max(actualFrameBytes, 0));
+    }
+
     private static String simpleClassName(String className) {
         String value = textOrFallback(className, "<unknown>");
         int lastDotIndex = value.lastIndexOf('.');
@@ -357,6 +386,16 @@ public final class ChannelTransportSourceRankCore {
     }
 
     private record SourceReportEntry(SourceKey key, SourceCounterSnapshot counter) {
+    }
+
+    public record CreateBlockEntityTransportSnapshot(
+            long packets,
+            long rawBytes,
+            long actualBytes
+    ) {
+        public long savedBytes() {
+            return Math.max(this.rawBytes - this.actualBytes, 0L);
+        }
     }
 
     private record SourceCounterSnapshot(
