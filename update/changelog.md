@@ -1,3 +1,7 @@
+#### v2.8.16.36-release hotfix
+
+1. Fixed oversized transport batch flushes that could disconnect players after TPA or teleport bursts (#13).
+
 #### v2.8.16.35-release
 
 1. Gated all Create block entity updates with lightweight pre-encode size accounting.
