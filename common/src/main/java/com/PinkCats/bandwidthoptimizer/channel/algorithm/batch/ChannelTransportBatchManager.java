@@ -36,6 +36,12 @@ public final class ChannelTransportBatchManager {
 
     private static final int LIGHT_BATCH_PACKET_THRESHOLD = 32;
     private static final int LIGHT_BATCH_BYTES_THRESHOLD = 64 * 1024;
+    private static final int CLIENTBOUND_BATCH_CARRIER_MAX_BYTES = 1_048_576;
+    private static final int SERVERBOUND_BATCH_CARRIER_MAX_BYTES = 32_767;
+    private static final int CLIENTBOUND_BATCH_PREWRAP_BYTES_BUDGET = CLIENTBOUND_BATCH_CARRIER_MAX_BYTES / 2;
+    private static final int SERVERBOUND_BATCH_PREWRAP_BYTES_BUDGET = SERVERBOUND_BATCH_CARRIER_MAX_BYTES / 2;
+    private static final int CLIENTBOUND_BATCH_PREWRAP_PACKET_BUDGET = 2_048;
+    private static final int SERVERBOUND_BATCH_PREWRAP_PACKET_BUDGET = 256;
 
     private static final AttributeKey<OutboundBatchState> OUTBOUND_BATCH_STATE_KEY =
             AttributeKey.valueOf("bandwidthoptimizer:channel_transport_outbound_batch_state");
@@ -142,7 +148,6 @@ public final class ChannelTransportBatchManager {
             return;
         }
 
-        boolean statefulBatchAttempted = false;
         try {
             PacketFlow packetFlow = drainedBatch.packetFlow();
             if (packetFlow == null
@@ -152,52 +157,142 @@ public final class ChannelTransportBatchManager {
             }
 
             ChannelTransportSession transportSession = ChannelTransportStateManager.getOrCreateSession(channel);
-            statefulBatchAttempted = true;
-            ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame = shouldUseLightBatchEncoding(flushMode, drainedBatch)
-                    ? ChannelTransportPacketCodec.wrapBatchPacketsLight(transportSession, drainedBatch.packetBytesList())
-                    : ChannelTransportPacketCodec.wrapBatchPackets(transportSession, drainedBatch.packetBytesList());
-            if (wrappedFrame == null) {
-                failStatefulBatchCommit(channel, "outbound-batch-carrier-commit", null);
-                return;
-            }
-
-            var writeFuture = ChannelTransportHooks.writeTransportCarrierPacketToPipeline(
-                    channel,
-                    packetFlow,
-                    wrappedFrame.transportFrameBytes()
-            );
-            if (writeFuture == null) {
-                failStatefulBatchCommit(channel, "outbound-batch-carrier-commit", null);
-                return;
-            }
-
-            recordOutboundBatchPacketStream(drainedBatch.context(), drainedBatch.pendingPackets());
-            writeFuture.addListener(future -> {
-                if (!future.isSuccess()) {
-                    Throwable failure = future.cause() == null ? new IllegalStateException("Unknown outbound batch flush failure") : future.cause();
-                    if (shouldIgnoreBatchFlushFailure(channel, failure)) {
-                        return;
-                    }
-                    failStatefulBatchCommit(channel, "outbound-batch-flush", failure);
-                    return;
-                }
-                recordOutboundBatchTransportStats(drainedBatch.context(), readProtocolName(drainedBatch.context()), wrappedFrame);
-                ChannelTransportPacketRankCaptureManager.completeBatchTransportCapture(
-                        drainedBatch.packetCaptures(),
-                        wrappedFrame
-                );
-                completeBatchBoundaryTrace(drainedBatch.pendingPackets(), wrappedFrame);
-            });
+            writeBatchCarrierOrSplit(channel, drainedBatch, packetFlow, transportSession, flushMode);
         } catch (Throwable throwable) {
             if (shouldIgnoreBatchFlushFailure(channel, throwable)) {
                 return;
             }
-            if (statefulBatchAttempted) {
-                failStatefulBatchCommit(channel, "outbound-batch-flush", throwable);
-                return;
-            }
             failConnection(channel, "outbound-batch-flush", throwable);
         }
+    }
+
+    private static void writeBatchCarrierOrSplit(
+            Channel channel,
+            OutboundBatchDrain drainedBatch,
+            PacketFlow packetFlow,
+            ChannelTransportSession transportSession,
+            OutboundBatchFlushMode flushMode
+    ) {
+        if (shouldPreSplitBatch(packetFlow, drainedBatch)) {
+            if (drainedBatch.pendingPackets().size() <= 1) {
+                writePendingPacketsDirectly(drainedBatch, "batch_carrier_payload_budget_direct");
+                return;
+            }
+            for (OutboundBatchDrain splitDrain : splitDrainInHalf(drainedBatch)) {
+                writeBatchCarrierOrSplit(channel, splitDrain, packetFlow, transportSession, flushMode);
+            }
+            return;
+        }
+
+        ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame = wrapBatchFrame(
+                drainedBatch,
+                transportSession,
+                flushMode
+        );
+        if (wrappedFrame == null) {
+            writePendingPacketsDirectly(drainedBatch, "batch_carrier_wrap_direct");
+            return;
+        }
+
+        int payloadLimitBytes = carrierPayloadLimitBytes(packetFlow);
+        if (wrappedFrame.transportFrameLength() > payloadLimitBytes) {
+            failConnection(
+                    channel,
+                    "outbound-batch-carrier-size",
+                    new IllegalStateException("Transport batch carrier exceeds payload limit after pre-split: "
+                            + wrappedFrame.transportFrameLength()
+                            + " > "
+                            + payloadLimitBytes)
+            );
+            return;
+        }
+
+        writeWrappedBatchCarrier(channel, drainedBatch, packetFlow, wrappedFrame);
+    }
+
+    private static ChannelTransportPacketCodec.WrappedTransportFrame wrapBatchFrame(
+            OutboundBatchDrain drainedBatch,
+            ChannelTransportSession transportSession,
+            OutboundBatchFlushMode flushMode
+    ) {
+        return shouldUseLightBatchEncoding(flushMode, drainedBatch)
+                ? ChannelTransportPacketCodec.wrapBatchPacketsLight(transportSession, drainedBatch.packetBytesList())
+                : ChannelTransportPacketCodec.wrapBatchPackets(transportSession, drainedBatch.packetBytesList());
+    }
+
+    private static void writeWrappedBatchCarrier(
+            Channel channel,
+            OutboundBatchDrain drainedBatch,
+            PacketFlow packetFlow,
+            ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame
+    ) {
+        var writeFuture = ChannelTransportHooks.writeTransportCarrierPacketToPipeline(
+                channel,
+                packetFlow,
+                wrappedFrame.transportFrameBytes()
+        );
+        if (writeFuture == null) {
+            writePendingPacketsDirectly(drainedBatch, "batch_carrier_pipeline_direct");
+            return;
+        }
+
+        recordOutboundBatchPacketStream(drainedBatch.context(), drainedBatch.pendingPackets());
+        writeFuture.addListener(future -> {
+            if (!future.isSuccess()) {
+                Throwable failure = future.cause() == null ? new IllegalStateException("Unknown outbound batch flush failure") : future.cause();
+                if (shouldIgnoreBatchFlushFailure(channel, failure)) {
+                    return;
+                }
+                failStatefulBatchCommit(channel, "outbound-batch-flush", failure);
+                return;
+            }
+            recordOutboundBatchTransportStats(drainedBatch.context(), readProtocolName(drainedBatch.context()), wrappedFrame);
+            ChannelTransportPacketRankCaptureManager.completeBatchTransportCapture(
+                    drainedBatch.packetCaptures(),
+                    wrappedFrame
+            );
+            completeBatchBoundaryTrace(drainedBatch.pendingPackets(), wrappedFrame);
+        });
+    }
+
+    private static List<OutboundBatchDrain> splitDrainInHalf(OutboundBatchDrain drainedBatch) {
+        int midpoint = Math.max(drainedBatch.pendingPackets().size() / 2, 1);
+        return List.of(
+                new OutboundBatchDrain(
+                        drainedBatch.context(),
+                        List.copyOf(drainedBatch.pendingPackets().subList(0, midpoint))
+                ),
+                new OutboundBatchDrain(
+                        drainedBatch.context(),
+                        List.copyOf(drainedBatch.pendingPackets().subList(midpoint, drainedBatch.pendingPackets().size()))
+                )
+        );
+    }
+
+    private static int carrierPayloadLimitBytes(PacketFlow packetFlow) {
+        return packetFlow == PacketFlow.SERVERBOUND
+                ? SERVERBOUND_BATCH_CARRIER_MAX_BYTES
+                : CLIENTBOUND_BATCH_CARRIER_MAX_BYTES;
+    }
+
+    private static boolean shouldPreSplitBatch(PacketFlow packetFlow, OutboundBatchDrain drainedBatch) {
+        if (drainedBatch == null) {
+            return false;
+        }
+        return drainedBatch.totalPacketBytes() > prewrapBytesBudget(packetFlow)
+                || drainedBatch.pendingPackets().size() > prewrapPacketBudget(packetFlow);
+    }
+
+    private static int prewrapBytesBudget(PacketFlow packetFlow) {
+        return packetFlow == PacketFlow.SERVERBOUND
+                ? SERVERBOUND_BATCH_PREWRAP_BYTES_BUDGET
+                : CLIENTBOUND_BATCH_PREWRAP_BYTES_BUDGET;
+    }
+
+    private static int prewrapPacketBudget(PacketFlow packetFlow) {
+        return packetFlow == PacketFlow.SERVERBOUND
+                ? SERVERBOUND_BATCH_PREWRAP_PACKET_BUDGET
+                : CLIENTBOUND_BATCH_PREWRAP_PACKET_BUDGET;
     }
 
     private static void failStatefulBatchCommit(Channel channel, String stageName, Throwable throwable) {
