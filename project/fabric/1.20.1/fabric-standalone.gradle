@@ -1,5 +1,4 @@
 import net.fabricmc.loom.LoomGradlePlugin
-import net.darkhax.curseforgegradle.CurseForgeGradlePlugin
 import me.modmuss50.mpp.MppPlugin
 
 buildscript {
@@ -16,14 +15,12 @@ buildscript {
     }
     dependencies {
         classpath 'net.fabricmc:fabric-loom:1.10.5'
-        classpath 'net.darkhax.curseforgegradle:CurseForgeGradle:1.1.28'
         classpath 'me.modmuss50:mod-publish-plugin:1.0.0'
     }
 }
 
 apply plugin: 'idea'
 apply plugin: LoomGradlePlugin
-apply plugin: CurseForgeGradlePlugin
 apply plugin: MppPlugin
 
 apply from: file('../../../gradle/bo-property-loader.gradle')

@@ -466,28 +466,113 @@ ext.boCheckModrinthPublished = {
     return exists
 }
 
-def appliedCurseForgePlugin = project.plugins.find { plugin ->
-    plugin != null && plugin.getClass().getName() == 'net.darkhax.curseforgegradle.CurseForgeGradlePlugin'
+ext.boReadCurseForgeUploadApiToken = {
+    def properties = boReadPublishingProperties()
+    return properties?.getProperty('CF_TOKEN')
 }
 
-def curseForgeTaskClass = [
-        appliedCurseForgePlugin?.getClass()?.getClassLoader(),
-        this.class.classLoader,
-        Thread.currentThread().contextClassLoader,
-        project.buildscript.classLoader
-].findResult { loader ->
-    if (loader == null) {
-        return null
-    }
-    try {
-        return Class.forName('net.darkhax.curseforgegradle.TaskPublishCurseForge', true, loader)
-    } catch (Throwable ignored) {
-        return null
-    }
+ext.boReadCurseForgeUploadEndpoint = {
+    return project.findProperty('bo_publish_curseforge_upload_endpoint')?.toString()?.trim() ?: 'https://authors-old.curseforge.com'
 }
 
-if (curseForgeTaskClass == null) {
-    throw new GradleException("Unable to resolve TaskPublishCurseForge for project '${project.path}'")
+ext.boReadCurseForgeUploadVersionIds = {
+    // The legacy upload endpoint expects gameVersionId values, not Core API ids.
+    Map<String, Long> minecraftVersionIds = [
+            '1.19.2': 9366L,
+            '1.20.1': 9990L,
+            '1.21.1': 11779L
+    ]
+    Map<String, Long> loaderVersionIds = [
+            'fabric'  : 7499L,
+            'forge'   : 7498L,
+            'neoforge': 10150L,
+            'quilt'   : 9153L
+    ]
+    List<Long> versionIds = []
+    Long minecraftVersionId = minecraftVersionIds[minecraft_version.toString()]
+    if (minecraftVersionId == null) {
+        throw new GradleException("No CurseForge upload gameVersionId mapping for Minecraft ${minecraft_version} in ${project.path}")
+    }
+    versionIds.add(minecraftVersionId)
+
+    boReadPublishCurseForgeLoaders().each { loaderName ->
+        Long loaderVersionId = loaderVersionIds[loaderName.toString().trim().toLowerCase(Locale.ROOT)]
+        if (loaderVersionId == null) {
+            throw new GradleException("No CurseForge upload loader mapping for ${loaderName} in ${project.path}")
+        }
+        versionIds.add(loaderVersionId)
+    }
+
+    versionIds.add(9638L)
+    versionIds.add(9639L)
+    return versionIds.unique()
+}
+
+ext.boReadCurseForgeUploadMetadata = {
+    return [
+            changelog    : boReadPrimaryChangelog(),
+            changelogType: 'markdown',
+            displayName  : boReadPublishDisplayName(),
+            releaseType  : publish_version.toString(),
+            gameVersions : boReadCurseForgeUploadVersionIds()
+    ]
+}
+
+ext.boWriteMultipartTextPart = { OutputStream output, String boundary, String name, String content, String contentType ->
+    output.write("--${boundary}\r\n".getBytes('UTF-8'))
+    output.write("Content-Disposition: form-data; name=\"${name}\"\r\n".getBytes('UTF-8'))
+    output.write("Content-Type: ${contentType}\r\n\r\n".getBytes('UTF-8'))
+    output.write(content.getBytes('UTF-8'))
+    output.write("\r\n".getBytes('UTF-8'))
+}
+
+ext.boWriteMultipartFilePart = { OutputStream output, String boundary, String name, File file ->
+    output.write("--${boundary}\r\n".getBytes('UTF-8'))
+    output.write("Content-Disposition: form-data; name=\"${name}\"; filename=\"${file.name}\"\r\n".getBytes('UTF-8'))
+    output.write("Content-Type: application/java-archive\r\n\r\n".getBytes('UTF-8'))
+    file.withInputStream { InputStream input ->
+        byte[] buffer = new byte[8192]
+        int read
+        while ((read = input.read(buffer)) > 0) {
+            output.write(buffer, 0, read)
+        }
+    }
+    output.write("\r\n".getBytes('UTF-8'))
+}
+
+ext.boUploadCurseForgeFile = {
+    String token = boReadCurseForgeUploadApiToken()
+    if (token == null || token.trim().isEmpty()) {
+        throw new GradleException("Missing CF_TOKEN for CurseForge upload in ${project.path}")
+    }
+
+    File artifactFile = boVerifyPublishArtifactFile()
+    String endpoint = boReadCurseForgeUploadEndpoint()
+    String uploadUrl = "${endpoint}/api/projects/${boUrlEncode(curseforge_id.toString())}/upload-file"
+    String boundary = "bo-cf-${System.currentTimeMillis()}-${Math.abs(new Random().nextInt())}"
+    HttpURLConnection connection = (HttpURLConnection) URI.create(uploadUrl).toURL().openConnection()
+    connection.setRequestMethod('POST')
+    connection.setConnectTimeout(boPublishHttpTimeoutMillis())
+    connection.setReadTimeout(Math.max(boPublishHttpTimeoutMillis(), 180000))
+    connection.setDoOutput(true)
+    connection.setRequestProperty('X-Api-Token', token.trim())
+    connection.setRequestProperty('User-Agent', boPublishUserAgent())
+    connection.setRequestProperty('Content-Type', "multipart/form-data; boundary=${boundary}")
+
+    connection.outputStream.withCloseable { OutputStream output ->
+        boWriteMultipartTextPart(output, boundary, 'metadata', JsonOutput.toJson(boReadCurseForgeUploadMetadata()), 'application/json; charset=UTF-8')
+        boWriteMultipartFilePart(output, boundary, 'file', artifactFile)
+        output.write("--${boundary}--\r\n".getBytes('UTF-8'))
+    }
+
+    int responseCode = connection.getResponseCode()
+    InputStream stream = responseCode >= 400 ? connection.getErrorStream() : connection.getInputStream()
+    String body = stream == null ? '' : stream.getText('UTF-8')
+    if (responseCode < 200 || responseCode >= 300) {
+        String bodySummary = body == null ? '' : body.replaceAll(/\s+/, ' ').take(500)
+        throw new GradleException("CurseForge upload failed for ${project.path}: POST ${uploadUrl} returned HTTP ${responseCode}${bodySummary.isEmpty() ? '' : " (${bodySummary})"}")
+    }
+    return body.trim().isEmpty() ? [:] : new JsonSlurper().parseText(body)
 }
 
 tasks.register('PublishInfo') {
@@ -599,13 +684,10 @@ tasks.register('verifyPublishArtifact') {
     }
 }
 
-tasks.register('publishCurseForge', curseForgeTaskClass) {
+tasks.register('publishCurseForge') {
     dependsOn boReadPublishArtifactTaskName()
     dependsOn 'verifyPublishArtifact'
     dependsOn 'checkCurseForgePublishStatus'
-
-    def properties = boReadPublishingProperties()
-    apiToken = properties?.getProperty('CF_TOKEN')
 
     onlyIf {
         boolean exists = boPublishRemoteStatus.containsKey('curseforgeExists')
@@ -618,26 +700,11 @@ tasks.register('publishCurseForge', curseForgeTaskClass) {
         return true
     }
 
-    def mainFile = upload(curseforge_id, boReadPublishArtifactFile())
-    mainFile.changelog = boReadPrimaryChangelog()
-    mainFile.addEnvironment('Client', 'Server')
-    mainFile.addGameVersion("${minecraft_version}")
-    boReadPublishCurseForgeLoaders().each { loaderName ->
-        mainFile.addModLoader(loaderName)
-    }
-    boReadPublishRequiredDependencies().each { dependencyId ->
-        mainFile.addRequirement(dependencyId)
-    }
-    boReadPublishOptionalDependencies().each { dependencyId ->
-        mainFile.addOptional(dependencyId)
-    }
-    mainFile.displayName = boReadPublishDisplayName()
-    mainFile.releaseType = publish_version
-    disableVersionDetection()
-
     doLast {
+        def response = boUploadCurseForgeFile()
         boWritePublishLedgerSuccessEntry('curseforge', [
-                fileId: mainFile.hasProperty('curseFileId') ? mainFile.curseFileId : null
+                source: 'direct-curseforge-upload',
+                fileId: response instanceof Map ? response.id : null
         ])
     }
 }
