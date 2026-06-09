@@ -13,11 +13,11 @@ public final class OptionalDynamicCompatAbsentRegressionMain {
 
     public static void main(String[] args) throws Exception {
         require(!isClassPresent("dev.ryanhcode.sable.Sable"), "Sable is unexpectedly present in the bare test classpath");
-        require(!isClassPresent("org.valkyrienskies.mod.common.VSGameUtilsKt"), "Valkyrien Skies is unexpectedly present in the bare test classpath");
+        require(!isClassPresent("org.valkyrienskies.mod.common.IShipObjectWorldServerProvider"), "Valkyrien Skies is unexpectedly present in the bare test classpath");
 
         require(invokePrivateStatic("com.PinkCats.bandwidthoptimizer.compat.sable.SableDynamicStructureCompat", "projectOutMethod") == null,
                 "Sable lazy lookup should stay empty when Sable is absent");
-        require(invokePrivateStatic("com.PinkCats.bandwidthoptimizer.compat.valkyrienskies.ValkyrienSkiesDynamicStructureCompat", "toWorldCoordinatesMethod") == null,
+        require(invokePrivateStatic("com.PinkCats.bandwidthoptimizer.compat.valkyrienskies.ValkyrienSkiesDynamicStructureCompat", "serverBridge") == null,
                 "Valkyrien Skies lazy lookup should stay empty when Valkyrien Skies is absent");
 
         Vec3 fallback = new Vec3(1.0D, 2.0D, 3.0D);
@@ -51,8 +51,8 @@ public final class OptionalDynamicCompatAbsentRegressionMain {
                 "Create mechanical block entities should still use the delayed gate");
         require(shouldGateCreateBlockEntity("belt", true),
                 "Create mechanical block entities should still use the bootstrap gate");
-        require(!shouldGateCreateBlockEntity("display_link", false),
-                "Non-mechanical Create block entities should bypass the normal delayed gate");
+        require(shouldGateCreateBlockEntity("display_link", false),
+                "Non-mechanical Create block entities should use the shared normal delayed gate");
         require(shouldGateCreateBlockEntity("display_link", true),
                 "Non-mechanical Create block entities should still use the bootstrap gate");
         require(isAnyPointInImmediateView(
