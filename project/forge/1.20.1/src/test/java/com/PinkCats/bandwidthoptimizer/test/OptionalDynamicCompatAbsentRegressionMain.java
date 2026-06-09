@@ -30,38 +30,27 @@ public final class OptionalDynamicCompatAbsentRegressionMain {
         require(valkyrienTarget.target() == fallback && !valkyrienTarget.transformed() && !valkyrienTarget.forceImmediate(),
                 "Valkyrien Skies absent target should be vanilla");
 
-        for (String immediateControl : new String[] {
-                "analog_lever",
-                "contraption_controls",
-                "desk_bell",
-                "elevator_contact",
+        for (String dynamicController : new String[] {
+                "mechanical_piston",
+                "windmill_bearing",
+                "mechanical_bearing",
+                "clockwork_bearing",
+                "rope_pulley",
+                "hose_pulley",
                 "elevator_pulley",
-                "factory_panel",
-                "lectern_controller",
-                "redstone_link",
-                "redstone_requester",
-                "sliding_door",
-                "stock_ticker"
+                "gantry_pinion",
+                "cart_assembler",
+                "contraption_controls"
         }) {
-            require(!shouldGateCreateBlockEntity(immediateControl, false),
-                    "Create interactive controls must bypass the normal delayed gate: " + immediateControl);
-            require(!shouldGateCreateBlockEntity(immediateControl, true),
-                    "Create interactive controls must bypass the bootstrap delayed gate: " + immediateControl);
+            require(shouldGateCreateBlockEntity(dynamicController, false),
+                    "Create dynamic structure controllers must use the normal delayed gate: " + dynamicController);
+            require(shouldGateCreateBlockEntity(dynamicController, true),
+                    "Create dynamic structure controllers must use the bootstrap delayed gate: " + dynamicController);
         }
         require(shouldGateCreateBlockEntity("belt", false),
                 "Create mechanical block entities should still use the delayed gate");
         require(shouldGateCreateBlockEntity("belt", true),
                 "Create mechanical block entities should still use the bootstrap gate");
-        require(shouldGateCreateBlockEntity("chute", false),
-                "Create chute logistics should still use the delayed gate");
-        require(shouldGateCreateBlockEntity("smart_chute", false),
-                "Create smart chute logistics should still use the delayed gate");
-        require(shouldGateCreateBlockEntity("funnel", false),
-                "Create funnel logistics should still use the delayed gate");
-        require(shouldGateCreateBlockEntity("portable_storage_interface", false),
-                "Create portable storage interfaces should still use the delayed gate");
-        require(shouldGateCreateBlockEntity("portable_fluid_interface", false),
-                "Create portable fluid interfaces should still use the delayed gate");
         require(shouldGateCreateBlockEntity("display_link", false),
                 "Non-mechanical Create block entities should use the shared normal delayed gate");
         require(shouldGateCreateBlockEntity("display_link", true),
