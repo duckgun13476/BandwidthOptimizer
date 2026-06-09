@@ -6,16 +6,15 @@ import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import org.joml.Matrix4dc;
+import org.joml.Vector3d;
 
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.util.List;
 
 public final class ValkyrienSkiesDynamicStructureCompat {
 
-    private static volatile Method toWorldCoordinatesMethod;
+    private static volatile ServerBridge serverBridge;
     private static volatile boolean lookupAttempted;
 
     private ValkyrienSkiesDynamicStructureCompat() {}
@@ -24,8 +23,8 @@ public final class ValkyrienSkiesDynamicStructureCompat {
         if (player == null || pos == null || fallbackTarget == null) {
             return DynamicTarget.vanilla(fallbackTarget);
         }
-        Method method = toWorldCoordinatesMethod();
-        if (method == null) {
+        ServerBridge bridge = serverBridge();
+        if (bridge == null) {
             return DynamicTarget.vanilla(fallbackTarget);
         }
         ServerLevel level = ServerPlayerLevelCompat.serverLevel(player);
@@ -33,10 +32,29 @@ public final class ValkyrienSkiesDynamicStructureCompat {
             return DynamicTarget.vanilla(fallbackTarget);
         }
         try {
-            Object projected = method.invoke(null, level, fallbackTarget);
-            if (!(projected instanceof Vec3 projectedTarget)) {
+            Object shipWorld = bridge.getShipObjectWorld.invoke(level.getServer());
+            if (shipWorld == null) {
+                return DynamicTarget.vanilla(fallbackTarget);
+            }
+            Object dimensionId = bridge.getDimensionId.invoke(level);
+            if (!(dimensionId instanceof String dimension)) {
+                return DynamicTarget.vanilla(fallbackTarget);
+            }
+            Object allShips = bridge.getAllShips.invoke(shipWorld);
+            Object ship = bridge.getByChunkPos.invoke(allShips, pos.getX() >> 4, pos.getZ() >> 4, dimension);
+            if (ship == null) {
+                return DynamicTarget.vanilla(fallbackTarget);
+            }
+            Object shipToWorld = bridge.getShipToWorld.invoke(ship);
+            if (!(shipToWorld instanceof Matrix4dc matrix)) {
                 return DynamicTarget.forceImmediate(fallbackTarget);
             }
+            Vector3d projected = matrix.transformPosition(
+                    fallbackTarget.x,
+                    fallbackTarget.y,
+                    fallbackTarget.z,
+                    new Vector3d());
+            Vec3 projectedTarget = new Vec3(projected.x, projected.y, projected.z);
             return DynamicTarget.resolved(projectedTarget, !samePosition(fallbackTarget, projectedTarget));
         } catch (ReflectiveOperationException | RuntimeException exception) {
             logFailure(exception);
@@ -44,45 +62,46 @@ public final class ValkyrienSkiesDynamicStructureCompat {
         }
     }
 
-    private static Method toWorldCoordinatesMethod() {
+    private static ServerBridge serverBridge() {
         if (lookupAttempted) {
-            return toWorldCoordinatesMethod;
+            return serverBridge;
         }
         synchronized (ValkyrienSkiesDynamicStructureCompat.class) {
             if (lookupAttempted) {
-                return toWorldCoordinatesMethod;
+                return serverBridge;
             }
             lookupAttempted = true;
             try {
-                Class<?> utilsClass = Class.forName(
-                        "org.valkyrienskies.mod.common.VSGameUtilsKt",
+                Class<?> serverProviderClass = Class.forName(
+                        "org.valkyrienskies.mod.common.IShipObjectWorldServerProvider",
                         false,
                         ValkyrienSkiesDynamicStructureCompat.class.getClassLoader());
-                for (Class<?> levelType : List.of(Level.class, ServerLevel.class)) {
-                    Method method = findServerToWorldCoordinatesMethod(utilsClass, levelType);
-                    if (method != null) {
-                        toWorldCoordinatesMethod = method;
-                        return method;
-                    }
-                }
+                Class<?> dimensionProviderClass = Class.forName(
+                        "org.valkyrienskies.mod.common.util.DimensionIdProvider",
+                        false,
+                        ValkyrienSkiesDynamicStructureCompat.class.getClassLoader());
+                Class<?> shipWorldClass = Class.forName(
+                        "org.valkyrienskies.core.api.world.ServerShipWorld",
+                        false,
+                        ValkyrienSkiesDynamicStructureCompat.class.getClassLoader());
+                Class<?> queryableShipDataClass = Class.forName(
+                        "org.valkyrienskies.core.api.ships.QueryableShipData",
+                        false,
+                        ValkyrienSkiesDynamicStructureCompat.class.getClassLoader());
+                Class<?> shipClass = Class.forName(
+                        "org.valkyrienskies.core.api.ships.Ship",
+                        false,
+                        ValkyrienSkiesDynamicStructureCompat.class.getClassLoader());
+                serverBridge = new ServerBridge(
+                        serverProviderClass.getMethod("getShipObjectWorld"),
+                        dimensionProviderClass.getMethod("getDimensionId"),
+                        shipWorldClass.getMethod("getAllShips"),
+                        queryableShipDataClass.getMethod("getByChunkPos", int.class, int.class, String.class),
+                        shipClass.getMethod("getShipToWorld"));
+                return serverBridge;
             } catch (ReflectiveOperationException | LinkageError ignored) {
                 return null;
             }
-            return null;
-        }
-    }
-
-    // Server-safe lookup only.
-    private static Method findServerToWorldCoordinatesMethod(Class<?> utilsClass, Class<?> levelType) throws ReflectiveOperationException {
-        try {
-            Method method = utilsClass.getDeclaredMethod("toWorldCoordinates", levelType, Vec3.class);
-            if (Modifier.isStatic(method.getModifiers()) && Vec3.class.isAssignableFrom(method.getReturnType())) {
-                method.setAccessible(true);
-                return method;
-            }
-            return null;
-        } catch (NoSuchMethodException ignored) {
-            return null;
         }
     }
 
@@ -95,6 +114,14 @@ public final class ValkyrienSkiesDynamicStructureCompat {
             Bandwidthoptimizer.LOGGER.info("[ValkyrienSkiesCompat][CreateTarget] failed to project dynamic target", exception);
         }
     }
+
+    private record ServerBridge(
+            Method getShipObjectWorld,
+            Method getDimensionId,
+            Method getAllShips,
+            Method getByChunkPos,
+            Method getShipToWorld
+    ) {}
 
     public record DynamicTarget(Vec3 target, boolean transformed, boolean forceImmediate) {
         private static DynamicTarget vanilla(Vec3 target) {
