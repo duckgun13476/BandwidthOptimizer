@@ -122,6 +122,19 @@ public final class CreateBlockEntityUpdateGate {
             "mechanical_press",
             "steam_whistle"
     );
+    private static final Set<String> IMMEDIATE_CONTROL_BLOCK_ENTITY_TYPES = Set.of(
+            "analog_lever",
+            "contraption_controls",
+            "desk_bell",
+            "elevator_contact",
+            "elevator_pulley",
+            "factory_panel",
+            "lectern_controller",
+            "redstone_link",
+            "redstone_requester",
+            "sliding_door",
+            "stock_ticker"
+    );
     private CreateBlockEntityUpdateGate() {}
 
     public static void bindPlayer(ServerPlayer player) {
@@ -522,12 +535,17 @@ public final class CreateBlockEntityUpdateGate {
                 && MECHANICAL_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
     }
 
-    // Let every Create block entity use the same distance and critical-state gate.
+    private static boolean isImmediateControlBlockEntity(ResourceLocation typeKey) {
+        return isCreateBlockEntity(typeKey)
+                && IMMEDIATE_CONTROL_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
+    }
+
+    // Keep interactive controls out of delayed merging.
     private static boolean shouldGateCreateBlockEntity(ResourceLocation typeKey, boolean chunkBootstrapActive) {
         if (!isCreateBlockEntity(typeKey)) {
             return false;
         }
-        return true;
+        return !isImmediateControlBlockEntity(typeKey);
     }
 
     private static boolean isSoundClassifiedBlockEntity(ResourceLocation typeKey) {
