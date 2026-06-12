@@ -1,3 +1,8 @@
+#### v2.8.16.38-release hotfix
+
+1. Fixed Valkyrien startup crash.
+2. Fixed Create interactive control delay.
+
 #### v2.8.16.36-release hotfix
 
 1. Fixed oversized transport batch flushes that could disconnect players after TPA or teleport bursts (#13).
