@@ -7,9 +7,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
-import org.joml.Matrix4dc;
-import org.joml.Vector3d;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 public final class ValkyrienSkiesDynamicStructureCompat {
@@ -46,15 +46,20 @@ public final class ValkyrienSkiesDynamicStructureCompat {
                 return DynamicTarget.vanilla(fallbackTarget);
             }
             Object shipToWorld = bridge.getShipToWorld.invoke(ship);
-            if (!(shipToWorld instanceof Matrix4dc matrix)) {
+            if (!bridge.matrix4dcClass.isInstance(shipToWorld)) {
                 return DynamicTarget.forceImmediate(fallbackTarget);
             }
-            Vector3d projected = matrix.transformPosition(
+            Object projected = bridge.vector3dConstructor.newInstance();
+            bridge.transformPosition.invoke(
+                    shipToWorld,
                     fallbackTarget.x,
                     fallbackTarget.y,
                     fallbackTarget.z,
-                    new Vector3d());
-            Vec3 projectedTarget = new Vec3(projected.x, projected.y, projected.z);
+                    projected);
+            Vec3 projectedTarget = new Vec3(
+                    bridge.vector3dX.getDouble(projected),
+                    bridge.vector3dY.getDouble(projected),
+                    bridge.vector3dZ.getDouble(projected));
             return DynamicTarget.resolved(projectedTarget, !samePosition(fallbackTarget, projectedTarget));
         } catch (ReflectiveOperationException | RuntimeException exception) {
             logFailure(exception);
@@ -92,12 +97,26 @@ public final class ValkyrienSkiesDynamicStructureCompat {
                         "org.valkyrienskies.core.api.ships.Ship",
                         false,
                         ValkyrienSkiesDynamicStructureCompat.class.getClassLoader());
+                Class<?> matrix4dcClass = Class.forName(
+                        "org.joml.Matrix4dc",
+                        false,
+                        ValkyrienSkiesDynamicStructureCompat.class.getClassLoader());
+                Class<?> vector3dClass = Class.forName(
+                        "org.joml.Vector3d",
+                        false,
+                        ValkyrienSkiesDynamicStructureCompat.class.getClassLoader());
                 serverBridge = new ServerBridge(
                         serverProviderClass.getMethod("getShipObjectWorld"),
                         dimensionProviderClass.getMethod("getDimensionId"),
                         shipWorldClass.getMethod("getAllShips"),
                         queryableShipDataClass.getMethod("getByChunkPos", int.class, int.class, String.class),
-                        shipClass.getMethod("getShipToWorld"));
+                        shipClass.getMethod("getShipToWorld"),
+                        matrix4dcClass,
+                        vector3dClass.getConstructor(),
+                        matrix4dcClass.getMethod("transformPosition", double.class, double.class, double.class, vector3dClass),
+                        vector3dClass.getField("x"),
+                        vector3dClass.getField("y"),
+                        vector3dClass.getField("z"));
                 return serverBridge;
             } catch (ReflectiveOperationException | LinkageError ignored) {
                 return null;
@@ -120,7 +139,13 @@ public final class ValkyrienSkiesDynamicStructureCompat {
             Method getDimensionId,
             Method getAllShips,
             Method getByChunkPos,
-            Method getShipToWorld
+            Method getShipToWorld,
+            Class<?> matrix4dcClass,
+            Constructor<?> vector3dConstructor,
+            Method transformPosition,
+            Field vector3dX,
+            Field vector3dY,
+            Field vector3dZ
     ) {}
 
     public record DynamicTarget(Vec3 target, boolean transformed, boolean forceImmediate) {
