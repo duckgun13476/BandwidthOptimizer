@@ -1,0 +1,23 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.PinkCats.bandwidthoptimizer.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "refmap": "bandwidthoptimizer.refmap.json",
+  "mixins": [
+    "minecraft.ClientboundSectionBlocksUpdatePacketAccessor",
+    "minecraft.ConnectionAccessor",
+    "minecraft.ConnectionBandwidthStatsMixin",
+    "minecraft.ConnectionSendBoundaryMixin",
+    "minecraft.PacketOutPipeMixin",
+    "minecraft.PacketInPipeMixin",
+    "minecraft.ServerGamePacketListenerImplAccessor"
+  ],
+  "client": [],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  }
+}

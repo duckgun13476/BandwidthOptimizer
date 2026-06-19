@@ -35,11 +35,11 @@ apply from: rootProject.file('gradle/bo-publishing-root.gradle')
 tasks.register('runClientAllVersions') {
     group = 'Development'
     description = 'Root aggregate placeholder for version-specific client runs.'
-    dependsOn ':forge-1.19.2:runClient', ':forge-1.20.1:runClient', ':fabric-1.20.1:runClient', ':fabric-1.21.1:runClient', ':neoforge-1.21.1:runClient'
+    dependsOn ':forge-1.19.2:runClient', ':forge-1.20.1:runClient', ':fabric-1.20.1:runClient', ':fabric-1.21.1:runClient', ':neoforge-1.21.1:runClient', ':neoforge-26.1.2:runClient'
 }
 
 tasks.register('runServerAllVersions') {
     group = 'Development'
     description = 'Root aggregate placeholder for version-specific server runs.'
-    dependsOn ':forge-1.19.2:runServer', ':forge-1.20.1:runServer', ':fabric-1.20.1:runServer', ':fabric-1.21.1:runServer', ':neoforge-1.21.1:runServer'
+    dependsOn ':forge-1.19.2:runServer', ':forge-1.20.1:runServer', ':fabric-1.20.1:runServer', ':fabric-1.21.1:runServer', ':neoforge-1.21.1:runServer', ':neoforge-26.1.2:runServer'
 }

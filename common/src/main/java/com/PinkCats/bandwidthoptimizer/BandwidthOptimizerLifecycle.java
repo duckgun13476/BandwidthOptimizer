@@ -21,47 +21,72 @@ public final class BandwidthOptimizerLifecycle {
         }
         registered = true;
         platform.lifecycle().onPlayerLogin(player -> {
-            ServerPlayer serverPlayer = TorqueNative.serverPlayer(player);
-            ServerBandwidthStatsRegistry.bindPlayer(serverPlayer);
-            ExperientChunkWatchEventTracker.clearPlayer(serverPlayer);
-            ChunkLifecycleCoordinator.onPlayerLogin(serverPlayer);
-            CreateBlockEntityUpdateGate.bindPlayer(serverPlayer);
+            onPlayerLogin(TorqueNative.serverPlayer(player));
         });
         platform.lifecycle().onPlayerRespawn(player -> {
-            ServerPlayer serverPlayer = TorqueNative.serverPlayer(player);
-            CreateBlockEntityUpdateGate.clearPlayer(serverPlayer, "respawn");
-            ChunkLifecycleCoordinator.onPlayerRespawn(serverPlayer);
-            CreateBlockEntityUpdateGate.bindPlayer(serverPlayer);
+            onPlayerRespawn(TorqueNative.serverPlayer(player));
         });
         platform.lifecycle().onPlayerDimensionChange(player -> {
-            ServerPlayer serverPlayer = TorqueNative.serverPlayer(player);
-            CreateBlockEntityUpdateGate.clearPlayer(serverPlayer, "dimension_change");
-            ChunkLifecycleCoordinator.onPlayerDimensionChange(serverPlayer);
-            CreateBlockEntityUpdateGate.bindPlayer(serverPlayer);
+            onPlayerDimensionChange(TorqueNative.serverPlayer(player));
         });
         platform.lifecycle().onPlayerLogout(player -> {
-            ServerPlayer serverPlayer = TorqueNative.serverPlayer(player);
-            CreateBlockEntityUpdateGate.clearPlayer(serverPlayer, "logout");
-            ChunkLifecycleCoordinator.onPlayerLogout(serverPlayer);
-            ExperientChunkWatchEventTracker.clearPlayer(serverPlayer);
-            ServerBandwidthStatsRegistry.unbindPlayer(serverPlayer);
+            onPlayerLogout(TorqueNative.serverPlayer(player));
         });
         platform.lifecycle().onChunkWatch((player, level, pos) ->
-                ExperientChunkWatchEventTracker.recordWatch(TorqueNative.serverPlayer(player), nativeChunkPos(pos)));
+                onChunkWatch(TorqueNative.serverPlayer(player), nativeChunkPos(pos)));
         platform.lifecycle().onChunkUnwatch((player, level, pos) -> {
-            ServerPlayer serverPlayer = TorqueNative.serverPlayer(player);
-            net.minecraft.world.level.ChunkPos chunkPos = nativeChunkPos(pos);
-            ExperientChunkWatchEventTracker.recordUnwatch(serverPlayer, chunkPos);
-            CreateBlockEntityUpdateGate.dropPendingChunk(serverPlayer, chunkPos, "watch_remove");
-            ChunkLifecycleCoordinator.onPlayerStopWatchingChunk(serverPlayer, chunkPos, TorqueNative.serverLevel(level));
+            onChunkUnwatch(TorqueNative.serverPlayer(player), TorqueNative.serverLevel(level), nativeChunkPos(pos));
         });
         platform.lifecycle().onChunkUnload((level, pos) -> {
-            ServerLevel serverLevel = TorqueNative.serverLevel(level);
-            ChunkLifecycleCoordinator.onServerChunkUnload(serverLevel, nativeChunkPos(pos));
+            onChunkUnload(TorqueNative.serverLevel(level), nativeChunkPos(pos));
         });
         platform.lifecycle().onServerTickEnd(() -> {
-            CreateBlockEntityUpdateGate.onServerTick();
+            onServerTickEnd();
         });
+    }
+
+    public static void onPlayerLogin(ServerPlayer serverPlayer) {
+        ServerBandwidthStatsRegistry.bindPlayer(serverPlayer);
+        ExperientChunkWatchEventTracker.clearPlayer(serverPlayer);
+        ChunkLifecycleCoordinator.onPlayerLogin(serverPlayer);
+        CreateBlockEntityUpdateGate.bindPlayer(serverPlayer);
+    }
+
+    public static void onPlayerRespawn(ServerPlayer serverPlayer) {
+        CreateBlockEntityUpdateGate.clearPlayer(serverPlayer, "respawn");
+        ChunkLifecycleCoordinator.onPlayerRespawn(serverPlayer);
+        CreateBlockEntityUpdateGate.bindPlayer(serverPlayer);
+    }
+
+    public static void onPlayerDimensionChange(ServerPlayer serverPlayer) {
+        CreateBlockEntityUpdateGate.clearPlayer(serverPlayer, "dimension_change");
+        ChunkLifecycleCoordinator.onPlayerDimensionChange(serverPlayer);
+        CreateBlockEntityUpdateGate.bindPlayer(serverPlayer);
+    }
+
+    public static void onPlayerLogout(ServerPlayer serverPlayer) {
+        CreateBlockEntityUpdateGate.clearPlayer(serverPlayer, "logout");
+        ChunkLifecycleCoordinator.onPlayerLogout(serverPlayer);
+        ExperientChunkWatchEventTracker.clearPlayer(serverPlayer);
+        ServerBandwidthStatsRegistry.unbindPlayer(serverPlayer);
+    }
+
+    public static void onChunkWatch(ServerPlayer serverPlayer, net.minecraft.world.level.ChunkPos chunkPos) {
+        ExperientChunkWatchEventTracker.recordWatch(serverPlayer, chunkPos);
+    }
+
+    public static void onChunkUnwatch(ServerPlayer serverPlayer, ServerLevel serverLevel, net.minecraft.world.level.ChunkPos chunkPos) {
+        ExperientChunkWatchEventTracker.recordUnwatch(serverPlayer, chunkPos);
+        CreateBlockEntityUpdateGate.dropPendingChunk(serverPlayer, chunkPos, "watch_remove");
+        ChunkLifecycleCoordinator.onPlayerStopWatchingChunk(serverPlayer, chunkPos, serverLevel);
+    }
+
+    public static void onChunkUnload(ServerLevel serverLevel, net.minecraft.world.level.ChunkPos chunkPos) {
+        ChunkLifecycleCoordinator.onServerChunkUnload(serverLevel, chunkPos);
+    }
+
+    public static void onServerTickEnd() {
+        CreateBlockEntityUpdateGate.onServerTick();
     }
 
     private static net.minecraft.world.level.ChunkPos nativeChunkPos(ChunkPos pos) {

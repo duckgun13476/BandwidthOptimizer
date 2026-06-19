@@ -1,0 +1,162 @@
+package com.PinkCats.bandwidthoptimizer.chunk.lifecycle;
+
+import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
+import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerChunkStateSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
+import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkHotspotPathRuntimeConfig;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
+
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
+public final class ChunkLifecycleCoordinator {
+
+    private static final ConcurrentHashMap<UUID, ResourceKey<Level>> PLAYER_DIMENSIONS = new ConcurrentHashMap<>();
+
+    private ChunkLifecycleCoordinator() {}
+
+
+    public static void onPlayerLogin(ServerPlayer player) {
+        ChunkPeerStateManager.bindPlayerDimensionScope(player, "login");
+        rememberPlayerDimension(player);
+    }
+
+    public static void onPlayerRespawn(ServerPlayer player) {
+        if (player == null) {
+            return;
+        }
+
+        ResourceKey<Level> previousDimension = PLAYER_DIMENSIONS.get(player.getUUID());
+        ResourceKey<Level> currentDimension = com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(player).dimension();
+        boolean sameDimensionRespawn = previousDimension != null && previousDimension.equals(currentDimension);
+        if (sameDimensionRespawn) {
+            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[ChunkPeer][Lifecycle] player={}, uuid={}, reason=respawn_same_dimension_new_scope, dimension={}",
+                        player.getGameProfile().name(),
+                        player.getUUID(),
+                        currentDimension.identifier()
+                );
+            }
+            ChunkPeerStateManager.bindPlayerDimensionScope(player, "respawn_same_dimension_rebind");
+        } else {
+            ChunkPeerStateManager.bindPlayerDimensionScope(player, "respawn_dimension_scope");
+        }
+        rememberPlayerDimension(player);
+    }
+
+    public static void onPlayerDimensionChange(ServerPlayer player) {
+        ChunkPeerStateManager.bindPlayerDimensionScope(player, "dimension_change");
+        rememberPlayerDimension(player);
+    }
+
+    public static void onPlayerLogout(ServerPlayer player) {
+        ChunkPeerStateManager.clearPlayerState(player, "logout");
+        forgetPlayerDimension(player);
+    }
+
+
+
+    public static void prepareForClientRespawnBoundary(ServerPlayer player) {
+        ChunkPeerStateManager.bindPlayerDimensionScope(player, "prepare_client_respawn_boundary");
+        rememberPlayerDimension(player);
+    }
+
+
+    public static void onPlayerStopWatchingChunk(ServerPlayer player, ChunkPos chunkPos, ServerLevel level) {
+        retainPlayerChunkBoundary(player, chunkPos, "watch_remove");
+    }
+
+    public static void onServerChunkUnload(ServerLevel level, ChunkPos chunkPos) {
+        if (level == null || chunkPos == null) {
+            return;
+        }
+
+        List<ServerPlayer> watchingPlayers = level.getChunkSource().chunkMap.getPlayers(chunkPos, false);
+        if (watchingPlayers.isEmpty()) {
+            return;
+        }
+
+        for (ServerPlayer watchingPlayer : watchingPlayers) {
+            retainPlayerChunkBoundary(watchingPlayer, chunkPos, "level_chunk_unload");
+        }
+    }
+
+
+    private static void retainPlayerChunkBoundary(ServerPlayer player, ChunkPos chunkPos, String reason) {
+        if (player == null || chunkPos == null) {
+            return;
+        }
+
+        ChunkPacketCoordinate coordinate = ChunkPacketCoordinate.ofChunk(chunkPos.x(), chunkPos.z());
+        ChunkPeerChunkStateSnapshot knownChunkSnapshot = ChunkPeerStateManager.snapshotPlayerChunk(player, coordinate);
+        if (!shouldProcessLifecycleChunk(knownChunkSnapshot)) {
+            logTwoPointLifecycleSkip(player, coordinate, reason, knownChunkSnapshot);
+            return;
+        }
+
+        ChunkPeerChunkStateSnapshot retainedChunkSnapshot =
+                ChunkPeerStateManager.retainPlayerChunkForWatchBoundary(player, coordinate, reason);
+        if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ChunkLifecycle][Retain] player={}, uuid={}, reason={}, chunk={}, snapshotBefore={}, snapshotAfter={}",
+                    player.getGameProfile().name(),
+                    player.getUUID(),
+                    reason,
+                    coordinate.logText(),
+                    knownChunkSnapshot.summaryText(),
+                    retainedChunkSnapshot == null ? "<missing>" : retainedChunkSnapshot.summaryText()
+            );
+        }
+    }
+
+
+    private static void logTwoPointLifecycleSkip(
+            ServerPlayer player,
+            ChunkPacketCoordinate coordinate,
+            String reason,
+            ChunkPeerChunkStateSnapshot knownChunkSnapshot
+    ) {
+        if (!DebugRuntimeConfig.isDiagnoseEnabled()
+                || !ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()
+                || player == null
+                || coordinate == null) {
+            return;
+        }
+
+        Bandwidthoptimizer.LOGGER.info(
+                "[ChunkTwoPoint][LifecycleSkip] player={}, uuid={}, reason={}, chunk={}, snapshotBefore={}",
+                player.getGameProfile().name(),
+                player.getUUID(),
+                reason,
+                coordinate.logText(),
+                knownChunkSnapshot == null ? "<missing>" : knownChunkSnapshot.summaryText()
+        );
+    }
+
+    private static boolean shouldProcessLifecycleChunk(ChunkPeerChunkStateSnapshot knownChunkSnapshot) {
+        return knownChunkSnapshot != null
+                && (knownChunkSnapshot.knownSnapshotPublished() || knownChunkSnapshot.receiverSnapshotAcknowledged());
+    }
+
+    private static void rememberPlayerDimension(ServerPlayer player) {
+        if (player == null) {
+            return;
+        }
+        PLAYER_DIMENSIONS.put(player.getUUID(), com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(player).dimension());
+    }
+
+    private static void forgetPlayerDimension(ServerPlayer player) {
+        if (player == null) {
+            return;
+        }
+        PLAYER_DIMENSIONS.remove(player.getUUID());
+    }
+}
