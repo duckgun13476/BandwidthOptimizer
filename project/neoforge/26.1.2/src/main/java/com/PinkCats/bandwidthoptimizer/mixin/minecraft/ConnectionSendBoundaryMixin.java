@@ -8,9 +8,9 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelDecoderExceptionDu
 import com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportSourceRankCore;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.Connection;
-import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -26,7 +26,7 @@ public abstract class ConnectionSendBoundaryMixin {
 
     // Chunk send
     @Inject(method = "sendPacket", at = @At("HEAD"), cancellable = true)
-    private void bandwidthoptimizer$notePacketSendBoundary(Packet<?> packet, PacketSendListener listener, boolean flush, CallbackInfo ci) {
+    private void bandwidthoptimizer$notePacketSendBoundary(Packet<?> packet, ChannelFutureListener listener, boolean flush, CallbackInfo ci) {
         CreateBlockEntityUpdateGate.observeConnectionSend(this.channel, packet);
         if (CreateBlockEntityUpdateGate.tryDelayConnectionSend(this.channel, packet, listener)) {
             ci.cancel();

@@ -46,7 +46,7 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
         return this.protocolInfo;
     }
 
-    @Inject(method = "encode*", at = @At("HEAD"))
+    @Inject(method = "encode(Lio/netty/channel/ChannelHandlerContext;Lnet/minecraft/network/protocol/Packet;Lio/netty/buffer/ByteBuf;)V", at = @At("HEAD"))
     private void bandwidthoptimizer$rememberWriterIndex(ChannelHandlerContext context, Packet<T> packet, ByteBuf out, CallbackInfo ci) {
 
         //Index
@@ -54,7 +54,7 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
     }
 
 
-    @Inject(method = "encode*", at = @At("RETURN"))
+    @Inject(method = "encode(Lio/netty/channel/ChannelHandlerContext;Lnet/minecraft/network/protocol/Packet;Lio/netty/buffer/ByteBuf;)V", at = @At("RETURN"))
     private void bandwidthoptimizer$captureAndMaybeWrap(ChannelHandlerContext context, Packet<T> packet, ByteBuf out, CallbackInfo ci) {
         if (TrueUuidLateLoginQueryGuard.tryDropOutboundLateCustomQueryAck(context, packet, this.protocolInfo.flow(), out, this.bandwidthoptimizer$writerIndexBefore)) {
             return;

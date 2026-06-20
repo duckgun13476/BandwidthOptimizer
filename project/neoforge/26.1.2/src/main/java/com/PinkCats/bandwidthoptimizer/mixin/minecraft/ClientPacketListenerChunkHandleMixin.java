@@ -40,7 +40,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
 
     @Inject(method = "handleSetChunkCacheCenter", at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/network/protocol/PacketUtils;ensureRunningOnSameThread(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketListener;Lnet/minecraft/util/thread/BlockableEventLoop;)V",
+            target = "Lnet/minecraft/network/protocol/PacketUtils;ensureRunningOnSameThread(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketListener;Lnet/minecraft/network/PacketProcessor;)V",
             shift = At.Shift.AFTER
     ))
     private void bandwidthoptimizer$logChunkCacheCenterHandle(ClientboundSetChunkCacheCenterPacket packet, CallbackInfo ci) {
@@ -55,7 +55,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
 
     @Inject(method = "handleSetChunkCacheRadius", at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/network/protocol/PacketUtils;ensureRunningOnSameThread(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketListener;Lnet/minecraft/util/thread/BlockableEventLoop;)V",
+            target = "Lnet/minecraft/network/protocol/PacketUtils;ensureRunningOnSameThread(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketListener;Lnet/minecraft/network/PacketProcessor;)V",
             shift = At.Shift.AFTER
     ))
     private void bandwidthoptimizer$logChunkCacheRadiusHandle(ClientboundSetChunkCacheRadiusPacket packet, CallbackInfo ci) {

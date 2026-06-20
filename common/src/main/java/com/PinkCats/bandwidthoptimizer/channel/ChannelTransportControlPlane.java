@@ -10,7 +10,6 @@ import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
-import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
 
 import java.util.ArrayList;
@@ -43,7 +42,7 @@ public final class ChannelTransportControlPlane {
 
     private ChannelTransportControlPlane() {}
 
-    public static void observeConnectionSend(Channel channel, Packet<?> packet, PacketSendListener listener) {
+    public static void observeConnectionSend(Channel channel, Packet<?> packet, Object listener) {
         if (channel == null || packet == null || !isProxySafeControlEnabled()) {
             return;
         }

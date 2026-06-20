@@ -12,13 +12,12 @@ import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
-import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.Vec3;
@@ -216,7 +215,7 @@ public final class CreateBlockEntityUpdateGate {
         if (!(packet instanceof ClientboundBlockEntityDataPacket blockEntityDataPacket)) {
             return false;
         }
-        ResourceLocation blockEntityTypeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityDataPacket.getType());
+        Identifier blockEntityTypeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityDataPacket.getType());
         if (!isCreateBlockEntity(blockEntityTypeKey)) {
             return false;
         }
@@ -263,7 +262,7 @@ public final class CreateBlockEntityUpdateGate {
     }
 
     // Move distant Create updates before they enter the Netty send queue.
-    public static boolean tryDelayConnectionSend(Channel channel, Packet<?> packet, PacketSendListener listener) {
+    public static boolean tryDelayConnectionSend(Channel channel, Packet<?> packet, Object listener) {
         if (!isEnabled()
                 || channel == null
                 || packet == null
@@ -272,7 +271,7 @@ public final class CreateBlockEntityUpdateGate {
                 || !(packet instanceof ClientboundBlockEntityDataPacket blockEntityDataPacket)) {
             return false;
         }
-        ResourceLocation blockEntityTypeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityDataPacket.getType());
+        Identifier blockEntityTypeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityDataPacket.getType());
         if (!isCreateBlockEntity(blockEntityTypeKey)) {
             return false;
         }
@@ -419,7 +418,7 @@ public final class CreateBlockEntityUpdateGate {
             ServerPlayer player,
             PlayerState state,
             ClientboundBlockEntityDataPacket blockEntityDataPacket,
-            ResourceLocation blockEntityTypeKey,
+            Identifier blockEntityTypeKey,
             Packet<?> packet,
             int originalRawBytes
     ) {
@@ -530,30 +529,30 @@ public final class CreateBlockEntityUpdateGate {
         return !hadPoint;
     }
 
-    private static boolean isCreateMechanicalBlockEntity(ResourceLocation typeKey) {
+    private static boolean isCreateMechanicalBlockEntity(Identifier typeKey) {
         return isCreateBlockEntity(typeKey)
                 && MECHANICAL_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
     }
 
-    private static boolean isImmediateControlBlockEntity(ResourceLocation typeKey) {
+    private static boolean isImmediateControlBlockEntity(Identifier typeKey) {
         return isCreateBlockEntity(typeKey)
                 && IMMEDIATE_CONTROL_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
     }
 
     // Keep interactive controls out of delayed merging.
-    private static boolean shouldGateCreateBlockEntity(ResourceLocation typeKey, boolean chunkBootstrapActive) {
+    private static boolean shouldGateCreateBlockEntity(Identifier typeKey, boolean chunkBootstrapActive) {
         if (!isCreateBlockEntity(typeKey)) {
             return false;
         }
         return !isImmediateControlBlockEntity(typeKey);
     }
 
-    private static boolean isSoundClassifiedBlockEntity(ResourceLocation typeKey) {
+    private static boolean isSoundClassifiedBlockEntity(Identifier typeKey) {
         return isCreateBlockEntity(typeKey)
                 && SOUND_CLASSIFIED_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
     }
 
-    private static boolean isCreateBlockEntity(ResourceLocation typeKey) {
+    private static boolean isCreateBlockEntity(Identifier typeKey) {
         return typeKey != null
                 && "create".equals(typeKey.getNamespace());
     }
@@ -621,7 +620,7 @@ public final class CreateBlockEntityUpdateGate {
                 128.0D);
     }
 
-    private static boolean isWithinSoundSendDistance(ServerPlayer player, Vec3 target, ResourceLocation typeKey) {
+    private static boolean isWithinSoundSendDistance(ServerPlayer player, Vec3 target, Identifier typeKey) {
         if (player == null || target == null || typeKey == null) {
             return true;
         }
@@ -711,7 +710,7 @@ public final class CreateBlockEntityUpdateGate {
         return new ResolvedPoints(resolved, false);
     }
 
-    private static double soundSendDistanceBlocks(ResourceLocation typeKey) {
+    private static double soundSendDistanceBlocks(Identifier typeKey) {
         if ("steam_whistle".equals(typeKey.getPath())) {
             return 64.0D;
         }
@@ -814,8 +813,8 @@ public final class CreateBlockEntityUpdateGate {
         }
     }
 
-    private record PendingKey(ResourceLocation typeKey, BlockPos pos, int chunkX, int chunkZ) {
-        private static PendingKey of(ResourceLocation typeKey, BlockPos pos) {
+    private record PendingKey(Identifier typeKey, BlockPos pos, int chunkX, int chunkZ) {
+        private static PendingKey of(Identifier typeKey, BlockPos pos) {
             return new PendingKey(typeKey, pos, pos.getX() >> 4, pos.getZ() >> 4);
         }
     }
@@ -876,7 +875,7 @@ public final class CreateBlockEntityUpdateGate {
             boolean hasAnimation,
             String heldItem
     ) {
-        private static CreateSoundState capture(ResourceLocation typeKey, CompoundTag tag) {
+        private static CreateSoundState capture(Identifier typeKey, CompoundTag tag) {
             String type = typeKey == null ? "" : typeKey.getPath();
             CompoundTag safeTag = tag == null ? new CompoundTag() : tag;
             return new CreateSoundState(

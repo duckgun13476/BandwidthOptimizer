@@ -34,7 +34,7 @@ public final class ChannelTransportNetworkChannel {
             StreamCodec<RegistryFriendlyByteBuf, ChannelTransportBytePayload> codec = ChannelTransportBytePayload.STREAM_CODEC;
             modEventBus.addListener((RegisterPayloadHandlersEvent event) ->
                     event.registrar(PROTOCOL_VERSION)
-                            .playBidirectional(type, codec, (payload, context) -> {}));
+                            .playBidirectional(type, codec, (payload, context) -> {}, (payload, context) -> {}));
         }
         Bandwidthoptimizer.LOGGER.info(
                 "[Transport] Registered NeoForge network channel {} version={}",

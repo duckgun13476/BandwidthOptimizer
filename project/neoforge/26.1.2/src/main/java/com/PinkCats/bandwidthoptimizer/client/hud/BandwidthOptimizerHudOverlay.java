@@ -44,7 +44,7 @@ public final class BandwidthOptimizerHudOverlay {
         guiGraphics.fill(x, y, x + hud.boxWidth(), y + 1, 0xFF66D9EF);
         for (int index = 0; index < hud.lines().size(); index++) {
             String line = hud.lines().get(index);
-            guiGraphics.text(minecraft.font, line, x + 5, y + 4 + index * hud.lineHeight(), BandwidthOptimizerHudOverlayCore.hudLineColor(line), false);
+            guiGraphics.text(minecraft.font, line, x + 5, y + 4 + index * hud.lineHeight(), 0xFF000000 | BandwidthOptimizerHudOverlayCore.hudLineColor(line), false);
         }
     }
 

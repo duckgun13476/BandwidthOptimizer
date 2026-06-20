@@ -6,8 +6,8 @@ import java.util.concurrent.TimeUnit
 
 plugins {
     id 'java'
-    id 'idea'
     id 'net.neoforged.moddev' version '2.0.141'
+    id 'idea'
     id 'me.modmuss50.mod-publish-plugin' version '1.0.0'
 }
 
@@ -171,7 +171,8 @@ def neoforgeExcludedCommonJava = [
         'com/PinkCats/bandwidthoptimizer/command/BandwidthOptimizerCommand.java',
         'com/PinkCats/bandwidthoptimizer/experient/ExperientChunkWatchEventTracker.java',
         'com/PinkCats/bandwidthoptimizer/experient/RunAllProbeFiles.java',
-        'com/PinkCats/bandwidthoptimizer/server/stat/ServerBandwidthStatsCommand.java'
+        'com/PinkCats/bandwidthoptimizer/server/stat/ServerBandwidthStatsCommand.java',
+        'com/PinkCats/bandwidthoptimizer/report/ChannelTransportPacketRankSourceResolver.java'
 ]
 
 sourceSets {
