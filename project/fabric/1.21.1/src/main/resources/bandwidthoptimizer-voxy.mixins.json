@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_21",
   "refmap": "bandwidthoptimizer.refmap.json",
   "client": [
+    "voxy.VoxyChunkBuildOutputMixin",
     "voxy.VoxyChunkBoundRendererMixin",
     "voxy.VoxyRenderSectionMixin"
   ],

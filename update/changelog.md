@@ -1,3 +1,8 @@
+#### v2.8.16.39-release hotfix
+
+1. Fixed Voxy far terrain bleeding into nearby non-full block geometry, such as stairs, when connected to multiplayer servers.
+2. Preserved the Voxy chunk-hole workaround by only masking open sections when their Sodium mesh is small enough to avoid large section-sized holes.
+
 #### v2.8.16.38-release hotfix
 
 1. Fixed Valkyrien startup crash.
