@@ -1,7 +1,7 @@
-#### v2.8.16.39-release hotfix
+#### v2.8.16.40-release
 
-1. Fixed Voxy far terrain bleeding into nearby non-full block geometry, such as stairs, when connected to multiplayer servers.
-2. Preserved the Voxy chunk-hole workaround by only masking open sections when their Sodium mesh is small enough to avoid large section-sized holes.
+1. Added Brazilian Portuguese localization.
+2. Fixed Voxy rendering issues with stairs and chunk holes.
 
 #### v2.8.16.38-release hotfix
 
