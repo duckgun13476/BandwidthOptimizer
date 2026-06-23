@@ -19,7 +19,7 @@ public final class TransportDiagnosticProbe {
 
     private TransportDiagnosticProbe() {}
 
-    public static void observeOutboundEncodeCost(
+    public static void BO_Diag_transportEncodeCost(
             ChannelHandlerContext context,
             PacketFlow flow,
             Packet<?> packet,
@@ -27,7 +27,18 @@ public final class TransportDiagnosticProbe {
             long vanillaEncodeNanos,
             long boHookNanos
     ) {
-        if (!DiagnosticRuntimeSwitch.isEnabled(DiagnosticRuntimeSwitch.Topic.TRANSPORT)
+        observeOutboundEncodeCost(context, flow, packet, encodedBytes, vanillaEncodeNanos, boHookNanos);
+    }
+
+    private static void observeOutboundEncodeCost(
+            ChannelHandlerContext context,
+            PacketFlow flow,
+            Packet<?> packet,
+            int encodedBytes,
+            long vanillaEncodeNanos,
+            long boHookNanos
+    ) {
+        if (!isEnabled()
                 || context == null
                 || packet == null
                 || (vanillaEncodeNanos < ENCODE_LOG_THRESHOLD_NANOS && boHookNanos < HOOK_LOG_THRESHOLD_NANOS)) {
@@ -41,7 +52,7 @@ public final class TransportDiagnosticProbe {
             return;
         }
         Bandwidthoptimizer.LOGGER.warn(
-                "[BODiag][Transport][EncodeCost] channel={}, flow={}, packetClass={}, bytes={}, vanillaMs={}, boHookMs={}, pendingTasks={}, writable={}",
+                "[BO:Diag:transportEncodeCost] channel={}, flow={}, packetClass={}, bytes={}, vanillaMs={}, boHookMs={}, pendingTasks={}, writable={}",
                 channelId,
                 flow,
                 packet.getClass().getName(),
@@ -51,6 +62,11 @@ public final class TransportDiagnosticProbe {
                 pendingTasks(channel),
                 channel == null || channel.isWritable()
         );
+    }
+
+    private static boolean isEnabled() {
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.TRANSPORT_ENCODE_COST)
+                || DiagnosticRuntimeSwitch.isEnabled(DiagnosticRuntimeSwitch.Topic.TRANSPORT);
     }
 
     private static double millis(long nanos) {

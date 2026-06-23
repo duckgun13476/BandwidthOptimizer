@@ -86,7 +86,7 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
 
         //handle
         ChannelTransportHooks.tryToWrapOutboundPacket(context, packet, out, this.bandwidthoptimizer$writerIndexBefore, this);
-        TransportDiagnosticProbe.observeOutboundEncodeCost(
+        TransportDiagnosticProbe.BO_Diag_transportEncodeCost(
                 context,
                 this.protocolInfo.flow(),
                 packet,

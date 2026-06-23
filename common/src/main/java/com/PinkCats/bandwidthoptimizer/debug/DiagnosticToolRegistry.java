@@ -82,6 +82,12 @@ public final class DiagnosticToolRegistry {
                 Cost.SMALL,
                 "Serverbound move-packet burst windows",
                 "bandwidthoptimizer.diagnosetool.movementBurst"
+        ),
+        TRANSPORT_ENCODE_COST(
+                "transportEncodeCost",
+                Cost.SMALL,
+                "Outbound packet encode and BO hook cost spikes",
+                "bandwidthoptimizer.diagnosetool.transportEncodeCost"
         );
 
         private final String id;
