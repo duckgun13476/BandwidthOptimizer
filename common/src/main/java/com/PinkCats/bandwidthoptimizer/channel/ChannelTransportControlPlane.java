@@ -7,6 +7,7 @@ import com.PinkCats.bandwidthoptimizer.compat.minecraft.CustomPayloadPacketCompa
 import com.PinkCats.bandwidthoptimizer.compat.sable.SableChunkSyncCompat;
 import com.PinkCats.bandwidthoptimizer.compat.valkyrienskies.ValkyrienSkiesChunkSyncCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
@@ -52,9 +53,9 @@ public final class ChannelTransportControlPlane {
         if (listener != null) {
             ListenerTransportPolicy listenerTransportPolicy = classifyListenerTransportPolicy(packet);
             controlState.rememberListenerPacket(packet, listenerTransportPolicy);
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (BO_Diag_chunkTransportFrames()) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[Transport][ListenerPolicy][Observe] action={}, packetClass={}, channel={}",
+                        "[BO:Diag:chunkTransportFrames] event=listener_policy_observe action={}, packetClass={}, channel={}",
                         listenerTransportPolicy.logAction(),
                         packetClassName(packet),
                         com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(channel)
@@ -91,9 +92,9 @@ public final class ChannelTransportControlPlane {
 
         ImmediateTransportProfile immediateTransportProfile = classifyImmediateTransport(packet);
         if (immediateTransportProfile != ImmediateTransportProfile.NONE) {
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (BO_Diag_chunkTransportFrames()) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[Transport][ImmediatePolicy][Consume] reason={}, packetClass={}, channel={}",
+                        "[BO:Diag:chunkTransportFrames] event=immediate_policy_consume reason={}, packetClass={}, channel={}",
                         immediateTransportProfile.reason(),
                         packetClassName(packet),
                         com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(context.channel())
@@ -108,9 +109,9 @@ public final class ChannelTransportControlPlane {
         }
         ListenerTransportPolicy listenerTransportPolicy = getOrCreateControlState(context.channel()).consumeListenerPolicy(packet);
         if (listenerTransportPolicy == ListenerTransportPolicy.IMMEDIATE_TRANSPORT) {
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (BO_Diag_chunkTransportFrames()) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[Transport][ListenerPolicy][Consume] action={}, packetClass={}, channel={}",
+                        "[BO:Diag:chunkTransportFrames] event=listener_policy_consume action={}, packetClass={}, channel={}",
                         listenerTransportPolicy.logAction(),
                         packetClassName(packet),
                         com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(context.channel())
@@ -119,9 +120,9 @@ public final class ChannelTransportControlPlane {
             return TransportControlDecision.forceImmediateTransport("packet_send_listener_immediate_transport");
         }
         if (listenerTransportPolicy == ListenerTransportPolicy.DIRECT) {
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (BO_Diag_chunkTransportFrames()) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[Transport][ListenerPolicy][Consume] action={}, packetClass={}, channel={}",
+                        "[BO:Diag:chunkTransportFrames] event=listener_policy_consume action={}, packetClass={}, channel={}",
                         listenerTransportPolicy.logAction(),
                         packetClassName(packet),
                         com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(context.channel())
@@ -139,6 +140,11 @@ public final class ChannelTransportControlPlane {
                         Boolean.toString(Config.RuntimeProperty.Transport.DEFAULT_PROXY_SAFE_CONTROL_ENABLED)
                 )
         );
+    }
+
+    private static boolean BO_Diag_chunkTransportFrames() {
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES)
+                || DebugRuntimeConfig.isDiagnoseEnabled();
     }
 
     private static ListenerTransportPolicy classifyListenerTransportPolicy(Packet<?> packet) {

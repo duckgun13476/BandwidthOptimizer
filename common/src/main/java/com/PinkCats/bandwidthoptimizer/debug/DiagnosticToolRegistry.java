@@ -166,6 +166,12 @@ public final class DiagnosticToolRegistry {
                 Cost.SMALL,
                 "Persistent cache manifest gate arm, queue, and flush events",
                 "bandwidthoptimizer.diagnosetool.cacheManifestGate"
+        ),
+        CACHE_MANIFEST_SYNC(
+                "cacheManifestSync",
+                Cost.MEDIUM,
+                "Persistent cache manifest receive, batch apply, and completion events",
+                "bandwidthoptimizer.diagnosetool.cacheManifestSync"
         );
 
         private final String id;

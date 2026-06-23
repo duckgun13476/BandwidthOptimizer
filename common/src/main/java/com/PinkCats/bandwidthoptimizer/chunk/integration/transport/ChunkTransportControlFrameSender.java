@@ -24,6 +24,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.ConnectionProtocolNameCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
@@ -405,9 +406,9 @@ public final class ChunkTransportControlFrameSender {
             ChannelTransportTelemetry.recordOutboundWrap(readProtocolName(channel), wrappedFrame);
             ChunkHotspotStats.recordOutboundFrame(frame, Math.max(logicalPacketBytes, 0), encodedEnvelopeBytes.length);
             ChunkHotspotVerifyHooks.flushCurrentReport();
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (BO_Diag_chunkTransportFrames()) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[ChunkTransport][Control][Send] channel={}, op={}, epoch={}, observedPackets={}, chunk={}, fullVersion={}, payloadHash={}, payloadBytes={}, reason={}",
+                        "[BO:Diag:chunkTransportFrames] event=control_send channel={}, op={}, epoch={}, observedPackets={}, chunk={}, fullVersion={}, payloadHash={}, payloadBytes={}, reason={}",
                         com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
                         frame.operation().logName(),
                         frame.epoch(),
@@ -498,5 +499,10 @@ public final class ChunkTransportControlFrameSender {
             return "<none>";
         }
         return hashHex.length() <= 12 ? hashHex : hashHex.substring(0, 12);
+    }
+
+    private static boolean BO_Diag_chunkTransportFrames() {
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES)
+                || DebugRuntimeConfig.isDiagnoseEnabled();
     }
 }

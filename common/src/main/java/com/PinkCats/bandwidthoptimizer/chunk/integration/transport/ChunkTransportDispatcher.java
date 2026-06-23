@@ -797,11 +797,11 @@ public final class ChunkTransportDispatcher {
             ChunkHotspotFrame frame,
             int payloadBytes
     ) {
-        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (!BO_Diag_cacheManifestSync()) {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkPersistentCache][Manifest][IgnoreStaleScope] channel={}, frameScope={}, currentScope={}, bytes={}, reason={}",
+                "[BO:Diag:cacheManifestSync] event=ignore_stale_scope channel={}, frameScope={}, currentScope={}, bytes={}, reason={}",
                 readChannelId(context),
                 frame == null ? "<none>" : shortenHash(frame.payloadHash()),
                 shortenHash(ChunkPersistentServerScope.currentScopeHash()),
@@ -835,9 +835,9 @@ public final class ChunkTransportDispatcher {
                     payloadBytes.length,
                     "applied=" + appliedCount
             );
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (BO_Diag_cacheManifestSync()) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[ChunkPersistentCache][Manifest][BatchRecv] channel={}, entries={}, applied={}, bytes={}, reason={}",
+                        "[BO:Diag:cacheManifestSync] event=batch_recv channel={}, entries={}, applied={}, bytes={}, reason={}",
                         readChannelId(context),
                         batchFrame.fullSnapshotVersion(),
                         appliedCount,
@@ -866,9 +866,9 @@ public final class ChunkTransportDispatcher {
 
         ChunkPeerChunkStateSnapshot chunkSnapshot =
                 ChunkPeerStateManager.recordPersistentClientManifest(context, frame);
-        if (logEachEntry && DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (logEachEntry && BO_Diag_cacheManifestSync()) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkPersistentCache][Manifest][Recv] channel={}, chunk={}, hash={}, state={}",
+                    "[BO:Diag:cacheManifestSync] event=recv channel={}, chunk={}, hash={}, state={}",
                     readChannelId(context),
                     frame.coordinate().logText(),
                     shortenHash(frame.payloadHash()),
@@ -879,11 +879,11 @@ public final class ChunkTransportDispatcher {
     }
 
     private static void logPersistentManifestComplete(ChannelHandlerContext context, ChunkHotspotFrame frame) {
-        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (!BO_Diag_cacheManifestSync()) {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkPersistentCache][Manifest][Complete] channel={}, reason={}",
+                "[BO:Diag:cacheManifestSync] event=complete channel={}, reason={}",
                 readChannelId(context),
                 frame.reason() == null ? "" : frame.reason()
         );
@@ -2069,6 +2069,11 @@ public final class ChunkTransportDispatcher {
 
     private static boolean shouldLogDiagnose() {
         return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES)
+                || DebugRuntimeConfig.isDiagnoseEnabled();
+    }
+
+    private static boolean BO_Diag_cacheManifestSync() {
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CACHE_MANIFEST_SYNC)
                 || DebugRuntimeConfig.isDiagnoseEnabled();
     }
 

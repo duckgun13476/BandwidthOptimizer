@@ -8,6 +8,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescript
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentManifestGate;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
@@ -181,9 +182,9 @@ public final class ChunkTransportBoundaryController {
             return;
         }
         context.channel().attr(CHANNEL_BOUNDARY_STATE_KEY).set(new ChannelBoundaryState());
-        if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (BO_Diag_chunkTransportFrames()) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkTransport][Boundary][Reset] channel={}, reason={}",
+                    "[BO:Diag:chunkTransportFrames] event=boundary_reset channel={}, reason={}",
                     com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()),
                     reason == null ? "" : reason
             );
@@ -321,9 +322,9 @@ public final class ChunkTransportBoundaryController {
                 && channel.isOpen()
                 && channel.isActive()) {
             getOrCreateBoundaryState(channel).cancelOutboundBarrier(pendingBarrier.barrierId(), "barrier_send_skipped");
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (BO_Diag_chunkTransportFrames()) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[ChunkTransport][Barrier][SendSkipped] channel={}, barrierId={}, reason={}",
+                        "[BO:Diag:chunkTransportFrames] event=barrier_send_skipped channel={}, barrierId={}, reason={}",
                         com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
                         pendingBarrier.barrierId(),
                         pendingBarrier.reason()
@@ -479,9 +480,9 @@ public final class ChunkTransportBoundaryController {
             this.pendingOutboundBarrierId = 0L;
             this.pendingOutboundBarrierDeadlineNanos = 0L;
             this.pendingOutboundBarrierReason = "";
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (BO_Diag_chunkTransportFrames()) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[ChunkTransport][Barrier][Ack] barrierId={}, reason={}",
+                        "[BO:Diag:chunkTransportFrames] event=barrier_ack barrierId={}, reason={}",
                         barrierId,
                         reason == null ? "" : reason
                 );
@@ -495,9 +496,9 @@ public final class ChunkTransportBoundaryController {
             this.pendingOutboundBarrierId = 0L;
             this.pendingOutboundBarrierDeadlineNanos = 0L;
             this.pendingOutboundBarrierReason = "";
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (BO_Diag_chunkTransportFrames()) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[ChunkTransport][Barrier][Cancel] barrierId={}, reason={}",
+                        "[BO:Diag:chunkTransportFrames] event=barrier_cancel barrierId={}, reason={}",
                         barrierId,
                         reason == null ? "" : reason
                 );
@@ -597,9 +598,9 @@ public final class ChunkTransportBoundaryController {
             if (this.pendingOutboundBarrierId <= 0L || nowNanos < this.pendingOutboundBarrierDeadlineNanos) {
                 return;
             }
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (BO_Diag_chunkTransportFrames()) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[ChunkTransport][Barrier][Timeout] barrierId={}, reason={}",
+                        "[BO:Diag:chunkTransportFrames] event=barrier_timeout barrierId={}, reason={}",
                         this.pendingOutboundBarrierId,
                         this.pendingOutboundBarrierReason
                 );
@@ -625,5 +626,10 @@ public final class ChunkTransportBoundaryController {
         return coordinate == null || !coordinate.present()
                 ? "<unknown>"
                 : coordinate.chunkX() + "," + coordinate.chunkZ();
+    }
+
+    private static boolean BO_Diag_chunkTransportFrames() {
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES)
+                || DebugRuntimeConfig.isDiagnoseEnabled();
     }
 }
