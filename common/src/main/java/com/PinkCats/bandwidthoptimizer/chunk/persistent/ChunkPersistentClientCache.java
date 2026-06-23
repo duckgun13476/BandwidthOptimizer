@@ -155,7 +155,7 @@ public final class ChunkPersistentClientCache {
                 return;
             }
             mergePendingLastUsedUpdatesLocked(cachedSnapshot);
-            snapshotToWrite = new ZipCacheSnapshot(cachedSnapshot.index(), cachedSnapshot.blobs());
+            snapshotToWrite = cachedSnapshot.copy();
             dirty = false;
             dirtyBlobWrites = 0;
             dirtyBytes = 0L;
@@ -315,6 +315,7 @@ public final class ChunkPersistentClientCache {
                 String blobEntryName = blobEntryName(fingerprint.hashHex());
                 if (fingerprint.hashHex().equals(cacheSnapshot.index().getProperty(keyPrefix + "hash", ""))
                         && cacheSnapshot.blobs().containsKey(blobEntryName)) {
+                    cacheSnapshot.verifiedBlobEntries().add(blobEntryName);
                     cacheSnapshot.index().setProperty(keyPrefix + "lastUsedAtMillis", Long.toString(System.currentTimeMillis()));
                     markDirty(0);
                     logStore(frame, restoredPacketBytes.length, cacheFile());
@@ -328,6 +329,7 @@ public final class ChunkPersistentClientCache {
                 cacheSnapshot.index().setProperty(keyPrefix + "lastUsedAtMillis", Long.toString(System.currentTimeMillis()));
                 cacheSnapshot.index().setProperty(keyPrefix + "serverScopeHash", serverScopeHash);
                 cacheSnapshot.blobs().putIfAbsent(blobEntryName, restoredPacketBytes.clone());
+                cacheSnapshot.verifiedBlobEntries().add(blobEntryName);
                 pruneUnreferencedBlobs(cacheSnapshot);
                 markDirty(restoredPacketBytes.length);
                 markManifestRefreshDirty();
@@ -373,14 +375,15 @@ public final class ChunkPersistentClientCache {
         }
 
         byte[] packetBytes = cacheSnapshot.blobs().get(blobEntryName(cachedHash));
-        long hashStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
-        boolean matchedHash = packetBytes != null && packetBytes.length > 0 && matchesHash(packetBytes, cachedHash);
+        boolean matchedHash = packetBytes != null
+                && packetBytes.length > 0
+                && cacheSnapshot.verifiedBlobEntries().contains(blobEntryName(cachedHash));
         ChunkLoadDelayProbe.logStage(
                 (Channel) null,
                 frame,
                 "client",
-                "persistent_loaded_find_hash_check",
-                ChunkLoadDelayProbe.elapsedMillisSince(hashStartNanos),
+                "persistent_loaded_find_verified_check",
+                0L,
                 packetBytes == null ? 0 : packetBytes.length,
                 "matched=" + matchedHash
         );
@@ -422,14 +425,15 @@ public final class ChunkPersistentClientCache {
         }
 
         byte[] packetBytes = cacheSnapshot.blobs().get(blobEntryName(cachedHash));
-        long hashStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
-        boolean matchedHash = packetBytes != null && packetBytes.length > 0 && matchesHash(packetBytes, cachedHash);
+        boolean matchedHash = packetBytes != null
+                && packetBytes.length > 0
+                && cacheSnapshot.verifiedBlobEntries().contains(blobEntryName(cachedHash));
         ChunkLoadDelayProbe.logStage(
                 (Channel) null,
                 frame,
                 "client",
-                "persistent_loaded_find_base_hash_check",
-                ChunkLoadDelayProbe.elapsedMillisSince(hashStartNanos),
+                "persistent_loaded_find_base_verified_check",
+                0L,
                 packetBytes == null ? 0 : packetBytes.length,
                 "matched=" + matchedHash
         );
@@ -469,14 +473,15 @@ public final class ChunkPersistentClientCache {
                 }
 
                 byte[] packetBytes = cacheSnapshot.blobs().get(blobEntryName(cachedHash));
-                long hashStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
-                boolean matchedHash = packetBytes != null && packetBytes.length > 0 && matchesHash(packetBytes, cachedHash);
+                boolean matchedHash = packetBytes != null
+                        && packetBytes.length > 0
+                        && cacheSnapshot.verifiedBlobEntries().contains(blobEntryName(cachedHash));
                 ChunkLoadDelayProbe.logStage(
                         (Channel) null,
                         frame,
                         "client",
-                        "persistent_find_hash_check",
-                        ChunkLoadDelayProbe.elapsedMillisSince(hashStartNanos),
+                        "persistent_find_verified_check",
+                        0L,
                         packetBytes == null ? 0 : packetBytes.length,
                         "matched=" + matchedHash
                 );
@@ -531,14 +536,15 @@ public final class ChunkPersistentClientCache {
                 }
 
                 byte[] packetBytes = cacheSnapshot.blobs().get(blobEntryName(cachedHash));
-                long hashStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
-                boolean matchedHash = packetBytes != null && packetBytes.length > 0 && matchesHash(packetBytes, cachedHash);
+                boolean matchedHash = packetBytes != null
+                        && packetBytes.length > 0
+                        && cacheSnapshot.verifiedBlobEntries().contains(blobEntryName(cachedHash));
                 ChunkLoadDelayProbe.logStage(
                         (Channel) null,
                         frame,
                         "client",
-                        "persistent_find_base_hash_check",
-                        ChunkLoadDelayProbe.elapsedMillisSince(hashStartNanos),
+                        "persistent_find_base_verified_check",
+                        0L,
                         packetBytes == null ? 0 : packetBytes.length,
                         "matched=" + matchedHash
                 );
@@ -917,7 +923,8 @@ public final class ChunkPersistentClientCache {
                         || !serverScopeHash.equals(scopedCoordinateKey.serverScopeHash())
                         || scopedCoordinateKey.coordinate() == null
                         || !scopedCoordinateKey.coordinate().present()
-                        || !isSafeHash(hash)) {
+                        || !isSafeHash(hash)
+                        || !cacheSnapshot.verifiedBlobEntries().contains(blobEntryName(hash))) {
                     continue;
                 }
 
@@ -1266,7 +1273,36 @@ public final class ChunkPersistentClientCache {
                 }
             }
         }
-        return new ZipCacheSnapshot(index, blobs);
+        return verifyLoadedZipCacheSnapshot(new ZipCacheSnapshot(index, blobs));
+    }
+
+    private static ZipCacheSnapshot verifyLoadedZipCacheSnapshot(ZipCacheSnapshot cacheSnapshot) {
+        if (cacheSnapshot == null || cacheSnapshot.index() == null || cacheSnapshot.blobs() == null) {
+            return ZipCacheSnapshot.empty();
+        }
+
+        ArrayList<String> staleCoordinateKeys = new ArrayList<>();
+        for (String key : cacheSnapshot.index().stringPropertyNames()) {
+            if (!key.endsWith(".hash")) {
+                continue;
+            }
+
+            String coordinateKey = key.substring(0, key.length() - ".hash".length());
+            String hash = cacheSnapshot.index().getProperty(key, "");
+            String blobEntryName = isSafeHash(hash) ? blobEntryName(hash) : "";
+            byte[] packetBytes = blobEntryName.isBlank() ? null : cacheSnapshot.blobs().get(blobEntryName);
+            if (packetBytes != null && packetBytes.length > 0 && matchesHash(packetBytes, hash)) {
+                cacheSnapshot.verifiedBlobEntries().add(blobEntryName);
+            } else {
+                staleCoordinateKeys.add(coordinateKey);
+            }
+        }
+
+        for (String coordinateKey : staleCoordinateKeys) {
+            removeSnapshotIndexEntry(cacheSnapshot.index(), coordinateKey);
+        }
+        pruneUnreferencedBlobs(cacheSnapshot);
+        return cacheSnapshot;
     }
 
     private static void writeZipCacheSnapshot(ZipCacheSnapshot cacheSnapshot) throws IOException {
@@ -1292,7 +1328,7 @@ public final class ChunkPersistentClientCache {
 
     private static void publishLoadedHotPathSnapshotLocked() {
         loadedHotPathServerScopeHash = activeServerScopeHash == null ? "" : activeServerScopeHash;
-        loadedHotPathSnapshot = cachedSnapshot == null ? null : new ZipCacheSnapshot(cachedSnapshot.index(), cachedSnapshot.blobs());
+        loadedHotPathSnapshot = cachedSnapshot == null ? null : cachedSnapshot.copy();
     }
 
     private static int zipCompressionLevel() {
@@ -1505,7 +1541,21 @@ public final class ChunkPersistentClientCache {
         Set<String> referencedBlobEntries = referencedBlobEntries(cacheSnapshot.index());
         int before = cacheSnapshot.blobs().size();
         cacheSnapshot.blobs().keySet().removeIf(blobEntryName -> !referencedBlobEntries.contains(blobEntryName));
+        cacheSnapshot.verifiedBlobEntries().removeIf(blobEntryName -> !cacheSnapshot.blobs().containsKey(blobEntryName));
         return Math.max(before - cacheSnapshot.blobs().size(), 0);
+    }
+
+    private static void removeSnapshotIndexEntry(Properties index, String coordinateKey) {
+        if (index == null || coordinateKey == null || coordinateKey.isBlank()) {
+            return;
+        }
+        index.remove(coordinateKey + ".hash");
+        index.remove(coordinateKey + ".protocolName");
+        index.remove(coordinateKey + ".packetClassName");
+        index.remove(coordinateKey + ".fullSnapshotVersion");
+        index.remove(coordinateKey + ".encodedBytes");
+        index.remove(coordinateKey + ".lastUsedAtMillis");
+        index.remove(coordinateKey + ".serverScopeHash");
     }
 
     private static Set<String> referencedBlobEntries(Properties index) {
@@ -1684,8 +1734,13 @@ public final class ChunkPersistentClientCache {
 
     private record ZipCacheSnapshot(
             Properties index,
-            Map<String, byte[]> blobs
+            Map<String, byte[]> blobs,
+            Set<String> verifiedBlobEntries
     ) {
+        private ZipCacheSnapshot(Properties index, Map<String, byte[]> blobs) {
+            this(index, blobs, Set.of());
+        }
+
         private ZipCacheSnapshot {
             Properties safeIndex = new Properties();
             if (index != null) {
@@ -1693,10 +1748,15 @@ public final class ChunkPersistentClientCache {
             }
             index = safeIndex;
             blobs = blobs == null ? new HashMap<>() : new HashMap<>(blobs);
+            verifiedBlobEntries = verifiedBlobEntries == null ? new HashSet<>() : new HashSet<>(verifiedBlobEntries);
         }
 
         private static ZipCacheSnapshot empty() {
             return new ZipCacheSnapshot(new Properties(), new HashMap<>());
+        }
+
+        private ZipCacheSnapshot copy() {
+            return new ZipCacheSnapshot(index, blobs, verifiedBlobEntries);
         }
     }
 
