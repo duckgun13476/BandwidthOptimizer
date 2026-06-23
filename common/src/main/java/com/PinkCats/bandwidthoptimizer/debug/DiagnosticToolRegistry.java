@@ -136,6 +136,18 @@ public final class DiagnosticToolRegistry {
                 Cost.LARGE,
                 "Chunk transport encode, restore, and stage timing timeline",
                 "bandwidthoptimizer.diagnosetool.chunkDelayTimeline"
+        ),
+        TRANSPORT_TRACE_JOURNAL(
+                "transportTraceJournal",
+                Cost.MEDIUM,
+                "Per-channel transport trace journal close dumps",
+                "bandwidthoptimizer.diagnosetool.transportTraceJournal"
+        ),
+        CHUNK_TRANSPORT_FRAMES(
+                "chunkTransportFrames",
+                Cost.MEDIUM,
+                "Chunk transport wrap, unwrap, and control-frame decisions",
+                "bandwidthoptimizer.diagnosetool.chunkTransportFrames"
         );
 
         private final String id;

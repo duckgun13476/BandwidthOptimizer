@@ -43,6 +43,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkServerOfflineReuseStats;
 import com.PinkCats.bandwidthoptimizer.compat.sable.SableChunkSyncCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
@@ -176,7 +177,7 @@ public final class ChunkTransportDispatcher {
         long frameCount = incrementOutboundFrameCount(runtimeDecision.operation());
         if (shouldLogDiagnose() && shouldLogSample(frameCount)) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkTransport][Wrap] channel={}, op={}, count={}, epoch={}, observedPackets={}, chunk={}, payloadBytes={}, envelopeBytes={}, payloadHash={}",
+                    "[BO:Diag:chunkTransportFrames] event=wrap, channel={}, op={}, count={}, epoch={}, observedPackets={}, chunk={}, payloadBytes={}, envelopeBytes={}, payloadHash={}",
                     readChannelId(context),
                     runtimeDecision.operation().logName(),
                     frameCount,
@@ -362,7 +363,7 @@ public final class ChunkTransportDispatcher {
         long frameCount = incrementOutboundFrameCount(runtimeDecision.operation());
         if (shouldLogDiagnose() && shouldLogSample(frameCount)) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkTransport][Wrap] channel={}, op={}, count={}, epoch={}, observedPackets={}, chunk={}, payloadBytes={}, envelopeBytes={}, payloadHash={}",
+                    "[BO:Diag:chunkTransportFrames] event=wrap, channel={}, op={}, count={}, epoch={}, observedPackets={}, chunk={}, payloadBytes={}, envelopeBytes={}, payloadHash={}",
                     readChannelId(context),
                     runtimeDecision.operation().logName(),
                     frameCount,
@@ -1910,7 +1911,7 @@ public final class ChunkTransportDispatcher {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkTransport][Control][Ignore] action={}, channel={}, op={}, epoch={}, chunk={}, fullVersion={}, baseHash={}, payloadHash={}, state={}",
+                "[BO:Diag:chunkTransportFrames] event=control_ignore, action={}, channel={}, op={}, epoch={}, chunk={}, fullVersion={}, baseHash={}, payloadHash={}, state={}",
                 label,
                 context == null ? "<none>" : readChannelId(context),
                 frame == null || frame.operation() == null ? "<unknown>" : frame.operation().logName(),
@@ -1970,7 +1971,7 @@ public final class ChunkTransportDispatcher {
         }
 
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkTransport][Unwrap] channel={}, op={}, count={}, epoch={}, observedPackets={}, chunk={}, payloadBytes={}, envelopeBytes={}, payloadHash={}",
+                "[BO:Diag:chunkTransportFrames] event=unwrap, channel={}, op={}, count={}, epoch={}, observedPackets={}, chunk={}, payloadBytes={}, envelopeBytes={}, payloadHash={}",
                 readChannelId(context),
                 envelope.frame().operation().logName(),
                 frameCount,
@@ -1997,7 +1998,7 @@ public final class ChunkTransportDispatcher {
         }
 
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkTransport][Control][Recv] channel={}, op={}, count={}, epoch={}, observedPackets={}, chunk={}, fullVersion={}, payloadHash={}, reason={}",
+                "[BO:Diag:chunkTransportFrames] event=control_recv, channel={}, op={}, count={}, epoch={}, observedPackets={}, chunk={}, fullVersion={}, payloadHash={}, reason={}",
                 readChannelId(context),
                 frame.operation().logName(),
                 frameCount,
@@ -2019,7 +2020,7 @@ public final class ChunkTransportDispatcher {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkTransport][Data][Ignore] channel={}, op={}, epoch={}, chunk={}, fullVersion={}, baseHash={}, payloadHash={}, reason={}",
+                "[BO:Diag:chunkTransportFrames] event=data_ignore, channel={}, op={}, epoch={}, chunk={}, fullVersion={}, baseHash={}, payloadHash={}, reason={}",
                 readChannelId(context),
                 frame == null || frame.operation() == null ? "<unknown>" : frame.operation().logName(),
                 frame == null ? 0L : frame.epoch(),
@@ -2041,7 +2042,7 @@ public final class ChunkTransportDispatcher {
         }
         logIgnoredInboundRuntimeFrame(context, frame, reason);
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkTransport][Budget][Ignore] channel={}, op={}, epoch={}, chunk={}, fullVersion={}, baseHash={}, payloadHash={}, reason={}",
+                "[BO:Diag:chunkTransportFrames] event=budget_ignore, channel={}, op={}, epoch={}, chunk={}, fullVersion={}, baseHash={}, payloadHash={}, reason={}",
                 readChannelId(context),
                 frame == null || frame.operation() == null ? "<unknown>" : frame.operation().logName(),
                 frame == null ? 0L : frame.epoch(),
@@ -2067,7 +2068,8 @@ public final class ChunkTransportDispatcher {
     }
 
     private static boolean shouldLogDiagnose() {
-        return DebugRuntimeConfig.isDiagnoseEnabled();
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES)
+                || DebugRuntimeConfig.isDiagnoseEnabled();
     }
 
     private static String readChannelId(ChannelHandlerContext context) {

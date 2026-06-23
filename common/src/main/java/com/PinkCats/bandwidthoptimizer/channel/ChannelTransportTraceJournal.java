@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.channel;
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
@@ -27,7 +28,7 @@ public final class ChannelTransportTraceJournal {
 
 
     public static void record(ChannelHandlerContext context, String kind, String countKey, String eventText) {
-        if (!DebugRuntimeConfig.isDiagnoseEnabled() || context == null || context.channel() == null) {
+        if (!isEnabled() || context == null || context.channel() == null) {
             return;
         }
         int capacity = closeDumpSize();
@@ -44,7 +45,7 @@ public final class ChannelTransportTraceJournal {
         if (channel == null) {
             return;
         }
-        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (!isEnabled()) {
             channel.attr(TRACE_JOURNAL_KEY).set(null);
             return;
         }
@@ -77,6 +78,11 @@ public final class ChannelTransportTraceJournal {
         }
     }
 
+    private static boolean isEnabled() {
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.TRANSPORT_TRACE_JOURNAL)
+                || DebugRuntimeConfig.isDiagnoseEnabled();
+    }
+
     private static String trimToLogLine(String value) {
         String safeValue = value == null ? "<null>" : value;
         if (safeValue.length() <= MAX_EVENT_TEXT_LENGTH) {
@@ -104,7 +110,7 @@ public final class ChannelTransportTraceJournal {
 
         private synchronized void dump(String channelId, String reason, Throwable throwable) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[Transport][Trace][CloseDump] channel={}, reason={}, recordedEvents={}, recentEvents={}, countKeys={}",
+                    "[BO:Diag:transportTraceJournal] event=close_dump, channel={}, reason={}, recordedEvents={}, recentEvents={}, countKeys={}",
                     channelId,
                     reason,
                     this.recordedEvents,
@@ -113,7 +119,7 @@ public final class ChannelTransportTraceJournal {
             );
             if (throwable != null) {
                 Bandwidthoptimizer.LOGGER.warn(
-                        "[Transport][Trace][CloseDumpException] channel={}, reason={}",
+                        "[BO:Diag:transportTraceJournal] event=close_dump_exception, channel={}, reason={}",
                         channelId,
                         reason,
                         throwable
@@ -125,7 +131,7 @@ public final class ChannelTransportTraceJournal {
             for (int index = 0; index < countLines; index++) {
                 Map.Entry<String, Long> entry = sortedCounters.get(index);
                 Bandwidthoptimizer.LOGGER.info(
-                        "[Transport][Trace][CloseDump][Count] channel={}, key={}, count={}",
+                        "[BO:Diag:transportTraceJournal] event=close_dump_count, channel={}, key={}, count={}",
                         channelId,
                         entry.getKey(),
                         entry.getValue()
@@ -133,7 +139,7 @@ public final class ChannelTransportTraceJournal {
             }
             for (String event : this.recentEvents) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[Transport][Trace][CloseDump][Event] channel={}, {}",
+                        "[BO:Diag:transportTraceJournal] event=close_dump_event, channel={}, {}",
                         channelId,
                         event
                 );
