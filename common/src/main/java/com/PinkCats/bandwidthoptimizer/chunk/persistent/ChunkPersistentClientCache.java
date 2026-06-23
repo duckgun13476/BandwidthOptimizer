@@ -72,6 +72,7 @@ public final class ChunkPersistentClientCache {
     private static final Object LOCK = new Object();
     private static final Object FLUSH_LOCK = new Object();
     private static final Set<String> MANIFEST_SENT_CHANNELS = ConcurrentHashMap.newKeySet();
+    private static final ConcurrentHashMap<String, Long> LAST_USED_UPDATES = new ConcurrentHashMap<>();
     private static final java.util.concurrent.atomic.AtomicInteger PENDING_STORE_TASKS = new java.util.concurrent.atomic.AtomicInteger();
     private static final String ZIP_FILE_NAME = "client-persistent-chunk-cache.zip";
     private static final String INDEX_ENTRY_NAME = "index.properties";
@@ -150,9 +151,10 @@ public final class ChunkPersistentClientCache {
     public static void flushNow(String reason) {
         ZipCacheSnapshot snapshotToWrite;
         synchronized (LOCK) {
-            if (!dirty || cachedSnapshot == null) {
+            if (cachedSnapshot == null || (!dirty && LAST_USED_UPDATES.isEmpty())) {
                 return;
             }
+            mergePendingLastUsedUpdatesLocked(cachedSnapshot);
             snapshotToWrite = new ZipCacheSnapshot(cachedSnapshot.index(), cachedSnapshot.blobs());
             dirty = false;
             dirtyBlobWrites = 0;
@@ -386,6 +388,7 @@ public final class ChunkPersistentClientCache {
             return null;
         }
 
+        recordLastUsed(serverScopeHash, frame.coordinate());
         logLoad(frame, packetBytes.length);
         ChunkLoadDelayProbe.logStage(
                 (Channel) null,
@@ -434,6 +437,7 @@ public final class ChunkPersistentClientCache {
             return null;
         }
 
+        recordLastUsed(serverScopeHash, frame.coordinate());
         logLoad(frame, packetBytes.length);
         ChunkLoadDelayProbe.logStage(
                 (Channel) null,
@@ -480,8 +484,7 @@ public final class ChunkPersistentClientCache {
                     return null;
                 }
 
-                cacheSnapshot.index().setProperty(keyPrefix + "lastUsedAtMillis", Long.toString(System.currentTimeMillis()));
-                markDirty(0);
+                recordLastUsed(serverScopeHash, frame.coordinate());
                 logLoad(frame, packetBytes.length);
                 ChunkLoadDelayProbe.logStage(
                         (Channel) null,
@@ -543,8 +546,7 @@ public final class ChunkPersistentClientCache {
                     return null;
                 }
 
-                cacheSnapshot.index().setProperty(keyPrefix + "lastUsedAtMillis", Long.toString(System.currentTimeMillis()));
-                markDirty(0);
+                recordLastUsed(serverScopeHash, frame.coordinate());
                 logLoad(frame, packetBytes.length);
                 ChunkLoadDelayProbe.logStage(
                         (Channel) null,
@@ -1348,6 +1350,30 @@ public final class ChunkPersistentClientCache {
 
     private static int maxPendingStoreTasks() {
         return Math.max(readIntProperty(MAX_PENDING_STORE_TASKS_PROPERTY, DEFAULT_MAX_PENDING_STORE_TASKS), 1);
+    }
+
+    private static void recordLastUsed(String serverScopeHash, ChunkPacketCoordinate coordinate) {
+        if (!isSafeScopeHash(serverScopeHash) || coordinate == null || !coordinate.present()) {
+            return;
+        }
+        LAST_USED_UPDATES.put(entryPrefix(serverScopeHash, coordinate), System.currentTimeMillis());
+    }
+
+    private static void mergePendingLastUsedUpdatesLocked(ZipCacheSnapshot cacheSnapshot) {
+        if (cacheSnapshot == null || cacheSnapshot.index() == null || LAST_USED_UPDATES.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, Long> entry : LAST_USED_UPDATES.entrySet()) {
+            String keyPrefix = entry.getKey();
+            Long lastUsedAtMillis = entry.getValue();
+            if (keyPrefix == null || lastUsedAtMillis == null) {
+                continue;
+            }
+            if (LAST_USED_UPDATES.remove(keyPrefix, lastUsedAtMillis)
+                    && cacheSnapshot.index().containsKey(keyPrefix + "hash")) {
+                cacheSnapshot.index().setProperty(keyPrefix + "lastUsedAtMillis", Long.toString(lastUsedAtMillis));
+            }
+        }
     }
 
     private static String currentServerScopeHash() {
