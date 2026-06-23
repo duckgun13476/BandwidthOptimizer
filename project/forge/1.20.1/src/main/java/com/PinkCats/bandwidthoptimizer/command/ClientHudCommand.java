@@ -5,6 +5,7 @@ import com.PinkCats.bandwidthoptimizer.client.hud.BandwidthOptimizerHudOverlay;
 import com.PinkCats.bandwidthoptimizer.chunk.debug.ChunkClientGapProbe;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.CommandSourceCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticRuntimeSwitch;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -36,7 +37,10 @@ public final class ClientHudCommand {
                         .executes(context -> toggle(context.getSource())))
                 .then(Commands.literal("chunkgap")
                         .executes(context -> toggleChunkGapProbe(context.getSource())))
-                .then(buildDiagnoseCommand()));
+                .then(buildDiagnoseCommand())
+                .then(buildDiagnosticToolCommand()));
+        dispatcher.register(Commands.literal("bandwidthoptimister")
+                .then(buildDiagnosticToolCommand()));
     }
 
     private static int toggle(CommandSourceStack source) {
@@ -73,6 +77,48 @@ public final class ClientHudCommand {
                 .then(clientDiagnoseTopic(DiagnosticRuntimeSwitch.Topic.MOVEMENT))
                 .then(clientDiagnoseTopic(DiagnosticRuntimeSwitch.Topic.TRANSPORT))
                 .then(clientDiagnoseTopic(DiagnosticRuntimeSwitch.Topic.CACHE));
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> buildDiagnosticToolCommand() {
+        LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("diagnosetool")
+                .executes(context -> diagnosticToolStatus(context.getSource()))
+                .then(Commands.literal("status")
+                        .executes(context -> diagnosticToolStatus(context.getSource())));
+        for (DiagnosticToolRegistry.Tool tool : DiagnosticToolRegistry.Tool.values()) {
+            root.then(clientDiagnosticTool(tool));
+        }
+        return root;
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> clientDiagnosticTool(DiagnosticToolRegistry.Tool tool) {
+        return Commands.literal(tool.id())
+                .executes(context -> toggleDiagnosticTool(context.getSource(), tool))
+                .then(Commands.literal("on")
+                        .executes(context -> setDiagnosticTool(context.getSource(), tool, true)))
+                .then(Commands.literal("off")
+                        .executes(context -> setDiagnosticTool(context.getSource(), tool, false)));
+    }
+
+    private static int diagnosticToolStatus(CommandSourceStack source) {
+        CommandSourceCompat.sendSuccess(source, Component.literal(
+                DiagnosticToolRegistry.listText()
+                        + "\nThis only controls the local client."
+        ), false);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int toggleDiagnosticTool(CommandSourceStack source, DiagnosticToolRegistry.Tool tool) {
+        return setDiagnosticTool(source, tool, DiagnosticToolRegistry.toggle(tool));
+    }
+
+    private static int setDiagnosticTool(CommandSourceStack source, DiagnosticToolRegistry.Tool tool, boolean enabled) {
+        DiagnosticToolRegistry.setEnabled(tool, enabled);
+        CommandSourceCompat.sendSuccess(source, Component.literal(
+                "BO diagnosetool " + tool.id()
+                        + ' ' + onOff(enabled)
+                        + ". Log prefix [BO:Diag:" + tool.id() + "]. This only controls the local client."
+        ), false);
+        return Command.SINGLE_SUCCESS;
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> clientDiagnoseTopic(DiagnosticRuntimeSwitch.Topic topic) {
