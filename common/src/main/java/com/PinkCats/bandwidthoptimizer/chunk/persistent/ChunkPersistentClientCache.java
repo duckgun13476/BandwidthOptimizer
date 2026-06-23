@@ -37,6 +37,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 import java.util.zip.Deflater;
 import java.util.zip.ZipEntry;
@@ -53,8 +54,6 @@ public final class ChunkPersistentClientCache {
     private static final String MANIFEST_REFRESH_QUIET_MILLIS_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheManifestRefreshQuietMillis";
     private static final String ZIP_LEVEL_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheZipLevel";
     private static final String CHECKPOINT_INTERVAL_MILLIS_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheCheckpointMillis";
-    private static final String CHECKPOINT_DIRTY_BLOBS_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheCheckpointDirtyBlobs";
-    private static final String CHECKPOINT_DIRTY_BYTES_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheCheckpointDirtyBytes";
     private static final String BACKUP_ENABLED_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheBackupEnabled";
     private static final String BACKUP_INTERVAL_MILLIS_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheBackupMillis";
     private static final String MAX_PENDING_STORE_TASKS_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheMaxPendingStores";
@@ -65,9 +64,7 @@ public final class ChunkPersistentClientCache {
     private static final long DEFAULT_MANIFEST_REFRESH_INTERVAL_MILLIS = 5_000L;
     private static final long DEFAULT_MANIFEST_REFRESH_QUIET_MILLIS = 8_000L;
     private static final int DEFAULT_ZIP_LEVEL = 2;
-    private static final long DEFAULT_CHECKPOINT_INTERVAL_MILLIS = 5_000L;
-    private static final int DEFAULT_CHECKPOINT_DIRTY_BLOBS = 16;
-    private static final long DEFAULT_CHECKPOINT_DIRTY_BYTES = 512L * 1024L;
+    private static final long DEFAULT_CHECKPOINT_INTERVAL_MILLIS = 900_000L;
     private static final boolean DEFAULT_BACKUP_ENABLED = true;
     private static final long DEFAULT_BACKUP_INTERVAL_MILLIS = 600_000L;
     private static final int DEFAULT_MAX_PENDING_STORE_TASKS = 2048;
@@ -96,6 +93,7 @@ public final class ChunkPersistentClientCache {
     private static boolean dirty;
     private static int dirtyBlobWrites;
     private static long dirtyBytes;
+    private static final AtomicLong LAST_SUCCESSFUL_FLUSH_MILLIS = new AtomicLong(System.currentTimeMillis());
     private static Channel activeManifestRefreshChannel;
     private static String activeManifestRefreshChannelId = "";
     private static long manifestRefreshDirtyGeneration;
@@ -154,7 +152,16 @@ public final class ChunkPersistentClientCache {
 
     public static void flushNow(String reason) {
         ZipCacheSnapshot snapshotToWrite;
+        String safeReason = safeText(reason, "client_cache_flush");
+        int pendingStores = PENDING_STORE_REQUEST_COUNT.get();
         synchronized (LOCK) {
+            if (shouldSkipBlockingFlush(safeReason)) {
+                return;
+            }
+            if (shouldDeferFlushForPendingStores(safeReason, pendingStores)) {
+                schedulePendingStoreDrain();
+                return;
+            }
             if (cachedSnapshot == null || (!dirty && LAST_USED_UPDATES.isEmpty())) {
                 return;
             }
@@ -169,13 +176,14 @@ public final class ChunkPersistentClientCache {
             try {
                 long startedAtMillis = System.currentTimeMillis();
                 writeZipCacheSnapshot(snapshotToWrite);
+                LAST_SUCCESSFUL_FLUSH_MILLIS.set(System.currentTimeMillis());
                 if (DebugRuntimeConfig.isDiagnoseEnabled()) {
                     Bandwidthoptimizer.LOGGER.info(
                             "[ChunkPersistentCache][Flush] cacheFile={}, blobs={}, millis={}, reason={}",
                             cacheFile(),
                             snapshotToWrite.blobs().size(),
                             System.currentTimeMillis() - startedAtMillis,
-                            safeText(reason, "client_shutdown")
+                            safeReason
                     );
                 }
             } catch (IOException exception) {
@@ -191,6 +199,13 @@ public final class ChunkPersistentClientCache {
                 }
             }
         }
+    }
+
+    public static void flushAsync(String reason) {
+        if (!isEnabled()) {
+            return;
+        }
+        queueAsyncFlush(reason);
     }
 
 
@@ -292,6 +307,8 @@ public final class ChunkPersistentClientCache {
             STORE_DRAIN_QUEUED.set(false);
             if (!PENDING_STORE_REQUESTS.isEmpty()) {
                 schedulePendingStoreDrain();
+            } else {
+                queueIdleCheckpointAfterStoreDrain();
             }
         }
     }
@@ -1239,7 +1256,6 @@ public final class ChunkPersistentClientCache {
         if (cachedSnapshot == null) {
             cachedSnapshot = readZipCacheSnapshot();
         }
-        publishLoadedHotPathSnapshotLocked();
         ChunkLoadDelayProbe.logStage(
                 (Channel) null,
                 null,
@@ -1254,10 +1270,10 @@ public final class ChunkPersistentClientCache {
 
     private static void markDirty(int encodedBytes) {
         dirty = true;
-        dirtyBlobWrites++;
-        dirtyBytes += Math.max(encodedBytes, 0);
-        if (dirtyBlobWrites >= checkpointDirtyBlobs() || dirtyBytes >= checkpointDirtyBytes()) {
-            queueAsyncFlush("dirty_threshold_checkpoint");
+        int safeEncodedBytes = Math.max(encodedBytes, 0);
+        if (safeEncodedBytes > 0) {
+            dirtyBlobWrites++;
+            dirtyBytes += safeEncodedBytes;
         }
     }
 
@@ -1267,27 +1283,66 @@ public final class ChunkPersistentClientCache {
     }
 
     private static void queueAsyncFlush(String reason) {
+        synchronized (LOCK) {
+            queueAsyncFlushLocked(reason);
+        }
+    }
+
+    private static void queueAsyncFlushLocked(String reason) {
         if (flushQueued) {
             return;
         }
         flushQueued = true;
-        IO_EXECUTOR.execute(() -> {
-            try {
-                flushNow(reason);
-            } finally {
-                boolean shouldQueueAgain;
-                synchronized (LOCK) {
-                    flushQueued = false;
-                    shouldQueueAgain = dirty
-                            && (dirtyBlobWrites >= checkpointDirtyBlobs() || dirtyBytes >= checkpointDirtyBytes());
-                }
-                if (shouldQueueAgain) {
+        try {
+            IO_EXECUTOR.execute(() -> {
+                try {
+                    flushNow(reason);
+                } finally {
                     synchronized (LOCK) {
-                        queueAsyncFlush("dirty_followup_checkpoint");
+                        flushQueued = false;
                     }
                 }
+            });
+        } catch (RuntimeException exception) {
+            flushQueued = false;
+            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                Bandwidthoptimizer.LOGGER.warn(
+                        "[ChunkPersistentCache][Flush][QueueFail] reason={}, pending={}, error={}",
+                        safeText(reason, "async_flush"),
+                        PENDING_STORE_REQUEST_COUNT.get(),
+                        exception.toString()
+                );
             }
-        });
+        }
+    }
+
+    private static void queueIdleCheckpointAfterStoreDrain() {
+        synchronized (LOCK) {
+            if (PENDING_STORE_REQUEST_COUNT.get() != 0 || !dirty) {
+                return;
+            }
+            long elapsedMillis = System.currentTimeMillis() - LAST_SUCCESSFUL_FLUSH_MILLIS.get();
+            if (elapsedMillis < checkpointIntervalMillis()) {
+                return;
+            }
+            queueAsyncFlushLocked("store_drain_idle_checkpoint");
+        }
+    }
+
+    private static boolean shouldSkipBlockingFlush(String reason) {
+        String safeReason = safeText(reason, "");
+        return "jvm_shutdown".equals(safeReason)
+                || safeReason.contains("logging_out")
+                || safeReason.contains("disconnect")
+                || safeReason.contains("stopping");
+    }
+
+    private static boolean shouldDeferFlushForPendingStores(String reason, int pendingStores) {
+        if (pendingStores <= 0) {
+            return false;
+        }
+        String safeReason = safeText(reason, "");
+        return safeReason.contains("checkpoint") || safeReason.contains("backup");
     }
 
     private static ZipCacheSnapshot readZipCacheSnapshot() throws IOException {
@@ -1430,10 +1485,6 @@ public final class ChunkPersistentClientCache {
         return Math.max(readLongProperty(CHECKPOINT_INTERVAL_MILLIS_PROPERTY, DEFAULT_CHECKPOINT_INTERVAL_MILLIS), 1_000L);
     }
 
-    private static int checkpointDirtyBlobs() {
-        return Math.max(readIntProperty(CHECKPOINT_DIRTY_BLOBS_PROPERTY, DEFAULT_CHECKPOINT_DIRTY_BLOBS), 1);
-    }
-
     private static int manifestBatchEntries() {
         return Math.max(readIntProperty(MANIFEST_BATCH_ENTRIES_PROPERTY, DEFAULT_MANIFEST_BATCH_ENTRIES), 1);
     }
@@ -1457,10 +1508,6 @@ public final class ChunkPersistentClientCache {
                 readLongProperty(MANIFEST_REFRESH_QUIET_MILLIS_PROPERTY, DEFAULT_MANIFEST_REFRESH_QUIET_MILLIS),
                 0L
         );
-    }
-
-    private static long checkpointDirtyBytes() {
-        return Math.max(readLongProperty(CHECKPOINT_DIRTY_BYTES_PROPERTY, DEFAULT_CHECKPOINT_DIRTY_BYTES), 64L * 1024L);
     }
 
     private static boolean isBackupEnabled() {

@@ -35,7 +35,7 @@ final class BandwidthOptimizerHudOverlayCore {
     }
 
     static void onLoggingOut(String reason) {
-        ChunkPersistentClientCache.flushNow(reason);
+        ChunkPersistentClientCache.flushAsync(reason);
     }
 
     static boolean shouldRender(Minecraft minecraft) {

@@ -21,13 +21,13 @@ public class BandwidthOptimizerFabricClient implements ClientModInitializer {
         ServerBandwidthStatsClientReceiver.register();
         ChunkPersistentClientCache.startAsyncPreload("fabric_client_startup");
         ClientLifecycleEvents.CLIENT_STOPPING.register(client ->
-                ChunkPersistentClientCache.flushNow("fabric_client_stopping"));
+                ChunkPersistentClientCache.flushAsync("fabric_client_stopping"));
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
                 ClientHudCommand.register(dispatcher));
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) ->
                 BandwidthOptimizerHudOverlay.onLoggingIn());
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
-                ChunkPersistentClientCache.flushNow("fabric_client_disconnect"));
+                ChunkPersistentClientCache.flushAsync("fabric_client_disconnect"));
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             ExperientClientCaptureResetHooks.onClientTick();
             ExperientAutoConnectController.onClientTick(client);
