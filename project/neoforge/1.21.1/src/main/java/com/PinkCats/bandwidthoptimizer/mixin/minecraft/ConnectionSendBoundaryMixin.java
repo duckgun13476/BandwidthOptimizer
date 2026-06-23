@@ -6,6 +6,7 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportControlPlane;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportTraceJournal;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelDecoderExceptionDumper;
 import com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate;
+import com.PinkCats.bandwidthoptimizer.debug.MovementDiagnosticProbe;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportSourceRankCore;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -27,6 +28,7 @@ public abstract class ConnectionSendBoundaryMixin {
     // Chunk send
     @Inject(method = "sendPacket", at = @At("HEAD"), cancellable = true)
     private void bandwidthoptimizer$notePacketSendBoundary(Packet<?> packet, PacketSendListener listener, boolean flush, CallbackInfo ci) {
+        MovementDiagnosticProbe.observeConnectionSend(this.channel, packet);
         CreateBlockEntityUpdateGate.observeConnectionSend(this.channel, packet);
         if (CreateBlockEntityUpdateGate.tryDelayConnectionSend(this.channel, packet, listener)) {
             ci.cancel();

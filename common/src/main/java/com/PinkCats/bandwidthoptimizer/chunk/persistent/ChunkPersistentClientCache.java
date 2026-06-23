@@ -11,7 +11,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameC
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprintService;
-import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticRuntimeSwitch;
 import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 import io.netty.channel.Channel;
 
@@ -126,7 +126,7 @@ public final class ChunkPersistentClientCache {
                 try {
                     cachedZipCacheSnapshot();
                     publishLoadedHotPathSnapshotLocked();
-                    if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                    if (shouldLogCacheDiagnose()) {
                         Bandwidthoptimizer.LOGGER.info(
                                 "[ChunkPersistentCache][Preload] cacheFile={}, blobs={}, millis={}, reason={}",
                                 cacheFile(),
@@ -138,7 +138,7 @@ public final class ChunkPersistentClientCache {
                 } catch (IOException exception) {
                     cachedSnapshot = ZipCacheSnapshot.empty();
                     publishLoadedHotPathSnapshotLocked();
-                    if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                    if (shouldLogCacheDiagnose()) {
                         Bandwidthoptimizer.LOGGER.warn(
                                 "[ChunkPersistentCache][Preload][Fail] cacheFile={}, reason={}",
                                 cacheFile(),
@@ -177,7 +177,7 @@ public final class ChunkPersistentClientCache {
                 long startedAtMillis = System.currentTimeMillis();
                 writeZipCacheSnapshot(snapshotToWrite);
                 LAST_SUCCESSFUL_FLUSH_MILLIS.set(System.currentTimeMillis());
-                if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                if (shouldLogCacheDiagnose()) {
                     Bandwidthoptimizer.LOGGER.info(
                             "[ChunkPersistentCache][Flush] cacheFile={}, blobs={}, millis={}, reason={}",
                             cacheFile(),
@@ -190,7 +190,7 @@ public final class ChunkPersistentClientCache {
                 synchronized (LOCK) {
                     dirty = true;
                 }
-                if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                if (shouldLogCacheDiagnose()) {
                     Bandwidthoptimizer.LOGGER.warn(
                             "[ChunkPersistentCache][Flush][Fail] cacheFile={}, reason={}",
                             cacheFile(),
@@ -257,7 +257,7 @@ public final class ChunkPersistentClientCache {
                 } else {
                     pendingStores = PENDING_STORE_REQUEST_COUNT.get();
                 }
-                if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                if (shouldLogCacheDiagnose()) {
                     Bandwidthoptimizer.LOGGER.warn(
                             "[ChunkPersistentCache][Store][Drop] chunk={}, bytes={}, pending={}, limit={}, reason={}",
                             coordinate.logText(),
@@ -282,7 +282,7 @@ public final class ChunkPersistentClientCache {
             IO_EXECUTOR.execute(ChunkPersistentClientCache::drainPendingStoreRequests);
         } catch (RuntimeException exception) {
             STORE_DRAIN_QUEUED.set(false);
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (shouldLogCacheDiagnose()) {
                 Bandwidthoptimizer.LOGGER.warn(
                         "[ChunkPersistentCache][Store][QueueFail] pending={}, reason={}",
                         PENDING_STORE_REQUEST_COUNT.get(),
@@ -350,7 +350,7 @@ public final class ChunkPersistentClientCache {
             );
             storeFullSnapshot(frame, request.snapshotBytes(), request.serverScopeHash(), fingerprint);
         } catch (RuntimeException exception) {
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (shouldLogCacheDiagnose()) {
                 Bandwidthoptimizer.LOGGER.warn(
                         "[ChunkPersistentCache][Store][WorkerFail] chunk={}, bytes={}, pending={}, reason={}",
                         request.coordinate().logText(),
@@ -425,7 +425,7 @@ public final class ChunkPersistentClientCache {
                 publishLoadedHotPathSnapshotLocked();
                 logStore(frame, restoredPacketBytes.length, cacheFile());
             } catch (IOException exception) {
-                if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                if (shouldLogCacheDiagnose()) {
                     Bandwidthoptimizer.LOGGER.warn(
                             "[ChunkPersistentCache][Store][Fail] chunk={}, hash={}, reason={}",
                             frame.coordinate().logText(),
@@ -575,7 +575,7 @@ public final class ChunkPersistentClientCache {
                 );
                 return packetBytes.clone();
             } catch (IOException exception) {
-                if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                if (shouldLogCacheDiagnose()) {
                     Bandwidthoptimizer.LOGGER.warn(
                             "[ChunkPersistentCache][Load][Fail] chunk={}, hash={}, reason={}",
                             frame.coordinate().logText(),
@@ -638,7 +638,7 @@ public final class ChunkPersistentClientCache {
                 );
                 return packetBytes.clone();
             } catch (IOException exception) {
-                if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                if (shouldLogCacheDiagnose()) {
                     Bandwidthoptimizer.LOGGER.warn(
                             "[ChunkPersistentCache][LoadBase][Fail] chunk={}, hash={}, reason={}",
                             frame.coordinate().logText(),
@@ -668,7 +668,7 @@ public final class ChunkPersistentClientCache {
         boolean hadManifestForChannel = hasManifestForChannel(channel);
         clearActiveServerScope(channel);
         boolean cleared = (previousScopeHash != null && !previousScopeHash.isBlank()) || hadManifestForChannel;
-        if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (shouldLogCacheDiagnose()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkPersistentCache][Scope][Reset] channel={}, previousScope={}, hadManifest={}, reason={}, cleared={}",
                     com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
@@ -738,7 +738,7 @@ public final class ChunkPersistentClientCache {
                 serverScopeHash,
                 safeText(reason, "persistent_client_cache_manifest") + "_complete"
         );
-        if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (shouldLogCacheDiagnose()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkPersistentCache][Manifest] channel={}, entries={}, sent={}, cacheFile={}, reason={}",
                     manifestKey,
@@ -816,7 +816,7 @@ public final class ChunkPersistentClientCache {
 
         channel.eventLoop().execute(() -> {
             if (!serverScopeHash.equals(currentServerScopeHash()) || !channel.isOpen()) {
-                if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                if (shouldLogCacheDiagnose()) {
                     Bandwidthoptimizer.LOGGER.info(
                             "[ChunkPersistentCache][Manifest][RefreshSkipStale] channel={}, scope={}, currentScope={}, reason={}",
                             manifestKey,
@@ -851,7 +851,7 @@ public final class ChunkPersistentClientCache {
                     manifestRefreshInFlightGeneration = 0L;
                 }
             }
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (shouldLogCacheDiagnose()) {
                 Bandwidthoptimizer.LOGGER.info(
                         "[ChunkPersistentCache][Manifest][Refresh] channel={}, entries={}, sent={}, batches={}, generation={}, reason={}",
                         manifestKey,
@@ -920,7 +920,7 @@ public final class ChunkPersistentClientCache {
         long sendStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         channel.eventLoop().execute(() -> {
             if (!serverScopeHash.equals(currentServerScopeHash())) {
-                if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                if (shouldLogCacheDiagnose()) {
                     Bandwidthoptimizer.LOGGER.info(
                             "[ChunkPersistentCache][Manifest][SkipStale] channel={}, scope={}, currentScope={}, reason={}",
                             manifestKey,
@@ -948,7 +948,7 @@ public final class ChunkPersistentClientCache {
                     serverScopeHash,
                     safeText(reason, "persistent_client_cache_manifest") + "_complete"
             );
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (shouldLogCacheDiagnose()) {
                 Bandwidthoptimizer.LOGGER.info(
                         "[ChunkPersistentCache][Manifest][Async] channel={}, entries={}, sent={}, batches={}, cacheFile={}, reason={}",
                         manifestKey,
@@ -1072,7 +1072,7 @@ public final class ChunkPersistentClientCache {
         writeZipCacheSnapshot(migratedSnapshot);
         cachedSnapshot = migratedSnapshot;
         deleteDirectoryTree(legacyRoot);
-        if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (shouldLogCacheDiagnose()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkPersistentCache][Migrate] legacy={}, zip={}, blobs={}",
                     legacyRoot,
@@ -1221,7 +1221,7 @@ public final class ChunkPersistentClientCache {
             Files.createDirectories(targetPath.getParent());
             Files.copy(sourcePath, tempPath, StandardCopyOption.REPLACE_EXISTING);
             moveReplacing(tempPath, targetPath);
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (shouldLogCacheDiagnose()) {
                 Bandwidthoptimizer.LOGGER.info(
                         "[ChunkPersistentCache][Backup] cacheFile={}, backupFile={}, bytes={}, millis={}, reason={}",
                         sourcePath,
@@ -1236,7 +1236,7 @@ public final class ChunkPersistentClientCache {
                 Files.deleteIfExists(tempPath);
             } catch (IOException ignored) {
             }
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (shouldLogCacheDiagnose()) {
                 Bandwidthoptimizer.LOGGER.warn(
                         "[ChunkPersistentCache][Backup][Fail] cacheFile={}, backupFile={}, reason={}",
                         sourcePath,
@@ -1305,7 +1305,7 @@ public final class ChunkPersistentClientCache {
             });
         } catch (RuntimeException exception) {
             flushQueued = false;
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (shouldLogCacheDiagnose()) {
                 Bandwidthoptimizer.LOGGER.warn(
                         "[ChunkPersistentCache][Flush][QueueFail] reason={}, pending={}, error={}",
                         safeText(reason, "async_flush"),
@@ -1597,7 +1597,7 @@ public final class ChunkPersistentClientCache {
         if (channel != null) {
             MANIFEST_SENT_CHANNELS.removeIf(key -> key.startsWith(com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel) + "|"));
         }
-        if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (shouldLogCacheDiagnose()) {
             Bandwidthoptimizer.LOGGER.info(
                     "[ChunkPersistentCache][Scope] channel={}, scope={}, reason={}",
                     channel == null ? "<none>" : com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
@@ -1819,8 +1819,12 @@ public final class ChunkPersistentClientCache {
         return text == null || text.isBlank() ? fallback : text;
     }
 
+    private static boolean shouldLogCacheDiagnose() {
+        return DiagnosticRuntimeSwitch.isEnabled(DiagnosticRuntimeSwitch.Topic.CACHE);
+    }
+
     private static void logStore(ChunkHotspotFrame frame, int encodedBytes, Path cachePath) {
-        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (!shouldLogCacheDiagnose()) {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
@@ -1833,7 +1837,7 @@ public final class ChunkPersistentClientCache {
     }
 
     private static void logLoad(ChunkHotspotFrame frame, int encodedBytes) {
-        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (!shouldLogCacheDiagnose()) {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(

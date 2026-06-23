@@ -1,7 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
-import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticRuntimeSwitch;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientChunkCache;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -81,7 +81,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
 
     @Inject(method = "handleMovePlayer", at = @At("RETURN"))
     private void bandwidthoptimizer$logPlayerPositionHandle(ClientboundPlayerPositionPacket packet, CallbackInfo ci) {
-        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (!DiagnosticRuntimeSwitch.isEnabled(DiagnosticRuntimeSwitch.Topic.MOVEMENT)) {
             return;
         }
         int index = bandwidthoptimizer$POSITION_LOG_COUNT.incrementAndGet();
@@ -91,7 +91,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         LocalPlayer player = Minecraft.getInstance().player;
         ChunkPos playerChunk = player == null ? null : player.chunkPosition();
         Bandwidthoptimizer.LOGGER.info(
-                "[PlayerPositionHandle] index={}, packetPos=({}, {}, {}), packetId={}, relative={}, playerPos=({}, {}, {}), playerChunk=({}, {})",
+                "[BODiag][Movement][PositionHandle] index={}, packetPos=({}, {}, {}), packetId={}, relative={}, playerPos=({}, {}, {}), playerChunk=({}, {})",
                 index,
                 packet == null ? 0.0D : packet.getX(),
                 packet == null ? 0.0D : packet.getY(),
@@ -127,7 +127,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
 
     @Unique
     private static void bandwidthoptimizer$logHandle(String kind, int chunkX, int chunkZ, int radius, boolean cached) {
-        if (!DebugRuntimeConfig.isDiagnoseEnabled())
+        if (!DiagnosticRuntimeSwitch.isEnabled(DiagnosticRuntimeSwitch.Topic.CACHE))
             return;
 
         int index = bandwidthoptimizer$HANDLE_LOG_COUNT.incrementAndGet();
@@ -135,7 +135,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkClientHandle] index={}, kind={}, chunk=({}, {}), radius={}, cached={}",
+                "[BODiag][Cache][ChunkHandle] index={}, kind={}, chunk=({}, {}), radius={}, cached={}",
                 index,
                 kind,
                 chunkX,

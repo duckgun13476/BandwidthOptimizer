@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.report.ChannelTransportCompressionCommand
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCommand;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsCommand;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.CommandSourceCompat;
+import com.PinkCats.bandwidthoptimizer.debug.BandwidthOptimizerDiagnosticCommand;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
 import net.minecraft.commands.CommandSourceStack;
@@ -20,6 +21,7 @@ public final class BandwidthOptimizerCommand {
                         .requires(source -> source.hasPermission(2))
                         .then(ChannelTransportCompressionCommand.buildCommand())
                         .then(ChannelTransportPacketRankCommand.buildCommand()))
+                .then(BandwidthOptimizerDiagnosticCommand.buildCommand())
                 .then(ServerBandwidthStatsCommand.buildCommand())
         );
     }
@@ -30,6 +32,7 @@ public final class BandwidthOptimizerCommand {
                 "BandwidthOptimizer commands: /bandwidthoptimizer hud (client) | "
                         + "/bandwidthoptimizer test transportreport run [ticks] | "
                         + "/bandwidthoptimizer test packetrank run [ticks] | "
+                        + "/bandwidthoptimizer diagnose status|off|<topic> on|off | "
                         + "/bandwidthoptimizer stats total|players [limit]|reset|vanilla on|off"
         ), false);
         return Command.SINGLE_SUCCESS;

@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
 import com.PinkCats.bandwidthoptimizer.channel.access.PacketEncoderFlowAccess;
 import com.PinkCats.bandwidthoptimizer.channel.access.PacketEncoderProtocolInfoAccess;
+import com.PinkCats.bandwidthoptimizer.debug.TransportDiagnosticProbe;
 import com.PinkCats.bandwidthoptimizer.compat.trueuuid.TrueUuidLateLoginQueryGuard;
 import com.PinkCats.bandwidthoptimizer.server.stat.ChannelBandwidthStats;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
@@ -35,6 +36,9 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
     @Unique
     private int bandwidthoptimizer$writerIndexBefore;
 
+    @Unique
+    private long bandwidthoptimizer$encodeStartNanos;
+
 
     @Override
     public PacketFlow bandwidthoptimizer$getPacketFlow() {
@@ -51,6 +55,7 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
 
         //Index
         this.bandwidthoptimizer$writerIndexBefore = out.writerIndex();
+        this.bandwidthoptimizer$encodeStartNanos = System.nanoTime();
     }
 
 
@@ -60,9 +65,13 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
             return;
         }
 
+        int encodedByteLength = out.writerIndex() - this.bandwidthoptimizer$writerIndexBefore;
+        long returnHookStartNanos = System.nanoTime();
+        long vanillaEncodeNanos = this.bandwidthoptimizer$encodeStartNanos <= 0L
+                ? 0L
+                : Math.max(returnHookStartNanos - this.bandwidthoptimizer$encodeStartNanos, 0L);
         ChannelBandwidthStats stats = ServerBandwidthStatsRegistry.getOrCreate(context);
         if (stats != null) {
-            int encodedByteLength = out.writerIndex() - this.bandwidthoptimizer$writerIndexBefore;
             stats.recordOutboundRawEncoded(encodedByteLength);
             if (VanillaCompressionEstimator.isEnabled()) {
                 stats.recordOutboundVanillaCompressedEstimate(
@@ -77,5 +86,13 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
 
         //handle
         ChannelTransportHooks.tryToWrapOutboundPacket(context, packet, out, this.bandwidthoptimizer$writerIndexBefore, this);
+        TransportDiagnosticProbe.observeOutboundEncodeCost(
+                context,
+                this.protocolInfo.flow(),
+                packet,
+                encodedByteLength,
+                vanillaEncodeNanos,
+                System.nanoTime() - returnHookStartNanos
+        );
     }
 }

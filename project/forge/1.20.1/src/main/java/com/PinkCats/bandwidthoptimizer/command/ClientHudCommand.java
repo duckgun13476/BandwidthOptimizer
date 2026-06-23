@@ -4,8 +4,10 @@ import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.client.hud.BandwidthOptimizerHudOverlay;
 import com.PinkCats.bandwidthoptimizer.chunk.debug.ChunkClientGapProbe;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.CommandSourceCompat;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticRuntimeSwitch;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -33,7 +35,8 @@ public final class ClientHudCommand {
                 .then(Commands.literal("hud")
                         .executes(context -> toggle(context.getSource())))
                 .then(Commands.literal("chunkgap")
-                        .executes(context -> toggleChunkGapProbe(context.getSource()))));
+                        .executes(context -> toggleChunkGapProbe(context.getSource())))
+                .then(buildDiagnoseCommand()));
     }
 
     private static int toggle(CommandSourceStack source) {
@@ -55,6 +58,55 @@ public final class ClientHudCommand {
         return Command.SINGLE_SUCCESS;
     }
 
+    private static LiteralArgumentBuilder<CommandSourceStack> buildDiagnoseCommand() {
+        return Commands.literal("diagnose")
+                .executes(context -> diagnoseStatus(context.getSource()))
+                .then(Commands.literal("status")
+                        .executes(context -> diagnoseStatus(context.getSource())))
+                .then(Commands.literal("off")
+                        .executes(context -> setDiagnoseAll(context.getSource(), false)))
+                .then(Commands.literal("all")
+                        .then(Commands.literal("on")
+                                .executes(context -> setDiagnoseAll(context.getSource(), true)))
+                        .then(Commands.literal("off")
+                                .executes(context -> setDiagnoseAll(context.getSource(), false))))
+                .then(clientDiagnoseTopic(DiagnosticRuntimeSwitch.Topic.MOVEMENT))
+                .then(clientDiagnoseTopic(DiagnosticRuntimeSwitch.Topic.TRANSPORT))
+                .then(clientDiagnoseTopic(DiagnosticRuntimeSwitch.Topic.CACHE));
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> clientDiagnoseTopic(DiagnosticRuntimeSwitch.Topic topic) {
+        return Commands.literal(topic.id())
+                .then(Commands.literal("on")
+                        .executes(context -> setDiagnoseTopic(context.getSource(), topic, true)))
+                .then(Commands.literal("off")
+                        .executes(context -> setDiagnoseTopic(context.getSource(), topic, false)));
+    }
+
+    private static int diagnoseStatus(CommandSourceStack source) {
+        CommandSourceCompat.sendSuccess(source, Component.literal(
+                DiagnosticRuntimeSwitch.statusText()
+                        + ". This only controls the local client."
+        ), false);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int setDiagnoseTopic(CommandSourceStack source, DiagnosticRuntimeSwitch.Topic topic, boolean enabled) {
+        DiagnosticRuntimeSwitch.setEnabled(topic, enabled);
+        CommandSourceCompat.sendSuccess(source, Component.literal(
+                "BO client diagnose " + topic.id() + ' ' + onOff(enabled) + ". " + DiagnosticRuntimeSwitch.statusText()
+        ), false);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int setDiagnoseAll(CommandSourceStack source, boolean enabled) {
+        DiagnosticRuntimeSwitch.setAll(enabled);
+        CommandSourceCompat.sendSuccess(source, Component.literal(
+                "BO client diagnose all " + onOff(enabled) + ". " + DiagnosticRuntimeSwitch.statusText()
+        ), false);
+        return Command.SINGLE_SUCCESS;
+    }
+
     private static int toggleChunkGapProbe(CommandSourceStack source) {
         boolean enabled = !ChunkClientGapProbe.isEnabled();
         ChunkClientGapProbe.setEnabled(enabled);
@@ -67,5 +119,9 @@ public final class ClientHudCommand {
 
     private static String formatCooldownSeconds(long waitMillis) {
         return String.format(Locale.ROOT, "%.1f", waitMillis / 1000.0D);
+    }
+
+    private static String onOff(boolean value) {
+        return value ? "on" : "off";
     }
 }
