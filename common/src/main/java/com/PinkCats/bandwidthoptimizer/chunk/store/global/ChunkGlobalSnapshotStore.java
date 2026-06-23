@@ -11,6 +11,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshot
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.store.blob.ChunkBlobHandle;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 
 import java.util.HashMap;
 import java.util.Iterator;
@@ -123,7 +124,7 @@ public final class ChunkGlobalSnapshotStore {
 
             if (shouldLogDiagnose() && shouldLogSample(materializedUpdateCount)) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[ChunkStore][Materialize] channel={}, chunk={}, fullVersion={}, fullHash={}, packetCount={}, blobRefs={}, retainedBlobBytes={}/{}, materializedSnapshots={}",
+                        "[BO:Diag:chunkGlobalSnapshot] event=materialize channel={}, chunk={}, fullVersion={}, fullHash={}, packetCount={}, blobRefs={}, retainedBlobBytes={}/{}, materializedSnapshots={}",
                         channelId,
                         snapshot.coordinate().logText(),
                         snapshot.fullSnapshotVersion(),
@@ -364,7 +365,7 @@ public final class ChunkGlobalSnapshotStore {
             releaseMaterializedSnapshotReferences(eldestEntry.getValue());
             if (shouldLogDiagnose()) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[ChunkStore][Evict] scope=materialized_snapshot, reason=version_limit, chunk={}, fullVersion={}, fullHash={}, retainedVersions={}, limit={}",
+                        "[BO:Diag:chunkGlobalSnapshot] event=evict scope=materialized_snapshot, reason=version_limit, chunk={}, fullVersion={}, fullHash={}, retainedVersions={}, limit={}",
                         eldestEntry.getValue().coordinate().logText(),
                         eldestEntry.getValue().fullSnapshotVersion(),
                         shortenHash(eldestEntry.getValue().fullSnapshotHash()),
@@ -400,7 +401,7 @@ public final class ChunkGlobalSnapshotStore {
             removeHotspotDistinctHashes(removedRecord);
             if (shouldLogDiagnose()) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[ChunkStore][Evict] scope=blob, reason={}, hash={}, encodedBytes={}, retainedBlobBytes={}/{}",
+                        "[BO:Diag:chunkGlobalSnapshot] event=evict scope=blob, reason={}, hash={}, encodedBytes={}, retainedBlobBytes={}/{}",
                         reason,
                         removedRecord.snapshotShortHash(),
                         removedRecord.encodedBytes(),
@@ -437,7 +438,7 @@ public final class ChunkGlobalSnapshotStore {
         }
         if (shouldLogDiagnose()) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkStore][Evict] scope=materialized_snapshot, reason={}, chunkStoreKey={}, chunk={}, fullVersion={}, fullHash={}, retainedBlobBytes={}/{}",
+                    "[BO:Diag:chunkGlobalSnapshot] event=evict scope=materialized_snapshot, reason={}, chunkStoreKey={}, chunk={}, fullVersion={}, fullHash={}, retainedBlobBytes={}/{}",
                     reason,
                     candidate.chunkStoreKey(),
                     removedRecord.coordinate().logText(),
@@ -543,7 +544,7 @@ public final class ChunkGlobalSnapshotStore {
         }
         if (shouldLogDiagnose()) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkStore][Release] reason={}, chunkStoreKey={}, releasedVersions={}, retainedBlobBytes={}/{}",
+                    "[BO:Diag:chunkGlobalSnapshot] event=release reason={}, chunkStoreKey={}, releasedVersions={}, retainedBlobBytes={}/{}",
                     reason,
                     chunkStoreKey,
                     versionRecords.size(),
@@ -587,7 +588,12 @@ public final class ChunkGlobalSnapshotStore {
     }
 
     private static boolean shouldLogDiagnose() {
-        return DebugRuntimeConfig.isDiagnoseEnabled();
+        return BO_Diag_chunkGlobalSnapshot();
+    }
+
+    private static boolean BO_Diag_chunkGlobalSnapshot() {
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_GLOBAL_SNAPSHOT)
+                || DebugRuntimeConfig.isDiagnoseEnabled();
     }
 
     private static String shortenHash(String hashHex) {

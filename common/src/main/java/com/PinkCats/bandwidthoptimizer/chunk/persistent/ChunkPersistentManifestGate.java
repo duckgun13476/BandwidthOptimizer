@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.chunk.persistent;
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
@@ -41,9 +42,9 @@ public final class ChunkPersistentManifestGate {
                 timeoutMillis,
                 TimeUnit.MILLISECONDS
         );
-        if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (BO_Diag_cacheManifestGate()) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkPersistentCache][ManifestGate][Arm] channel={}, timeoutMillis={}, reason={}",
+                    "[BO:Diag:cacheManifestGate] event=arm channel={}, timeoutMillis={}, reason={}",
                     com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
                     timeoutMillis,
                     safeText(reason, "server_login")
@@ -96,9 +97,9 @@ public final class ChunkPersistentManifestGate {
         }
 
         boolean queued = gateState.queue(packet);
-        if (queued && DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (queued && BO_Diag_cacheManifestGate()) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkPersistentCache][ManifestGate][Queue] channel={}, queued={}, packetClass={}",
+                    "[BO:Diag:cacheManifestGate] event=queue channel={}, queued={}, packetClass={}",
                     com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
                     gateState.queuedCount(),
                     packet.getClass().getName()
@@ -140,9 +141,9 @@ public final class ChunkPersistentManifestGate {
                 channel.write(queuedPacket);
             }
             channel.flush();
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (BO_Diag_cacheManifestGate()) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[ChunkPersistentCache][ManifestGate][Flush] channel={}, packets={}, reason={}",
+                        "[BO:Diag:cacheManifestGate] event=flush channel={}, packets={}, reason={}",
                         com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
                         queuedPackets.size(),
                         safeText(reason, "manifest_gate_release")
@@ -177,6 +178,11 @@ public final class ChunkPersistentManifestGate {
 
     private static boolean isEnabled() {
         return Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, Boolean.toString(DEFAULT_ENABLED)));
+    }
+
+    private static boolean BO_Diag_cacheManifestGate() {
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CACHE_MANIFEST_GATE)
+                || DebugRuntimeConfig.isDiagnoseEnabled();
     }
 
     private static String safeText(String text, String fallback) {

@@ -148,6 +148,24 @@ public final class DiagnosticToolRegistry {
                 Cost.MEDIUM,
                 "Chunk transport wrap, unwrap, and control-frame decisions",
                 "bandwidthoptimizer.diagnosetool.chunkTransportFrames"
+        ),
+        CHUNK_PEER_STATE(
+                "chunkPeerState",
+                Cost.MEDIUM,
+                "Chunk peer observation, scope, and lifecycle state changes",
+                "bandwidthoptimizer.diagnosetool.chunkPeerState"
+        ),
+        CHUNK_GLOBAL_SNAPSHOT(
+                "chunkGlobalSnapshot",
+                Cost.MEDIUM,
+                "Global chunk snapshot materialization, eviction, and release events",
+                "bandwidthoptimizer.diagnosetool.chunkGlobalSnapshot"
+        ),
+        CACHE_MANIFEST_GATE(
+                "cacheManifestGate",
+                Cost.SMALL,
+                "Persistent cache manifest gate arm, queue, and flush events",
+                "bandwidthoptimizer.diagnosetool.cacheManifestGate"
         );
 
         private final String id;
