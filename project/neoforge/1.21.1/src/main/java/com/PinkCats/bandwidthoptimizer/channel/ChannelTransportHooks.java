@@ -23,7 +23,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTranspor
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentManifestGate;
 import com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate;
 import com.PinkCats.bandwidthoptimizer.compat.sable.SableChunkSyncCompat;
-import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.ChannelTransportHookDiagnosticProbe;
 import com.PinkCats.bandwidthoptimizer.report.ChunkBoundaryBandwidthRecorder;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCaptureManager;
 import com.PinkCats.bandwidthoptimizer.server.stat.ChannelBandwidthStats;
@@ -123,9 +123,9 @@ public final class ChannelTransportHooks {
                 ChunkTransportBoundaryController.beginOutboundPacket(context, protocolName, packet);
         boolean forceImmediateTransport = controlDecision.forceImmediateTransport();
         boolean pendingDirectTransport = controlDecision.forceDirectTransport() || boundaryDecision.forceDirectTransport();
-        if (forceImmediateTransport && pendingDirectTransport && DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (forceImmediateTransport && pendingDirectTransport && ChannelTransportHookDiagnosticProbe.BO_Diag_chunkTransportFrames()) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[Transport][ImmediatePolicy][DirectOverride] immediateReason={}, directReason={}, controlDirect={}, boundaryDirect={}, protocol={}, packetClass={}, channel={}",
+                    "[BO:Diag:chunkTransportFrames] event=immediate_policy_direct_override immediateReason={}, directReason={}, controlDirect={}, boundaryDirect={}, protocol={}, packetClass={}, channel={}",
                     controlDecision.reason(),
                     controlDecision.forceDirectTransport() ? controlDecision.reason() : boundaryDecision.reason(),
                     controlDecision.forceDirectTransport(),
@@ -184,9 +184,9 @@ public final class ChannelTransportHooks {
         }
         if (forceImmediateTransport) {
             ChannelTransportBatchManager.flushOutboundBatchNow(context);
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (ChannelTransportHookDiagnosticProbe.BO_Diag_chunkTransportFrames()) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[Transport][ImmediatePolicy][Start] reason={}, protocol={}, packetClass={}, rawBytes={}, rawPacketId={}, channel={}",
+                        "[BO:Diag:chunkTransportFrames] event=immediate_policy_start reason={}, protocol={}, packetClass={}, rawBytes={}, rawPacketId={}, channel={}",
                         controlDecision.reason(),
                         protocolName,
                         packetClassName(packet),
@@ -275,9 +275,9 @@ public final class ChannelTransportHooks {
                 out.writerIndex(startIndexInclusive);
                 out.writeBytes(directFallbackPacketBytes);
                 recordCommittedOutboundPacketStream(context, packet, directFallbackPacketBytes);
-                if (forceImmediateTransport && DebugRuntimeConfig.isDiagnoseEnabled()) {
+                if (forceImmediateTransport && ChannelTransportHookDiagnosticProbe.BO_Diag_chunkTransportFrames()) {
                     Bandwidthoptimizer.LOGGER.info(
-                            "[Transport][ImmediatePolicy][Fallback] reason=serverbound_carrier_size, packetClass={}, inputBytes={}, channel={}",
+                            "[BO:Diag:chunkTransportFrames] event=immediate_policy_fallback reason=serverbound_carrier_size, packetClass={}, inputBytes={}, channel={}",
                             packetClassName(packet),
                             transportInputPacketBytes.length,
                             channelIdText(context)
@@ -309,7 +309,7 @@ public final class ChannelTransportHooks {
 
             if (chunkTransportEncodedBytes == null && !forceImmediateTransport && ChannelTransportBatchManager.shouldBatchOutboundPacket(context)) {
                 out.writerIndex(startIndexInclusive);
-                if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                if (ChannelTransportHookDiagnosticProbe.BO_Diag_transportTraceJournal()) {
                     ChannelTransportTraceJournal.record(
                             context,
                             "OutboundBatchEnqueue",
@@ -392,9 +392,9 @@ public final class ChannelTransportHooks {
             if (!writeTransportCarrierPacket(context, outboundPacketFlow, out, wrappedFrame.transportFrameBytes(), packetEncoderFlowAccess)) {
                 throw new IllegalStateException("Stateful transport carrier was not committed");
             }
-            if (forceImmediateTransport && DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (forceImmediateTransport && ChannelTransportHookDiagnosticProbe.BO_Diag_chunkTransportFrames()) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[Transport][ImmediatePolicy][Result] path=single_transport, reason={}, protocol={}, packetClass={}, rawBytes={}, inputBytes={}, frameKind={}, frameBytes={}, channel={}",
+                        "[BO:Diag:chunkTransportFrames] event=immediate_policy_result path=single_transport, reason={}, protocol={}, packetClass={}, rawBytes={}, inputBytes={}, frameKind={}, frameBytes={}, channel={}",
                         controlDecision.reason(),
                         protocolName,
                         packetClassName(packet),
@@ -885,7 +885,7 @@ public final class ChannelTransportHooks {
                 packetFlow,
                 packetBytes
         );
-        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (!ChannelTransportHookDiagnosticProbe.BO_Diag_transportTraceJournal()) {
             return;
         }
         ChannelTransportTraceJournal.record(
@@ -916,7 +916,7 @@ public final class ChannelTransportHooks {
         if (wrappedFrame == null)
             return;
 
-        if (!DebugRuntimeConfig.isDiagnoseEnabled())
+        if (!ChannelTransportHookDiagnosticProbe.BO_Diag_transportTraceJournal())
             return;
 
         ChannelTransportOperationTelemetry telemetry = wrappedFrame.telemetry();
@@ -946,7 +946,7 @@ public final class ChannelTransportHooks {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[Transport][Trace][OutboundPacket] index={}, channel={}, flow={}, protocol={}, packetClass={}, tablePacketId={}, rawPacketId={}, inputPacketId={}, rawBytes={}, inputBytes={}, chunkApplied={}, frameKind={}, frameBytes={}, bodyBytes={}, entry={}, mappingStageBytes={}, exactRef={}, templateRef={}, exactAdd={}, templateAdd={}, exactRemove={}, templateRemove={}, rawPrefix={}, inputPrefix={}, framePrefix={}",
+                "[BO:Diag:transportTraceJournal] event=outbound_packet index={}, channel={}, flow={}, protocol={}, packetClass={}, tablePacketId={}, rawPacketId={}, inputPacketId={}, rawBytes={}, inputBytes={}, chunkApplied={}, frameKind={}, frameBytes={}, bodyBytes={}, entry={}, mappingStageBytes={}, exactRef={}, templateRef={}, exactAdd={}, templateAdd={}, exactRemove={}, templateRemove={}, rawPrefix={}, inputPrefix={}, framePrefix={}",
                 traceIndex,
                 channelIdText(context),
                 packetFlow,
@@ -981,7 +981,7 @@ public final class ChannelTransportHooks {
             int carrierPacketId,
             byte[] transportFrameBytes
     ) {
-        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (!ChannelTransportHookDiagnosticProbe.BO_Diag_transportTraceJournal()) {
             return;
         }
         ChannelTransportTraceJournal.record(
@@ -1000,7 +1000,7 @@ public final class ChannelTransportHooks {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[Transport][Trace][OutboundCarrier] index={}, channel={}, flow={}, protocol={}, carrierPacketId={}, frameBytes={}, framePrefix={}",
+                "[BO:Diag:transportTraceJournal] event=outbound_carrier index={}, channel={}, flow={}, protocol={}, carrierPacketId={}, frameBytes={}, framePrefix={}",
                 traceIndex,
                 channelIdText(context),
                 packetFlow,
@@ -1020,13 +1020,13 @@ public final class ChannelTransportHooks {
         if (unwrappedFrame == null)
             return;
 
-        if (!DebugRuntimeConfig.isDiagnoseEnabled())
+        if (!ChannelTransportHookDiagnosticProbe.BO_Diag_transportTraceJournal())
             return;
 
         ChannelTransportOperationTelemetry telemetry = unwrappedFrame.telemetry();
         PacketFlow packetFlow = packetDecoderFlowAccess == null ? null : packetDecoderFlowAccess.bandwidthoptimizer$getPacketFlow();
 
-        if (!DebugRuntimeConfig.isDiagnoseEnabled())
+        if (!ChannelTransportHookDiagnosticProbe.BO_Diag_transportTraceJournal())
             return;
 
         ChannelTransportTraceJournal.record(
@@ -1048,7 +1048,7 @@ public final class ChannelTransportHooks {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[Transport][Trace][InboundCarrier] index={}, channel={}, flow={}, protocol={}, frameKind={}, frameBytes={}, bodyBytes={}, restoredPackets={}, restoredBytes={}, entry={}, mappingStageBytes={}, exactRef={}, templateRef={}, exactAdd={}, templateAdd={}, exactRemove={}, templateRemove={}, framePrefix={}",
+                "[BO:Diag:transportTraceJournal] event=inbound_carrier index={}, channel={}, flow={}, protocol={}, frameKind={}, frameBytes={}, bodyBytes={}, restoredPackets={}, restoredBytes={}, entry={}, mappingStageBytes={}, exactRef={}, templateRef={}, exactAdd={}, templateAdd={}, exactRemove={}, templateRemove={}, framePrefix={}",
                 traceIndex,
                 channelIdText(context),
                 packetFlow,
@@ -1086,7 +1086,7 @@ public final class ChannelTransportHooks {
                         + ", framePrefix=" + hexPrefix(transportFrameBytes)
         );
         Bandwidthoptimizer.LOGGER.error(
-                "[Transport][Trace][InboundCarrierFailure] channel={}, protocol={}, frameBytes={}, framePrefix={}",
+                "[BO:Diag:transportTraceJournal] event=inbound_carrier_failure channel={}, protocol={}, frameBytes={}, framePrefix={}",
                 channelIdText(context),
                 readProtocolName(context),
                 lengthOf(transportFrameBytes),
@@ -1102,7 +1102,7 @@ public final class ChannelTransportHooks {
             Packet<?> restoredPacket
     ) {
 
-        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (!ChannelTransportHookDiagnosticProbe.BO_Diag_transportTraceJournal()) {
             return;
         }
         PacketFlow packetFlow = packetDecoderFlowAccess == null ? null : packetDecoderFlowAccess.bandwidthoptimizer$getPacketFlow();
@@ -1123,7 +1123,7 @@ public final class ChannelTransportHooks {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[Transport][Trace][RestoredPacket] index={}, channel={}, flow={}, protocol={}, packetClass={}, rawPacketId={}, packetBytes={}, packetPrefix={}",
+                "[BO:Diag:transportTraceJournal] event=restored_packet index={}, channel={}, flow={}, protocol={}, packetClass={}, rawPacketId={}, packetBytes={}, packetPrefix={}",
                 traceIndex,
                 channelIdText(context),
                 packetFlow,
@@ -1155,7 +1155,7 @@ public final class ChannelTransportHooks {
                         + ", packetPrefix=" + hexPrefix(restoredPacketBytes)
         );
         Bandwidthoptimizer.LOGGER.error(
-                "[Transport][Trace][RestoredPacketFailure] channel={}, flow={}, protocol={}, rawPacketId={}, packetBytes={}, packetPrefix={}",
+                "[BO:Diag:transportTraceJournal] event=restored_packet_failure channel={}, flow={}, protocol={}, rawPacketId={}, packetBytes={}, packetPrefix={}",
                 channelIdText(context),
                 packetFlow,
                 readProtocolName(context),
@@ -1168,7 +1168,7 @@ public final class ChannelTransportHooks {
 
 
     private static long nextTransportTraceIndex(AtomicLong counter) {
-        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (!ChannelTransportHookDiagnosticProbe.BO_Diag_transportTraceJournal()) {
             return -1L;
         }
         int sampleLimit = transportTraceSampleLimit();
