@@ -35,6 +35,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 import java.util.zip.Deflater;
 import java.util.zip.ZipEntry;
@@ -69,11 +71,14 @@ public final class ChunkPersistentClientCache {
     private static final boolean DEFAULT_BACKUP_ENABLED = true;
     private static final long DEFAULT_BACKUP_INTERVAL_MILLIS = 600_000L;
     private static final int DEFAULT_MAX_PENDING_STORE_TASKS = 2048;
+    private static final int STORE_DRAIN_BATCH_LIMIT = 256;
     private static final Object LOCK = new Object();
     private static final Object FLUSH_LOCK = new Object();
     private static final Set<String> MANIFEST_SENT_CHANNELS = ConcurrentHashMap.newKeySet();
     private static final ConcurrentHashMap<String, Long> LAST_USED_UPDATES = new ConcurrentHashMap<>();
-    private static final java.util.concurrent.atomic.AtomicInteger PENDING_STORE_TASKS = new java.util.concurrent.atomic.AtomicInteger();
+    private static final ConcurrentHashMap<String, PendingStoreRequest> PENDING_STORE_REQUESTS = new ConcurrentHashMap<>();
+    private static final AtomicInteger PENDING_STORE_REQUEST_COUNT = new AtomicInteger();
+    private static final AtomicBoolean STORE_DRAIN_QUEUED = new AtomicBoolean();
     private static final String ZIP_FILE_NAME = "client-persistent-chunk-cache.zip";
     private static final String INDEX_ENTRY_NAME = "index.properties";
     private static final String BLOBS_ENTRY_DIRECTORY = "blobs/";
@@ -208,65 +213,132 @@ public final class ChunkPersistentClientCache {
         if (!isEnabled()
                 || !isSafeScopeHash(serverScopeHash)
                 || hotspotKind != ChunkHotspotKind.FULL_CHUNK
+                || coordinate == null
+                || !coordinate.present()
                 || encodedPacketBytes == null
                 || encodedPacketBytes.length == 0) {
             return;
         }
 
-        int pendingStores = PENDING_STORE_TASKS.incrementAndGet();
-        if (pendingStores > maxPendingStoreTasks()) {
-            PENDING_STORE_TASKS.decrementAndGet();
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
-                Bandwidthoptimizer.LOGGER.warn(
-                        "[ChunkPersistentCache][Store][Drop] chunk={}, bytes={}, pending={}, reason={}",
-                        coordinate == null ? "<none>" : coordinate.logText(),
-                        encodedPacketBytes.length,
-                        pendingStores,
-                        safeText(reason, "persistent_cache_store_queue_full")
-                );
+        byte[] snapshotBytes = encodedPacketBytes;
+        String storeKey = pendingStoreKey(serverScopeHash, coordinate);
+        PendingStoreRequest request = new PendingStoreRequest(
+                serverScopeHash,
+                protocolName,
+                epoch,
+                packetClassName,
+                hotspotKind,
+                laneKind,
+                coordinate,
+                snapshotBytes,
+                reason
+        );
+        PendingStoreRequest previousRequest = PENDING_STORE_REQUESTS.put(storeKey, request);
+        if (previousRequest == null) {
+            int pendingStores = PENDING_STORE_REQUEST_COUNT.incrementAndGet();
+            if (pendingStores > maxPendingStoreTasks()) {
+                if (PENDING_STORE_REQUESTS.remove(storeKey, request)) {
+                    pendingStores = PENDING_STORE_REQUEST_COUNT.decrementAndGet();
+                } else {
+                    pendingStores = PENDING_STORE_REQUEST_COUNT.get();
+                }
+                if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                    Bandwidthoptimizer.LOGGER.warn(
+                            "[ChunkPersistentCache][Store][Drop] chunk={}, bytes={}, pending={}, limit={}, reason={}",
+                            coordinate.logText(),
+                            snapshotBytes.length,
+                            pendingStores,
+                            maxPendingStoreTasks(),
+                            safeText(reason, "persistent_cache_store_queue_full")
+                    );
+                }
+                return;
             }
-            return;
         }
 
-        byte[] snapshotBytes = encodedPacketBytes.clone();
+        schedulePendingStoreDrain();
+    }
+
+    private static void schedulePendingStoreDrain() {
+        if (!STORE_DRAIN_QUEUED.compareAndSet(false, true)) {
+            return;
+        }
         try {
-            IO_EXECUTOR.execute(() -> {
-                try {
-                    ChunkSnapshotFingerprint fingerprint =
-                            ChunkSnapshotFingerprintService.fingerprintOutboundPacket(snapshotBytes);
-                    if (fingerprint == null || fingerprint.hashHex() == null || fingerprint.hashHex().isBlank()) {
-                        return;
-                    }
-                    ChunkHotspotFrame frame = new ChunkHotspotFrame(
-                            ChunkHotspotFrameCodec.PROTOCOL_VERSION,
-                            ChunkHotspotFrameOp.PUBLISH_FULL,
-                            Math.max(epoch, 0L),
-                            0L,
-                            protocolName == null ? "PLAY" : protocolName,
-                            safeText(packetClassName, ""),
-                            hotspotKind,
-                            laneKind,
-                            coordinate,
-                            snapshotBytes.length,
-                            1L,
-                            0L,
-                            fingerprint.hashHex(),
-                            fingerprint.hashHex(),
-                            0L,
-                            safeText(reason, "persistent_cache_from_decoded_inbound_full")
-                    );
-                    storeFullSnapshot(frame, snapshotBytes, serverScopeHash, fingerprint);
-                } finally {
-                    PENDING_STORE_TASKS.decrementAndGet();
-                }
-            });
+            IO_EXECUTOR.execute(ChunkPersistentClientCache::drainPendingStoreRequests);
         } catch (RuntimeException exception) {
-            PENDING_STORE_TASKS.decrementAndGet();
+            STORE_DRAIN_QUEUED.set(false);
             if (DebugRuntimeConfig.isDiagnoseEnabled()) {
                 Bandwidthoptimizer.LOGGER.warn(
-                        "[ChunkPersistentCache][Store][QueueFail] chunk={}, bytes={}, reason={}",
-                        coordinate == null ? "<none>" : coordinate.logText(),
-                        encodedPacketBytes.length,
+                        "[ChunkPersistentCache][Store][QueueFail] pending={}, reason={}",
+                        PENDING_STORE_REQUEST_COUNT.get(),
+                        exception.toString()
+                );
+            }
+        }
+    }
+
+    private static void drainPendingStoreRequests() {
+        int drained = 0;
+        try {
+            while (drained < STORE_DRAIN_BATCH_LIMIT) {
+                PendingStoreRequest request = pollPendingStoreRequest();
+                if (request == null) {
+                    break;
+                }
+                processPendingStoreRequest(request);
+                drained++;
+            }
+        } finally {
+            STORE_DRAIN_QUEUED.set(false);
+            if (!PENDING_STORE_REQUESTS.isEmpty()) {
+                schedulePendingStoreDrain();
+            }
+        }
+    }
+
+    private static PendingStoreRequest pollPendingStoreRequest() {
+        for (Map.Entry<String, PendingStoreRequest> entry : PENDING_STORE_REQUESTS.entrySet()) {
+            if (PENDING_STORE_REQUESTS.remove(entry.getKey(), entry.getValue())) {
+                PENDING_STORE_REQUEST_COUNT.decrementAndGet();
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
+    private static void processPendingStoreRequest(PendingStoreRequest request) {
+        try {
+            ChunkSnapshotFingerprint fingerprint =
+                    ChunkSnapshotFingerprintService.fingerprintOutboundPacket(request.snapshotBytes());
+            if (fingerprint == null || fingerprint.hashHex() == null || fingerprint.hashHex().isBlank()) {
+                return;
+            }
+            ChunkHotspotFrame frame = new ChunkHotspotFrame(
+                    ChunkHotspotFrameCodec.PROTOCOL_VERSION,
+                    ChunkHotspotFrameOp.PUBLISH_FULL,
+                    Math.max(request.epoch(), 0L),
+                    0L,
+                    request.protocolName() == null ? "PLAY" : request.protocolName(),
+                    safeText(request.packetClassName(), ""),
+                    request.hotspotKind(),
+                    request.laneKind(),
+                    request.coordinate(),
+                    request.snapshotBytes().length,
+                    1L,
+                    0L,
+                    fingerprint.hashHex(),
+                    fingerprint.hashHex(),
+                    0L,
+                    safeText(request.reason(), "persistent_cache_from_decoded_inbound_full")
+            );
+            storeFullSnapshot(frame, request.snapshotBytes(), request.serverScopeHash(), fingerprint);
+        } catch (RuntimeException exception) {
+            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+                Bandwidthoptimizer.LOGGER.warn(
+                        "[ChunkPersistentCache][Store][WorkerFail] chunk={}, bytes={}, pending={}, reason={}",
+                        request.coordinate().logText(),
+                        request.snapshotBytes().length,
+                        PENDING_STORE_REQUEST_COUNT.get(),
                         exception.toString()
                 );
             }
@@ -317,6 +389,7 @@ public final class ChunkPersistentClientCache {
                     cacheSnapshot.verifiedBlobEntries().add(blobEntryName);
                     cacheSnapshot.index().setProperty(keyPrefix + "lastUsedAtMillis", Long.toString(System.currentTimeMillis()));
                     markDirty(0);
+                    publishLoadedHotPathSnapshotLocked();
                     logStore(frame, restoredPacketBytes.length, cacheFile());
                     return;
                 }
@@ -1617,6 +1690,12 @@ public final class ChunkPersistentClientCache {
                 + ".chunk." + coordinate.chunkX() + "." + coordinate.chunkZ() + ".";
     }
 
+    private static String pendingStoreKey(String serverScopeHash, ChunkPacketCoordinate coordinate) {
+        return serverScopeHash.toLowerCase(Locale.ROOT)
+                + ":" + coordinate.chunkX()
+                + ":" + coordinate.chunkZ();
+    }
+
     private static ScopedCoordinateKey parseScopedCoordinateKey(String coordinateKey) {
         if (coordinateKey == null || !coordinateKey.startsWith("scope.")) {
             return null;
@@ -1775,6 +1854,26 @@ public final class ChunkPersistentClientCache {
 
         private byte[] copyPacketBytes() {
             return packetBytes.clone();
+        }
+    }
+
+    private record PendingStoreRequest(
+            String serverScopeHash,
+            String protocolName,
+            long epoch,
+            String packetClassName,
+            ChunkHotspotKind hotspotKind,
+            ChunkLaneKind laneKind,
+            ChunkPacketCoordinate coordinate,
+            byte[] snapshotBytes,
+            String reason
+    ) {
+        private PendingStoreRequest {
+            serverScopeHash = serverScopeHash == null ? "" : serverScopeHash;
+            protocolName = protocolName == null ? "PLAY" : protocolName;
+            packetClassName = packetClassName == null ? "" : packetClassName;
+            snapshotBytes = snapshotBytes == null ? new byte[0] : snapshotBytes.clone();
+            reason = reason == null ? "" : reason;
         }
     }
 
