@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.compat.valkyrienskies;
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -129,9 +130,14 @@ public final class ValkyrienSkiesDynamicStructureCompat {
     }
 
     private static void logFailure(Exception exception) {
-        if (DebugRuntimeConfig.isDiagnoseEnabled()) {
-            Bandwidthoptimizer.LOGGER.info("[ValkyrienSkiesCompat][CreateTarget] failed to project dynamic target", exception);
+        if (BO_Diag_compatDynamicGates()) {
+            Bandwidthoptimizer.LOGGER.info("[BO:Diag:compatDynamicGates] event=valkyrienskies_create_target_failed", exception);
         }
+    }
+
+    private static boolean BO_Diag_compatDynamicGates() {
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.COMPAT_DYNAMIC_GATES)
+                || DebugRuntimeConfig.isDiagnoseEnabled();
     }
 
     private record ServerBridge(

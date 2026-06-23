@@ -7,6 +7,7 @@ import com.PinkCats.bandwidthoptimizer.compat.minecraft.BlockEntityTypeKeyCompat
 import com.PinkCats.bandwidthoptimizer.compat.sable.SableDynamicStructureCompat;
 import com.PinkCats.bandwidthoptimizer.compat.valkyrienskies.ValkyrienSkiesDynamicStructureCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.core.BlockPos;
@@ -167,7 +168,7 @@ public final class CreateBlockEntityUpdateGate {
             PendingDropStats dropped = state.clearPending();
             if (!dropped.isEmpty()) {
                 recordDropped(dropped);
-                logDiagnose("[CreateUpdateGate][Clear] player={}, reason={}, dropped={}",
+                logDiagnose("event=create_update_clear player={}, reason={}, dropped={}",
                         player.getGameProfile().getName(),
                         reason == null ? "" : reason,
                         dropped.count());
@@ -186,7 +187,7 @@ public final class CreateBlockEntityUpdateGate {
         PendingDropStats dropped = state.dropChunk(chunkPos.x, chunkPos.z);
         if (!dropped.isEmpty()) {
             recordDropped(dropped);
-            logDiagnose("[CreateUpdateGate][DropChunk] player={}, chunk=({}, {}), reason={}, dropped={}",
+            logDiagnose("event=create_update_drop_chunk player={}, chunk=({}, {}), reason={}, dropped={}",
                     player.getGameProfile().getName(),
                     chunkPos.x,
                     chunkPos.z,
@@ -250,7 +251,7 @@ public final class CreateBlockEntityUpdateGate {
         long delayed = DELAYED_COUNT.incrementAndGet();
         DELAYED_BYTES.addAndGet(originalRawBytes);
         if (shouldLogSample(delayed)) {
-            logDiagnose("[CreateUpdateGate][Delay] player={}, type={}, pos={}, delayed={}, superseded={}, released={}, dropped={}",
+            logDiagnose("event=create_update_delay player={}, type={}, pos={}, delayed={}, superseded={}, released={}, dropped={}",
                     player.getGameProfile().getName(),
                     blockEntityTypeKey,
                     blockEntityDataPacket.getPos(),
@@ -363,7 +364,7 @@ public final class CreateBlockEntityUpdateGate {
                 long released = RELEASED_COUNT.incrementAndGet();
                 RELEASED_BYTES.addAndGet(pendingUpdate.rawBytes());
                 if (shouldLogSample(released)) {
-                    logDiagnose("[CreateUpdateGate][Release] player={}, type={}, pos={}, reason={}, rawBytes={}, superseded={}",
+                    logDiagnose("event=create_update_release player={}, type={}, pos={}, reason={}, rawBytes={}, superseded={}",
                             player.getGameProfile().getName(),
                             pendingUpdate.key().typeKey(),
                             pendingUpdate.key().pos(),
@@ -442,7 +443,7 @@ public final class CreateBlockEntityUpdateGate {
         long delayed = DELAYED_COUNT.incrementAndGet();
         DELAYED_BYTES.addAndGet(originalRawBytes);
         if (shouldLogSample(delayed)) {
-            logDiagnose("[CreateUpdateGate][Delay] player={}, type={}, pos={}, delayed={}, superseded={}, released={}, dropped={}",
+            logDiagnose("event=create_update_delay player={}, type={}, pos={}, delayed={}, superseded={}, released={}, dropped={}",
                     player.getGameProfile().getName(),
                     blockEntityTypeKey,
                     blockEntityDataPacket.getPos(),
@@ -809,9 +810,14 @@ public final class CreateBlockEntityUpdateGate {
     }
 
     private static void logDiagnose(String message, Object... args) {
-        if (DebugRuntimeConfig.isDiagnoseEnabled()) {
-            Bandwidthoptimizer.LOGGER.info(message, args);
+        if (BO_Diag_compatDynamicGates()) {
+            Bandwidthoptimizer.LOGGER.info("[BO:Diag:compatDynamicGates] " + message, args);
         }
+    }
+
+    private static boolean BO_Diag_compatDynamicGates() {
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.COMPAT_DYNAMIC_GATES)
+                || DebugRuntimeConfig.isDiagnoseEnabled();
     }
 
     private record PendingKey(ResourceLocation typeKey, BlockPos pos, int chunkX, int chunkZ) {

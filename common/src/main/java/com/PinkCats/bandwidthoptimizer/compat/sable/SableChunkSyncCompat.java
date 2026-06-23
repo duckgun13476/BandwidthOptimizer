@@ -6,6 +6,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordina
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.CustomPayloadPacketCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
 import net.minecraft.network.protocol.Packet;
@@ -87,9 +88,9 @@ public final class SableChunkSyncCompat {
             return false;
         }
         state.rememberInitialSyncChunk(descriptor.coordinate());
-        if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (BO_Diag_compatDynamicGates()) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[SableCompat][ChunkForceFull] channel={}, plot={}, chunk={}",
+                    "[BO:Diag:compatDynamicGates] event=sable_chunk_force_full channel={}, plot={}, chunk={}",
                     com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(context.channel()),
                     state.activePlotText(),
                     descriptor.coordinate().logText()
@@ -178,11 +179,11 @@ public final class SableChunkSyncCompat {
             Long plotCoordinate,
             int chunkCount
     ) {
-        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (!BO_Diag_compatDynamicGates()) {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[SableCompat][Payload] action={}, channel={}, nettyChannel={}, plot={}, chunks={}",
+                "[BO:Diag:compatDynamicGates] event=sable_payload_boundary action={}, channel={}, nettyChannel={}, plot={}, chunks={}",
                 action,
                 payloadChannel,
                 com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(context.channel()),
@@ -203,6 +204,11 @@ public final class SableChunkSyncCompat {
         private static PayloadDecision forceDirect(String reason) {
             return new PayloadDecision(true, reason);
         }
+    }
+
+    private static boolean BO_Diag_compatDynamicGates() {
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.COMPAT_DYNAMIC_GATES)
+                || DebugRuntimeConfig.isDiagnoseEnabled();
     }
 
     private static final class SableSyncState {

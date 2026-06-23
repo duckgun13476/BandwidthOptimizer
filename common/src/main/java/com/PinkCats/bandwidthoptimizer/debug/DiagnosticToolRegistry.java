@@ -202,6 +202,12 @@ public final class DiagnosticToolRegistry {
                 Cost.MEDIUM,
                 "Chunk protocol frame encode/decode preview checks",
                 "bandwidthoptimizer.diagnosetool.chunkProtocolPreview"
+        ),
+        COMPAT_DYNAMIC_GATES(
+                "compatDynamicGates",
+                Cost.MEDIUM,
+                "Dynamic-structure compatibility gates and projection failures",
+                "bandwidthoptimizer.diagnosetool.compatDynamicGates"
         );
 
         private final String id;

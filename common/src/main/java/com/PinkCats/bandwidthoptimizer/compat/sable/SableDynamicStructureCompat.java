@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.compat.sable;
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -83,9 +84,14 @@ public final class SableDynamicStructureCompat {
     }
 
     private static void logFailure(Exception exception) {
-        if (DebugRuntimeConfig.isDiagnoseEnabled()) {
-            Bandwidthoptimizer.LOGGER.info("[SableCompat][CreateTarget] failed to project dynamic target", exception);
+        if (BO_Diag_compatDynamicGates()) {
+            Bandwidthoptimizer.LOGGER.info("[BO:Diag:compatDynamicGates] event=sable_create_target_failed", exception);
         }
+    }
+
+    private static boolean BO_Diag_compatDynamicGates() {
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.COMPAT_DYNAMIC_GATES)
+                || DebugRuntimeConfig.isDiagnoseEnabled();
     }
 
     public record DynamicTarget(Vec3 target, boolean transformed, boolean forceImmediate) {
