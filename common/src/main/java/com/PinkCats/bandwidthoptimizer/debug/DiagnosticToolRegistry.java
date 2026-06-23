@@ -100,6 +100,12 @@ public final class DiagnosticToolRegistry {
                 Cost.SMALL,
                 "Client chunk-cache center, radius, and chunk handle events",
                 "bandwidthoptimizer.diagnosetool.cacheChunkHandle"
+        ),
+        CACHE_PERSISTENT_IO(
+                "cachePersistentIO",
+                Cost.MEDIUM,
+                "Persistent chunk-cache store and load events",
+                "bandwidthoptimizer.diagnosetool.cachePersistentIO"
         );
 
         private final String id;

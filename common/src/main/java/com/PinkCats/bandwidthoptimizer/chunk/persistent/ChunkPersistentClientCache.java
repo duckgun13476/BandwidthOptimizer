@@ -12,6 +12,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameO
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprintService;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticRuntimeSwitch;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 import io.netty.channel.Channel;
 
@@ -1820,7 +1821,8 @@ public final class ChunkPersistentClientCache {
     }
 
     private static boolean shouldLogCacheDiagnose() {
-        return DiagnosticRuntimeSwitch.isEnabled(DiagnosticRuntimeSwitch.Topic.CACHE);
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CACHE_PERSISTENT_IO)
+                || DiagnosticRuntimeSwitch.isEnabled(DiagnosticRuntimeSwitch.Topic.CACHE);
     }
 
     private static void logStore(ChunkHotspotFrame frame, int encodedBytes, Path cachePath) {
@@ -1828,7 +1830,7 @@ public final class ChunkPersistentClientCache {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkPersistentCache][Store] chunk={}, hash={}, bytes={}, cacheFile={}",
+                "[BO:Diag:cachePersistentIO] action=store, chunk={}, hash={}, bytes={}, cacheFile={}",
                 frame.coordinate().logText(),
                 shortenHash(frame.payloadHash()),
                 encodedBytes,
@@ -1841,7 +1843,7 @@ public final class ChunkPersistentClientCache {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkPersistentCache][Load] chunk={}, hash={}, bytes={}",
+                "[BO:Diag:cachePersistentIO] action=load, chunk={}, hash={}, bytes={}",
                 frame.coordinate().logText(),
                 shortenHash(frame.payloadHash()),
                 encodedBytes
