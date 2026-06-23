@@ -1,0 +1,114 @@
+package com.PinkCats.bandwidthoptimizer.debug;
+
+import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+public final class DiagnosticToolRegistry {
+
+    private DiagnosticToolRegistry() {}
+
+    public static boolean isEnabled(Tool tool) {
+        if (tool == null) {
+            return false;
+        }
+        return Boolean.getBoolean(tool.propertyName()) || tool.enabled.get();
+    }
+
+    public static boolean toggle(Tool tool) {
+        if (tool == null) {
+            return false;
+        }
+        while (true) {
+            boolean current = tool.enabled.get();
+            boolean next = !current;
+            if (tool.enabled.compareAndSet(current, next)) {
+                return next;
+            }
+        }
+    }
+
+    public static void setEnabled(Tool tool, boolean enabled) {
+        if (tool != null) {
+            tool.enabled.set(enabled);
+        }
+    }
+
+    public static String listText() {
+        StringBuilder builder = new StringBuilder("BO diagnosetool:");
+        for (Tool tool : Tool.values()) {
+            builder.append('\n')
+                    .append(tool.cost().label())
+                    .append(' ')
+                    .append(tool.id())
+                    .append('=')
+                    .append(isEnabled(tool) ? "on" : "off")
+                    .append(" - ")
+                    .append(tool.description());
+        }
+        return builder.toString();
+    }
+
+    public enum Cost {
+        SMALL("小"),
+        MEDIUM("中"),
+        LARGE("大");
+
+        private final String label;
+
+        Cost(String label) {
+            this.label = label;
+        }
+
+        public String label() {
+            return label;
+        }
+    }
+
+    public enum Tool {
+        NETTY_MSPT(
+                "nettyMSPT",
+                Cost.MEDIUM,
+                "Netty event-loop MSPT and BO operation spike attribution",
+                "bandwidthoptimizer.diagnosetool.nettyMSPT"
+        );
+
+        private final String id;
+        private final Cost cost;
+        private final String description;
+        private final String propertyName;
+        private final AtomicBoolean enabled = new AtomicBoolean();
+
+        Tool(String id, Cost cost, String description, String propertyName) {
+            this.id = id;
+            this.cost = cost;
+            this.description = description;
+            this.propertyName = propertyName;
+        }
+
+        public String id() {
+            return id;
+        }
+
+        public Cost cost() {
+            return cost;
+        }
+
+        public String description() {
+            return description;
+        }
+
+        String propertyName() {
+            return propertyName;
+        }
+
+        public static Tool fromId(String id) {
+            String normalized = id == null ? "" : id.toLowerCase(Locale.ROOT);
+            for (Tool tool : values()) {
+                if (tool.id.toLowerCase(Locale.ROOT).equals(normalized)) {
+                    return tool;
+                }
+            }
+            return null;
+        }
+    }
+}

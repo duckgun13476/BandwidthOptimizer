@@ -81,7 +81,7 @@ public final class ChannelTransportHooks {
         if (context == null || out == null) {
             return;
         }
-        if (NettySpikeProbe.isEnabled()) { NettySpikeProbe.ensureWatchdog(context); }
+        NettySpikeProbe.BO_Diag_nettyMSPT(context);
 
         int endIndexExclusive = out.writerIndex();
         if (endIndexExclusive <= startIndexInclusive) {
@@ -200,7 +200,7 @@ public final class ChannelTransportHooks {
             }
         }
 
-        long chunkEncodeStartNanos = NettySpikeProbe.beginOperation(
+        long chunkEncodeStartNanos = NettySpikeProbe.BO_Diag_nettyMSPT_timer(
                 context,
                 "outbound_chunk_encode",
                 packetClassName(packet) + ", rawBytes=" + originalPacketBytes.length
@@ -215,7 +215,7 @@ public final class ChannelTransportHooks {
                     originalPacketBytes
             );
         } finally {
-            NettySpikeProbe.finishOperation(
+            NettySpikeProbe.BO_Diag_nettyMSPT_timer(
                     context,
                     "outbound_chunk_encode",
                     chunkEncodeStartNanos,
@@ -388,7 +388,7 @@ public final class ChannelTransportHooks {
             }
 
             ChannelTransportSession transportSession = ChannelTransportStateManager.getOrCreateSession(context.channel());
-            long wrapStartNanos = NettySpikeProbe.beginOperation(
+            long wrapStartNanos = NettySpikeProbe.BO_Diag_nettyMSPT_timer(
                     context,
                     "outbound_transport_wrap",
                     packetClassName(packet) + ", inputBytes=" + transportInputPacketBytes.length
@@ -398,7 +398,7 @@ public final class ChannelTransportHooks {
                 statefulTransportAttempted = true;
                 wrappedFrame = KineticChannel.processOutboundPacket(transportSession, transportInputPacketBytes);
             } finally {
-                NettySpikeProbe.finishOperation(
+                NettySpikeProbe.BO_Diag_nettyMSPT_timer(
                         context,
                         "outbound_transport_wrap",
                         wrapStartNanos,
@@ -542,7 +542,7 @@ public final class ChannelTransportHooks {
             List<Object> out,
             PacketDecoderFlowAccess packetDecoderFlowAccess
     ) throws Exception {
-        if (NettySpikeProbe.isEnabled()) { NettySpikeProbe.ensureWatchdog(context); }
+        NettySpikeProbe.BO_Diag_nettyMSPT(context);
         if (context == null
                 || in == null
                 || out == null
@@ -593,7 +593,7 @@ public final class ChannelTransportHooks {
             int outputSizeBeforeDecode,
             PacketDecoderFlowAccess packetDecoderFlowAccess
     ) throws Exception {
-        if (NettySpikeProbe.isEnabled()) { NettySpikeProbe.ensureWatchdog(context); }
+        NettySpikeProbe.BO_Diag_nettyMSPT(context);
         if (context == null
                 || out == null
                 || packetDecoderFlowAccess == null
@@ -658,7 +658,7 @@ public final class ChannelTransportHooks {
             List<Object> out,
             PacketDecoderFlowAccess packetDecoderFlowAccess
     ) throws Exception {
-        long decodeStartNanos = NettySpikeProbe.beginOperation(
+        long decodeStartNanos = NettySpikeProbe.BO_Diag_nettyMSPT_timer(
                 context,
                 "inbound_decode_restored_output",
                 "frameKind=" + (unwrappedFrame == null ? "<null>" : unwrappedFrame.frameKind())
@@ -738,7 +738,7 @@ public final class ChannelTransportHooks {
                 );
             }
         } finally {
-            NettySpikeProbe.finishOperation(
+            NettySpikeProbe.BO_Diag_nettyMSPT_timer(
                     context,
                     "inbound_decode_restored_output",
                     decodeStartNanos,
@@ -774,7 +774,7 @@ public final class ChannelTransportHooks {
             return false;
         }
 
-        long carrierWriteStartNanos = NettySpikeProbe.beginOperation(
+        long carrierWriteStartNanos = NettySpikeProbe.BO_Diag_nettyMSPT_timer(
                 context,
                 "transport_carrier_write",
                 "flow=" + packetFlow + ", frameBytes=" + transportFrameBytes.length
@@ -795,7 +795,7 @@ public final class ChannelTransportHooks {
             carrierPacket.write(outputBuffer);
             return true;
         } finally {
-            NettySpikeProbe.finishOperation(
+            NettySpikeProbe.BO_Diag_nettyMSPT_timer(
                     context,
                     "transport_carrier_write",
                     carrierWriteStartNanos,
@@ -822,7 +822,7 @@ public final class ChannelTransportHooks {
         }
 
         ChannelHandlerContext encoderContext = channel.pipeline().context("encoder");
-        long pipelineWriteStartNanos = NettySpikeProbe.beginOperation(
+        long pipelineWriteStartNanos = NettySpikeProbe.BO_Diag_nettyMSPT_timer(
                 encoderContext,
                 "transport_pipeline_write",
                 "flow=" + packetFlow + ", frameBytes=" + transportFrameBytes.length
@@ -840,7 +840,7 @@ public final class ChannelTransportHooks {
             payloadBuffer.release();
             throw e;
         } finally {
-            NettySpikeProbe.finishOperation(
+            NettySpikeProbe.BO_Diag_nettyMSPT_timer(
                     encoderContext,
                     "transport_pipeline_write",
                     pipelineWriteStartNanos,

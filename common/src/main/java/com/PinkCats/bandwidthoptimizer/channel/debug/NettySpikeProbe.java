@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.channel.debug;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
@@ -16,12 +17,10 @@ public final class NettySpikeProbe {
     private static final String THRESHOLD_MILLIS_PROPERTY = "bandwidthoptimizer.netty.spikeThresholdMillis";
     private static final String WATCHDOG_INTERVAL_MILLIS_PROPERTY = "bandwidthoptimizer.netty.watchdogIntervalMillis";
     private static final String LOG_COOLDOWN_MILLIS_PROPERTY = "bandwidthoptimizer.netty.spikeLogCooldownMillis";
-    // Low-frequency probe; keep enabled by default and allow a system-property override.
-    private static final boolean DEFAULT_ENABLED = true;
+    private static final boolean DEFAULT_ENABLED = false;
     private static final long DEFAULT_THRESHOLD_MILLIS = 1_000L;
     private static final long DEFAULT_WATCHDOG_INTERVAL_MILLIS = 500L;
     private static final long DEFAULT_LOG_COOLDOWN_MILLIS = 30_000L;
-    private static final boolean ENABLED = readBoolean(ENABLED_PROPERTY, DEFAULT_ENABLED);
     private static final long THRESHOLD_MILLIS =
             readLong(THRESHOLD_MILLIS_PROPERTY, DEFAULT_THRESHOLD_MILLIS, 1L, 60_000L);
     private static final long WATCHDOG_INTERVAL_MILLIS =
@@ -35,12 +34,29 @@ public final class NettySpikeProbe {
     private NettySpikeProbe() {}
 
     public static boolean isEnabled() {
-        return ENABLED;
+        return isLegacyPropertyEnabled() || DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.NETTY_MSPT);
+    }
+
+    public static void BO_Diag_nettyMSPT(ChannelHandlerContext context) {
+        ensureWatchdog(context);
+    }
+
+    public static long BO_Diag_nettyMSPT_timer(ChannelHandlerContext context, String operation, String detail) {
+        return beginOperation(context, operation, detail);
+    }
+
+    public static void BO_Diag_nettyMSPT_timer(
+            ChannelHandlerContext context,
+            String operation,
+            long startNanos,
+            String detail
+    ) {
+        finishOperation(context, operation, startNanos, detail);
     }
 
     // Starts the per-channel event-loop watchdog.
     public static void ensureWatchdog(ChannelHandlerContext context) {
-        if (!ENABLED || context == null || context.channel() == null) {
+        if (!isEnabled() || context == null || context.channel() == null) {
             return;
         }
         ProbeState state = getOrCreateState(context.channel());
@@ -49,7 +65,7 @@ public final class NettySpikeProbe {
 
     // Marks the active BO Netty stage for spike attribution.
     public static long beginOperation(ChannelHandlerContext context, String operation, String detail) {
-        if (!ENABLED || context == null || context.channel() == null) {
+        if (!isEnabled() || context == null || context.channel() == null) {
             return 0L;
         }
         ensureWatchdog(context);
@@ -60,7 +76,7 @@ public final class NettySpikeProbe {
 
     // Logs slow BO operations above the configured threshold.
     public static void finishOperation(ChannelHandlerContext context, String operation, long startNanos, String detail) {
-        if (!ENABLED || context == null || context.channel() == null || startNanos <= 0L) {
+        if (!isEnabled() || context == null || context.channel() == null || startNanos <= 0L) {
             return;
         }
         long nowNanos = System.nanoTime();
@@ -93,6 +109,10 @@ public final class NettySpikeProbe {
     private static boolean readBoolean(String property, boolean defaultValue) {
         String rawValue = System.getProperty(property);
         return rawValue == null || rawValue.isBlank() ? defaultValue : Boolean.parseBoolean(rawValue);
+    }
+
+    private static boolean isLegacyPropertyEnabled() {
+        return readBoolean(ENABLED_PROPERTY, DEFAULT_ENABLED);
     }
 
     private static long readLong(String property, long defaultValue, long minValue, long maxValue) {
@@ -209,7 +229,7 @@ public final class NettySpikeProbe {
                     ? -1L
                     : Math.max(nowMillis - this.lastCompletedOperationAtMillis, 0L);
             Bandwidthoptimizer.LOGGER.warn(
-                    "[NettySpike] type={}, boActive={}, delayMs={}, thresholdMs={}, channel={}, eventLoop={}, operation={}, activeOperation={}, activeForMs={}, activeDetail={}, lastCompletedOperation={}, lastCompletedAgoMs={}, lastCompletedDetail={}, totalOperations={}, eventLoopDelays={}, operationSlows={}, recent={}",
+                    "[BO:Diag:nettyMSPT] type={}, boActive={}, delayMs={}, thresholdMs={}, channel={}, eventLoop={}, operation={}, activeOperation={}, activeForMs={}, activeDetail={}, lastCompletedOperation={}, lastCompletedAgoMs={}, lastCompletedDetail={}, totalOperations={}, eventLoopDelays={}, operationSlows={}, recent={}",
                     type,
                     boActive,
                     delayMillis,
