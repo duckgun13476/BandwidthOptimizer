@@ -27,7 +27,7 @@ public abstract class ConnectionSendBoundaryMixin {
     // Chunk send
     @Inject(method = "sendPacket", at = @At("HEAD"), cancellable = true)
     private void bandwidthoptimizer$notePacketSendBoundary(Packet<?> packet, PacketSendListener listener, CallbackInfo ci) {
-        MovementDiagnosticProbe.observeConnectionSend(this.channel, packet);
+        MovementDiagnosticProbe.BO_Diag_movementCorrection(this.channel, packet);
         CreateBlockEntityUpdateGate.observeConnectionSend(this.channel, packet);
         if (CreateBlockEntityUpdateGate.tryDelayConnectionSend(this.channel, packet, listener)) {
             ci.cancel();

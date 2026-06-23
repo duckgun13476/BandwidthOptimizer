@@ -22,8 +22,21 @@ public final class MovementDiagnosticProbe {
 
     private MovementDiagnosticProbe() {}
 
+    public static void BO_Diag_movementCorrection(Channel channel, Packet<?> packet) {
+        observeConnectionSend(channel, packet);
+    }
+
+    public static void BO_Diag_movementBurst(
+            ChannelHandlerContext context,
+            PacketFlow flow,
+            List<Object> out,
+            int startIndex
+    ) {
+        observeDecodedPackets(context, flow, out, startIndex);
+    }
+
     public static void observeConnectionSend(Channel channel, Packet<?> packet) {
-        if (!DiagnosticRuntimeSwitch.isEnabled(DiagnosticRuntimeSwitch.Topic.MOVEMENT)
+        if (!isEnabled(DiagnosticToolRegistry.Tool.MOVEMENT_CORRECTION)
                 || channel == null
                 || !(packet instanceof ClientboundPlayerPositionPacket positionPacket)) {
             return;
@@ -34,7 +47,7 @@ public final class MovementDiagnosticProbe {
             return;
         }
         Bandwidthoptimizer.LOGGER.warn(
-                "[BODiag][Movement][CorrectionSend] channel={}, packetPos=({}, {}, {}), packetId={}, relative={}, pendingTasks={}, writable={}",
+                "[BO:Diag:movementCorrection] channel={}, packetPos=({}, {}, {}), packetId={}, relative={}, pendingTasks={}, writable={}",
                 ChannelIdentity.longText(channel),
                 positionPacket.getX(),
                 positionPacket.getY(),
@@ -52,7 +65,7 @@ public final class MovementDiagnosticProbe {
             List<Object> out,
             int startIndex
     ) {
-        if (!DiagnosticRuntimeSwitch.isEnabled(DiagnosticRuntimeSwitch.Topic.MOVEMENT)
+        if (!isEnabled(DiagnosticToolRegistry.Tool.MOVEMENT_BURST)
                 || context == null
                 || flow != PacketFlow.SERVERBOUND
                 || out == null
@@ -73,7 +86,7 @@ public final class MovementDiagnosticProbe {
             return;
         }
         Bandwidthoptimizer.LOGGER.warn(
-                "[BODiag][Movement][MoveBurst] channel={}, moves={}, windowMs={}, pendingTasks={}, writable={}",
+                "[BO:Diag:movementBurst] channel={}, moves={}, windowMs={}, pendingTasks={}, writable={}",
                 ChannelIdentity.longText(context.channel()),
                 burst.movePackets(),
                 burst.windowMillis(),
@@ -91,6 +104,11 @@ public final class MovementDiagnosticProbe {
             return -1;
         }
         return executor.pendingTasks();
+    }
+
+    private static boolean isEnabled(DiagnosticToolRegistry.Tool tool) {
+        return DiagnosticToolRegistry.isEnabled(tool)
+                || DiagnosticRuntimeSwitch.isEnabled(DiagnosticRuntimeSwitch.Topic.MOVEMENT);
     }
 
     private static final class MoveWindow {

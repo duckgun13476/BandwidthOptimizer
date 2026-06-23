@@ -70,6 +70,18 @@ public final class DiagnosticToolRegistry {
                 Cost.MEDIUM,
                 "Netty event-loop MSPT and BO operation spike attribution",
                 "bandwidthoptimizer.diagnosetool.nettyMSPT"
+        ),
+        MOVEMENT_CORRECTION(
+                "movementCorrection",
+                Cost.SMALL,
+                "Server outbound player-position correction sends",
+                "bandwidthoptimizer.diagnosetool.movementCorrection"
+        ),
+        MOVEMENT_BURST(
+                "movementBurst",
+                Cost.SMALL,
+                "Serverbound move-packet burst windows",
+                "bandwidthoptimizer.diagnosetool.movementBurst"
         );
 
         private final String id;

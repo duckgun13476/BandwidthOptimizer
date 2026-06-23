@@ -78,7 +78,7 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
                 this.bandwidthoptimizer$outputSizeBeforeDecode,
                 this
         )) {
-            MovementDiagnosticProbe.observeDecodedPackets(
+            MovementDiagnosticProbe.BO_Diag_movementBurst(
                     context,
                     this.flow,
                     out,
@@ -96,7 +96,7 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
                 out,
                 this.bandwidthoptimizer$outputSizeBeforeDecode
         );
-        MovementDiagnosticProbe.observeDecodedPackets(
+        MovementDiagnosticProbe.BO_Diag_movementBurst(
                 context,
                 this.flow,
                 out,
