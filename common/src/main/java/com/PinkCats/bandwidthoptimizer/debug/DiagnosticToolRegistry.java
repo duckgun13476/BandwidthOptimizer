@@ -172,6 +172,36 @@ public final class DiagnosticToolRegistry {
                 Cost.MEDIUM,
                 "Persistent cache manifest receive, batch apply, and completion events",
                 "bandwidthoptimizer.diagnosetool.cacheManifestSync"
+        ),
+        CHUNK_LIFECYCLE(
+                "chunkLifecycle",
+                Cost.SMALL,
+                "Player respawn, watch-boundary, and chunk lifecycle retention events",
+                "bandwidthoptimizer.diagnosetool.chunkLifecycle"
+        ),
+        CHUNK_INBOUND_OBSERVATION(
+                "chunkInboundObservation",
+                Cost.SMALL,
+                "Inbound chunk channel cleanup and server-switch reset events",
+                "bandwidthoptimizer.diagnosetool.chunkInboundObservation"
+        ),
+        CACHE_BUDGET(
+                "cacheBudget",
+                Cost.MEDIUM,
+                "Client chunk-cache budget trimming and eviction summaries",
+                "bandwidthoptimizer.diagnosetool.cacheBudget"
+        ),
+        CHUNK_PLAN_PREVIEW(
+                "chunkPlanPreview",
+                Cost.MEDIUM,
+                "Chunk planner white-box preview decisions",
+                "bandwidthoptimizer.diagnosetool.chunkPlanPreview"
+        ),
+        CHUNK_PROTOCOL_PREVIEW(
+                "chunkProtocolPreview",
+                Cost.MEDIUM,
+                "Chunk protocol frame encode/decode preview checks",
+                "bandwidthoptimizer.diagnosetool.chunkProtocolPreview"
         );
 
         private final String id;

@@ -6,6 +6,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescript
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerObservationSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkHotspotPathRuntimeConfig;
 
 public final class ChunkPlanPreviewService {
@@ -23,12 +24,12 @@ public final class ChunkPlanPreviewService {
             return;
         }
 
-        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (!BO_Diag_chunkPlanPreview()) {
             return;
         }
         if (shouldLog(channelSnapshot, decision)) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkPlan][Preview] channel={}, epoch={}, observedPackets={}, {}",
+                    "[BO:Diag:chunkPlanPreview] event=preview channel={}, epoch={}, observedPackets={}, {}",
                     channelSnapshot.channelId(),
                     channelSnapshot.epoch(),
                     channelSnapshot.observedPacketCount(),
@@ -56,5 +57,10 @@ public final class ChunkPlanPreviewService {
         }
         long observedPacketCount = snapshot.observedPacketCount();
         return observedPacketCount <= 10L || observedPacketCount % 100L == 0L;
+    }
+
+    private static boolean BO_Diag_chunkPlanPreview() {
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_PLAN_PREVIEW)
+                || DebugRuntimeConfig.isDiagnoseEnabled();
     }
 }

@@ -5,6 +5,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordina
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerChunkStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkHotspotPathRuntimeConfig;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
@@ -37,9 +38,9 @@ public final class ChunkLifecycleCoordinator {
         ResourceKey<Level> currentDimension = com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(player).dimension();
         boolean sameDimensionRespawn = previousDimension != null && previousDimension.equals(currentDimension);
         if (sameDimensionRespawn) {
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (BO_Diag_chunkLifecycle()) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[ChunkPeer][Lifecycle] player={}, uuid={}, reason=respawn_same_dimension_new_scope, dimension={}",
+                        "[BO:Diag:chunkLifecycle] event=respawn_same_dimension_new_scope player={}, uuid={}, dimension={}",
                         player.getGameProfile().getName(),
                         player.getUUID(),
                         currentDimension.location()
@@ -104,9 +105,9 @@ public final class ChunkLifecycleCoordinator {
 
         ChunkPeerChunkStateSnapshot retainedChunkSnapshot =
                 ChunkPeerStateManager.retainPlayerChunkForWatchBoundary(player, coordinate, reason);
-        if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (BO_Diag_chunkLifecycle()) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkLifecycle][Retain] player={}, uuid={}, reason={}, chunk={}, snapshotBefore={}, snapshotAfter={}",
+                    "[BO:Diag:chunkLifecycle] event=retain player={}, uuid={}, reason={}, chunk={}, snapshotBefore={}, snapshotAfter={}",
                     player.getGameProfile().getName(),
                     player.getUUID(),
                     reason,
@@ -124,7 +125,7 @@ public final class ChunkLifecycleCoordinator {
             String reason,
             ChunkPeerChunkStateSnapshot knownChunkSnapshot
     ) {
-        if (!DebugRuntimeConfig.isDiagnoseEnabled()
+        if (!BO_Diag_chunkLifecycle()
                 || !ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()
                 || player == null
                 || coordinate == null) {
@@ -132,7 +133,7 @@ public final class ChunkLifecycleCoordinator {
         }
 
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkTwoPoint][LifecycleSkip] player={}, uuid={}, reason={}, chunk={}, snapshotBefore={}",
+                "[BO:Diag:chunkLifecycle] event=two_point_lifecycle_skip player={}, uuid={}, reason={}, chunk={}, snapshotBefore={}",
                 player.getGameProfile().getName(),
                 player.getUUID(),
                 reason,
@@ -158,5 +159,10 @@ public final class ChunkLifecycleCoordinator {
             return;
         }
         PLAYER_DIMENSIONS.remove(player.getUUID());
+    }
+
+    private static boolean BO_Diag_chunkLifecycle() {
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_LIFECYCLE)
+                || DebugRuntimeConfig.isDiagnoseEnabled();
     }
 }

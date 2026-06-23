@@ -10,6 +10,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameO
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerObservationSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 
 public final class ChunkProtocolPreviewService {
 
@@ -25,7 +26,7 @@ public final class ChunkProtocolPreviewService {
                 || descriptor == null
                 || decision == null
                 || decision.decisionKind() == ChunkPlanDecisionKind.BYPASS
-                || !DebugRuntimeConfig.isDiagnoseEnabled()
+                || !BO_Diag_chunkProtocolPreview()
                 || !shouldLogPreview(snapshot)) {
             return;
         }
@@ -36,7 +37,7 @@ public final class ChunkProtocolPreviewService {
             ChunkHotspotFrame decodedFrame = ChunkHotspotFrameCodec.decodeFrame(encodedFrameBytes);
             boolean matches = frame.equals(decodedFrame);
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkProtocol][Preview] channel={}, epoch={}, observedPackets={}, frameBytes={}, match={}, {}",
+                    "[BO:Diag:chunkProtocolPreview] event=preview channel={}, epoch={}, observedPackets={}, frameBytes={}, match={}, {}",
                     snapshot.channelId(),
                     snapshot.epoch(),
                     snapshot.observedPacketCount(),
@@ -46,14 +47,14 @@ public final class ChunkProtocolPreviewService {
             );
             if (!matches) {
                 Bandwidthoptimizer.LOGGER.error(
-                        "[ChunkProtocol][PreviewMismatch] original={}, decoded={}",
+                        "[BO:Diag:chunkProtocolPreview] event=preview_mismatch original={}, decoded={}",
                         frame.summaryText(),
                         decodedFrame.summaryText()
                 );
             }
         } catch (Throwable throwable) {
             Bandwidthoptimizer.LOGGER.error(
-                    "[ChunkProtocol][PreviewError] channel={}, observedPackets={}, packetClass={}, message={}",
+                    "[BO:Diag:chunkProtocolPreview] event=preview_error channel={}, observedPackets={}, packetClass={}, message={}",
                     snapshot.channelId(),
                     snapshot.observedPacketCount(),
                     descriptor.packetClassName(),
@@ -101,5 +102,10 @@ public final class ChunkProtocolPreviewService {
     private static boolean shouldLogPreview(ChunkPeerStateSnapshot snapshot) {
         long observedPacketCount = snapshot.observedPacketCount();
         return observedPacketCount <= 5L || observedPacketCount % 100L == 0L;
+    }
+
+    private static boolean BO_Diag_chunkProtocolPreview() {
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_PROTOCOL_PREVIEW)
+                || DebugRuntimeConfig.isDiagnoseEnabled();
     }
 }

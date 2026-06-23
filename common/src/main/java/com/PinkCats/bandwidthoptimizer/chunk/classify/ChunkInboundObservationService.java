@@ -17,6 +17,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshot
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundLoginPacket;
@@ -93,9 +94,9 @@ public final class ChunkInboundObservationService {
             ChunkRuntimeReferenceStore.clearChannel(channelId);
             ChunkShadowSnapshotManager.clearChannel(channelId);
             ChunkClientTrimmedFullBaseStore.clearChannel(channelId);
-            if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+            if (BO_Diag_chunkInboundObservation()) {
                 Bandwidthoptimizer.LOGGER.info(
-                        "[ChunkInbound][ChannelClose] channel={}, reason=runtime_cache_cleanup",
+                        "[BO:Diag:chunkInboundObservation] event=channel_close_cleanup channel={}, reason=runtime_cache_cleanup",
                         channelId
                 );
             }
@@ -123,9 +124,9 @@ public final class ChunkInboundObservationService {
         ChunkClientTrimmedFullBaseStore.clearChannel(channelId);
         ChunkPersistentClientCache.prepareForServerSwitch(context.channel(), reason);
         ChunkPersistentClientCache.sendManifestOnce(context.channel(), "persistent_client_cache_after_login");
-        if (DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (BO_Diag_chunkInboundObservation()) {
             Bandwidthoptimizer.LOGGER.info(
-                    "[ChunkTransport][VelocitySwitch][Reset] channel={}, protocol={}, packetClass={}, reason={}",
+                    "[BO:Diag:chunkInboundObservation] event=velocity_switch_reset channel={}, protocol={}, packetClass={}, reason={}",
                     com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()),
                     protocolName,
                     packet.getClass().getName(),
@@ -166,5 +167,10 @@ public final class ChunkInboundObservationService {
         }
         ChunkPeerStateSnapshot channelSnapshot = ChunkPeerStateManager.snapshotOutboundChannel(context);
         return channelSnapshot == null ? 0L : channelSnapshot.epoch();
+    }
+
+    private static boolean BO_Diag_chunkInboundObservation() {
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_INBOUND_OBSERVATION)
+                || DebugRuntimeConfig.isDiagnoseEnabled();
     }
 }

@@ -9,6 +9,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshot
 import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.LoaderEnvironmentCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 
@@ -303,12 +304,12 @@ public final class ChunkClientCacheBudgetManager {
                 && runtimeEvictedBaseCount <= 0) {
             return;
         }
-        if (!DebugRuntimeConfig.isDiagnoseEnabled()) {
+        if (!BO_Diag_cacheBudget()) {
             return;
         }
 
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkCache][Trim] reason={}, beforeTotalBytes={}, afterTotalBytes={}, beforeShadowBytes={}, afterShadowBytes={}, beforeRuntimeBytes={}, afterRuntimeBytes={}, releasedShadowBytes={}, evictedChunks={}, evictedRuntimeFullBases={}",
+                "[BO:Diag:cacheBudget] event=trim reason={}, beforeTotalBytes={}, afterTotalBytes={}, beforeShadowBytes={}, afterShadowBytes={}, beforeRuntimeBytes={}, afterRuntimeBytes={}, releasedShadowBytes={}, evictedChunks={}, evictedRuntimeFullBases={}",
                 reason == null || reason.isBlank() ? "client_cache_budget_trim" : reason,
                 usageBeforeTrim.totalBytes(),
                 usageAfterTrim.totalBytes(),
@@ -329,5 +330,10 @@ public final class ChunkClientCacheBudgetManager {
         private long totalBytes() {
             return Math.max(this.shadowBytes, 0L) + Math.max(this.runtimeReferenceBytes, 0L);
         }
+    }
+
+    private static boolean BO_Diag_cacheBudget() {
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CACHE_BUDGET)
+                || DebugRuntimeConfig.isDiagnoseEnabled();
     }
 }
