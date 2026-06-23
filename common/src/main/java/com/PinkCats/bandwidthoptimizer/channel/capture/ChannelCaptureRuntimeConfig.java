@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.channel.capture;
 
 import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -14,9 +15,10 @@ public final class ChannelCaptureRuntimeConfig {
 
     private ChannelCaptureRuntimeConfig() {}
 
-    // jsonl full capture (dangerous) only diagnose
+    // Full JSONL capture is expensive; keep it behind an explicit diagnostic switch.
     public static boolean isJsonlCaptureEnabled() {
-        return DebugRuntimeConfig.isDiagnoseEnabled() && JSONL_CAPTURE_ENABLED.get();
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHANNEL_JSONL_CAPTURE)
+                || (DebugRuntimeConfig.isDiagnoseEnabled() && JSONL_CAPTURE_ENABLED.get());
     }
 
     public static void setJsonlCaptureEnabled(boolean enabled) {

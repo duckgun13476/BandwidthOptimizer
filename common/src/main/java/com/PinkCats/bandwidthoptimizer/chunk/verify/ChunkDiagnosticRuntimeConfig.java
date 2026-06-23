@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.chunk.verify;
 
 import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -14,9 +15,10 @@ public final class ChunkDiagnosticRuntimeConfig {
 
     private ChunkDiagnosticRuntimeConfig() {}
 
-    // diagnose file
+    // Diagnostic report files are disabled unless an explicit diagnostic switch enables them.
     public static boolean isEnabled() {
-        return DebugRuntimeConfig.isDiagnoseEnabled() && DIAGNOSTIC_OUTPUT_ENABLED.get();
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_VERIFY_OUTPUT)
+                || (DebugRuntimeConfig.isDiagnoseEnabled() && DIAGNOSTIC_OUTPUT_ENABLED.get());
     }
 
     public static void applyEnabled(boolean enabled) {

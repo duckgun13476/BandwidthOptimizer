@@ -106,6 +106,18 @@ public final class DiagnosticToolRegistry {
                 Cost.MEDIUM,
                 "Persistent chunk-cache store and load events",
                 "bandwidthoptimizer.diagnosetool.cachePersistentIO"
+        ),
+        CHANNEL_JSONL_CAPTURE(
+                "channelJsonlCapture",
+                Cost.LARGE,
+                "Full channel JSONL packet capture",
+                "bandwidthoptimizer.diagnosetool.channelJsonlCapture"
+        ),
+        CHUNK_VERIFY_OUTPUT(
+                "chunkVerifyOutput",
+                Cost.MEDIUM,
+                "Chunk hotspot verification and boundary output files",
+                "bandwidthoptimizer.diagnosetool.chunkVerifyOutput"
         );
 
         private final String id;
