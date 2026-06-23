@@ -88,6 +88,18 @@ public final class DiagnosticToolRegistry {
                 Cost.SMALL,
                 "Outbound packet encode and BO hook cost spikes",
                 "bandwidthoptimizer.diagnosetool.transportEncodeCost"
+        ),
+        MOVEMENT_POSITION_HANDLE(
+                "movementPositionHandle",
+                Cost.SMALL,
+                "Client handling of server position correction packets",
+                "bandwidthoptimizer.diagnosetool.movementPositionHandle"
+        ),
+        CACHE_CHUNK_HANDLE(
+                "cacheChunkHandle",
+                Cost.SMALL,
+                "Client chunk-cache center, radius, and chunk handle events",
+                "bandwidthoptimizer.diagnosetool.cacheChunkHandle"
         );
 
         private final String id;
