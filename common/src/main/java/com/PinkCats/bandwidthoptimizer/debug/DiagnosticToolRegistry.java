@@ -130,6 +130,12 @@ public final class DiagnosticToolRegistry {
                 Cost.MEDIUM,
                 "Client 3x3 chunk-cache gap scan",
                 "bandwidthoptimizer.diagnosetool.chunkGapScan"
+        ),
+        CHUNK_DELAY_TIMELINE(
+                "chunkDelayTimeline",
+                Cost.LARGE,
+                "Chunk transport encode, restore, and stage timing timeline",
+                "bandwidthoptimizer.diagnosetool.chunkDelayTimeline"
         );
 
         private final String id;

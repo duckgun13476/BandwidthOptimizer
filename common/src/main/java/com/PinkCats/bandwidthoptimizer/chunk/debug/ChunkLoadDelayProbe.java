@@ -5,6 +5,7 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
 import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkPlanDecision;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
@@ -42,7 +43,7 @@ public final class ChunkLoadDelayProbe {
     private ChunkLoadDelayProbe() {}
 
     public static boolean isEnabled() {
-        return ENABLED;
+        return ENABLED || DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_DELAY_TIMELINE);
     }
 
     // Marks vanilla chunk packet construction timing.
@@ -52,7 +53,7 @@ public final class ChunkLoadDelayProbe {
             int chunkZ,
             long constructStartNanos
     ) {
-        if (!ENABLED || packet == null) {
+        if (!isEnabled() || packet == null) {
             return;
         }
         long nowMillis = System.currentTimeMillis();
@@ -65,7 +66,7 @@ public final class ChunkLoadDelayProbe {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkVanillaProbe] event={}, nowMs={}, stage=server_vanilla_chunk_packet_construct, chunk=({}, {}), constructElapsedMs={}, thread={}",
+                "[BO:Diag:chunkDelayTimeline] event=vanilla_construct, index={}, nowMs={}, stage=server_vanilla_chunk_packet_construct, chunk=({}, {}), constructElapsedMs={}, thread={}",
                 eventIndex,
                 nowMillis,
                 chunkX,
@@ -81,7 +82,7 @@ public final class ChunkLoadDelayProbe {
             Packet<?> packet,
             int packetBytes
     ) {
-        if (!ENABLED || !(packet instanceof ClientboundLevelChunkWithLightPacket levelChunkPacket)) {
+        if (!isEnabled() || !(packet instanceof ClientboundLevelChunkWithLightPacket levelChunkPacket)) {
             return;
         }
         ConstructedChunkPacketTiming timing = CONSTRUCTED_CHUNK_PACKETS.remove(packet);
@@ -95,7 +96,7 @@ public final class ChunkLoadDelayProbe {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkVanillaProbe] event={}, nowMs={}, stage=server_vanilla_chunk_packet_outbound, channel={}, chunk=({}, {}), packetBytes={}, constructElapsedMs={}, constructToOutboundMs={}, constructThread={}, outboundThread={}",
+                "[BO:Diag:chunkDelayTimeline] event=vanilla_outbound, index={}, nowMs={}, stage=server_vanilla_chunk_packet_outbound, channel={}, chunk=({}, {}), packetBytes={}, constructElapsedMs={}, constructToOutboundMs={}, constructThread={}, outboundThread={}",
                 eventIndex,
                 nowMillis,
                 channelText(context),
@@ -117,7 +118,7 @@ public final class ChunkLoadDelayProbe {
             int envelopeBytes,
             ChunkPlanDecision decision
     ) {
-        if (!ENABLED) {
+        if (!isEnabled()) {
             return;
         }
         long eventIndex = SERVER_ENCODE_EVENTS.incrementAndGet();
@@ -125,7 +126,7 @@ public final class ChunkLoadDelayProbe {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkDelayProbe] server_encode event={}, nowMs={}, channel={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, originalBytes={}, envelopeBytes={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, reason={}, decisionReason={}, selectedBytes={}",
+                "[BO:Diag:chunkDelayTimeline] event=server_encode, index={}, nowMs={}, channel={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, originalBytes={}, envelopeBytes={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, reason={}, decisionReason={}, selectedBytes={}",
                 eventIndex,
                 System.currentTimeMillis(),
                 channelText(context),
@@ -162,7 +163,7 @@ public final class ChunkLoadDelayProbe {
             ChunkHotspotFrame frame,
             int envelopeBytes
     ) {
-        if (!ENABLED) {
+        if (!isEnabled()) {
             return;
         }
         long eventIndex = CLIENT_DECODE_EVENTS.incrementAndGet();
@@ -170,7 +171,7 @@ public final class ChunkLoadDelayProbe {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkDelayProbe] client_envelope_decode event={}, nowMs={}, channel={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, envelopeBytes={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, reason={}",
+                "[BO:Diag:chunkDelayTimeline] event=client_envelope_decode, index={}, nowMs={}, channel={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, envelopeBytes={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, reason={}",
                 eventIndex,
                 System.currentTimeMillis(),
                 channelText(context),
@@ -196,7 +197,7 @@ public final class ChunkLoadDelayProbe {
             int restoredBytes,
             String source
     ) {
-        if (!ENABLED) {
+        if (!isEnabled()) {
             return;
         }
         long eventIndex = CLIENT_DECODE_EVENTS.incrementAndGet();
@@ -204,7 +205,7 @@ public final class ChunkLoadDelayProbe {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkDelayProbe] client_restored event={}, nowMs={}, channel={}, source={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, restoredBytes={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, reason={}",
+                "[BO:Diag:chunkDelayTimeline] event=client_restored, index={}, nowMs={}, channel={}, source={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, restoredBytes={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, reason={}",
                 eventIndex,
                 System.currentTimeMillis(),
                 channelText(context),
@@ -231,7 +232,7 @@ public final class ChunkLoadDelayProbe {
             String reason,
             boolean nackSent
     ) {
-        if (!ENABLED) {
+        if (!isEnabled()) {
             return;
         }
         long eventIndex = CLIENT_MISS_EVENTS.incrementAndGet();
@@ -239,7 +240,7 @@ public final class ChunkLoadDelayProbe {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkDelayProbe] client_restore_miss event={}, nowMs={}, channel={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, missingReason={}, nackSent={}, frameReason={}",
+                "[BO:Diag:chunkDelayTimeline] event=client_restore_miss, index={}, nowMs={}, channel={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, missingReason={}, nackSent={}, frameReason={}",
                 eventIndex,
                 System.currentTimeMillis(),
                 channelText(context),
@@ -267,7 +268,7 @@ public final class ChunkLoadDelayProbe {
             int replayBytes,
             String recoveryReason
     ) {
-        if (!ENABLED) {
+        if (!isEnabled()) {
             return;
         }
         long eventIndex = SERVER_NACK_EVENTS.incrementAndGet();
@@ -275,7 +276,7 @@ public final class ChunkLoadDelayProbe {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkDelayProbe] server_nack_recovery event={}, nowMs={}, channel={}, nackReason={}, replaySent={}, replayBytes={}, recoveryReason={}, epoch={}, observed={}, chunk={}, fullVersion={}, baseHash={}, payloadHash={}",
+                "[BO:Diag:chunkDelayTimeline] event=server_nack_recovery, index={}, nowMs={}, channel={}, nackReason={}, replaySent={}, replayBytes={}, recoveryReason={}, epoch={}, observed={}, chunk={}, fullVersion={}, baseHash={}, payloadHash={}",
                 eventIndex,
                 System.currentTimeMillis(),
                 channelText(context),
@@ -302,7 +303,7 @@ public final class ChunkLoadDelayProbe {
             String reason,
             boolean queued
     ) {
-        if (!ENABLED) {
+        if (!isEnabled()) {
             return;
         }
         long eventIndex = CACHE_BUDGET_EVENTS.incrementAndGet();
@@ -310,7 +311,7 @@ public final class ChunkLoadDelayProbe {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkDelayProbe] client_budget_invalidate event={}, nowMs={}, channel={}, queued={}, epoch={}, chunk={}, fullVersion={}, fullHash={}, reason={}",
+                "[BO:Diag:chunkDelayTimeline] event=client_budget_invalidate, index={}, nowMs={}, channel={}, queued={}, epoch={}, chunk={}, fullVersion={}, fullHash={}, reason={}",
                 eventIndex,
                 System.currentTimeMillis(),
                 channelId == null || channelId.isBlank() ? "<unknown>" : channelId,
@@ -332,7 +333,7 @@ public final class ChunkLoadDelayProbe {
             int bytes,
             String detail
     ) {
-        if (!ENABLED) {
+        if (!isEnabled()) {
             return;
         }
         logStage(channelText(context), frame, side, stage, elapsedMillis, bytes, detail);
@@ -347,14 +348,14 @@ public final class ChunkLoadDelayProbe {
             int bytes,
             String detail
     ) {
-        if (!ENABLED) {
+        if (!isEnabled()) {
             return;
         }
         logStage(ChannelIdentity.longText(channel), frame, side, stage, elapsedMillis, bytes, detail);
     }
 
     public static long elapsedMillisSince(long startNanos) {
-        if (!ENABLED || startNanos <= 0L) {
+        if (!isEnabled() || startNanos <= 0L) {
             return 0L;
         }
         return TimeUnit.NANOSECONDS.toMillis(Math.max(System.nanoTime() - startNanos, 0L));
@@ -374,7 +375,7 @@ public final class ChunkLoadDelayProbe {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkStageProbe] event={}, nowMs={}, side={}, stage={}, elapsedMs={}, channel={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, bytes={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, reason={}, detail={}",
+                "[BO:Diag:chunkDelayTimeline] event=stage, index={}, nowMs={}, side={}, stage={}, elapsedMs={}, channel={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, bytes={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, reason={}, detail={}",
                 eventIndex,
                 System.currentTimeMillis(),
                 safeText(side, "<unknown>"),
