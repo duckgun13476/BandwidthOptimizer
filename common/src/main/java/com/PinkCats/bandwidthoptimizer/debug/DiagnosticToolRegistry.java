@@ -118,6 +118,18 @@ public final class DiagnosticToolRegistry {
                 Cost.MEDIUM,
                 "Chunk hotspot verification and boundary output files",
                 "bandwidthoptimizer.diagnosetool.chunkVerifyOutput"
+        ),
+        CHUNK_LOAD_TIMELINE(
+                "chunkLoadTimeline",
+                Cost.LARGE,
+                "Client chunk-load timeline after position sync",
+                "bandwidthoptimizer.diagnosetool.chunkLoadTimeline"
+        ),
+        CHUNK_GAP_SCAN(
+                "chunkGapScan",
+                Cost.MEDIUM,
+                "Client 3x3 chunk-cache gap scan",
+                "bandwidthoptimizer.diagnosetool.chunkGapScan"
         );
 
         private final String id;

@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.debug;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientChunkCache;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -112,7 +113,7 @@ public final class ChunkClientGapProbe {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkGapProbe] round_start round={}, reason={}, anchor=({}, {}), center=({}, {}), radius={}",
+                "[BO:Diag:chunkGapScan] event=round_start, round={}, reason={}, anchor=({}, {}), center=({}, {}), radius={}",
                 currentRound,
                 roundReason,
                 anchorX,
@@ -137,7 +138,7 @@ public final class ChunkClientGapProbe {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkGapProbe] missing_3x3 event={}, round={}, reason={}, target={}, anchor=({}, {}), missing={}, received={}, cached={}, matrix={}, missingChunks={}, center=({}, {}), radius={}",
+                "[BO:Diag:chunkGapScan] event=missing_3x3, index={}, round={}, reason={}, target={}, anchor=({}, {}), missing={}, received={}, cached={}, matrix={}, missingChunks={}, center=({}, {}), radius={}",
                 eventIndex,
                 currentRound,
                 roundReason,
@@ -168,7 +169,7 @@ public final class ChunkClientGapProbe {
             return;
         }
         Bandwidthoptimizer.LOGGER.info(
-                "[ChunkGapProbe] marker event={}, round={}, reason={}, kind={}, chunk=({}, {}), centerKnown={}, center=({}, {}), radius={}",
+                "[BO:Diag:chunkGapScan] event=marker, index={}, round={}, reason={}, kind={}, chunk=({}, {}), centerKnown={}, center=({}, {}), radius={}",
                 eventIndex,
                 currentRound,
                 roundReason,
@@ -239,7 +240,8 @@ public final class ChunkClientGapProbe {
     }
 
     public static boolean isEnabled() {
-        return Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "false"));
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_GAP_SCAN)
+                || Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "false"));
     }
 
     public static void setEnabled(boolean enabled) {
