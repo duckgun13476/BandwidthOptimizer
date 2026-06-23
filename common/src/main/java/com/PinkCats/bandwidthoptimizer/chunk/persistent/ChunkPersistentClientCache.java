@@ -80,8 +80,7 @@ public final class ChunkPersistentClientCache {
     private static final String LEGACY_DIRECTORY_NAME = "client-persistent-chunk-cache";
     private static final ScheduledExecutorService IO_EXECUTOR = Executors.newSingleThreadScheduledExecutor(new CacheThreadFactory());
     private static ZipCacheSnapshot cachedSnapshot;
-    private static volatile ZipCacheSnapshot loadedHotPathSnapshot;
-    private static volatile String loadedHotPathServerScopeHash = "";
+    private static volatile LoadedHotPathSnapshot loadedHotPathSnapshot = LoadedHotPathSnapshot.empty("");
     private static String activeServerScopeHash = "";
     private static boolean preloadStarted;
     private static boolean checkpointLoopStarted;
@@ -205,7 +204,7 @@ public final class ChunkPersistentClientCache {
             byte[] encodedPacketBytes,
             String reason
     ) {
-        String serverScopeHash = loadedHotPathServerScopeHash;
+        String serverScopeHash = loadedHotPathSnapshot.serverScopeHash();
         if (!isEnabled()
                 || !isSafeScopeHash(serverScopeHash)
                 || hotspotKind != ChunkHotspotKind.FULL_CHUNK
@@ -358,59 +357,50 @@ public final class ChunkPersistentClientCache {
     }
 
     public static byte[] findLoadedPacketBytes(ChunkHotspotFrame frame) {
-        String serverScopeHash = loadedHotPathServerScopeHash;
-        ZipCacheSnapshot cacheSnapshot = loadedHotPathSnapshot;
+        LoadedHotPathSnapshot cacheSnapshot = loadedHotPathSnapshot;
+        String serverScopeHash = cacheSnapshot.serverScopeHash();
         if (!isEnabled()
                 || !isSafeScopeHash(serverScopeHash)
-                || cacheSnapshot == null
                 || !isStorableFullSnapshot(frame)) {
             return null;
         }
 
         long loadStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         String keyPrefix = entryPrefix(serverScopeHash, frame.coordinate());
-        String cachedHash = cacheSnapshot.index().getProperty(keyPrefix + "hash", "");
-        if (!frame.payloadHash().equals(cachedHash)) {
+        LoadedCacheEntry cacheEntry = cacheSnapshot.entriesByKeyPrefix().get(keyPrefix);
+        if (cacheEntry == null || !frame.payloadHash().equals(cacheEntry.payloadHash())) {
             return null;
         }
 
-        byte[] packetBytes = cacheSnapshot.blobs().get(blobEntryName(cachedHash));
-        boolean matchedHash = packetBytes != null
-                && packetBytes.length > 0
-                && cacheSnapshot.verifiedBlobEntries().contains(blobEntryName(cachedHash));
         ChunkLoadDelayProbe.logStage(
                 (Channel) null,
                 frame,
                 "client",
                 "persistent_loaded_find_verified_check",
                 0L,
-                packetBytes == null ? 0 : packetBytes.length,
-                "matched=" + matchedHash
+                cacheEntry.encodedBytes(),
+                "matched=true"
         );
-        if (!matchedHash) {
-            return null;
-        }
 
         recordLastUsed(serverScopeHash, frame.coordinate());
-        logLoad(frame, packetBytes.length);
+        logLoad(frame, cacheEntry.encodedBytes());
         ChunkLoadDelayProbe.logStage(
                 (Channel) null,
                 frame,
                 "client",
                 "persistent_loaded_find_total",
                 ChunkLoadDelayProbe.elapsedMillisSince(loadStartNanos),
-                packetBytes.length,
+                cacheEntry.encodedBytes(),
                 "hit=true"
         );
-        return packetBytes.clone();
+        return cacheEntry.copyPacketBytes();
     }
 
     public static byte[] findLoadedBasePacketBytes(ChunkHotspotFrame frame) {
-        String serverScopeHash = loadedHotPathServerScopeHash;
-        ZipCacheSnapshot cacheSnapshot = loadedHotPathSnapshot;
+        LoadedHotPathSnapshot cacheSnapshot = loadedHotPathSnapshot;
+        String serverScopeHash = cacheSnapshot.serverScopeHash();
         if (!isEnabled()
                 || !isSafeScopeHash(serverScopeHash)
-                || cacheSnapshot == null
                 || !isStorableFullSnapshot(frame)
                 || frame.baseSnapshotHash() == null
                 || !isSafeHash(frame.baseSnapshotHash())) {
@@ -419,40 +409,33 @@ public final class ChunkPersistentClientCache {
 
         long loadStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         String keyPrefix = entryPrefix(serverScopeHash, frame.coordinate());
-        String cachedHash = cacheSnapshot.index().getProperty(keyPrefix + "hash", "");
-        if (!frame.baseSnapshotHash().equals(cachedHash)) {
+        LoadedCacheEntry cacheEntry = cacheSnapshot.entriesByKeyPrefix().get(keyPrefix);
+        if (cacheEntry == null || !frame.baseSnapshotHash().equals(cacheEntry.payloadHash())) {
             return null;
         }
 
-        byte[] packetBytes = cacheSnapshot.blobs().get(blobEntryName(cachedHash));
-        boolean matchedHash = packetBytes != null
-                && packetBytes.length > 0
-                && cacheSnapshot.verifiedBlobEntries().contains(blobEntryName(cachedHash));
         ChunkLoadDelayProbe.logStage(
                 (Channel) null,
                 frame,
                 "client",
                 "persistent_loaded_find_base_verified_check",
                 0L,
-                packetBytes == null ? 0 : packetBytes.length,
-                "matched=" + matchedHash
+                cacheEntry.encodedBytes(),
+                "matched=true"
         );
-        if (!matchedHash) {
-            return null;
-        }
 
         recordLastUsed(serverScopeHash, frame.coordinate());
-        logLoad(frame, packetBytes.length);
+        logLoad(frame, cacheEntry.encodedBytes());
         ChunkLoadDelayProbe.logStage(
                 (Channel) null,
                 frame,
                 "client",
                 "persistent_loaded_find_base_total",
                 ChunkLoadDelayProbe.elapsedMillisSince(loadStartNanos),
-                packetBytes.length,
+                cacheEntry.encodedBytes(),
                 "hit=true"
         );
-        return packetBytes.clone();
+        return cacheEntry.copyPacketBytes();
     }
 
 
@@ -1327,8 +1310,39 @@ public final class ChunkPersistentClientCache {
     }
 
     private static void publishLoadedHotPathSnapshotLocked() {
-        loadedHotPathServerScopeHash = activeServerScopeHash == null ? "" : activeServerScopeHash;
-        loadedHotPathSnapshot = cachedSnapshot == null ? null : cachedSnapshot.copy();
+        String serverScopeHash = activeServerScopeHash == null ? "" : activeServerScopeHash;
+        if (!isSafeScopeHash(serverScopeHash) || cachedSnapshot == null) {
+            loadedHotPathSnapshot = LoadedHotPathSnapshot.empty(serverScopeHash);
+            return;
+        }
+
+        HashMap<String, LoadedCacheEntry> entriesByKeyPrefix = new HashMap<>();
+        Properties index = cachedSnapshot.index();
+        for (String key : index.stringPropertyNames()) {
+            if (!key.endsWith(".hash")) {
+                continue;
+            }
+
+            String coordinateKey = key.substring(0, key.length() - ".hash".length());
+            ScopedCoordinateKey scopedCoordinateKey = parseScopedCoordinateKey(coordinateKey);
+            String hash = index.getProperty(key, "");
+            String blobEntryName = isSafeHash(hash) ? blobEntryName(hash) : "";
+            byte[] packetBytes = blobEntryName.isBlank() ? null : cachedSnapshot.blobs().get(blobEntryName);
+            if (scopedCoordinateKey == null
+                    || !serverScopeHash.equals(scopedCoordinateKey.serverScopeHash())
+                    || scopedCoordinateKey.coordinate() == null
+                    || !scopedCoordinateKey.coordinate().present()
+                    || packetBytes == null
+                    || packetBytes.length == 0
+                    || !cachedSnapshot.verifiedBlobEntries().contains(blobEntryName)) {
+                continue;
+            }
+            entriesByKeyPrefix.put(
+                    entryPrefix(serverScopeHash, scopedCoordinateKey.coordinate()),
+                    new LoadedCacheEntry(hash, packetBytes)
+            );
+        }
+        loadedHotPathSnapshot = new LoadedHotPathSnapshot(serverScopeHash, entriesByKeyPrefix);
     }
 
     private static int zipCompressionLevel() {
@@ -1730,6 +1744,38 @@ public final class ChunkPersistentClientCache {
             String serverScopeHash,
             ChunkPacketCoordinate coordinate
     ) {
+    }
+
+    private record LoadedHotPathSnapshot(
+            String serverScopeHash,
+            Map<String, LoadedCacheEntry> entriesByKeyPrefix
+    ) {
+        private LoadedHotPathSnapshot {
+            serverScopeHash = serverScopeHash == null ? "" : serverScopeHash;
+            entriesByKeyPrefix = entriesByKeyPrefix == null ? Map.of() : Map.copyOf(entriesByKeyPrefix);
+        }
+
+        private static LoadedHotPathSnapshot empty(String serverScopeHash) {
+            return new LoadedHotPathSnapshot(serverScopeHash, Map.of());
+        }
+    }
+
+    private record LoadedCacheEntry(
+            String payloadHash,
+            byte[] packetBytes
+    ) {
+        private LoadedCacheEntry {
+            payloadHash = payloadHash == null ? "" : payloadHash;
+            packetBytes = packetBytes == null ? new byte[0] : packetBytes;
+        }
+
+        private int encodedBytes() {
+            return packetBytes.length;
+        }
+
+        private byte[] copyPacketBytes() {
+            return packetBytes.clone();
+        }
     }
 
     private record ZipCacheSnapshot(
