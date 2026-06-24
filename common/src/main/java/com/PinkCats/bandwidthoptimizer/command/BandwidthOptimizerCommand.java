@@ -31,6 +31,7 @@ public final class BandwidthOptimizerCommand {
         CommandSourceCompat.sendSuccess(source, Component.literal(
                 "BandwidthOptimizer commands: "
                         + "/bandwidthoptimizer debug status|list|off|<tool> [minutes] | "
+                        + "/bandwidthoptimizer debug download-log [minutes] | "
                         + "/bandwidthoptimizer report transport run [ticks] | "
                         + "/bandwidthoptimizer report packetrank run [ticks] | "
                         + "/bandwidthoptimizer stats total|players [limit]|reset|vanilla on|off"

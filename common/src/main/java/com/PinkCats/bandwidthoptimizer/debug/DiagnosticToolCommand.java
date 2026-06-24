@@ -21,7 +21,20 @@ public final class DiagnosticToolCommand {
                 .then(Commands.literal("list")
                         .executes(context -> list(context.getSource())))
                 .then(Commands.literal("off")
-                        .executes(context -> disableAll(context.getSource())));
+                        .executes(context -> disableAll(context.getSource())))
+                .then(Commands.literal("download-log")
+                        .executes(context -> ServerBoLogExportService.request(
+                                context.getSource(),
+                                DiagnosticToolRegistry.DEFAULT_MINUTES
+                        ))
+                        .then(Commands.argument("minutes", IntegerArgumentType.integer(
+                                        DiagnosticToolRegistry.MIN_MINUTES,
+                                        DiagnosticToolRegistry.MAX_MINUTES
+                                ))
+                                .executes(context -> ServerBoLogExportService.request(
+                                        context.getSource(),
+                                        IntegerArgumentType.getInteger(context, "minutes")
+                                ))));
 
         for (DiagnosticToolRegistry.Tool tool : DiagnosticToolRegistry.Tool.values()) {
             root.then(toolCommand(tool));
@@ -48,6 +61,7 @@ public final class DiagnosticToolCommand {
                 DiagnosticToolRegistry.listText()
                         + "\nUse /bandwidthoptimizer debug <name> to toggle for 30m, "
                         + "/bandwidthoptimizer debug <name> <5-300> to enable for minutes, "
+                        + "/bandwidthoptimizer debug download-log <5-300> to save BO server logs on your client, "
                         + "or /bandwidthoptimizer debug off."
         ), false);
         return Command.SINGLE_SUCCESS;

@@ -10,6 +10,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.lifecycle.ChunkLifecycleCoordinator
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.command.BandwidthOptimizerCommand;
+import com.PinkCats.bandwidthoptimizer.debug.ServerBoLogExportNetworkChannel;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportCompressionCaptureManager;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCaptureManager;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsNetworkChannel;
@@ -64,6 +65,8 @@ public class Bandwidthoptimizer {
         ChannelTransportNetworkChannel.register();
         ServerBandwidthStatsNetworkChannel.setModEventBus(modEventBus);
         ServerBandwidthStatsNetworkChannel.register();
+        ServerBoLogExportNetworkChannel.setModEventBus(modEventBus);
+        ServerBoLogExportNetworkChannel.register();
         NeoForge.EVENT_BUS.register(this);
         modEventBus.addListener(this::commonSetup);
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
@@ -73,6 +76,7 @@ public class Bandwidthoptimizer {
     private void commonSetup(FMLCommonSetupEvent event) {
         ChannelTransportNetworkChannel.register();
         ServerBandwidthStatsNetworkChannel.register();
+        ServerBoLogExportNetworkChannel.register();
         BandwidthOptimizerLifecycle.register(TorqueLayer.platform());
     }
 
