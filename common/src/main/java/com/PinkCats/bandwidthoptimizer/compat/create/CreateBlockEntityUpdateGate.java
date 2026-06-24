@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.compat.create;
 
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
@@ -810,7 +812,7 @@ public final class CreateBlockEntityUpdateGate {
 
     private static void logDiagnose(String message, Object... args) {
         if (BO_Diag_compatDynamicGates()) {
-            Bandwidthoptimizer.LOGGER.info("[BO:Diag:compatDynamicGates] " + message, args);
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.COMPAT_DYNAMIC_GATES, "" + message, args);
         }
     }
 

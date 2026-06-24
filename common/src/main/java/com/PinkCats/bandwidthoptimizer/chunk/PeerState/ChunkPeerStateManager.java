@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.PeerState;
 
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
@@ -57,8 +59,7 @@ public final class ChunkPeerStateManager {
         ChunkPeerObservationSnapshot observation = state.recordObservation(descriptor, snapshotFingerprint, storeObservation);
         ChunkPeerStateSnapshot channelSnapshot = observation.channelState();
         if (shouldLogDiagnose() && state.shouldLogObservation()) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkPeerState] event=observeHotspot channel={}, epoch={}, observedPackets={}, encodedBytes={}, {}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_PEER_STATE, "event=observeHotspot channel={}, epoch={}, observedPackets={}, encodedBytes={}, {}",
                     channelSnapshot.channelId(),
                     channelSnapshot.epoch(),
                     channelSnapshot.observedPacketCount(),
@@ -69,8 +70,7 @@ public final class ChunkPeerStateManager {
 
         ChunkPeerChunkStateSnapshot chunkSnapshot = observation.chunkState();
         if (chunkSnapshot != null && shouldLogDiagnose() && state.shouldLogObservation()) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkPeerState] event=observeChunk channel={}, epoch={}, observedPackets={}, {}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_PEER_STATE, "event=observeChunk channel={}, epoch={}, observedPackets={}, {}",
                     channelSnapshot.channelId(),
                     channelSnapshot.epoch(),
                     channelSnapshot.observedPacketCount(),
@@ -79,8 +79,7 @@ public final class ChunkPeerStateManager {
         }
 
         if (storeObservation != null && shouldLogDiagnose() && state.shouldLogObservation()) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkPeerState] event=observeStore channel={}, epoch={}, observedPackets={}, {}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_PEER_STATE, "event=observeStore channel={}, epoch={}, observedPackets={}, {}",
                     channelSnapshot.channelId(),
                     channelSnapshot.epoch(),
                     channelSnapshot.observedPacketCount(),
@@ -105,8 +104,7 @@ public final class ChunkPeerStateManager {
         ChunkPeerState state = CHANNEL_STATES.computeIfAbsent(channelId, ChunkPeerState::new);
         ChunkPeerStateSnapshot snapshot = state.setEpoch(epoch);
         if (shouldLogDiagnose()) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkPeerState] event=bind player={}, uuid={}, reason={}, dimension={}, channel={}, epoch={}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_PEER_STATE, "event=bind player={}, uuid={}, reason={}, dimension={}, channel={}, epoch={}",
                     player.getGameProfile().getName(),
                     player.getUUID(),
                     reason,
@@ -134,8 +132,7 @@ public final class ChunkPeerStateManager {
             ChunkServerOfflineReuseStats.clearChannel(channelId);
         }
         if (shouldLogDiagnose()) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkPeerState] event=lifecycle player={}, uuid={}, reason={}, retainedScope={}, scopeState={}, clearedChannelState={}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_PEER_STATE, "event=lifecycle player={}, uuid={}, reason={}, retainedScope={}, scopeState={}, clearedChannelState={}",
                     player.getGameProfile().getName(),
                     player.getUUID(),
                     reason,
@@ -169,8 +166,7 @@ public final class ChunkPeerStateManager {
         if (snapshot.epoch() <= 0L) {
             snapshot = state.setEpoch(FIRST_SCOPE_ID);
             if (shouldLogDiagnose()) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:chunkPeerState] event=ensure channel={}, epoch={}, reason={}",
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_PEER_STATE, "event=ensure channel={}, epoch={}, reason={}",
                         snapshot.channelId(),
                         snapshot.epoch(),
                         reason == null ? "" : reason
@@ -201,8 +197,7 @@ public final class ChunkPeerStateManager {
         if (snapshot.epoch() < targetEpoch) {
             snapshot = state.setEpoch(targetEpoch);
             if (shouldLogDiagnose()) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:chunkPeerState] event=ensureAtLeast channel={}, epoch={}, reason={}",
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_PEER_STATE, "event=ensureAtLeast channel={}, epoch={}, reason={}",
                         snapshot.channelId(),
                         snapshot.epoch(),
                         reason == null ? "" : reason
@@ -337,8 +332,7 @@ public final class ChunkPeerStateManager {
         ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.invalidateChunk(scopeId, coordinate);
         ChunkShadowSnapshotManager.invalidateChunk(ChannelIdentity.longText(channel), scopeId, coordinate);
         if (shouldLogDiagnose()) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkPeerState] event=lifecycleInvalidate player={}, uuid={}, channel={}, reason={}, chunk={}, state={}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_PEER_STATE, "event=lifecycleInvalidate player={}, uuid={}, channel={}, reason={}, chunk={}, state={}",
                     player.getGameProfile().getName(),
                     player.getUUID(),
                     ChannelIdentity.longText(channel),
@@ -365,8 +359,7 @@ public final class ChunkPeerStateManager {
         ChunkRuntimeReferenceStore.invalidateFullSnapshotAcrossScopes(channelId, coordinate);
         ChunkShadowSnapshotManager.invalidateChunk(channelId, coordinate);
         if (shouldLogDiagnose()) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkPeerState] event=lifecycleInvalidate channel={}, reason={}, chunk={}, removedPeerStates={}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_PEER_STATE, "event=lifecycleInvalidate channel={}, reason={}, chunk={}, removedPeerStates={}",
                     channelId,
                     reason == null ? "" : reason,
                     coordinate.logText(),
@@ -390,8 +383,7 @@ public final class ChunkPeerStateManager {
         long scopeId = state == null ? 0L : state.snapshot().epoch();
         ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.markChunkAwaitingFullReplay(scopeId, coordinate);
         if (shouldLogDiagnose()) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkPeerState] event=lifecycleRetain player={}, uuid={}, channel={}, reason={}, chunk={}, state={}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_PEER_STATE, "event=lifecycleRetain player={}, uuid={}, channel={}, reason={}, chunk={}, state={}",
                     player.getGameProfile().getName(),
                     player.getUUID(),
                     ChannelIdentity.longText(channel),
@@ -448,8 +440,7 @@ public final class ChunkPeerStateManager {
         if (!shouldLogDiagnose()) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:chunkPeerState] event={} channel={}, epoch={}, chunk={}, fullVersion={}, payloadHash={}, state={}",
+        DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_PEER_STATE, "event={} channel={}, epoch={}, chunk={}, fullVersion={}, payloadHash={}, state={}",
                 label,
                 ChannelIdentity.longText(context.channel()),
                 frame.epoch(),

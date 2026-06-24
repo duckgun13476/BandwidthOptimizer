@@ -17,12 +17,12 @@ public final class BandwidthOptimizerDiagnosticCommand {
                 .then(Commands.literal("status")
                         .executes(context -> status(context.getSource())))
                 .then(Commands.literal("off")
-                        .executes(context -> setAll(context.getSource(), false)))
+                        .executes(context -> disableAll(context.getSource())))
                 .then(Commands.literal("all")
                         .then(Commands.literal("on")
                                 .executes(context -> setAll(context.getSource(), true)))
                         .then(Commands.literal("off")
-                                .executes(context -> setAll(context.getSource(), false))))
+                                .executes(context -> disableAll(context.getSource()))))
                 .then(topicCommand(DiagnosticRuntimeSwitch.Topic.MOVEMENT))
                 .then(topicCommand(DiagnosticRuntimeSwitch.Topic.TRANSPORT))
                 .then(topicCommand(DiagnosticRuntimeSwitch.Topic.CACHE));
@@ -57,6 +57,14 @@ public final class BandwidthOptimizerDiagnosticCommand {
         DiagnosticRuntimeSwitch.setAll(enabled);
         CommandSourceCompat.sendSuccess(source, Component.literal(
                 "BO diagnose all " + onOff(enabled) + ". " + DiagnosticRuntimeSwitch.statusText()
+        ), true);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int disableAll(CommandSourceStack source) {
+        DiagnosticSilencer.disableAll();
+        CommandSourceCompat.sendSuccess(source, Component.literal(
+                DiagnosticSilencer.disabledText("server")
         ), true);
         return Command.SINGLE_SUCCESS;
     }

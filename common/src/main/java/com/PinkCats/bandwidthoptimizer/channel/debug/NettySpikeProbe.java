@@ -1,7 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel.debug;
 
-import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -217,8 +217,9 @@ public final class NettySpikeProbe {
             long lastCompletedAgoMillis = this.lastCompletedOperationAtMillis <= 0L
                     ? -1L
                     : Math.max(nowMillis - this.lastCompletedOperationAtMillis, 0L);
-            Bandwidthoptimizer.LOGGER.warn(
-                    "[BO:Diag:nettyMSPT] type={}, boActive={}, delayMs={}, thresholdMs={}, channel={}, eventLoop={}, operation={}, activeOperation={}, activeForMs={}, activeDetail={}, lastCompletedOperation={}, lastCompletedAgoMs={}, lastCompletedDetail={}, totalOperations={}, eventLoopDelays={}, operationSlows={}, recent={}",
+            DiagnosticLog.warn(
+                    DiagnosticToolRegistry.Tool.NETTY_MSPT,
+                    "type={}, boActive={}, delayMs={}, thresholdMs={}, channel={}, eventLoop={}, operation={}, activeOperation={}, activeForMs={}, activeDetail={}, lastCompletedOperation={}, lastCompletedAgoMs={}, lastCompletedDetail={}, totalOperations={}, eventLoopDelays={}, operationSlows={}, recent={}",
                     type,
                     boActive,
                     delayMillis,

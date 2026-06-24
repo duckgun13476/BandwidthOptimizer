@@ -1,6 +1,5 @@
 package com.PinkCats.bandwidthoptimizer.debug;
 
-import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -46,8 +45,9 @@ public final class MovementDiagnosticProbe {
         if (!window.markCorrection(now)) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.warn(
-                "[BO:Diag:movementCorrection] channel={}, packetPos=({}, {}, {}), packetId={}, relative={}, pendingTasks={}, writable={}",
+        DiagnosticLog.warn(
+                DiagnosticToolRegistry.Tool.MOVEMENT_CORRECTION,
+                "channel={}, packetPos=({}, {}, {}), packetId={}, relative={}, pendingTasks={}, writable={}",
                 ChannelIdentity.longText(channel),
                 positionPacket.getX(),
                 positionPacket.getY(),
@@ -85,8 +85,9 @@ public final class MovementDiagnosticProbe {
         if (burst == null) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.warn(
-                "[BO:Diag:movementBurst] channel={}, moves={}, windowMs={}, pendingTasks={}, writable={}",
+        DiagnosticLog.warn(
+                DiagnosticToolRegistry.Tool.MOVEMENT_BURST,
+                "channel={}, moves={}, windowMs={}, pendingTasks={}, writable={}",
                 ChannelIdentity.longText(context.channel()),
                 burst.movePackets(),
                 burst.windowMillis(),

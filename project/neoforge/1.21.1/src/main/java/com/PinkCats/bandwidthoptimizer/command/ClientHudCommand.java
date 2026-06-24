@@ -2,7 +2,9 @@ package com.PinkCats.bandwidthoptimizer.command;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.client.hud.BandwidthOptimizerHudOverlay;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticRuntimeSwitch;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticSilencer;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
@@ -34,9 +36,11 @@ public final class ClientHudCommand {
         dispatcher.register(Commands.literal("bandwidthoptimizer")
                 .then(Commands.literal("hud")
                         .executes(context -> toggle(context.getSource())))
+                .then(buildDebugCommand())
                 .then(buildDiagnoseCommand())
                 .then(buildDiagnosticToolCommand()));
         dispatcher.register(Commands.literal("bandwidthoptimister")
+                .then(buildDebugCommand())
                 .then(buildDiagnosticToolCommand()));
     }
 
@@ -65,15 +69,21 @@ public final class ClientHudCommand {
                 .then(Commands.literal("status")
                         .executes(context -> diagnoseStatus(context.getSource())))
                 .then(Commands.literal("off")
-                        .executes(context -> setDiagnoseAll(context.getSource(), false)))
+                        .executes(context -> disableAllDiagnostics(context.getSource())))
                 .then(Commands.literal("all")
                         .then(Commands.literal("on")
                                 .executes(context -> setDiagnoseAll(context.getSource(), true)))
                         .then(Commands.literal("off")
-                                .executes(context -> setDiagnoseAll(context.getSource(), false))))
+                                .executes(context -> disableAllDiagnostics(context.getSource()))))
                 .then(clientDiagnoseTopic(DiagnosticRuntimeSwitch.Topic.MOVEMENT))
                 .then(clientDiagnoseTopic(DiagnosticRuntimeSwitch.Topic.TRANSPORT))
                 .then(clientDiagnoseTopic(DiagnosticRuntimeSwitch.Topic.CACHE));
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> buildDebugCommand() {
+        return Commands.literal("debug")
+                .then(Commands.literal("off")
+                        .executes(context -> disableAllDiagnostics(context.getSource())));
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> buildDiagnosticToolCommand() {
@@ -113,7 +123,7 @@ public final class ClientHudCommand {
         source.sendSuccess(() -> Component.literal(
                 "BO diagnosetool " + tool.id()
                         + ' ' + onOff(enabled)
-                        + ". Log prefix [BO:Diag:" + tool.id() + "]. This only controls the local client."
+                        + ". Log prefix " + DiagnosticLog.prefix(tool) + ". This only controls the local client."
         ), false);
         return Command.SINGLE_SUCCESS;
     }
@@ -146,6 +156,14 @@ public final class ClientHudCommand {
         DiagnosticRuntimeSwitch.setAll(enabled);
         source.sendSuccess(() -> Component.literal(
                 "BO client diagnose all " + onOff(enabled) + ". " + DiagnosticRuntimeSwitch.statusText()
+        ), false);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int disableAllDiagnostics(CommandSourceStack source) {
+        DiagnosticSilencer.disableAll();
+        source.sendSuccess(() -> Component.literal(
+                DiagnosticSilencer.disabledText("local client")
         ), false);
         return Command.SINGLE_SUCCESS;
     }

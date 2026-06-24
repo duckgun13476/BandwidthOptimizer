@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
 
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.debug.ChunkClientGapProbe;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.BlockEntityTypeKeyCompat;
@@ -73,8 +75,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         bandwidthoptimizer$cacheCenterX = packet.getX();
         bandwidthoptimizer$cacheCenterZ = packet.getZ();
         ChunkClientGapProbe.recordCacheCenter(packet.getX(), packet.getZ());
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:chunkLoadTimeline] event=cache_center, round={}, chunk=({}, {}), sinceTpMs={}",
+        DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LOAD_TIMELINE, "event=cache_center, round={}, chunk=({}, {}), sinceTpMs={}",
                 bandwidthoptimizer$currentRound,
                 bandwidthoptimizer$cacheCenterX,
                 bandwidthoptimizer$cacheCenterZ,
@@ -94,8 +95,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         }
         bandwidthoptimizer$cacheRadius = Math.max(1, Math.min(packet.getRadius(), 32));
         ChunkClientGapProbe.recordCacheRadius(bandwidthoptimizer$cacheRadius);
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:chunkLoadTimeline] event=cache_radius, round={}, radius={}, totalWindow={}, sinceTpMs={}",
+        DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LOAD_TIMELINE, "event=cache_radius, round={}, radius={}, totalWindow={}, sinceTpMs={}",
                 bandwidthoptimizer$currentRound,
                 bandwidthoptimizer$cacheRadius,
                 bandwidthoptimizer$totalWindowChunks(),
@@ -114,8 +114,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         long now = System.currentTimeMillis();
         if (bandwidthoptimizer$firstChunkMillis <= 0L) {
             bandwidthoptimizer$firstChunkMillis = now;
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkLoadTimeline] event=first_chunk, round={}, delayMs={}, sinceCommandMs={}, chunk=({}, {}), center=({}, {}), radius={}, inWindow={}, receivedWindow={}/{}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LOAD_TIMELINE, "event=first_chunk, round={}, delayMs={}, sinceCommandMs={}, chunk=({}, {}), center=({}, {}), radius={}, inWindow={}, receivedWindow={}/{}",
                     bandwidthoptimizer$currentRound,
                     Math.max(now - bandwidthoptimizer$roundStartMillis, 0L),
                     ExperientClientCommandTiming.millisSinceLastSent(now),
@@ -132,8 +131,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         if (count <= bandwidthoptimizer$MAX_CHUNK_LOGS_PER_ROUND
                 && (count <= 32 || count % bandwidthoptimizer$WINDOW_PROGRESS_INTERVAL == 0)) {
             int receivedWindow = bandwidthoptimizer$countReceivedWindow();
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkLoadTimeline] event=chunk_progress, round={}, count={}, sinceTpMs={}, firstChunkMs={}, chunk=({}, {}), inWindow={}, receivedWindow={}/{}, center=({}, {}), radius={}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LOAD_TIMELINE, "event=chunk_progress, round={}, count={}, sinceTpMs={}, firstChunkMs={}, chunk=({}, {}), inWindow={}, receivedWindow={}/{}, center=({}, {}), radius={}",
                     bandwidthoptimizer$currentRound,
                     count,
                     Math.max(now - bandwidthoptimizer$roundStartMillis, 0L),
@@ -150,8 +148,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         }
         bandwidthoptimizer$logFullWindowIfNeeded(now);
         if (count == bandwidthoptimizer$MAX_CHUNK_LOGS_PER_ROUND) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkLoadTimeline] event=round_log_limit, round={}, count={}, sinceTpMs={}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LOAD_TIMELINE, "event=round_log_limit, round={}, count={}, sinceTpMs={}",
                     bandwidthoptimizer$currentRound,
                     count,
                     bandwidthoptimizer$sinceRoundStartMillis()
@@ -173,8 +170,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         if (bandwidthoptimizer$isIgnoredBlockEntityType(blockEntityTypeKey)) {
             int ignoredCount = ++bandwidthoptimizer$roundIgnoredBlockEntityCount;
             if (ignoredCount <= 16 || ignoredCount % 64 == 0) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:chunkLoadTimeline] event=block_entity_filtered, round={}, ignoredCount={}, sinceTpMs={}, sinceCommandMs={}, type={}, block=({}, {}, {})",
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LOAD_TIMELINE, "event=block_entity_filtered, round={}, ignoredCount={}, sinceTpMs={}, sinceCommandMs={}, type={}, block=({}, {}, {})",
                         bandwidthoptimizer$currentRound,
                         ignoredCount,
                         bandwidthoptimizer$sinceRoundStartMillis(),
@@ -193,8 +189,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         long now = System.currentTimeMillis();
         if (bandwidthoptimizer$firstBlockEntityMillis <= 0L) {
             bandwidthoptimizer$firstBlockEntityMillis = now;
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkLoadTimeline] event=first_block_entity, round={}, delayMs={}, sinceCommandMs={}, firstChunkMs={}, type={}, block=({}, {}, {}), chunk=({}, {}), inWindow={}, receivedWindow={}/{}, ignoredBlockEntities={}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LOAD_TIMELINE, "event=first_block_entity, round={}, delayMs={}, sinceCommandMs={}, firstChunkMs={}, type={}, block=({}, {}, {}), chunk=({}, {}), inWindow={}, receivedWindow={}/{}, ignoredBlockEntities={}",
                     bandwidthoptimizer$currentRound,
                     Math.max(now - bandwidthoptimizer$roundStartMillis, 0L),
                     ExperientClientCommandTiming.millisSinceLastSent(now),
@@ -212,8 +207,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
             );
         }
         if (count <= 32 || count % 8 == 0) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkLoadTimeline] event=block_entity_progress, round={}, count={}, sinceTpMs={}, firstChunkMs={}, firstBlockEntityMs={}, type={}, block=({}, {}, {}), chunk=({}, {}), inWindow={}, receivedWindow={}/{}, ignoredBlockEntities={}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LOAD_TIMELINE, "event=block_entity_progress, round={}, count={}, sinceTpMs={}, firstChunkMs={}, firstBlockEntityMs={}, type={}, block=({}, {}, {}), chunk=({}, {}), inWindow={}, receivedWindow={}/{}, ignoredBlockEntities={}",
                     bandwidthoptimizer$currentRound,
                     count,
                     Math.max(now - bandwidthoptimizer$roundStartMillis, 0L),
@@ -256,8 +250,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
                 : new ChunkPos(((int) Math.floor(packet.getX())) >> 4, ((int) Math.floor(packet.getZ())) >> 4);
         ChunkClientGapProbe.recordTeleport(packetChunk);
         long now = bandwidthoptimizer$roundStartMillis;
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:chunkLoadTimeline] event=tp_start, round={}, sinceCommandMs={}, commandSequence={}, command={}, packetPos=({}, {}, {}), packetId={}, relative={}, playerPos=({}, {}, {}), playerChunk=({}, {}), center=({}, {}), radius={}",
+        DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LOAD_TIMELINE, "event=tp_start, round={}, sinceCommandMs={}, commandSequence={}, command={}, packetPos=({}, {}, {}), packetId={}, relative={}, playerPos=({}, {}, {}), playerChunk=({}, {}), center=({}, {}), radius={}",
                 round,
                 ExperientClientCommandTiming.millisSinceLastSent(now),
                 ExperientClientCommandTiming.sequence(),
@@ -289,8 +282,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
             return;
         }
         bandwidthoptimizer$fullWindowLogged = true;
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:chunkLoadTimeline] event=full_window_received, round={}, sinceTpMs={}, sinceCommandMs={}, firstChunkMs={}, firstBlockEntityMs={}, receivedWindow={}/{}, totalChunks={}, blockEntities={}, ignoredBlockEntities={}",
+        DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LOAD_TIMELINE, "event=full_window_received, round={}, sinceTpMs={}, sinceCommandMs={}, firstChunkMs={}, firstBlockEntityMs={}, receivedWindow={}/{}, totalChunks={}, blockEntities={}, ignoredBlockEntities={}",
                 bandwidthoptimizer$currentRound,
                 Math.max(now - bandwidthoptimizer$roundStartMillis, 0L),
                 ExperientClientCommandTiming.millisSinceLastSent(now),

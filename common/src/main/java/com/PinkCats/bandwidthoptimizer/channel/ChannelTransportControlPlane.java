@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel;
 
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.compat.bungeecord.BungeeCordPluginMessageCompat;
@@ -53,8 +55,7 @@ public final class ChannelTransportControlPlane {
             ListenerTransportPolicy listenerTransportPolicy = classifyListenerTransportPolicy(packet);
             controlState.rememberListenerPacket(packet, listenerTransportPolicy);
             if (BO_Diag_chunkTransportFrames()) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:chunkTransportFrames] event=listener_policy_observe action={}, packetClass={}, channel={}",
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES, "event=listener_policy_observe action={}, packetClass={}, channel={}",
                         listenerTransportPolicy.logAction(),
                         packetClassName(packet),
                         com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(channel)
@@ -92,8 +93,7 @@ public final class ChannelTransportControlPlane {
         ImmediateTransportProfile immediateTransportProfile = classifyImmediateTransport(packet);
         if (immediateTransportProfile != ImmediateTransportProfile.NONE) {
             if (BO_Diag_chunkTransportFrames()) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:chunkTransportFrames] event=immediate_policy_consume reason={}, packetClass={}, channel={}",
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES, "event=immediate_policy_consume reason={}, packetClass={}, channel={}",
                         immediateTransportProfile.reason(),
                         packetClassName(packet),
                         com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(context.channel())
@@ -109,8 +109,7 @@ public final class ChannelTransportControlPlane {
         ListenerTransportPolicy listenerTransportPolicy = getOrCreateControlState(context.channel()).consumeListenerPolicy(packet);
         if (listenerTransportPolicy == ListenerTransportPolicy.IMMEDIATE_TRANSPORT) {
             if (BO_Diag_chunkTransportFrames()) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:chunkTransportFrames] event=listener_policy_consume action={}, packetClass={}, channel={}",
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES, "event=listener_policy_consume action={}, packetClass={}, channel={}",
                         listenerTransportPolicy.logAction(),
                         packetClassName(packet),
                         com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(context.channel())
@@ -120,8 +119,7 @@ public final class ChannelTransportControlPlane {
         }
         if (listenerTransportPolicy == ListenerTransportPolicy.DIRECT) {
             if (BO_Diag_chunkTransportFrames()) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:chunkTransportFrames] event=listener_policy_consume action={}, packetClass={}, channel={}",
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES, "event=listener_policy_consume action={}, packetClass={}, channel={}",
                         listenerTransportPolicy.logAction(),
                         packetClassName(packet),
                         com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(context.channel())

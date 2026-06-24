@@ -1,10 +1,10 @@
 package com.PinkCats.bandwidthoptimizer.chunk.debug;
 
-import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
 import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkPlanDecision;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -62,8 +62,9 @@ public final class ChunkLoadDelayProbe {
         if (!shouldLogVanillaChunkPacket(eventIndex, elapsedMillis)) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:chunkDelayTimeline] event=vanilla_construct, index={}, nowMs={}, stage=server_vanilla_chunk_packet_construct, chunk=({}, {}), constructElapsedMs={}, thread={}",
+        DiagnosticLog.info(
+                DiagnosticToolRegistry.Tool.CHUNK_DELAY_TIMELINE,
+                "event=vanilla_construct, index={}, nowMs={}, stage=server_vanilla_chunk_packet_construct, chunk=({}, {}), constructElapsedMs={}, thread={}",
                 eventIndex,
                 nowMillis,
                 chunkX,
@@ -92,8 +93,9 @@ public final class ChunkLoadDelayProbe {
         if (!shouldLogVanillaChunkPacket(eventIndex, Math.max(constructToOutboundMillis, constructElapsedMillis))) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:chunkDelayTimeline] event=vanilla_outbound, index={}, nowMs={}, stage=server_vanilla_chunk_packet_outbound, channel={}, chunk=({}, {}), packetBytes={}, constructElapsedMs={}, constructToOutboundMs={}, constructThread={}, outboundThread={}",
+        DiagnosticLog.info(
+                DiagnosticToolRegistry.Tool.CHUNK_DELAY_TIMELINE,
+                "event=vanilla_outbound, index={}, nowMs={}, stage=server_vanilla_chunk_packet_outbound, channel={}, chunk=({}, {}), packetBytes={}, constructElapsedMs={}, constructToOutboundMs={}, constructThread={}, outboundThread={}",
                 eventIndex,
                 nowMillis,
                 channelText(context),
@@ -122,8 +124,9 @@ public final class ChunkLoadDelayProbe {
         if (!shouldLogDataFrame(frame, eventIndex)) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:chunkDelayTimeline] event=server_encode, index={}, nowMs={}, channel={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, originalBytes={}, envelopeBytes={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, reason={}, decisionReason={}, selectedBytes={}",
+        DiagnosticLog.info(
+                DiagnosticToolRegistry.Tool.CHUNK_DELAY_TIMELINE,
+                "event=server_encode, index={}, nowMs={}, channel={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, originalBytes={}, envelopeBytes={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, reason={}, decisionReason={}, selectedBytes={}",
                 eventIndex,
                 System.currentTimeMillis(),
                 channelText(context),
@@ -167,8 +170,9 @@ public final class ChunkLoadDelayProbe {
         if (!shouldLogDataFrame(frame, eventIndex)) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:chunkDelayTimeline] event=client_envelope_decode, index={}, nowMs={}, channel={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, envelopeBytes={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, reason={}",
+        DiagnosticLog.info(
+                DiagnosticToolRegistry.Tool.CHUNK_DELAY_TIMELINE,
+                "event=client_envelope_decode, index={}, nowMs={}, channel={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, envelopeBytes={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, reason={}",
                 eventIndex,
                 System.currentTimeMillis(),
                 channelText(context),
@@ -201,8 +205,9 @@ public final class ChunkLoadDelayProbe {
         if (!shouldLogDataFrame(frame, eventIndex)) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:chunkDelayTimeline] event=client_restored, index={}, nowMs={}, channel={}, source={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, restoredBytes={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, reason={}",
+        DiagnosticLog.info(
+                DiagnosticToolRegistry.Tool.CHUNK_DELAY_TIMELINE,
+                "event=client_restored, index={}, nowMs={}, channel={}, source={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, restoredBytes={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, reason={}",
                 eventIndex,
                 System.currentTimeMillis(),
                 channelText(context),
@@ -236,8 +241,9 @@ public final class ChunkLoadDelayProbe {
         if (!shouldLogImportantFrame(frame, eventIndex)) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:chunkDelayTimeline] event=client_restore_miss, index={}, nowMs={}, channel={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, missingReason={}, nackSent={}, frameReason={}",
+        DiagnosticLog.info(
+                DiagnosticToolRegistry.Tool.CHUNK_DELAY_TIMELINE,
+                "event=client_restore_miss, index={}, nowMs={}, channel={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, missingReason={}, nackSent={}, frameReason={}",
                 eventIndex,
                 System.currentTimeMillis(),
                 channelText(context),
@@ -272,8 +278,9 @@ public final class ChunkLoadDelayProbe {
         if (!shouldLogImportantFrame(nackFrame, eventIndex)) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:chunkDelayTimeline] event=server_nack_recovery, index={}, nowMs={}, channel={}, nackReason={}, replaySent={}, replayBytes={}, recoveryReason={}, epoch={}, observed={}, chunk={}, fullVersion={}, baseHash={}, payloadHash={}",
+        DiagnosticLog.info(
+                DiagnosticToolRegistry.Tool.CHUNK_DELAY_TIMELINE,
+                "event=server_nack_recovery, index={}, nowMs={}, channel={}, nackReason={}, replaySent={}, replayBytes={}, recoveryReason={}, epoch={}, observed={}, chunk={}, fullVersion={}, baseHash={}, payloadHash={}",
                 eventIndex,
                 System.currentTimeMillis(),
                 channelText(context),
@@ -307,8 +314,9 @@ public final class ChunkLoadDelayProbe {
         if (!shouldLogImportant(eventIndex)) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:chunkDelayTimeline] event=client_budget_invalidate, index={}, nowMs={}, channel={}, queued={}, epoch={}, chunk={}, fullVersion={}, fullHash={}, reason={}",
+        DiagnosticLog.info(
+                DiagnosticToolRegistry.Tool.CHUNK_DELAY_TIMELINE,
+                "event=client_budget_invalidate, index={}, nowMs={}, channel={}, queued={}, epoch={}, chunk={}, fullVersion={}, fullHash={}, reason={}",
                 eventIndex,
                 System.currentTimeMillis(),
                 channelId == null || channelId.isBlank() ? "<unknown>" : channelId,
@@ -371,8 +379,9 @@ public final class ChunkLoadDelayProbe {
         if (!shouldLogStage(frame, eventIndex, elapsedMillis)) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:chunkDelayTimeline] event=stage, index={}, nowMs={}, side={}, stage={}, elapsedMs={}, channel={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, bytes={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, reason={}, detail={}",
+        DiagnosticLog.info(
+                DiagnosticToolRegistry.Tool.CHUNK_DELAY_TIMELINE,
+                "event=stage, index={}, nowMs={}, side={}, stage={}, elapsedMs={}, channel={}, op={}, kind={}, lane={}, epoch={}, observed={}, chunk={}, bytes={}, fullVersion={}, laneVersion={}, baseHash={}, payloadHash={}, reason={}, detail={}",
                 eventIndex,
                 System.currentTimeMillis(),
                 safeText(side, "<unknown>"),

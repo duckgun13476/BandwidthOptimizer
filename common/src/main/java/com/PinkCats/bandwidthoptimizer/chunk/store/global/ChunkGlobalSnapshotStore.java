@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.store.global;
 
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkLaneKind;
@@ -122,8 +124,7 @@ public final class ChunkGlobalSnapshotStore {
             evictUnreferencedBlobsToBudget("materialize");
 
             if (shouldLogDiagnose() && shouldLogSample(materializedUpdateCount)) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:chunkGlobalSnapshot] event=materialize channel={}, chunk={}, fullVersion={}, fullHash={}, packetCount={}, blobRefs={}, retainedBlobBytes={}/{}, materializedSnapshots={}",
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_GLOBAL_SNAPSHOT, "event=materialize channel={}, chunk={}, fullVersion={}, fullHash={}, packetCount={}, blobRefs={}, retainedBlobBytes={}/{}, materializedSnapshots={}",
                         channelId,
                         snapshot.coordinate().logText(),
                         snapshot.fullSnapshotVersion(),
@@ -363,8 +364,7 @@ public final class ChunkGlobalSnapshotStore {
             totalMaterializedSnapshotEvictions++;
             releaseMaterializedSnapshotReferences(eldestEntry.getValue());
             if (shouldLogDiagnose()) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:chunkGlobalSnapshot] event=evict scope=materialized_snapshot, reason=version_limit, chunk={}, fullVersion={}, fullHash={}, retainedVersions={}, limit={}",
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_GLOBAL_SNAPSHOT, "event=evict scope=materialized_snapshot, reason=version_limit, chunk={}, fullVersion={}, fullHash={}, retainedVersions={}, limit={}",
                         eldestEntry.getValue().coordinate().logText(),
                         eldestEntry.getValue().fullSnapshotVersion(),
                         shortenHash(eldestEntry.getValue().fullSnapshotHash()),
@@ -399,8 +399,7 @@ public final class ChunkGlobalSnapshotStore {
             totalBlobEvictions++;
             removeHotspotDistinctHashes(removedRecord);
             if (shouldLogDiagnose()) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:chunkGlobalSnapshot] event=evict scope=blob, reason={}, hash={}, encodedBytes={}, retainedBlobBytes={}/{}",
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_GLOBAL_SNAPSHOT, "event=evict scope=blob, reason={}, hash={}, encodedBytes={}, retainedBlobBytes={}/{}",
                         reason,
                         removedRecord.snapshotShortHash(),
                         removedRecord.encodedBytes(),
@@ -436,8 +435,7 @@ public final class ChunkGlobalSnapshotStore {
             MATERIALIZED_SNAPSHOTS.remove(candidate.chunkStoreKey());
         }
         if (shouldLogDiagnose()) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkGlobalSnapshot] event=evict scope=materialized_snapshot, reason={}, chunkStoreKey={}, chunk={}, fullVersion={}, fullHash={}, retainedBlobBytes={}/{}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_GLOBAL_SNAPSHOT, "event=evict scope=materialized_snapshot, reason={}, chunkStoreKey={}, chunk={}, fullVersion={}, fullHash={}, retainedBlobBytes={}/{}",
                     reason,
                     candidate.chunkStoreKey(),
                     removedRecord.coordinate().logText(),
@@ -542,8 +540,7 @@ public final class ChunkGlobalSnapshotStore {
             MATERIALIZED_SNAPSHOTS.remove(chunkStoreKey);
         }
         if (shouldLogDiagnose()) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkGlobalSnapshot] event=release reason={}, chunkStoreKey={}, releasedVersions={}, retainedBlobBytes={}/{}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_GLOBAL_SNAPSHOT, "event=release reason={}, chunkStoreKey={}, releasedVersions={}, retainedBlobBytes={}/{}",
                     reason,
                     chunkStoreKey,
                     versionRecords.size(),

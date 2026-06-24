@@ -33,6 +33,12 @@ public final class DiagnosticToolRegistry {
         }
     }
 
+    public static void setAll(boolean enabled) {
+        for (Tool tool : Tool.values()) {
+            setEnabled(tool, enabled);
+        }
+    }
+
     public static String listText() {
         StringBuilder builder = new StringBuilder("BO diagnosetool:");
         for (Tool tool : Tool.values()) {

@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.protocol;
 
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.plan.ChunkPlanDecision;
@@ -35,8 +37,7 @@ public final class ChunkProtocolPreviewService {
             byte[] encodedFrameBytes = ChunkHotspotFrameCodec.encodeFrame(frame);
             ChunkHotspotFrame decodedFrame = ChunkHotspotFrameCodec.decodeFrame(encodedFrameBytes);
             boolean matches = frame.equals(decodedFrame);
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkProtocolPreview] event=preview channel={}, epoch={}, observedPackets={}, frameBytes={}, match={}, {}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_PROTOCOL_PREVIEW, "event=preview channel={}, epoch={}, observedPackets={}, frameBytes={}, match={}, {}",
                     snapshot.channelId(),
                     snapshot.epoch(),
                     snapshot.observedPacketCount(),
@@ -45,15 +46,13 @@ public final class ChunkProtocolPreviewService {
                     frame.summaryText()
             );
             if (!matches) {
-                Bandwidthoptimizer.LOGGER.error(
-                        "[BO:Diag:chunkProtocolPreview] event=preview_mismatch original={}, decoded={}",
+                DiagnosticLog.error(DiagnosticToolRegistry.Tool.CHUNK_PROTOCOL_PREVIEW, "event=preview_mismatch original={}, decoded={}",
                         frame.summaryText(),
                         decodedFrame.summaryText()
                 );
             }
         } catch (Throwable throwable) {
-            Bandwidthoptimizer.LOGGER.error(
-                    "[BO:Diag:chunkProtocolPreview] event=preview_error channel={}, observedPackets={}, packetClass={}, message={}",
+            DiagnosticLog.error(DiagnosticToolRegistry.Tool.CHUNK_PROTOCOL_PREVIEW, "event=preview_error channel={}, observedPackets={}, packetClass={}, message={}",
                     snapshot.channelId(),
                     snapshot.observedPacketCount(),
                     descriptor.packetClassName(),

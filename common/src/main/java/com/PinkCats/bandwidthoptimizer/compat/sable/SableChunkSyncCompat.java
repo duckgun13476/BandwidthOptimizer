@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.compat.sable;
 
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
@@ -88,8 +90,7 @@ public final class SableChunkSyncCompat {
         }
         state.rememberInitialSyncChunk(descriptor.coordinate());
         if (BO_Diag_compatDynamicGates()) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:compatDynamicGates] event=sable_chunk_force_full channel={}, plot={}, chunk={}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.COMPAT_DYNAMIC_GATES, "event=sable_chunk_force_full channel={}, plot={}, chunk={}",
                     com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(context.channel()),
                     state.activePlotText(),
                     descriptor.coordinate().logText()
@@ -181,8 +182,7 @@ public final class SableChunkSyncCompat {
         if (!BO_Diag_compatDynamicGates()) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:compatDynamicGates] event=sable_payload_boundary action={}, channel={}, nettyChannel={}, plot={}, chunks={}",
+        DiagnosticLog.info(DiagnosticToolRegistry.Tool.COMPAT_DYNAMIC_GATES, "event=sable_payload_boundary action={}, channel={}, nettyChannel={}, plot={}, chunks={}",
                 action,
                 payloadChannel,
                 com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.shortText(context.channel()),

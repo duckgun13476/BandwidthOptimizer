@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.debug;
 
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import net.minecraft.client.Minecraft;
@@ -112,8 +114,7 @@ public final class ChunkClientGapProbe {
         if (!isVerbose()) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:chunkGapScan] event=round_start, round={}, reason={}, anchor=({}, {}), center=({}, {}), radius={}",
+        DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_GAP_SCAN, "event=round_start, round={}, reason={}, anchor=({}, {}), center=({}, {}), radius={}",
                 currentRound,
                 roundReason,
                 anchorX,
@@ -137,8 +138,7 @@ public final class ChunkClientGapProbe {
         if (eventIndex > readInt(MAX_EVENTS_PROPERTY, 512, 1, 100_000)) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:chunkGapScan] event=missing_3x3, index={}, round={}, reason={}, target={}, anchor=({}, {}), missing={}, received={}, cached={}, matrix={}, missingChunks={}, center=({}, {}), radius={}",
+        DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_GAP_SCAN, "event=missing_3x3, index={}, round={}, reason={}, target={}, anchor=({}, {}), missing={}, received={}, cached={}, matrix={}, missingChunks={}, center=({}, {}), radius={}",
                 eventIndex,
                 currentRound,
                 roundReason,
@@ -168,8 +168,7 @@ public final class ChunkClientGapProbe {
         if (eventIndex > readInt(MAX_EVENTS_PROPERTY, 512, 1, 100_000)) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:chunkGapScan] event=marker, index={}, round={}, reason={}, kind={}, chunk=({}, {}), centerKnown={}, center=({}, {}), radius={}",
+        DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_GAP_SCAN, "event=marker, index={}, round={}, reason={}, kind={}, chunk=({}, {}), centerKnown={}, center=({}, {}), radius={}",
                 eventIndex,
                 currentRound,
                 roundReason,

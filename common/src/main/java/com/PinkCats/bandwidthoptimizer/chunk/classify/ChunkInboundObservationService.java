@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.classify;
 
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStateManager;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.batch.ChannelTransportBatchManager;
@@ -94,8 +96,7 @@ public final class ChunkInboundObservationService {
             ChunkShadowSnapshotManager.clearChannel(channelId);
             ChunkClientTrimmedFullBaseStore.clearChannel(channelId);
             if (BO_Diag_chunkInboundObservation()) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:chunkInboundObservation] event=channel_close_cleanup channel={}, reason=runtime_cache_cleanup",
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_INBOUND_OBSERVATION, "event=channel_close_cleanup channel={}, reason=runtime_cache_cleanup",
                         channelId
                 );
             }
@@ -124,8 +125,7 @@ public final class ChunkInboundObservationService {
         ChunkPersistentClientCache.prepareForServerSwitch(context.channel(), reason);
         ChunkPersistentClientCache.sendManifestOnce(context.channel(), "persistent_client_cache_after_login");
         if (BO_Diag_chunkInboundObservation()) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkInboundObservation] event=velocity_switch_reset channel={}, protocol={}, packetClass={}, reason={}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_INBOUND_OBSERVATION, "event=velocity_switch_reset channel={}, protocol={}, packetClass={}, reason={}",
                     com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()),
                     protocolName,
                     packet.getClass().getName(),

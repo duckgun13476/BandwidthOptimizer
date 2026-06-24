@@ -1,7 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel;
 
-import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -107,8 +107,9 @@ public final class ChannelTransportTraceJournal {
         }
 
         private synchronized void dump(String channelId, String reason, Throwable throwable) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:transportTraceJournal] event=close_dump, channel={}, reason={}, recordedEvents={}, recentEvents={}, countKeys={}",
+            DiagnosticLog.info(
+                    DiagnosticToolRegistry.Tool.TRANSPORT_TRACE_JOURNAL,
+                    "event=close_dump, channel={}, reason={}, recordedEvents={}, recentEvents={}, countKeys={}",
                     channelId,
                     reason,
                     this.recordedEvents,
@@ -116,8 +117,9 @@ public final class ChannelTransportTraceJournal {
                     this.counters.size()
             );
             if (throwable != null) {
-                Bandwidthoptimizer.LOGGER.warn(
-                        "[BO:Diag:transportTraceJournal] event=close_dump_exception, channel={}, reason={}",
+                DiagnosticLog.warn(
+                        DiagnosticToolRegistry.Tool.TRANSPORT_TRACE_JOURNAL,
+                        "event=close_dump_exception, channel={}, reason={}",
                         channelId,
                         reason,
                         throwable
@@ -128,16 +130,18 @@ public final class ChannelTransportTraceJournal {
             int countLines = Math.min(sortedCounters.size(), MAX_COUNT_LINES);
             for (int index = 0; index < countLines; index++) {
                 Map.Entry<String, Long> entry = sortedCounters.get(index);
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:transportTraceJournal] event=close_dump_count, channel={}, key={}, count={}",
+                DiagnosticLog.info(
+                        DiagnosticToolRegistry.Tool.TRANSPORT_TRACE_JOURNAL,
+                        "event=close_dump_count, channel={}, key={}, count={}",
                         channelId,
                         entry.getKey(),
                         entry.getValue()
                 );
             }
             for (String event : this.recentEvents) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:transportTraceJournal] event=close_dump_event, channel={}, {}",
+                DiagnosticLog.info(
+                        DiagnosticToolRegistry.Tool.TRANSPORT_TRACE_JOURNAL,
+                        "event=close_dump_event, channel={}, {}",
                         channelId,
                         event
                 );

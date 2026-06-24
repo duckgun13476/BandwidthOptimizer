@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.persistent;
 
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
@@ -42,8 +44,7 @@ public final class ChunkPersistentManifestGate {
                 TimeUnit.MILLISECONDS
         );
         if (BO_Diag_cacheManifestGate()) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:cacheManifestGate] event=arm channel={}, timeoutMillis={}, reason={}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CACHE_MANIFEST_GATE, "event=arm channel={}, timeoutMillis={}, reason={}",
                     com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
                     timeoutMillis,
                     safeText(reason, "server_login")
@@ -97,8 +98,7 @@ public final class ChunkPersistentManifestGate {
 
         boolean queued = gateState.queue(packet);
         if (queued && BO_Diag_cacheManifestGate()) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:cacheManifestGate] event=queue channel={}, queued={}, packetClass={}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CACHE_MANIFEST_GATE, "event=queue channel={}, queued={}, packetClass={}",
                     com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
                     gateState.queuedCount(),
                     packet.getClass().getName()
@@ -141,8 +141,7 @@ public final class ChunkPersistentManifestGate {
             }
             channel.flush();
             if (BO_Diag_cacheManifestGate()) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:cacheManifestGate] event=flush channel={}, packets={}, reason={}",
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CACHE_MANIFEST_GATE, "event=flush channel={}, packets={}, reason={}",
                         com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
                         queuedPackets.size(),
                         safeText(reason, "manifest_gate_release")

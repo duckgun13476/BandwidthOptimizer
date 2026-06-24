@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.persistent;
 
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkLaneKind;
@@ -1829,8 +1831,7 @@ public final class ChunkPersistentClientCache {
         if (!shouldLogCacheDiagnose()) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:cachePersistentIO] action=store, chunk={}, hash={}, bytes={}, cacheFile={}",
+        DiagnosticLog.info(DiagnosticToolRegistry.Tool.CACHE_PERSISTENT_IO, "action=store, chunk={}, hash={}, bytes={}, cacheFile={}",
                 frame.coordinate().logText(),
                 shortenHash(frame.payloadHash()),
                 encodedBytes,
@@ -1842,8 +1843,7 @@ public final class ChunkPersistentClientCache {
         if (!shouldLogCacheDiagnose()) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:cachePersistentIO] action=load, chunk={}, hash={}, bytes={}",
+        DiagnosticLog.info(DiagnosticToolRegistry.Tool.CACHE_PERSISTENT_IO, "action=load, chunk={}, hash={}, bytes={}",
                 frame.coordinate().logText(),
                 shortenHash(frame.payloadHash()),
                 encodedBytes

@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.plan;
 
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
@@ -27,8 +29,7 @@ public final class ChunkPlanPreviewService {
             return;
         }
         if (shouldLog(channelSnapshot, decision)) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkPlanPreview] event=preview channel={}, epoch={}, observedPackets={}, {}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_PLAN_PREVIEW, "event=preview channel={}, epoch={}, observedPackets={}, {}",
                     channelSnapshot.channelId(),
                     channelSnapshot.epoch(),
                     channelSnapshot.observedPacketCount(),

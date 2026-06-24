@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.integration.transport;
 
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
@@ -182,8 +184,7 @@ public final class ChunkTransportBoundaryController {
         }
         context.channel().attr(CHANNEL_BOUNDARY_STATE_KEY).set(new ChannelBoundaryState());
         if (BO_Diag_chunkTransportFrames()) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkTransportFrames] event=boundary_reset channel={}, reason={}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES, "event=boundary_reset channel={}, reason={}",
                     com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()),
                     reason == null ? "" : reason
             );
@@ -322,8 +323,7 @@ public final class ChunkTransportBoundaryController {
                 && channel.isActive()) {
             getOrCreateBoundaryState(channel).cancelOutboundBarrier(pendingBarrier.barrierId(), "barrier_send_skipped");
             if (BO_Diag_chunkTransportFrames()) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:chunkTransportFrames] event=barrier_send_skipped channel={}, barrierId={}, reason={}",
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES, "event=barrier_send_skipped channel={}, barrierId={}, reason={}",
                         com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
                         pendingBarrier.barrierId(),
                         pendingBarrier.reason()
@@ -480,8 +480,7 @@ public final class ChunkTransportBoundaryController {
             this.pendingOutboundBarrierDeadlineNanos = 0L;
             this.pendingOutboundBarrierReason = "";
             if (BO_Diag_chunkTransportFrames()) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:chunkTransportFrames] event=barrier_ack barrierId={}, reason={}",
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES, "event=barrier_ack barrierId={}, reason={}",
                         barrierId,
                         reason == null ? "" : reason
                 );
@@ -496,8 +495,7 @@ public final class ChunkTransportBoundaryController {
             this.pendingOutboundBarrierDeadlineNanos = 0L;
             this.pendingOutboundBarrierReason = "";
             if (BO_Diag_chunkTransportFrames()) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:chunkTransportFrames] event=barrier_cancel barrierId={}, reason={}",
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES, "event=barrier_cancel barrierId={}, reason={}",
                         barrierId,
                         reason == null ? "" : reason
                 );
@@ -598,8 +596,7 @@ public final class ChunkTransportBoundaryController {
                 return;
             }
             if (BO_Diag_chunkTransportFrames()) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:chunkTransportFrames] event=barrier_timeout barrierId={}, reason={}",
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES, "event=barrier_timeout barrierId={}, reason={}",
                         this.pendingOutboundBarrierId,
                         this.pendingOutboundBarrierReason
                 );

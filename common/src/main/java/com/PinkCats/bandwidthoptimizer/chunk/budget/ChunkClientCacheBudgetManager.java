@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.budget;
 
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
 import com.PinkCats.bandwidthoptimizer.chunk.debug.ChunkLoadDelayProbe;
@@ -307,8 +309,7 @@ public final class ChunkClientCacheBudgetManager {
             return;
         }
 
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:cacheBudget] event=trim reason={}, beforeTotalBytes={}, afterTotalBytes={}, beforeShadowBytes={}, afterShadowBytes={}, beforeRuntimeBytes={}, afterRuntimeBytes={}, releasedShadowBytes={}, evictedChunks={}, evictedRuntimeFullBases={}",
+        DiagnosticLog.info(DiagnosticToolRegistry.Tool.CACHE_BUDGET, "event=trim reason={}, beforeTotalBytes={}, afterTotalBytes={}, beforeShadowBytes={}, afterShadowBytes={}, beforeRuntimeBytes={}, afterRuntimeBytes={}, releasedShadowBytes={}, evictedChunks={}, evictedRuntimeFullBases={}",
                 reason == null || reason.isBlank() ? "client_cache_budget_trim" : reason,
                 usageBeforeTrim.totalBytes(),
                 usageAfterTrim.totalBytes(),

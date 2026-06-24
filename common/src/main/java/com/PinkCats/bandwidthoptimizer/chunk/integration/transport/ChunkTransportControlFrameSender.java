@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.integration.transport;
 
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
@@ -406,8 +408,7 @@ public final class ChunkTransportControlFrameSender {
             ChunkHotspotStats.recordOutboundFrame(frame, Math.max(logicalPacketBytes, 0), encodedEnvelopeBytes.length);
             ChunkHotspotVerifyHooks.flushCurrentReport();
             if (BO_Diag_chunkTransportFrames()) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:chunkTransportFrames] event=control_send channel={}, op={}, epoch={}, observedPackets={}, chunk={}, fullVersion={}, payloadHash={}, payloadBytes={}, reason={}",
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES, "event=control_send channel={}, op={}, epoch={}, observedPackets={}, chunk={}, fullVersion={}, payloadHash={}, payloadBytes={}, reason={}",
                         com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
                         frame.operation().logName(),
                         frame.epoch(),

@@ -1,6 +1,5 @@
 package com.PinkCats.bandwidthoptimizer.debug;
 
-import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
 
 import java.util.concurrent.atomic.AtomicInteger;
@@ -28,8 +27,9 @@ public final class ClientPacketHandleDiagnosticProbe {
         if (index > MAX_POSITION_LOGS) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:movementPositionHandle] index={}, packetPos=({}, {}, {}), packetId={}, relative={}, playerPos=({}, {}, {}), playerChunk=({}, {})",
+        DiagnosticLog.info(
+                DiagnosticToolRegistry.Tool.MOVEMENT_POSITION_HANDLE,
+                "index={}, packetPos=({}, {}, {}), packetId={}, relative={}, playerPos=({}, {}, {}), playerChunk=({}, {})",
                 index,
                 packet == null ? 0.0D : packet.getX(),
                 packet == null ? 0.0D : packet.getY(),
@@ -52,8 +52,9 @@ public final class ClientPacketHandleDiagnosticProbe {
         if (index > MAX_CHUNK_HANDLE_LOGS) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:cacheChunkHandle] index={}, kind={}, chunk=({}, {}), radius={}, cached={}",
+        DiagnosticLog.info(
+                DiagnosticToolRegistry.Tool.CACHE_CHUNK_HANDLE,
+                "index={}, kind={}, chunk=({}, {}), radius={}, cached={}",
                 index,
                 kind,
                 chunkX,

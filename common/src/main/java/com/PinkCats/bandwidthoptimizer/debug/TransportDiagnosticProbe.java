@@ -1,6 +1,5 @@
 package com.PinkCats.bandwidthoptimizer.debug;
 
-import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -51,8 +50,9 @@ public final class TransportDiagnosticProbe {
         if (previous != null && now - previous < LOG_MIN_INTERVAL_NANOS) {
             return;
         }
-        Bandwidthoptimizer.LOGGER.warn(
-                "[BO:Diag:transportEncodeCost] channel={}, flow={}, packetClass={}, bytes={}, vanillaMs={}, boHookMs={}, pendingTasks={}, writable={}",
+        DiagnosticLog.warn(
+                DiagnosticToolRegistry.Tool.TRANSPORT_ENCODE_COST,
+                "channel={}, flow={}, packetClass={}, bytes={}, vanillaMs={}, boHookMs={}, pendingTasks={}, writable={}",
                 channelId,
                 flow,
                 packet.getClass().getName(),

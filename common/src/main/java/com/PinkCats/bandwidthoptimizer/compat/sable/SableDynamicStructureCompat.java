@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.compat.sable;
 
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
@@ -84,7 +86,7 @@ public final class SableDynamicStructureCompat {
 
     private static void logFailure(Exception exception) {
         if (BO_Diag_compatDynamicGates()) {
-            Bandwidthoptimizer.LOGGER.info("[BO:Diag:compatDynamicGates] event=sable_create_target_failed", exception);
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.COMPAT_DYNAMIC_GATES, "event=sable_create_target_failed", exception);
         }
     }
 

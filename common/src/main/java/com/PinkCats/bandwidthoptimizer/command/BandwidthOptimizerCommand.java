@@ -5,6 +5,7 @@ import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCommand;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsCommand;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.CommandSourceCompat;
 import com.PinkCats.bandwidthoptimizer.debug.BandwidthOptimizerDiagnosticCommand;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticSilenceCommand;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolCommand;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
@@ -23,11 +24,13 @@ public final class BandwidthOptimizerCommand {
                         .then(ChannelTransportCompressionCommand.buildCommand())
                         .then(ChannelTransportPacketRankCommand.buildCommand()))
                 .then(BandwidthOptimizerDiagnosticCommand.buildCommand())
+                .then(DiagnosticSilenceCommand.buildCommand())
                 .then(DiagnosticToolCommand.buildCommand())
                 .then(ServerBandwidthStatsCommand.buildCommand())
         );
         dispatcher.register(Commands.literal("bandwidthoptimister")
                 .requires(source -> source.hasPermission(2))
+                .then(DiagnosticSilenceCommand.buildCommand())
                 .then(DiagnosticToolCommand.buildCommand())
         );
     }
@@ -39,6 +42,7 @@ public final class BandwidthOptimizerCommand {
                         + "/bandwidthoptimizer test transportreport run [ticks] | "
                         + "/bandwidthoptimizer test packetrank run [ticks] | "
                         + "/bandwidthoptimizer diagnosetool | "
+                        + "/bandwidthoptimizer debug off | "
                         + "/bandwidthoptimizer diagnose status|off|<topic> on|off | "
                         + "/bandwidthoptimizer stats total|players [limit]|reset|vanilla on|off"
         ), false);

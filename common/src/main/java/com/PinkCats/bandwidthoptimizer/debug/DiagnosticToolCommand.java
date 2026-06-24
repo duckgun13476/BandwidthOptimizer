@@ -62,7 +62,7 @@ public final class DiagnosticToolCommand {
                         + ' ' + action
                         + ' ' + (enabled ? "on" : "off")
                         + " cost=" + tool.cost().label()
-                        + ". Log prefix [BO:Diag:" + tool.id() + "]"
+                        + ". Log prefix " + DiagnosticLog.prefix(tool)
         ), true);
     }
 }

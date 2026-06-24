@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.lifecycle;
 
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerChunkStateSnapshot;
@@ -38,8 +40,7 @@ public final class ChunkLifecycleCoordinator {
         boolean sameDimensionRespawn = previousDimension != null && previousDimension.equals(currentDimension);
         if (sameDimensionRespawn) {
             if (BO_Diag_chunkLifecycle()) {
-                Bandwidthoptimizer.LOGGER.info(
-                        "[BO:Diag:chunkLifecycle] event=respawn_same_dimension_new_scope player={}, uuid={}, dimension={}",
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LIFECYCLE, "event=respawn_same_dimension_new_scope player={}, uuid={}, dimension={}",
                         player.getGameProfile().getName(),
                         player.getUUID(),
                         currentDimension.location()
@@ -105,8 +106,7 @@ public final class ChunkLifecycleCoordinator {
         ChunkPeerChunkStateSnapshot retainedChunkSnapshot =
                 ChunkPeerStateManager.retainPlayerChunkForWatchBoundary(player, coordinate, reason);
         if (BO_Diag_chunkLifecycle()) {
-            Bandwidthoptimizer.LOGGER.info(
-                    "[BO:Diag:chunkLifecycle] event=retain player={}, uuid={}, reason={}, chunk={}, snapshotBefore={}, snapshotAfter={}",
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LIFECYCLE, "event=retain player={}, uuid={}, reason={}, chunk={}, snapshotBefore={}, snapshotAfter={}",
                     player.getGameProfile().getName(),
                     player.getUUID(),
                     reason,
@@ -131,8 +131,7 @@ public final class ChunkLifecycleCoordinator {
             return;
         }
 
-        Bandwidthoptimizer.LOGGER.info(
-                "[BO:Diag:chunkLifecycle] event=two_point_lifecycle_skip player={}, uuid={}, reason={}, chunk={}, snapshotBefore={}",
+        DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LIFECYCLE, "event=two_point_lifecycle_skip player={}, uuid={}, reason={}, chunk={}, snapshotBefore={}",
                 player.getGameProfile().getName(),
                 player.getUUID(),
                 reason,
