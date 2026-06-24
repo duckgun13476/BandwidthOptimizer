@@ -65,20 +65,42 @@ public final class ChannelTransportPacketRankReportWriter {
                 .thenComparingLong(ChannelTransportPacketRankObservation::captureIndex));
 
         Map<String, ChannelTransportSession> sessionsByChannelId = new LinkedHashMap<>();
-        List<EnrichedObservation> enrichedObservations = new ArrayList<>(orderedObservations.size());
-        for (ChannelTransportPacketRankObservation observation : orderedObservations) {
-            ChannelTransportSession transportSession = sessionsByChannelId.computeIfAbsent(
-                    observation.channelId(),
-                    ignored -> new ChannelTransportSession()
-            );
-            ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame =
-                    ChannelTransportPacketCodec.wrapPacket(transportSession, observation.copyTransportInputPacketBytes());
-            int standaloneFrameBytes = wrappedFrame == null
-                    ? observation.transportInputBytes()
-                    : wrappedFrame.transportFrameLength();
-            enrichedObservations.add(new EnrichedObservation(observation, standaloneFrameBytes));
+        try {
+            List<EnrichedObservation> enrichedObservations = new ArrayList<>(orderedObservations.size());
+            for (ChannelTransportPacketRankObservation observation : orderedObservations) {
+                ChannelTransportSession transportSession = sessionsByChannelId.computeIfAbsent(
+                        observation.channelId(),
+                        ignored -> new ChannelTransportSession()
+                );
+                ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame =
+                        ChannelTransportPacketCodec.wrapPacket(transportSession, observation.copyTransportInputPacketBytes());
+                int standaloneFrameBytes = wrappedFrame == null
+                        ? observation.transportInputBytes()
+                        : wrappedFrame.transportFrameLength();
+                enrichedObservations.add(new EnrichedObservation(observation, standaloneFrameBytes));
+            }
+            return List.copyOf(enrichedObservations);
+        } finally {
+            closeSessions(sessionsByChannelId);
         }
-        return List.copyOf(enrichedObservations);
+    }
+
+    private static void closeSessions(Map<String, ChannelTransportSession> sessionsByChannelId) {
+        RuntimeException failure = null;
+        for (ChannelTransportSession session : sessionsByChannelId.values()) {
+            try {
+                session.close();
+            } catch (RuntimeException exception) {
+                if (failure == null) {
+                    failure = exception;
+                } else {
+                    failure.addSuppressed(exception);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
     }
 
 

@@ -7,7 +7,7 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 
-public final class KineticStreamingLayer implements TransportLayer {
+public final class KineticStreamingLayer implements TransportLayer, AutoCloseable {
 
     private static final int DIRECT_BUFFER_BYTES = 64 * 1024;
 
@@ -48,6 +48,12 @@ public final class KineticStreamingLayer implements TransportLayer {
     public void reset() {
         this.zstdContext.reset(this.compressionLevel);
         this.pendingDecodedBytes = new byte[0];
+    }
+
+    @Override
+    public void close() {
+        this.pendingDecodedBytes = new byte[0];
+        this.zstdContext.close();
     }
 
     // Decode failures must not poison the next carrier.

@@ -88,6 +88,13 @@ public final class KineticStreaming implements TransportAlgorithm {
             this.zstdLayer.reset();
         }
 
+        @Override
+        public void close() {
+            this.batchLayer.reset();
+            this.mapTableLayer.reset();
+            this.zstdLayer.close();
+        }
+
         private KineticMapTableLayer.LayerResult encodeMappingStage(byte[] packetBytes) {
             if (!ChannelTransportLayerRuntimeConfig.isMappingEnabled()) {
                 return KineticMapTableLayer.LayerResult.passthrough(packetBytes);

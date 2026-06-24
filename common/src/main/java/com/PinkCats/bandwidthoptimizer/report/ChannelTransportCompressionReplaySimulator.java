@@ -72,51 +72,53 @@ public final class ChannelTransportCompressionReplaySimulator {
     }
 
     private static DirectionMetrics simulateSinglePacketDirection(List<ChannelTransportCapturedPacketSample> orderedSamples) {
-        ChannelTransportSession transportSession = new ChannelTransportSession();
-        DirectionMetrics directionMetrics = DirectionMetrics.empty();
-        for (ChannelTransportCapturedPacketSample capturedPacketSample : orderedSamples) {
-            ChannelTransportPacketCodec.WrappedTransportFrame wrappedTransportFrame =
-                    ChannelTransportPacketCodec.wrapPacket(transportSession, capturedPacketSample.copyPacketBytes());
-            if (wrappedTransportFrame == null) {
-                throw new IllegalStateException("Failed to wrap packet for scenario replay: " + capturedPacketSample.packetClassName());
+        try (ChannelTransportSession transportSession = new ChannelTransportSession()) {
+            DirectionMetrics directionMetrics = DirectionMetrics.empty();
+            for (ChannelTransportCapturedPacketSample capturedPacketSample : orderedSamples) {
+                ChannelTransportPacketCodec.WrappedTransportFrame wrappedTransportFrame =
+                        ChannelTransportPacketCodec.wrapPacket(transportSession, capturedPacketSample.copyPacketBytes());
+                if (wrappedTransportFrame == null) {
+                    throw new IllegalStateException("Failed to wrap packet for scenario replay: " + capturedPacketSample.packetClassName());
+                }
+                directionMetrics = directionMetrics.plus(DirectionMetrics.singlePacket(
+                        capturedPacketSample.packetBytes().length,
+                        wrappedTransportFrame.transportFrameLength()
+                ));
             }
-            directionMetrics = directionMetrics.plus(DirectionMetrics.singlePacket(
-                    capturedPacketSample.packetBytes().length,
-                    wrappedTransportFrame.transportFrameLength()
-            ));
+            return directionMetrics;
         }
-        return directionMetrics;
     }
 
     private static DirectionMetrics simulateBatchedDirection(List<ChannelTransportCapturedPacketSample> orderedSamples) {
-        ChannelTransportSession transportSession = new ChannelTransportSession();
-        long batchWindowMillis = ChannelTransportBatchRuntimeConfig.windowMillis();
-        DirectionMetrics directionMetrics = DirectionMetrics.empty();
-        List<byte[]> pendingPacketBytesList = new ArrayList<>();
-        long batchStartAtMillis = Long.MIN_VALUE;
+        try (ChannelTransportSession transportSession = new ChannelTransportSession()) {
+            long batchWindowMillis = ChannelTransportBatchRuntimeConfig.windowMillis();
+            DirectionMetrics directionMetrics = DirectionMetrics.empty();
+            List<byte[]> pendingPacketBytesList = new ArrayList<>();
+            long batchStartAtMillis = Long.MIN_VALUE;
 
-        for (ChannelTransportCapturedPacketSample capturedPacketSample : orderedSamples) {
-            if (pendingPacketBytesList.isEmpty()) {
+            for (ChannelTransportCapturedPacketSample capturedPacketSample : orderedSamples) {
+                if (pendingPacketBytesList.isEmpty()) {
+                    batchStartAtMillis = capturedPacketSample.capturedAtMillis();
+                    pendingPacketBytesList.add(capturedPacketSample.copyPacketBytes());
+                    continue;
+                }
+
+                long elapsedMillis = capturedPacketSample.capturedAtMillis() - batchStartAtMillis;
+                if (elapsedMillis < batchWindowMillis) {
+                    pendingPacketBytesList.add(capturedPacketSample.copyPacketBytes());
+                    continue;
+                }
+
+                directionMetrics = directionMetrics.plus(flushBatch(transportSession, pendingPacketBytesList));
+                pendingPacketBytesList = new ArrayList<>();
                 batchStartAtMillis = capturedPacketSample.capturedAtMillis();
                 pendingPacketBytesList.add(capturedPacketSample.copyPacketBytes());
-                continue;
             }
 
-            long elapsedMillis = capturedPacketSample.capturedAtMillis() - batchStartAtMillis;
-            if (elapsedMillis < batchWindowMillis) {
-                pendingPacketBytesList.add(capturedPacketSample.copyPacketBytes());
-                continue;
-            }
-
-            directionMetrics = directionMetrics.plus(flushBatch(transportSession, pendingPacketBytesList));
-            pendingPacketBytesList = new ArrayList<>();
-            batchStartAtMillis = capturedPacketSample.capturedAtMillis();
-            pendingPacketBytesList.add(capturedPacketSample.copyPacketBytes());
+            if (!pendingPacketBytesList.isEmpty())
+                directionMetrics = directionMetrics.plus(flushBatch(transportSession, pendingPacketBytesList));
+            return directionMetrics;
         }
-
-        if (!pendingPacketBytesList.isEmpty())
-            directionMetrics = directionMetrics.plus(flushBatch(transportSession, pendingPacketBytesList));
-        return directionMetrics;
     }
 
     private static DirectionMetrics flushBatch(ChannelTransportSession transportSession, List<byte[]> pendingPacketBytesList) {

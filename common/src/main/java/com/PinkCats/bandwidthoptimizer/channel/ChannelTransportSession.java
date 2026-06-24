@@ -10,7 +10,7 @@ import com.PinkCats.bandwidthoptimizer.channel.algorithm.TransportAlgorithm;
 import java.util.Arrays;
 
 // Log and manage session
-public final class ChannelTransportSession {
+public final class ChannelTransportSession implements AutoCloseable {
 
     private final TransportAlgorithm algorithm = ChannelTransportAlgorithms.defaultAlgorithm();
     private final ChannelTransportAlgorithmSession outboundSession = this.algorithm.createSession();
@@ -28,6 +28,28 @@ public final class ChannelTransportSession {
     public synchronized void reset() {
         this.outboundSession.reset();
         this.inboundSession.reset();
+    }
+
+    @Override
+    public synchronized void close() {
+        RuntimeException failure = null;
+        try {
+            this.outboundSession.close();
+        } catch (RuntimeException exception) {
+            failure = exception;
+        }
+        try {
+            this.inboundSession.close();
+        } catch (RuntimeException exception) {
+            if (failure == null) {
+                failure = exception;
+            } else {
+                failure.addSuppressed(exception);
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
     }
 
 

@@ -32,7 +32,11 @@ public final class ChannelTransportStateManager {
 
         ChannelTransportSession newSession = new ChannelTransportSession();
         ChannelTransportSession racedSession = channel.attr(TRANSPORT_SESSION_KEY).setIfAbsent(newSession);
-        return racedSession != null ? racedSession : newSession;
+        if (racedSession != null) {
+            closeSession(newSession, "create-race");
+            return racedSession;
+        }
+        return newSession;
     }
 
 
@@ -40,11 +44,22 @@ public final class ChannelTransportStateManager {
         if (channel == null) {
             return;
         }
-        ChannelTransportSession existingSession = channel.attr(TRANSPORT_SESSION_KEY).get();
+        ChannelTransportSession existingSession = channel.attr(TRANSPORT_SESSION_KEY).getAndSet(null);
         if (existingSession != null) {
-            existingSession.reset();
+            closeSession(existingSession, reason);
         }
-        channel.attr(TRANSPORT_SESSION_KEY).set(null);
+    }
+
+    private static void closeSession(ChannelTransportSession session, String reason) {
+        try {
+            session.close();
+        } catch (RuntimeException exception) {
+            Bandwidthoptimizer.LOGGER.warn(
+                    "[Transport][SessionClose] Failed to close transport session, reason={}",
+                    reason,
+                    exception
+            );
+        }
     }
 
     // Proxy switches only guard outbound stale packets; inbound transport stays enabled.

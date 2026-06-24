@@ -268,9 +268,10 @@ public final class ChannelTransportPacketRankCaptureManager {
             ChannelTransportLayerRuntimeConfig.runWithTemporaryOverride(
                     new ChannelTransportLayerRuntimeConfig.RuntimeOverride(false, true, false),
                     () -> {
-                        ChannelTransportSession transportSession = new ChannelTransportSession();
-                        byte[] encodedBytes = transportSession.encodeSinglePacket(new byte[] {0});
-                        transportSession.decodeSinglePacket(encodedBytes);
+                        try (ChannelTransportSession transportSession = new ChannelTransportSession()) {
+                            byte[] encodedBytes = transportSession.encodeSinglePacket(new byte[] {0});
+                            transportSession.decodeSinglePacket(encodedBytes);
+                        }
                     }
             );
         } catch (Throwable throwable) {

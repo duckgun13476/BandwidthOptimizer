@@ -96,6 +96,8 @@ final class ZstdRuntimeBridge {
         );
         Method compressReset = compressContextClass.getMethod("reset");
         Method decompressReset = decompressContextClass.getMethod("reset");
+        Method compressClose = compressContextClass.getMethod("close");
+        Method decompressClose = decompressContextClass.getMethod("close");
         Object continueDirective = endDirectiveClass.getField("CONTINUE").get(null);
         Object endDirective = endDirectiveClass.getField("END").get(null);
         return new Bindings(
@@ -107,6 +109,8 @@ final class ZstdRuntimeBridge {
                 decompressStream,
                 compressReset,
                 decompressReset,
+                compressClose,
+                decompressClose,
                 continueDirective,
                 endDirective
         );
@@ -333,6 +337,7 @@ final class ZstdRuntimeBridge {
         private final Bindings bindings;
         private final Object compressContext;
         private final Object decompressContext;
+        private boolean closed;
 
         private Context(Bindings bindings, int compressionLevel) {
             this.bindings = bindings;
@@ -341,6 +346,7 @@ final class ZstdRuntimeBridge {
         }
 
         boolean compressDirectByteBufferStream(ByteBuffer targetBuffer, ByteBuffer sourceBuffer, boolean end) {
+            ensureOpen();
             return (Boolean) this.bindings.invoke(
                     this.bindings.compressStream,
                     this.compressContext,
@@ -351,6 +357,7 @@ final class ZstdRuntimeBridge {
         }
 
         boolean decompressDirectByteBufferStream(ByteBuffer targetBuffer, ByteBuffer sourceBuffer) {
+            ensureOpen();
             return (Boolean) this.bindings.invoke(
                     this.bindings.decompressStream,
                     this.decompressContext,
@@ -360,9 +367,41 @@ final class ZstdRuntimeBridge {
         }
 
         void reset(int compressionLevel) {
+            ensureOpen();
             this.bindings.invoke(this.bindings.compressReset, this.compressContext);
             this.bindings.invoke(this.bindings.setLevel, this.compressContext, compressionLevel);
             this.bindings.invoke(this.bindings.decompressReset, this.decompressContext);
+        }
+
+        void close() {
+            if (this.closed) {
+                return;
+            }
+            this.closed = true;
+            RuntimeException failure = null;
+            try {
+                this.bindings.invoke(this.bindings.compressClose, this.compressContext);
+            } catch (RuntimeException exception) {
+                failure = exception;
+            }
+            try {
+                this.bindings.invoke(this.bindings.decompressClose, this.decompressContext);
+            } catch (RuntimeException exception) {
+                if (failure == null) {
+                    failure = exception;
+                } else {
+                    failure.addSuppressed(exception);
+                }
+            }
+            if (failure != null) {
+                throw failure;
+            }
+        }
+
+        private void ensureOpen() {
+            if (this.closed) {
+                throw new IllegalStateException("zstd runtime context is closed");
+            }
         }
     }
 
@@ -376,6 +415,8 @@ final class ZstdRuntimeBridge {
         private final Method decompressStream;
         private final Method compressReset;
         private final Method decompressReset;
+        private final Method compressClose;
+        private final Method decompressClose;
         private final Object continueDirective;
         private final Object endDirective;
 
@@ -388,6 +429,8 @@ final class ZstdRuntimeBridge {
                 Method decompressStream,
                 Method compressReset,
                 Method decompressReset,
+                Method compressClose,
+                Method decompressClose,
                 Object continueDirective,
                 Object endDirective
         ) {
@@ -399,6 +442,8 @@ final class ZstdRuntimeBridge {
             this.decompressStream = decompressStream;
             this.compressReset = compressReset;
             this.decompressReset = decompressReset;
+            this.compressClose = compressClose;
+            this.decompressClose = decompressClose;
             this.continueDirective = continueDirective;
             this.endDirective = endDirective;
         }

@@ -2,7 +2,7 @@ package com.PinkCats.bandwidthoptimizer.channel.algorithm;
 
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.ChannelTransportOperationTelemetry;
 
-public interface ChannelTransportAlgorithmSession {
+public interface ChannelTransportAlgorithmSession extends AutoCloseable {
 
     byte[] encodePacket(byte[] packetBytes);
 
@@ -43,6 +43,9 @@ public interface ChannelTransportAlgorithmSession {
     }
 
     default void reset() {}
+
+    @Override
+    default void close() {}
 
 
     record OperationResult(byte[] bytes, ChannelTransportOperationTelemetry telemetry) { }

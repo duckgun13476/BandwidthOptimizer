@@ -34,24 +34,25 @@ public final class ChannelTransportRuntimeGuard {
         }
         try {
             byte[] probeBytes = "bandwidthoptimizer-zstd-probe".getBytes(StandardCharsets.US_ASCII);
-            ChannelTransportSession probeSession = new ChannelTransportSession();
-            byte[] encodedBytes = probeSession.encodeSinglePacket(probeBytes);
-            byte[] restoredBytes = probeSession.decodeSinglePacket(encodedBytes);
-            if (!Arrays.equals(probeBytes, restoredBytes)) {
-                throw new IllegalStateException("Probe round trip mismatch");
-            }
+            try (ChannelTransportSession probeSession = new ChannelTransportSession()) {
+                byte[] encodedBytes = probeSession.encodeSinglePacket(probeBytes);
+                byte[] restoredBytes = probeSession.decodeSinglePacket(encodedBytes);
+                if (!Arrays.equals(probeBytes, restoredBytes)) {
+                    throw new IllegalStateException("Probe round trip mismatch");
+                }
 
-            transportAvailable = true;
-            unavailableReason = "";
-            Bandwidthoptimizer.LOGGER.info(
-                    "[Transport] Runtime ready. algorithmId={}, mapEnabled={}, zstdEnabled={}, probeRawBytes={}, probeTransportBodyBytes={}, ratio={}",
-                    probeSession.algorithmId(),
-                    ChannelTransportLayerRuntimeConfig.isMappingEnabled(),
-                    ChannelTransportLayerRuntimeConfig.isZstdEnabled(),
-                    probeBytes.length,
-                    encodedBytes.length,
-                    ratioText(encodedBytes.length, probeBytes.length)
-            );
+                transportAvailable = true;
+                unavailableReason = "";
+                Bandwidthoptimizer.LOGGER.info(
+                        "[Transport] Runtime ready. algorithmId={}, mapEnabled={}, zstdEnabled={}, probeRawBytes={}, probeTransportBodyBytes={}, ratio={}",
+                        probeSession.algorithmId(),
+                        ChannelTransportLayerRuntimeConfig.isMappingEnabled(),
+                        ChannelTransportLayerRuntimeConfig.isZstdEnabled(),
+                        probeBytes.length,
+                        encodedBytes.length,
+                        ratioText(encodedBytes.length, probeBytes.length)
+                );
+            }
         } catch (Throwable throwable) {
             transportAvailable = false;
             unavailableReason = throwable.getClass().getSimpleName() + ": " + throwable.getMessage();
