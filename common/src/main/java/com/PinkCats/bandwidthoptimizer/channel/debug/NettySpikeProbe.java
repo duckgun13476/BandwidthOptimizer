@@ -13,11 +13,9 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public final class NettySpikeProbe {
 
-    private static final String ENABLED_PROPERTY = "bandwidthoptimizer.netty.spikeProbeEnabled";
     private static final String THRESHOLD_MILLIS_PROPERTY = "bandwidthoptimizer.netty.spikeThresholdMillis";
     private static final String WATCHDOG_INTERVAL_MILLIS_PROPERTY = "bandwidthoptimizer.netty.watchdogIntervalMillis";
     private static final String LOG_COOLDOWN_MILLIS_PROPERTY = "bandwidthoptimizer.netty.spikeLogCooldownMillis";
-    private static final boolean DEFAULT_ENABLED = false;
     private static final long DEFAULT_THRESHOLD_MILLIS = 1_000L;
     private static final long DEFAULT_WATCHDOG_INTERVAL_MILLIS = 500L;
     private static final long DEFAULT_LOG_COOLDOWN_MILLIS = 30_000L;
@@ -34,7 +32,7 @@ public final class NettySpikeProbe {
     private NettySpikeProbe() {}
 
     public static boolean isEnabled() {
-        return isLegacyPropertyEnabled() || DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.NETTY_MSPT);
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.NETTY_MSPT);
     }
 
     public static void BO_Diag_nettyMSPT(ChannelHandlerContext context) {
@@ -104,15 +102,6 @@ public final class NettySpikeProbe {
             });
         }
         return resolvedState;
-    }
-
-    private static boolean readBoolean(String property, boolean defaultValue) {
-        String rawValue = System.getProperty(property);
-        return rawValue == null || rawValue.isBlank() ? defaultValue : Boolean.parseBoolean(rawValue);
-    }
-
-    private static boolean isLegacyPropertyEnabled() {
-        return readBoolean(ENABLED_PROPERTY, DEFAULT_ENABLED);
     }
 
     private static long readLong(String property, long defaultValue, long minValue, long maxValue) {

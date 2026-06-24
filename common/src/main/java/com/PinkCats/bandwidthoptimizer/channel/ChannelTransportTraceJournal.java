@@ -2,7 +2,6 @@ package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
-import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -79,8 +78,7 @@ public final class ChannelTransportTraceJournal {
     }
 
     private static boolean isEnabled() {
-        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.TRANSPORT_TRACE_JOURNAL)
-                || DebugRuntimeConfig.isDiagnoseEnabled();
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.TRANSPORT_TRACE_JOURNAL);
     }
 
     private static String trimToLogLine(String value) {

@@ -8,7 +8,6 @@ import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTranspor
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.LoaderEnvironmentCompat;
-import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -333,7 +332,6 @@ public final class ChunkClientCacheBudgetManager {
     }
 
     private static boolean BO_Diag_cacheBudget() {
-        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CACHE_BUDGET)
-                || DebugRuntimeConfig.isDiagnoseEnabled();
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CACHE_BUDGET);
     }
 }

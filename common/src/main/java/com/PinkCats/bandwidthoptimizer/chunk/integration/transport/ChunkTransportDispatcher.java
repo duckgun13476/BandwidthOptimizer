@@ -42,7 +42,6 @@ import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkServerOfflineReuseStats;
 import com.PinkCats.bandwidthoptimizer.compat.sable.SableChunkSyncCompat;
-import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
@@ -2068,13 +2067,11 @@ public final class ChunkTransportDispatcher {
     }
 
     private static boolean shouldLogDiagnose() {
-        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES)
-                || DebugRuntimeConfig.isDiagnoseEnabled();
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES);
     }
 
     private static boolean BO_Diag_cacheManifestSync() {
-        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CACHE_MANIFEST_SYNC)
-                || DebugRuntimeConfig.isDiagnoseEnabled();
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CACHE_MANIFEST_SYNC);
     }
 
     private static String readChannelId(ChannelHandlerContext context) {

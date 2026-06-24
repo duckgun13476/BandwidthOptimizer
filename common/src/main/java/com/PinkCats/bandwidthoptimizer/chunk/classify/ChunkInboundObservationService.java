@@ -16,7 +16,6 @@ import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCac
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateSnapshot;
-import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
@@ -170,7 +169,6 @@ public final class ChunkInboundObservationService {
     }
 
     private static boolean BO_Diag_chunkInboundObservation() {
-        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_INBOUND_OBSERVATION)
-                || DebugRuntimeConfig.isDiagnoseEnabled();
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_INBOUND_OBSERVATION);
     }
 }

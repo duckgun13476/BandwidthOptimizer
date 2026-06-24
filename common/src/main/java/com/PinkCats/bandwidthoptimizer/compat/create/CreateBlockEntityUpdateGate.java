@@ -6,7 +6,6 @@ import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.BlockEntityTypeKeyCompat;
 import com.PinkCats.bandwidthoptimizer.compat.sable.SableDynamicStructureCompat;
 import com.PinkCats.bandwidthoptimizer.compat.valkyrienskies.ValkyrienSkiesDynamicStructureCompat;
-import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -816,8 +815,7 @@ public final class CreateBlockEntityUpdateGate {
     }
 
     private static boolean BO_Diag_compatDynamicGates() {
-        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.COMPAT_DYNAMIC_GATES)
-                || DebugRuntimeConfig.isDiagnoseEnabled();
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.COMPAT_DYNAMIC_GATES);
     }
 
     private record PendingKey(ResourceLocation typeKey, BlockPos pos, int chunkX, int chunkZ) {

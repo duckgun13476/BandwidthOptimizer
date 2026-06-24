@@ -10,7 +10,6 @@ import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshot
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalStoreObservation;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkServerOfflineReuseStats;
-import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ConnectionAccessor;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ServerGamePacketListenerImplAccessor;
@@ -466,8 +465,7 @@ public final class ChunkPeerStateManager {
     }
 
     private static boolean BO_Diag_chunkPeerState() {
-        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_PEER_STATE)
-                || DebugRuntimeConfig.isDiagnoseEnabled();
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_PEER_STATE);
     }
 
     private static String shortenHash(String hashHex) {

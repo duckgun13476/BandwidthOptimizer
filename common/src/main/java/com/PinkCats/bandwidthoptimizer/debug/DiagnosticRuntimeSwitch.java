@@ -4,7 +4,6 @@ import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class DiagnosticRuntimeSwitch {
-    private static final String ALL_PROPERTY = "bandwidthoptimizer.diagnose.all";
     private static final AtomicInteger ENABLED_MASK = new AtomicInteger();
 
     private DiagnosticRuntimeSwitch() {}
@@ -13,10 +12,7 @@ public final class DiagnosticRuntimeSwitch {
         if (topic == null) {
             return false;
         }
-        return DebugRuntimeConfig.isDiagnoseEnabled()
-                || Boolean.getBoolean(ALL_PROPERTY)
-                || Boolean.getBoolean(topic.propertyName())
-                || (ENABLED_MASK.get() & topic.mask()) != 0;
+        return (ENABLED_MASK.get() & topic.mask()) != 0;
     }
 
     public static void setEnabled(Topic topic, boolean enabled) {
@@ -52,12 +48,10 @@ public final class DiagnosticRuntimeSwitch {
 
         private final String id;
         private final int mask;
-        private final String propertyName;
 
         Topic(String id, int mask) {
             this.id = id;
             this.mask = mask;
-            this.propertyName = "bandwidthoptimizer.diagnose." + id;
         }
 
         public String id() {
@@ -66,10 +60,6 @@ public final class DiagnosticRuntimeSwitch {
 
         int mask() {
             return mask;
-        }
-
-        String propertyName() {
-            return propertyName;
         }
 
         public static Topic fromId(String id) {

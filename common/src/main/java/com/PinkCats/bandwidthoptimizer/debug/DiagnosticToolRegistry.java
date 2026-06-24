@@ -11,7 +11,7 @@ public final class DiagnosticToolRegistry {
         if (tool == null) {
             return false;
         }
-        return Boolean.getBoolean(tool.propertyName()) || tool.enabled.get();
+        return tool.enabled.get();
     }
 
     public static boolean toggle(Tool tool) {
@@ -68,159 +68,133 @@ public final class DiagnosticToolRegistry {
         NETTY_MSPT(
                 "nettyMSPT",
                 Cost.MEDIUM,
-                "Netty event-loop MSPT and BO operation spike attribution",
-                "bandwidthoptimizer.diagnosetool.nettyMSPT"
+                "Netty event-loop MSPT and BO operation spike attribution"
         ),
         MOVEMENT_CORRECTION(
                 "movementCorrection",
                 Cost.SMALL,
-                "Server outbound player-position correction sends",
-                "bandwidthoptimizer.diagnosetool.movementCorrection"
+                "Server outbound player-position correction sends"
         ),
         MOVEMENT_BURST(
                 "movementBurst",
                 Cost.SMALL,
-                "Serverbound move-packet burst windows",
-                "bandwidthoptimizer.diagnosetool.movementBurst"
+                "Serverbound move-packet burst windows"
         ),
         TRANSPORT_ENCODE_COST(
                 "transportEncodeCost",
                 Cost.SMALL,
-                "Outbound packet encode and BO hook cost spikes",
-                "bandwidthoptimizer.diagnosetool.transportEncodeCost"
+                "Outbound packet encode and BO hook cost spikes"
         ),
         MOVEMENT_POSITION_HANDLE(
                 "movementPositionHandle",
                 Cost.SMALL,
-                "Client handling of server position correction packets",
-                "bandwidthoptimizer.diagnosetool.movementPositionHandle"
+                "Client handling of server position correction packets"
         ),
         CACHE_CHUNK_HANDLE(
                 "cacheChunkHandle",
                 Cost.SMALL,
-                "Client chunk-cache center, radius, and chunk handle events",
-                "bandwidthoptimizer.diagnosetool.cacheChunkHandle"
+                "Client chunk-cache center, radius, and chunk handle events"
         ),
         CACHE_PERSISTENT_IO(
                 "cachePersistentIO",
                 Cost.MEDIUM,
-                "Persistent chunk-cache store and load events",
-                "bandwidthoptimizer.diagnosetool.cachePersistentIO"
+                "Persistent chunk-cache store and load events"
         ),
         CHANNEL_JSONL_CAPTURE(
                 "channelJsonlCapture",
                 Cost.LARGE,
-                "Full channel JSONL packet capture",
-                "bandwidthoptimizer.diagnosetool.channelJsonlCapture"
+                "Full channel JSONL packet capture"
         ),
         CHUNK_VERIFY_OUTPUT(
                 "chunkVerifyOutput",
                 Cost.MEDIUM,
-                "Chunk hotspot verification and boundary output files",
-                "bandwidthoptimizer.diagnosetool.chunkVerifyOutput"
+                "Chunk hotspot verification and boundary output files"
         ),
         CHUNK_LOAD_TIMELINE(
                 "chunkLoadTimeline",
                 Cost.LARGE,
-                "Client chunk-load timeline after position sync",
-                "bandwidthoptimizer.diagnosetool.chunkLoadTimeline"
+                "Client chunk-load timeline after position sync"
         ),
         CHUNK_GAP_SCAN(
                 "chunkGapScan",
                 Cost.MEDIUM,
-                "Client 3x3 chunk-cache gap scan",
-                "bandwidthoptimizer.diagnosetool.chunkGapScan"
+                "Client 3x3 chunk-cache gap scan"
         ),
         CHUNK_DELAY_TIMELINE(
                 "chunkDelayTimeline",
                 Cost.LARGE,
-                "Chunk transport encode, restore, and stage timing timeline",
-                "bandwidthoptimizer.diagnosetool.chunkDelayTimeline"
+                "Chunk transport encode, restore, and stage timing timeline"
         ),
         TRANSPORT_TRACE_JOURNAL(
                 "transportTraceJournal",
                 Cost.MEDIUM,
-                "Per-channel transport trace journal close dumps",
-                "bandwidthoptimizer.diagnosetool.transportTraceJournal"
+                "Per-channel transport trace journal close dumps"
         ),
         CHUNK_TRANSPORT_FRAMES(
                 "chunkTransportFrames",
                 Cost.MEDIUM,
-                "Chunk transport wrap, unwrap, and control-frame decisions",
-                "bandwidthoptimizer.diagnosetool.chunkTransportFrames"
+                "Chunk transport wrap, unwrap, and control-frame decisions"
         ),
         CHUNK_PEER_STATE(
                 "chunkPeerState",
                 Cost.MEDIUM,
-                "Chunk peer observation, scope, and lifecycle state changes",
-                "bandwidthoptimizer.diagnosetool.chunkPeerState"
+                "Chunk peer observation, scope, and lifecycle state changes"
         ),
         CHUNK_GLOBAL_SNAPSHOT(
                 "chunkGlobalSnapshot",
                 Cost.MEDIUM,
-                "Global chunk snapshot materialization, eviction, and release events",
-                "bandwidthoptimizer.diagnosetool.chunkGlobalSnapshot"
+                "Global chunk snapshot materialization, eviction, and release events"
         ),
         CACHE_MANIFEST_GATE(
                 "cacheManifestGate",
                 Cost.SMALL,
-                "Persistent cache manifest gate arm, queue, and flush events",
-                "bandwidthoptimizer.diagnosetool.cacheManifestGate"
+                "Persistent cache manifest gate arm, queue, and flush events"
         ),
         CACHE_MANIFEST_SYNC(
                 "cacheManifestSync",
                 Cost.MEDIUM,
-                "Persistent cache manifest receive, batch apply, and completion events",
-                "bandwidthoptimizer.diagnosetool.cacheManifestSync"
+                "Persistent cache manifest receive, batch apply, and completion events"
         ),
         CHUNK_LIFECYCLE(
                 "chunkLifecycle",
                 Cost.SMALL,
-                "Player respawn, watch-boundary, and chunk lifecycle retention events",
-                "bandwidthoptimizer.diagnosetool.chunkLifecycle"
+                "Player respawn, watch-boundary, and chunk lifecycle retention events"
         ),
         CHUNK_INBOUND_OBSERVATION(
                 "chunkInboundObservation",
                 Cost.SMALL,
-                "Inbound chunk channel cleanup and server-switch reset events",
-                "bandwidthoptimizer.diagnosetool.chunkInboundObservation"
+                "Inbound chunk channel cleanup and server-switch reset events"
         ),
         CACHE_BUDGET(
                 "cacheBudget",
                 Cost.MEDIUM,
-                "Client chunk-cache budget trimming and eviction summaries",
-                "bandwidthoptimizer.diagnosetool.cacheBudget"
+                "Client chunk-cache budget trimming and eviction summaries"
         ),
         CHUNK_PLAN_PREVIEW(
                 "chunkPlanPreview",
                 Cost.MEDIUM,
-                "Chunk planner white-box preview decisions",
-                "bandwidthoptimizer.diagnosetool.chunkPlanPreview"
+                "Chunk planner white-box preview decisions"
         ),
         CHUNK_PROTOCOL_PREVIEW(
                 "chunkProtocolPreview",
                 Cost.MEDIUM,
-                "Chunk protocol frame encode/decode preview checks",
-                "bandwidthoptimizer.diagnosetool.chunkProtocolPreview"
+                "Chunk protocol frame encode/decode preview checks"
         ),
         COMPAT_DYNAMIC_GATES(
                 "compatDynamicGates",
                 Cost.MEDIUM,
-                "Dynamic-structure compatibility gates and projection failures",
-                "bandwidthoptimizer.diagnosetool.compatDynamicGates"
+                "Dynamic-structure compatibility gates and projection failures"
         );
 
         private final String id;
         private final Cost cost;
         private final String description;
-        private final String propertyName;
         private final AtomicBoolean enabled = new AtomicBoolean();
 
-        Tool(String id, Cost cost, String description, String propertyName) {
+        Tool(String id, Cost cost, String description) {
             this.id = id;
             this.cost = cost;
             this.description = description;
-            this.propertyName = propertyName;
         }
 
         public String id() {
@@ -233,10 +207,6 @@ public final class DiagnosticToolRegistry {
 
         public String description() {
             return description;
-        }
-
-        String propertyName() {
-            return propertyName;
         }
 
         public static Tool fromId(String id) {

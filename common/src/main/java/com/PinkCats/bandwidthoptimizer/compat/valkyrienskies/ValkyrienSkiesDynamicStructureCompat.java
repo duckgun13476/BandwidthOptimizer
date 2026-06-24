@@ -2,7 +2,6 @@ package com.PinkCats.bandwidthoptimizer.compat.valkyrienskies;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat;
-import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -136,8 +135,7 @@ public final class ValkyrienSkiesDynamicStructureCompat {
     }
 
     private static boolean BO_Diag_compatDynamicGates() {
-        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.COMPAT_DYNAMIC_GATES)
-                || DebugRuntimeConfig.isDiagnoseEnabled();
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.COMPAT_DYNAMIC_GATES);
     }
 
     private record ServerBridge(

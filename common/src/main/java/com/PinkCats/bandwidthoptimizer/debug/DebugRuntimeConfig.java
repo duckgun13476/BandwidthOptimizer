@@ -13,13 +13,6 @@ public final class DebugRuntimeConfig {
         );
     }
 
-    public static boolean isDiagnoseEnabled() {
-        return readBooleanProperty(
-                Config.RuntimeProperty.Debug.DIAGNOSE_ENABLED,
-                Config.debugDiagnose || Config.RuntimeProperty.Debug.DEFAULT_DIAGNOSE_ENABLED
-        );
-    }
-
     private static boolean readBooleanProperty(String propertyName, boolean fallback) {
         String rawValue = System.getProperty(propertyName);
         if (rawValue == null || rawValue.isBlank()) {

@@ -2,7 +2,6 @@ package com.PinkCats.bandwidthoptimizer.chunk.persistent;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
-import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -181,8 +180,7 @@ public final class ChunkPersistentManifestGate {
     }
 
     private static boolean BO_Diag_cacheManifestGate() {
-        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CACHE_MANIFEST_GATE)
-                || DebugRuntimeConfig.isDiagnoseEnabled();
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CACHE_MANIFEST_GATE);
     }
 
     private static String safeText(String text, String fallback) {

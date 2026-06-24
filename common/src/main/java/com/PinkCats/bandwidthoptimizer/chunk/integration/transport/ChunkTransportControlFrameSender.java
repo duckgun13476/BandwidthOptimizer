@@ -23,7 +23,6 @@ import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerChunkStateSnapsh
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.ConnectionProtocolNameCompat;
-import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
@@ -502,7 +501,6 @@ public final class ChunkTransportControlFrameSender {
     }
 
     private static boolean BO_Diag_chunkTransportFrames() {
-        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES)
-                || DebugRuntimeConfig.isDiagnoseEnabled();
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES);
     }
 }

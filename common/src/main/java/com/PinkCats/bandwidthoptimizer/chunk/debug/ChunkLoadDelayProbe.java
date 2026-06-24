@@ -19,14 +19,11 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public final class ChunkLoadDelayProbe {
 
-    private static final String ENABLED_PROPERTY = "bandwidthoptimizer.chunk.loadDelayProbe";
     private static final String MAX_EVENTS_PROPERTY = "bandwidthoptimizer.chunk.loadDelayProbeMaxEvents";
     private static final String SLOW_STAGE_MILLIS_PROPERTY = "bandwidthoptimizer.chunk.loadDelayProbeSlowStageMillis";
-    private static final boolean DEFAULT_ENABLED = false;
     private static final long DEFAULT_MAX_EVENTS = 4096L;
     private static final long DEFAULT_SLOW_STAGE_MILLIS = 25L;
     private static final long SAMPLE_INTERVAL = 64L;
-    private static final boolean ENABLED = readBoolean(ENABLED_PROPERTY, DEFAULT_ENABLED);
     private static final long MAX_EVENTS = readLong(MAX_EVENTS_PROPERTY, DEFAULT_MAX_EVENTS, 0L, Long.MAX_VALUE);
     private static final long SLOW_STAGE_MILLIS =
             readLong(SLOW_STAGE_MILLIS_PROPERTY, DEFAULT_SLOW_STAGE_MILLIS, 1L, 60_000L);
@@ -43,7 +40,7 @@ public final class ChunkLoadDelayProbe {
     private ChunkLoadDelayProbe() {}
 
     public static boolean isEnabled() {
-        return ENABLED || DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_DELAY_TIMELINE);
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_DELAY_TIMELINE);
     }
 
     // Marks vanilla chunk packet construction timing.
@@ -438,11 +435,6 @@ public final class ChunkLoadDelayProbe {
         return eventIndex <= 128L
                 || eventIndex % SAMPLE_INTERVAL == 0L
                 || (MAX_EVENTS > 0L && eventIndex <= MAX_EVENTS);
-    }
-
-    private static boolean readBoolean(String property, boolean defaultValue) {
-        String rawValue = System.getProperty(property);
-        return rawValue == null || rawValue.isBlank() ? defaultValue : Boolean.parseBoolean(rawValue);
     }
 
     private static long readLong(String property, long defaultValue, long minValue, long maxValue) {

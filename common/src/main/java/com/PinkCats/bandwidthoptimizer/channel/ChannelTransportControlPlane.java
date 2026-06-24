@@ -6,7 +6,6 @@ import com.PinkCats.bandwidthoptimizer.compat.bungeecord.BungeeCordPluginMessage
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.CustomPayloadPacketCompat;
 import com.PinkCats.bandwidthoptimizer.compat.sable.SableChunkSyncCompat;
 import com.PinkCats.bandwidthoptimizer.compat.valkyrienskies.ValkyrienSkiesChunkSyncCompat;
-import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -143,8 +142,7 @@ public final class ChannelTransportControlPlane {
     }
 
     private static boolean BO_Diag_chunkTransportFrames() {
-        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES)
-                || DebugRuntimeConfig.isDiagnoseEnabled();
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES);
     }
 
     private static ListenerTransportPolicy classifyListenerTransportPolicy(Packet<?> packet) {

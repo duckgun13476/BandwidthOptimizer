@@ -10,7 +10,6 @@ import com.PinkCats.bandwidthoptimizer.chunk.snapshot.lane.ChunkLaneSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.store.blob.ChunkBlobHandle;
-import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 
 import java.util.HashMap;
@@ -592,8 +591,7 @@ public final class ChunkGlobalSnapshotStore {
     }
 
     private static boolean BO_Diag_chunkGlobalSnapshot() {
-        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_GLOBAL_SNAPSHOT)
-                || DebugRuntimeConfig.isDiagnoseEnabled();
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_GLOBAL_SNAPSHOT);
     }
 
     private static String shortenHash(String hashHex) {

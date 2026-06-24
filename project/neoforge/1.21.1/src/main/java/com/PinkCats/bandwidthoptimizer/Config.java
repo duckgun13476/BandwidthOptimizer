@@ -14,7 +14,6 @@ public class Config {
     public static final ModConfigSpec.BooleanValue ENABLE_TEST_MODE;
     public static final ModConfigSpec.IntValue STATS_LOG_INTERVAL_MINUTES;
     public static final ModConfigSpec.BooleanValue DEBUG_ANALYSIS;
-    public static final ModConfigSpec.BooleanValue DEBUG_DIAGNOSE;
     private static final int TEST_MODE_STATS_LOG_INTERVAL_MINUTES = 3;
 
     public static final ModConfigSpec.BooleanValue ENABLE_BATCH_REFERENCE_DEDUP;
@@ -59,7 +58,6 @@ public class Config {
     public static boolean enableTestMode = false;
     public static int statsLogIntervalMinutes = 30;
     public static boolean debugAnalysis = false;
-    public static boolean debugDiagnose = false;
 
     static {
         BUILDER.comment("Logging Settings").push("logging");
@@ -91,12 +89,6 @@ public class Config {
                 .comment("--------------------------------------------------------------------------")
                 .comment("Enable lightweight analysis outputs, such as packet rank, transport report, bypass rank, and telemetry dumps.")
                 .define("debug_analysis", false);
-
-        DEBUG_DIAGNOSE = BUILDER
-                .comment("")
-                .comment("--------------------------------------------------------------------------")
-                .comment("Enable heavyweight diagnostic outputs, such as packet jsonl, transport traces, and chunk boundary reports.")
-                .define("debug_diagnose", false);
 
         BUILDER.pop();
 
@@ -243,8 +235,7 @@ public class Config {
                 ENABLE_OPTIMIZER_STATS_LOGS.get(),
                 ENABLE_TEST_MODE.get(),
                 STATS_LOG_INTERVAL_MINUTES.get(),
-                DEBUG_ANALYSIS.get(),
-                DEBUG_DIAGNOSE.get()
+                DEBUG_ANALYSIS.get()
         );
     }
 
@@ -269,7 +260,6 @@ public class Config {
         enableTestMode = runtimeConfig.enableTestMode();
         statsLogIntervalMinutes = runtimeConfig.statsLogIntervalMinutes();
         debugAnalysis = runtimeConfig.debugAnalysis();
-        debugDiagnose = runtimeConfig.debugDiagnose();
     }
 
     public static long optimizerStatsLogIntervalMillis() {
@@ -290,8 +280,6 @@ public class Config {
 
             public static final String ANALYSIS_ENABLED = "bandwidthoptimizer.debug.analysis";
             public static final boolean DEFAULT_ANALYSIS_ENABLED = false;
-            public static final String DIAGNOSE_ENABLED = "bandwidthoptimizer.debug.diagnose";
-            public static final boolean DEFAULT_DIAGNOSE_ENABLED = false;
 
             private Debug() {
             }
@@ -317,9 +305,6 @@ public class Config {
             public static final long DEFAULT_BATCH_WARMUP_MILLIS = 5_000L;
             public static final String TELEMETRY_DUMP_FILE_NAME =
                     "bandwidthoptimizer.transport.telemetryDumpFileName";
-            public static final String CHANNEL_JSONL_CAPTURE_ENABLED =
-                    "bandwidthoptimizer.channelJsonlCaptureEnabled";
-            public static final boolean DEFAULT_CHANNEL_JSONL_CAPTURE_ENABLED = false;
             public static final String DECODER_EXCEPTION_DUMP_ENABLED =
                     "bandwidthoptimizer.decoderExceptionDumpEnabled";
             public static final boolean DEFAULT_DECODER_EXCEPTION_DUMP_ENABLED = true;
@@ -397,9 +382,6 @@ public class Config {
             public static final String SERVER_SHADOW_METADATA_ENTRY_LIMIT =
                     "bandwidthoptimizer.chunk.serverShadowMetadataEntryLimit";
             public static final long DEFAULT_SERVER_SHADOW_METADATA_ENTRY_LIMIT = 1_000_000L;
-            public static final String DIAGNOSTIC_OUTPUTS_ENABLED =
-                    "bandwidthoptimizer.chunk.diagnosticOutputsEnabled";
-            public static final boolean DEFAULT_DIAGNOSTIC_OUTPUTS_ENABLED = false;
 
             private Chunk() {
             }
@@ -540,8 +522,7 @@ public class Config {
             boolean enableOptimizerStatsLogs,
             boolean enableTestMode,
             int statsLogIntervalMinutes,
-            boolean debugAnalysis,
-            boolean debugDiagnose
+            boolean debugAnalysis
     ) {
     }
 }

@@ -30,9 +30,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 public abstract class ClientPacketListenerChunkHandleMixin {
 
     @Unique
-    private static final String bandwidthoptimizer$CHUNK_LOAD_PROBE_ENABLED_PROPERTY =
-            "bandwidthoptimizer.chunk.loadDelayProbe";
-    @Unique
     private static final int bandwidthoptimizer$MAX_CHUNK_LOGS_PER_ROUND = 384;
     @Unique
     private static final int bandwidthoptimizer$WINDOW_PROGRESS_INTERVAL = 16;
@@ -387,10 +384,6 @@ public abstract class ClientPacketListenerChunkHandleMixin {
 
     @Unique
     private static boolean bandwidthoptimizer$chunkLoadProbeEnabled() {
-        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_LOAD_TIMELINE)
-                || Boolean.parseBoolean(System.getProperty(
-                bandwidthoptimizer$CHUNK_LOAD_PROBE_ENABLED_PROPERTY,
-                "false"
-        ));
+        return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CHUNK_LOAD_TIMELINE);
     }
 }
