@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
 import com.PinkCats.bandwidthoptimizer.channel.access.PacketEncoderFlowAccess;
+import com.PinkCats.bandwidthoptimizer.debug.HotpathCostProbe;
 import com.PinkCats.bandwidthoptimizer.debug.TransportDiagnosticProbe;
 import com.PinkCats.bandwidthoptimizer.compat.trueuuid.TrueUuidLateLoginQueryGuard;
 import com.PinkCats.bandwidthoptimizer.server.stat.ChannelBandwidthStats;
@@ -63,29 +64,47 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
         long vanillaEncodeNanos = this.bandwidthoptimizer$encodeStartNanos <= 0L
                 ? 0L
                 : Math.max(returnHookStartNanos - this.bandwidthoptimizer$encodeStartNanos, 0L);
-        ChannelBandwidthStats stats = ServerBandwidthStatsRegistry.getOrCreate(context);
-        if (stats != null) {
-            stats.recordOutboundRawEncoded(encodedByteLength);
-            if (VanillaCompressionEstimator.isEnabled()) {
-                stats.recordOutboundVanillaCompressedEstimate(
-                        ByteBufUtil.getBytes(out, this.bandwidthoptimizer$writerIndexBefore, encodedByteLength, false),
-                        encodedByteLength
-                );
-            }
+        HotpathCostProbe.Trace trace = HotpathCostProbe.begin("transportHook");
+        if (trace.isActive()) {
+            trace.detail("flow=" + this.flow
+                    + ", packetClass=" + packet.getClass().getName()
+                    + ", bytes=" + encodedByteLength);
         }
+        try (trace) {
+            long stageStartNanos = HotpathCostProbe.start();
+            ChannelBandwidthStats stats = ServerBandwidthStatsRegistry.getOrCreate(context);
+            if (stats != null) {
+                stats.recordOutboundRawEncoded(encodedByteLength);
+                if (VanillaCompressionEstimator.isEnabled()) {
+                    stats.recordOutboundVanillaCompressedEstimate(
+                            ByteBufUtil.getBytes(out, this.bandwidthoptimizer$writerIndexBefore, encodedByteLength, false),
+                            encodedByteLength
+                    );
+                }
+            }
+            HotpathCostProbe.end("stats", stageStartNanos);
 
-        //Patch
-        ChannelCaptureHooks.captureOutboundEncodedPacket(context, packet, out, this.bandwidthoptimizer$writerIndexBefore);
+            //Patch
+            stageStartNanos = HotpathCostProbe.start();
+            ChannelCaptureHooks.captureOutboundEncodedPacket(context, packet, out, this.bandwidthoptimizer$writerIndexBefore);
+            HotpathCostProbe.end("capture", stageStartNanos);
 
-        //handle
-        ChannelTransportHooks.tryToWrapOutboundPacket(context, packet, out, this.bandwidthoptimizer$writerIndexBefore, this);
-        TransportDiagnosticProbe.BO_Diag_transportEncodeCost(
-                context,
-                this.flow,
-                packet,
-                encodedByteLength,
-                vanillaEncodeNanos,
-                System.nanoTime() - returnHookStartNanos
-        );
+            //handle
+            stageStartNanos = HotpathCostProbe.start();
+            ChannelTransportHooks.tryToWrapOutboundPacket(context, packet, out, this.bandwidthoptimizer$writerIndexBefore, this);
+            HotpathCostProbe.end("transportWrap", stageStartNanos);
+            long hookNanos = System.nanoTime() - returnHookStartNanos;
+
+            stageStartNanos = HotpathCostProbe.start();
+            TransportDiagnosticProbe.BO_Diag_transportEncodeCost(
+                    context,
+                    this.flow,
+                    packet,
+                    encodedByteLength,
+                    vanillaEncodeNanos,
+                    hookNanos
+            );
+            HotpathCostProbe.end("transportDiagnostic", stageStartNanos);
+        }
     }
 }

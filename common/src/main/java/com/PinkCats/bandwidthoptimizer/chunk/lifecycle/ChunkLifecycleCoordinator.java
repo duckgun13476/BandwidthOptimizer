@@ -7,6 +7,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordina
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerChunkStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
+import com.PinkCats.bandwidthoptimizer.debug.HotpathCostProbe;
 import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkHotspotPathRuntimeConfig;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
@@ -96,24 +97,48 @@ public final class ChunkLifecycleCoordinator {
             return;
         }
 
-        ChunkPacketCoordinate coordinate = ChunkPacketCoordinate.ofChunk(chunkPos.x, chunkPos.z);
-        ChunkPeerChunkStateSnapshot knownChunkSnapshot = ChunkPeerStateManager.snapshotPlayerChunk(player, coordinate);
-        if (!shouldProcessLifecycleChunk(knownChunkSnapshot)) {
-            logTwoPointLifecycleSkip(player, coordinate, reason, knownChunkSnapshot);
-            return;
+        HotpathCostProbe.Trace trace = HotpathCostProbe.begin(reason.equals("watch_remove") ? "watchRemoveRetain" : "chunkLifecycleRetain");
+        if (trace.isActive()) {
+            trace.detail("reason=" + reason
+                    + ", player=" + player.getGameProfile().getName()
+                    + ", chunk=" + chunkPos.x + "," + chunkPos.z);
         }
+        try (trace) {
+            long stageStartNanos = HotpathCostProbe.start();
+            ChunkPacketCoordinate coordinate = ChunkPacketCoordinate.ofChunk(chunkPos.x, chunkPos.z);
+            HotpathCostProbe.end("coordinate", stageStartNanos);
 
-        ChunkPeerChunkStateSnapshot retainedChunkSnapshot =
-                ChunkPeerStateManager.retainPlayerChunkForWatchBoundary(player, coordinate, reason);
-        if (BO_Diag_chunkLifecycle()) {
-            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LIFECYCLE, "event=retain player={}, uuid={}, reason={}, chunk={}, snapshotBefore={}, snapshotAfter={}",
-                    player.getGameProfile().getName(),
-                    player.getUUID(),
-                    reason,
-                    coordinate.logText(),
-                    knownChunkSnapshot.summaryText(),
-                    retainedChunkSnapshot == null ? "<missing>" : retainedChunkSnapshot.summaryText()
-            );
+            stageStartNanos = HotpathCostProbe.start();
+            ChunkPeerChunkStateSnapshot knownChunkSnapshot = ChunkPeerStateManager.snapshotPlayerChunk(player, coordinate);
+            HotpathCostProbe.end("snapshotBefore", stageStartNanos);
+
+            stageStartNanos = HotpathCostProbe.start();
+            boolean shouldProcess = shouldProcessLifecycleChunk(knownChunkSnapshot);
+            HotpathCostProbe.end("skipCheck", stageStartNanos);
+            if (!shouldProcess) {
+                stageStartNanos = HotpathCostProbe.start();
+                logTwoPointLifecycleSkip(player, coordinate, reason, knownChunkSnapshot);
+                HotpathCostProbe.end("skipLog", stageStartNanos);
+                return;
+            }
+
+            stageStartNanos = HotpathCostProbe.start();
+            ChunkPeerChunkStateSnapshot retainedChunkSnapshot =
+                    ChunkPeerStateManager.retainPlayerChunkForWatchBoundary(player, coordinate, reason);
+            HotpathCostProbe.end("retainState", stageStartNanos);
+
+            if (BO_Diag_chunkLifecycle()) {
+                stageStartNanos = HotpathCostProbe.start();
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LIFECYCLE, "event=retain player={}, uuid={}, reason={}, chunk={}, snapshotBefore={}, snapshotAfter={}",
+                        player.getGameProfile().getName(),
+                        player.getUUID(),
+                        reason,
+                        coordinate.logText(),
+                        knownChunkSnapshot.summaryText(),
+                        retainedChunkSnapshot == null ? "<missing>" : retainedChunkSnapshot.summaryText()
+                );
+                HotpathCostProbe.end("diagnosticLog", stageStartNanos);
+            }
         }
     }
 

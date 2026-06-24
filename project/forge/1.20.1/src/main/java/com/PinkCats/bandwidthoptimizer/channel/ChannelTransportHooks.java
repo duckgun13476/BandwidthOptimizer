@@ -27,6 +27,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentManifestG
 import com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate;
 import com.PinkCats.bandwidthoptimizer.compat.sable.SableChunkSyncCompat;
 import com.PinkCats.bandwidthoptimizer.debug.ChannelTransportHookDiagnosticProbe;
+import com.PinkCats.bandwidthoptimizer.debug.HotpathCostProbe;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ClientboundCustomPayloadPacketAccessor;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ServerboundCustomPayloadPacketAccessor;
 import com.PinkCats.bandwidthoptimizer.report.ChunkBoundaryBandwidthRecorder;
@@ -142,8 +143,12 @@ public final class ChannelTransportHooks {
         }
         boolean forceDirectTransport = !forceImmediateTransport && pendingDirectTransport;
         if (forceDirectTransport) {
+            long hotpathStartNanos = HotpathCostProbe.start();
             ChannelTransportBatchManager.flushOutboundBatchNow(context);
+            HotpathCostProbe.end("hook.forceDirect.flushBatch", hotpathStartNanos);
+            hotpathStartNanos = HotpathCostProbe.start();
             ChunkTransportBoundaryController.scheduleOutboundBarrier(context, boundaryDecision);
+            HotpathCostProbe.end("hook.forceDirect.scheduleBarrier", hotpathStartNanos);
             OutboundChunkEncodeResult directChunkTrace = new OutboundChunkEncodeResult(
                     false,
                     false,
@@ -151,6 +156,7 @@ public final class ChannelTransportHooks {
                     controlDecision.forceDirectTransport() ? controlDecision.reason() : boundaryDecision.reason(),
                     null
             );
+            hotpathStartNanos = HotpathCostProbe.start();
             ChunkBoundaryBandwidthRecorder.OutboundPacketTrace directBoundaryPacketTrace =
                     ChunkBoundaryBandwidthRecorder.beginOutboundTrace(
                             context,
@@ -160,7 +166,11 @@ public final class ChannelTransportHooks {
                             originalPacketBytes,
                             directChunkTrace
                     );
+            HotpathCostProbe.end("hook.forceDirect.beginBoundaryTrace", hotpathStartNanos);
+            hotpathStartNanos = HotpathCostProbe.start();
             recordCommittedOutboundPacketStream(context, packet, originalPacketBytes);
+            HotpathCostProbe.end("hook.forceDirect.commitStream", hotpathStartNanos);
+            hotpathStartNanos = HotpathCostProbe.start();
             recordDirectPacketTrace(
                     context,
                     controlDecision.forceDirectTransport() ? controlDecision.reason() : boundaryDecision.reason(),
@@ -169,13 +179,19 @@ public final class ChannelTransportHooks {
                     outboundPacketFlow,
                     originalPacketBytes
             );
+            HotpathCostProbe.end("hook.forceDirect.directTrace", hotpathStartNanos);
+            hotpathStartNanos = HotpathCostProbe.start();
             recordOutboundBypassStats(context, protocolName, originalPacketBytes.length, 1);
+            HotpathCostProbe.end("hook.forceDirect.bypassStats", hotpathStartNanos);
+            hotpathStartNanos = HotpathCostProbe.start();
             ChannelTransportPacketRankCaptureManager.recordDirectPassthrough(
                     context,
                     protocolName,
                     packet,
                     originalPacketBytes
             );
+            HotpathCostProbe.end("hook.forceDirect.rankCapture", hotpathStartNanos);
+            hotpathStartNanos = HotpathCostProbe.start();
             ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
                     directBoundaryPacketTrace,
                     "DIRECT_PASSTHROUGH",
@@ -184,7 +200,10 @@ public final class ChannelTransportHooks {
                     false,
                     1
             );
+            HotpathCostProbe.end("hook.forceDirect.completeBoundaryTrace", hotpathStartNanos);
+            hotpathStartNanos = HotpathCostProbe.start();
             sendServerCacheScopeAfterLoginBoundary(context, packet);
+            HotpathCostProbe.end("hook.forceDirect.serverCacheScope", hotpathStartNanos);
             return;
         }
         if (forceImmediateTransport) {

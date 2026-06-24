@@ -7,14 +7,27 @@ import io.netty.util.concurrent.SingleThreadEventExecutor;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 
 public final class TransportDiagnosticProbe {
     private static final long ENCODE_LOG_THRESHOLD_NANOS = TimeUnit.MILLISECONDS.toNanos(25L);
     private static final long HOOK_LOG_THRESHOLD_NANOS = TimeUnit.MILLISECONDS.toNanos(10L);
-    private static final long LOG_MIN_INTERVAL_NANOS = TimeUnit.MILLISECONDS.toNanos(250L);
-    private static final ConcurrentHashMap<String, Long> LAST_LOG_NANOS = new ConcurrentHashMap<>();
+    private static final long FLUSH_DELAY_MILLIS = 1000L;
+    private static final int MAX_FLUSH_ENTRIES = 8;
+    private static final ConcurrentHashMap<Key, Summary> SUMMARIES = new ConcurrentHashMap<>();
+    private static final AtomicBoolean FLUSH_SCHEDULED = new AtomicBoolean();
+    private static final ScheduledExecutorService FLUSH_EXECUTOR =
+            Executors.newSingleThreadScheduledExecutor(new DaemonThreadFactory());
 
     private TransportDiagnosticProbe() {}
 
@@ -44,24 +57,66 @@ public final class TransportDiagnosticProbe {
             return;
         }
         Channel channel = context.channel();
-        long now = System.nanoTime();
         String channelId = ChannelIdentity.longText(channel);
-        Long previous = LAST_LOG_NANOS.put(channelId, now);
-        if (previous != null && now - previous < LOG_MIN_INTERVAL_NANOS) {
-            return;
-        }
-        DiagnosticLog.warn(
-                DiagnosticToolRegistry.Tool.TRANSPORT_ENCODE_COST,
-                "channel={}, flow={}, packetClass={}, bytes={}, vanillaMs={}, boHookMs={}, pendingTasks={}, writable={}",
-                channelId,
-                flow,
-                packet.getClass().getName(),
+        String packetClass = packet.getClass().getName();
+        Summary summary = SUMMARIES.computeIfAbsent(
+                new Key(channelId, flow, packetClass),
+                ignored -> new Summary()
+        );
+        summary.record(
                 Math.max(encodedBytes, 0),
-                millis(vanillaEncodeNanos),
-                millis(boHookNanos),
+                vanillaEncodeNanos,
+                boHookNanos,
                 pendingTasks(channel),
                 channel == null || channel.isWritable()
         );
+        scheduleFlush();
+    }
+
+    private static void scheduleFlush() {
+        if (!FLUSH_SCHEDULED.compareAndSet(false, true)) {
+            return;
+        }
+        FLUSH_EXECUTOR.schedule(TransportDiagnosticProbe::flushSummaries, FLUSH_DELAY_MILLIS, TimeUnit.MILLISECONDS);
+    }
+
+    private static void flushSummaries() {
+        FLUSH_SCHEDULED.set(false);
+        if (!isEnabled()) {
+            SUMMARIES.clear();
+            return;
+        }
+        List<EntrySnapshot> snapshots = new ArrayList<>();
+        for (var iterator = SUMMARIES.entrySet().iterator(); iterator.hasNext(); ) {
+            var entry = iterator.next();
+            iterator.remove();
+            EntrySnapshot snapshot = entry.getValue().snapshot(entry.getKey());
+            if (snapshot.count() > 0L) {
+                snapshots.add(snapshot);
+            }
+        }
+        snapshots.sort(Comparator.comparingLong(EntrySnapshot::maxHookNanos).reversed());
+        int limit = Math.min(snapshots.size(), MAX_FLUSH_ENTRIES);
+        for (int i = 0; i < limit; i++) {
+            EntrySnapshot snapshot = snapshots.get(i);
+            DiagnosticLog.warn(
+                    DiagnosticToolRegistry.Tool.TRANSPORT_ENCODE_COST,
+                    "window=1s, channel={}, flow={}, packetClass={}, samples={}, bytes={}, vanillaMaxMs={}, hookMaxMs={}, hookAvgMs={}, pendingTasksMax={}, writableLast={}",
+                    snapshot.key().channelId(),
+                    snapshot.key().flow(),
+                    snapshot.key().packetClass(),
+                    snapshot.count(),
+                    snapshot.bytes(),
+                    millis(snapshot.maxVanillaNanos()),
+                    millis(snapshot.maxHookNanos()),
+                    millis(snapshot.hookNanos() / Math.max(snapshot.count(), 1L)),
+                    snapshot.maxPendingTasks(),
+                    snapshot.writableLast()
+            );
+        }
+        if (!SUMMARIES.isEmpty()) {
+            scheduleFlush();
+        }
     }
 
     private static boolean isEnabled() {
@@ -78,5 +133,70 @@ public final class TransportDiagnosticProbe {
             return -1;
         }
         return executor.pendingTasks();
+    }
+
+    private record Key(String channelId, PacketFlow flow, String packetClass) {}
+
+    private record EntrySnapshot(
+            Key key,
+            long count,
+            long bytes,
+            long hookNanos,
+            long maxVanillaNanos,
+            long maxHookNanos,
+            int maxPendingTasks,
+            boolean writableLast
+    ) {}
+
+    private static final class Summary {
+        private final LongAdder count = new LongAdder();
+        private final LongAdder bytes = new LongAdder();
+        private final LongAdder hookNanos = new LongAdder();
+        private final AtomicLong maxVanillaNanos = new AtomicLong();
+        private final AtomicLong maxHookNanos = new AtomicLong();
+        private final AtomicLong maxPendingTasks = new AtomicLong(-1L);
+        private volatile boolean writableLast = true;
+
+        private void record(int encodedBytes, long vanillaEncodeNanos, long boHookNanos, int pendingTasks, boolean writable) {
+            count.increment();
+            bytes.add(encodedBytes);
+            hookNanos.add(Math.max(boHookNanos, 0L));
+            updateMax(maxVanillaNanos, Math.max(vanillaEncodeNanos, 0L));
+            updateMax(maxHookNanos, Math.max(boHookNanos, 0L));
+            updateMax(maxPendingTasks, pendingTasks);
+            writableLast = writable;
+        }
+
+        private EntrySnapshot snapshot(Key key) {
+            return new EntrySnapshot(
+                    key,
+                    count.sum(),
+                    bytes.sum(),
+                    hookNanos.sum(),
+                    maxVanillaNanos.get(),
+                    maxHookNanos.get(),
+                    Math.toIntExact(Math.min(maxPendingTasks.get(), Integer.MAX_VALUE)),
+                    writableLast
+            );
+        }
+
+        private static void updateMax(AtomicLong target, long value) {
+            long previous;
+            do {
+                previous = target.get();
+                if (value <= previous) {
+                    return;
+                }
+            } while (!target.compareAndSet(previous, value));
+        }
+    }
+
+    private static final class DaemonThreadFactory implements ThreadFactory {
+        @Override
+        public Thread newThread(Runnable runnable) {
+            Thread thread = new Thread(runnable, "bo-transport-diagnostic-flush");
+            thread.setDaemon(true);
+            return thread;
+        }
     }
 }

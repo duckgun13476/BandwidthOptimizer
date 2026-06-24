@@ -45,6 +45,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkServerOfflineReuseStats;
 import com.PinkCats.bandwidthoptimizer.compat.sable.SableChunkSyncCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
+import com.PinkCats.bandwidthoptimizer.debug.HotpathCostProbe;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
@@ -205,8 +206,10 @@ public final class ChunkTransportDispatcher {
         if (shouldBypassHeavyChunkProtocol(packet))
             return OutboundChunkEncodeResult.bypass(false, "heavy_chunk_protocol_bypass");
 
+        long hotpathStartNanos = HotpathCostProbe.start();
         long classifyStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         ChunkPacketDescriptor descriptor = ChunkPacketClassifier.classifyOutboundPlayPacket(protocolName, packet);
+        HotpathCostProbe.end("chunk.classify", hotpathStartNanos);
         ChunkLoadDelayProbe.logStage(
                 context,
                 null,
@@ -220,24 +223,33 @@ public final class ChunkTransportDispatcher {
         if (!chunkPacketCandidate)
             return OutboundChunkEncodeResult.bypass(false, "descriptor_not_chunk_candidate");
 
+        hotpathStartNanos = HotpathCostProbe.start();
         if (ChunkPersistentManifestGate.shouldWaitForManifest(context, descriptor)) {
+            HotpathCostProbe.end("chunk.manifestGate", hotpathStartNanos);
             return OutboundChunkEncodeResult.bypass(true, ChunkPersistentManifestGate.WAIT_REASON);
         }
+        HotpathCostProbe.end("chunk.manifestGate", hotpathStartNanos);
 
+        hotpathStartNanos = HotpathCostProbe.start();
         boolean forceSableInitialSyncFull =
                 SableChunkSyncCompat.shouldForceFullChunkTransport(context, descriptor);
+        HotpathCostProbe.end("chunk.sableGate", hotpathStartNanos);
 
+        hotpathStartNanos = HotpathCostProbe.start();
         ChunkTransportBoundaryController.ChunkTransportPermit transportPermit =
                 ChunkTransportBoundaryController.permitChunkTransport(context, descriptor);
+        HotpathCostProbe.end("chunk.boundaryPermit", hotpathStartNanos);
         if (!transportPermit.allowed()) {
             return OutboundChunkEncodeResult.bypass(true, transportPermit.reason());
         }
 
+        hotpathStartNanos = HotpathCostProbe.start();
         long peerStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         ChunkPeerStateSnapshot peerSnapshot = ChunkPeerStateManager.snapshotOutboundChannel(context);
         if (!hasActiveRuntimeScope(peerSnapshot)) {
             peerSnapshot = ChunkPeerStateManager.ensureOutboundChannelScope(context, "runtime_chunk_transport_missing_scope");
         }
+        HotpathCostProbe.end("chunk.peerScope", hotpathStartNanos);
         ChunkLoadDelayProbe.logStage(
                 context,
                 null,
@@ -251,8 +263,10 @@ public final class ChunkTransportDispatcher {
             return OutboundChunkEncodeResult.bypass(true, "missing_bound_chunk_scope");
         }
 
+        hotpathStartNanos = HotpathCostProbe.start();
         long fingerprintStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         ChunkSnapshotFingerprint fingerprint = ChunkSnapshotFingerprintService.fingerprintOutboundPacket(originalPacketBytes);
+        HotpathCostProbe.end("chunk.fingerprint", hotpathStartNanos);
         ChunkLoadDelayProbe.logStage(
                 context,
                 null,
@@ -267,10 +281,12 @@ public final class ChunkTransportDispatcher {
         }
 
         long scopeId = peerSnapshot.epoch();
+        hotpathStartNanos = HotpathCostProbe.start();
         long snapshotStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         ChunkPeerChunkStateSnapshot knownChunkSnapshot = forceSableInitialSyncFull
                 ? null
                 : resolvePlanningChunkSnapshot(context, scopeId, descriptor, fingerprint);
+        HotpathCostProbe.end("chunk.resolveSnapshot", hotpathStartNanos);
         ChunkLoadDelayProbe.logStage(
                 context,
                 null,
@@ -280,6 +296,7 @@ public final class ChunkTransportDispatcher {
                 originalPacketBytes == null ? 0 : originalPacketBytes.length,
                 knownChunkSnapshot == null ? "known=false" : "known=true"
         );
+        hotpathStartNanos = HotpathCostProbe.start();
         long patchStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult = forceSableInitialSyncFull
                 ? ChunkPatchBuilder.ChunkPatchBuildResult.unavailable("sable_initial_sync_force_full")
@@ -292,6 +309,7 @@ public final class ChunkTransportDispatcher {
                         fingerprint,
                         knownChunkSnapshot
                 );
+        HotpathCostProbe.end("chunk.patchCandidate", hotpathStartNanos);
         ChunkLoadDelayProbe.logStage(
                 context,
                 null,
@@ -301,6 +319,7 @@ public final class ChunkTransportDispatcher {
                 originalPacketBytes == null ? 0 : originalPacketBytes.length,
                 patchBuildResult == null ? "<null>" : patchBuildResult.reason()
         );
+        hotpathStartNanos = HotpathCostProbe.start();
         long planStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         RuntimeChunkPlanningResult planningResult =
                 planRuntimeTransportWithTrace(
@@ -312,6 +331,7 @@ public final class ChunkTransportDispatcher {
                         originalPacketBytes
                 );
         RuntimeChunkTransportDecision runtimeDecision = planningResult.transportDecision();
+        HotpathCostProbe.end("chunk.plan", hotpathStartNanos);
         ChunkLoadDelayProbe.logStage(
                 context,
                 runtimeDecision == null ? null : runtimeDecision.frame(),
@@ -325,10 +345,12 @@ public final class ChunkTransportDispatcher {
             return OutboundChunkEncodeResult.bypass(true, planningResult.bypassReason());
         }
 
+        hotpathStartNanos = HotpathCostProbe.start();
         long envelopeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         byte[] encodedEnvelopeBytes = ChunkTransportEnvelopeCodec.encodeEnvelope(
                 new ChunkTransportEnvelope(runtimeDecision.frame(), runtimeDecision.copyTransportPayloadBytes())
         );
+        HotpathCostProbe.end("chunk.encodeEnvelope", hotpathStartNanos);
         ChunkLoadDelayProbe.logStage(
                 context,
                 runtimeDecision.frame(),
@@ -338,6 +360,7 @@ public final class ChunkTransportDispatcher {
                 encodedEnvelopeBytes.length,
                 ""
         );
+        hotpathStartNanos = HotpathCostProbe.start();
         long statsStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         ChunkHotspotStats.recordOutboundFrame(
                 runtimeDecision.frame(),
@@ -351,6 +374,7 @@ public final class ChunkTransportDispatcher {
                 encodedEnvelopeBytes.length
         );
         ChunkHotspotVerifyHooks.flushCurrentReport();
+        HotpathCostProbe.end("chunk.statsFlush", hotpathStartNanos);
         ChunkLoadDelayProbe.logStage(
                 context,
                 runtimeDecision.frame(),
@@ -361,6 +385,7 @@ public final class ChunkTransportDispatcher {
                 ""
         );
         long frameCount = incrementOutboundFrameCount(runtimeDecision.operation());
+        hotpathStartNanos = HotpathCostProbe.start();
         if (shouldLogDiagnose() && shouldLogSample(frameCount)) {
             DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES, "event=wrap, channel={}, op={}, count={}, epoch={}, observedPackets={}, chunk={}, payloadBytes={}, envelopeBytes={}, payloadHash={}",
                     readChannelId(context),
@@ -374,7 +399,10 @@ public final class ChunkTransportDispatcher {
                     fingerprint.shortHash()
             );
         }
+        HotpathCostProbe.end("chunk.diagnosticFrameLog", hotpathStartNanos);
+        hotpathStartNanos = HotpathCostProbe.start();
         rememberRecoverableFullChunkFrame(context, runtimeDecision, originalPacketBytes);
+        HotpathCostProbe.end("chunk.rememberRecoverableFull", hotpathStartNanos);
         return OutboundChunkEncodeResult.applied(
                 runtimeDecision.operation(),
                 runtimeDecision.frame().reason(),

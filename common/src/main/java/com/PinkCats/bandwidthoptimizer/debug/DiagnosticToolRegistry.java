@@ -163,6 +163,11 @@ public final class DiagnosticToolRegistry {
                 Cost.SMALL,
                 "Outbound packet encode and BO hook cost spikes"
         ),
+        HOTPATH_COST(
+                "hotpathCost",
+                Cost.SMALL,
+                "Slow BO hot-path stage cost ranking"
+        ),
         MOVEMENT_POSITION_HANDLE(
                 "movementPositionHandle",
                 Cost.SMALL,

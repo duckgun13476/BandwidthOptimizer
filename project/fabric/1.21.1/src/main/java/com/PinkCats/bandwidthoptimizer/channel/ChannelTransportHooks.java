@@ -27,6 +27,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentManifestG
 import com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate;
 import com.PinkCats.bandwidthoptimizer.compat.sable.SableChunkSyncCompat;
 import com.PinkCats.bandwidthoptimizer.debug.ChannelTransportHookDiagnosticProbe;
+import com.PinkCats.bandwidthoptimizer.debug.HotpathCostProbe;
 import com.PinkCats.bandwidthoptimizer.report.ChunkBoundaryBandwidthRecorder;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCaptureManager;
 import com.PinkCats.bandwidthoptimizer.server.stat.ChannelBandwidthStats;
@@ -88,17 +89,23 @@ public final class ChannelTransportHooks {
             return;
         }
 
+        long hotpathStartNanos = HotpathCostProbe.start();
         ConnectionProtocol connectionProtocol = readConnectionProtocol(packetEncoderFlowAccess);
         String protocolName = readProtocolName(connectionProtocol);
         byte[] originalPacketBytes = ByteBufUtil.getBytes(out, startIndexInclusive, endIndexExclusive - startIndexInclusive, false);
         PacketFlow outboundPacketFlow = resolvePacketFlow(packetEncoderFlowAccess, connectionProtocol, packet);
+        HotpathCostProbe.end("hook.copyAndResolve", hotpathStartNanos);
+        hotpathStartNanos = HotpathCostProbe.start();
         CreateBlockEntityUpdateGate.observeOutboundPacket(context, protocolName, outboundPacketFlow, packet);
         if (CreateBlockEntityUpdateGate.tryDelayOutboundPacket(context, protocolName, outboundPacketFlow, packet, originalPacketBytes)) {
+            HotpathCostProbe.end("hook.createGate", hotpathStartNanos);
             out.writerIndex(startIndexInclusive);
             return;
         }
+        HotpathCostProbe.end("hook.createGate", hotpathStartNanos);
 
 
+        hotpathStartNanos = HotpathCostProbe.start();
         if (!ChannelTransportRuntimeGuard.isTransportAvailable()
                 || !shouldUseTransportForCurrentProtocol(protocolName)) {
             recordCommittedOutboundPacketStream(context, packet, originalPacketBytes);
@@ -117,9 +124,12 @@ public final class ChannelTransportHooks {
                     packet,
                     originalPacketBytes
             );
+            HotpathCostProbe.end("hook.directBypass", hotpathStartNanos);
             return;
         }
+        HotpathCostProbe.end("hook.runtimeGuard", hotpathStartNanos);
 
+        hotpathStartNanos = HotpathCostProbe.start();
         ChannelTransportControlPlane.TransportControlDecision controlDecision =
                 ChannelTransportControlPlane.beginOutboundPacket(context, protocolName, packet);
         ChunkTransportBoundaryController.OutboundBoundaryDecision boundaryDecision =
@@ -137,10 +147,15 @@ public final class ChannelTransportHooks {
                     channelIdText(context)
             );
         }
+        HotpathCostProbe.end("hook.controlBoundary", hotpathStartNanos);
         boolean forceDirectTransport = !forceImmediateTransport && pendingDirectTransport;
         if (forceDirectTransport) {
+            hotpathStartNanos = HotpathCostProbe.start();
             ChannelTransportBatchManager.flushOutboundBatchNow(context);
+            HotpathCostProbe.end("hook.forceDirect.flushBatch", hotpathStartNanos);
+            hotpathStartNanos = HotpathCostProbe.start();
             ChunkTransportBoundaryController.scheduleOutboundBarrier(context, boundaryDecision);
+            HotpathCostProbe.end("hook.forceDirect.scheduleBarrier", hotpathStartNanos);
             OutboundChunkEncodeResult directChunkTrace = new OutboundChunkEncodeResult(
                     false,
                     false,
@@ -148,6 +163,7 @@ public final class ChannelTransportHooks {
                     controlDecision.forceDirectTransport() ? controlDecision.reason() : boundaryDecision.reason(),
                     null
             );
+            hotpathStartNanos = HotpathCostProbe.start();
             ChunkBoundaryBandwidthRecorder.OutboundPacketTrace directBoundaryPacketTrace =
                     ChunkBoundaryBandwidthRecorder.beginOutboundTrace(
                             context,
@@ -157,7 +173,11 @@ public final class ChannelTransportHooks {
                             originalPacketBytes,
                             directChunkTrace
                     );
+            HotpathCostProbe.end("hook.forceDirect.beginBoundaryTrace", hotpathStartNanos);
+            hotpathStartNanos = HotpathCostProbe.start();
             recordCommittedOutboundPacketStream(context, packet, originalPacketBytes);
+            HotpathCostProbe.end("hook.forceDirect.commitStream", hotpathStartNanos);
+            hotpathStartNanos = HotpathCostProbe.start();
             recordDirectPacketTrace(
                     context,
                     controlDecision.forceDirectTransport() ? controlDecision.reason() : boundaryDecision.reason(),
@@ -166,13 +186,19 @@ public final class ChannelTransportHooks {
                     outboundPacketFlow,
                     originalPacketBytes
             );
+            HotpathCostProbe.end("hook.forceDirect.directTrace", hotpathStartNanos);
+            hotpathStartNanos = HotpathCostProbe.start();
             recordOutboundBypassStats(context, protocolName, originalPacketBytes.length, 1);
+            HotpathCostProbe.end("hook.forceDirect.bypassStats", hotpathStartNanos);
+            hotpathStartNanos = HotpathCostProbe.start();
             ChannelTransportPacketRankCaptureManager.recordDirectPassthrough(
                     context,
                     protocolName,
                     packet,
                     originalPacketBytes
             );
+            HotpathCostProbe.end("hook.forceDirect.rankCapture", hotpathStartNanos);
+            hotpathStartNanos = HotpathCostProbe.start();
             ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
                     directBoundaryPacketTrace,
                     "DIRECT_PASSTHROUGH",
@@ -181,10 +207,14 @@ public final class ChannelTransportHooks {
                     false,
                     1
             );
+            HotpathCostProbe.end("hook.forceDirect.completeBoundaryTrace", hotpathStartNanos);
+            hotpathStartNanos = HotpathCostProbe.start();
             sendServerCacheScopeAfterLoginBoundary(context, packet);
+            HotpathCostProbe.end("hook.forceDirect.serverCacheScope", hotpathStartNanos);
             return;
         }
         if (forceImmediateTransport) {
+            hotpathStartNanos = HotpathCostProbe.start();
             ChannelTransportBatchManager.flushOutboundBatchNow(context);
             if (ChannelTransportHookDiagnosticProbe.BO_Diag_chunkTransportFrames()) {
                 DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES, "event=immediate_policy_start reason={}, protocol={}, packetClass={}, rawBytes={}, rawPacketId={}, channel={}",
@@ -196,31 +226,40 @@ public final class ChannelTransportHooks {
                         channelIdText(context)
                 );
             }
+            HotpathCostProbe.end("hook.forceImmediate", hotpathStartNanos);
         }
 
+        hotpathStartNanos = HotpathCostProbe.start();
         OutboundChunkEncodeResult chunkEncodeResult = ChunkTransportDispatcher.tryEncodeOutboundPacketWithTrace(
                 context,
                 protocolName,
                 packet,
                 originalPacketBytes
         );
+        HotpathCostProbe.end("hook.chunkDispatcher", hotpathStartNanos);
+        hotpathStartNanos = HotpathCostProbe.start();
         if (ChunkPersistentManifestGate.tryQueueWaitingPacket(context, packet, chunkEncodeResult.traceReason())) {
+            HotpathCostProbe.end("hook.manifestQueue", hotpathStartNanos);
             out.writerIndex(startIndexInclusive);
             return;
         }
+        HotpathCostProbe.end("hook.manifestQueue", hotpathStartNanos);
         byte[] chunkTransportEncodedBytes = chunkEncodeResult.copyEncodedPacketBytes();
         if (chunkEncodeResult.chunkProtocolApplied()) {
 
+            hotpathStartNanos = HotpathCostProbe.start();
             ChunkOutboundObservationService.observeOutboundPacket(
                     context,
                     protocolName,
                     packet,
                     originalPacketBytes
             );
+            HotpathCostProbe.end("hook.chunkObservation", hotpathStartNanos);
         }
         byte[] transportInputPacketBytes = chunkTransportEncodedBytes == null ? originalPacketBytes : chunkTransportEncodedBytes;
         byte[] directFallbackPacketBytes = originalPacketBytes;
         boolean chunkProtocolApplied = chunkTransportEncodedBytes != null;
+        hotpathStartNanos = HotpathCostProbe.start();
         ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace =
                 ChunkBoundaryBandwidthRecorder.beginOutboundTrace(
                         context,
@@ -230,7 +269,9 @@ public final class ChannelTransportHooks {
                         transportInputPacketBytes,
                         chunkEncodeResult
                 );
+        HotpathCostProbe.end("hook.boundaryTrace", hotpathStartNanos);
 
+        hotpathStartNanos = HotpathCostProbe.start();
         if (shouldBypassTransparentTransport(context, protocolName, packet, outboundPacketFlow)) {
             ChannelTransportBatchManager.flushOutboundBatchNow(context);
             recordCommittedOutboundPacketStream(context, packet, originalPacketBytes);
@@ -257,9 +298,12 @@ public final class ChannelTransportHooks {
                     false,
                     1
             );
+            HotpathCostProbe.end("hook.transparentBypass", hotpathStartNanos);
             return;
         }
+        HotpathCostProbe.end("hook.transparentBypass", hotpathStartNanos);
 
+        hotpathStartNanos = HotpathCostProbe.start();
         ChannelTransportPacketRankCaptureManager.OutboundPacketCapture outboundPacketCapture =
                 ChannelTransportPacketRankCaptureManager.beginOutboundPacketCapture(
                         context,
@@ -269,9 +313,11 @@ public final class ChannelTransportHooks {
                         transportInputPacketBytes,
                         chunkTransportEncodedBytes != null
                 );
+        HotpathCostProbe.end("hook.rankCapture", hotpathStartNanos);
 
         boolean statefulTransportAttempted = false;
         try {
+            hotpathStartNanos = HotpathCostProbe.start();
             if (shouldBypassServerboundCarrierByInputSize(outboundPacketFlow, transportInputPacketBytes.length)) {
                 out.writerIndex(startIndexInclusive);
                 out.writeBytes(directFallbackPacketBytes);
@@ -304,9 +350,12 @@ public final class ChannelTransportHooks {
                         chunkProtocolApplied,
                         1
                 );
+                HotpathCostProbe.end("hook.serverboundSizeBypass", hotpathStartNanos);
                 return;
             }
+            HotpathCostProbe.end("hook.serverboundSizeBypass", hotpathStartNanos);
 
+            hotpathStartNanos = HotpathCostProbe.start();
             if (chunkTransportEncodedBytes == null && !forceImmediateTransport && ChannelTransportBatchManager.shouldBatchOutboundPacket(context)) {
                 out.writerIndex(startIndexInclusive);
                 if (ChannelTransportHookDiagnosticProbe.BO_Diag_transportTraceJournal()) {
@@ -332,9 +381,12 @@ public final class ChannelTransportHooks {
                         outboundPacketCapture,
                         boundaryPacketTrace
                 );
+                HotpathCostProbe.end("hook.batchEnqueue", hotpathStartNanos);
                 return;
             }
+            HotpathCostProbe.end("hook.batchDecision", hotpathStartNanos);
 
+            hotpathStartNanos = HotpathCostProbe.start();
             if (!chunkProtocolApplied && ChannelTransportAdaptiveBypass.shouldBypassBeforeWrap(
                     protocolName,
                     outboundPacketFlow,
@@ -366,9 +418,12 @@ public final class ChannelTransportHooks {
                         false,
                         1
                 );
+                HotpathCostProbe.end("hook.adaptiveBypass", hotpathStartNanos);
                 return;
             }
+            HotpathCostProbe.end("hook.adaptiveBypass", hotpathStartNanos);
 
+            hotpathStartNanos = HotpathCostProbe.start();
             ChannelTransportSession transportSession = ChannelTransportStateManager.getOrCreateSession(context.channel());
             statefulTransportAttempted = true;
             ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame =
@@ -376,6 +431,8 @@ public final class ChannelTransportHooks {
             if (wrappedFrame == null) {
                 throw new IllegalStateException("Stateful transport wrap returned no carrier");
             }
+            HotpathCostProbe.end("hook.statefulWrap", hotpathStartNanos);
+            hotpathStartNanos = HotpathCostProbe.start();
             logOutboundTransportTrace(
                     context,
                     protocolName,
@@ -423,6 +480,7 @@ public final class ChannelTransportHooks {
                         wrappedFrame
                 );
             }
+            HotpathCostProbe.end("hook.carrierCommit", hotpathStartNanos);
         } catch (Throwable throwable) {
             if (statefulTransportAttempted) {
                 out.writerIndex(startIndexInclusive);
