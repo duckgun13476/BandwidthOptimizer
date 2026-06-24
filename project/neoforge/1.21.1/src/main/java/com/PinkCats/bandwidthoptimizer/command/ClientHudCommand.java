@@ -3,10 +3,10 @@ package com.PinkCats.bandwidthoptimizer.command;
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.client.hud.BandwidthOptimizerHudOverlay;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
-import com.PinkCats.bandwidthoptimizer.debug.DiagnosticRuntimeSwitch;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticSilencer;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.mojang.brigadier.Command;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.commands.CommandSourceStack;
@@ -36,12 +36,7 @@ public final class ClientHudCommand {
         dispatcher.register(Commands.literal("bandwidthoptimizer")
                 .then(Commands.literal("hud")
                         .executes(context -> toggle(context.getSource())))
-                .then(buildDebugCommand())
-                .then(buildDiagnoseCommand())
-                .then(buildDiagnosticToolCommand()));
-        dispatcher.register(Commands.literal("bandwidthoptimister")
-                .then(buildDebugCommand())
-                .then(buildDiagnosticToolCommand()));
+                .then(buildDebugCommand()));
     }
 
     private static int toggle(CommandSourceStack source) {
@@ -63,34 +58,15 @@ public final class ClientHudCommand {
         return Command.SINGLE_SUCCESS;
     }
 
-    private static LiteralArgumentBuilder<CommandSourceStack> buildDiagnoseCommand() {
-        return Commands.literal("diagnose")
-                .executes(context -> diagnoseStatus(context.getSource()))
-                .then(Commands.literal("status")
-                        .executes(context -> diagnoseStatus(context.getSource())))
-                .then(Commands.literal("off")
-                        .executes(context -> disableAllDiagnostics(context.getSource())))
-                .then(Commands.literal("all")
-                        .then(Commands.literal("on")
-                                .executes(context -> setDiagnoseAll(context.getSource(), true)))
-                        .then(Commands.literal("off")
-                                .executes(context -> disableAllDiagnostics(context.getSource()))))
-                .then(clientDiagnoseTopic(DiagnosticRuntimeSwitch.Topic.MOVEMENT))
-                .then(clientDiagnoseTopic(DiagnosticRuntimeSwitch.Topic.TRANSPORT))
-                .then(clientDiagnoseTopic(DiagnosticRuntimeSwitch.Topic.CACHE));
-    }
-
     private static LiteralArgumentBuilder<CommandSourceStack> buildDebugCommand() {
-        return Commands.literal("debug")
-                .then(Commands.literal("off")
-                        .executes(context -> disableAllDiagnostics(context.getSource())));
-    }
-
-    private static LiteralArgumentBuilder<CommandSourceStack> buildDiagnosticToolCommand() {
-        LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("diagnosetool")
+        LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("debug")
                 .executes(context -> diagnosticToolStatus(context.getSource()))
                 .then(Commands.literal("status")
-                        .executes(context -> diagnosticToolStatus(context.getSource())));
+                        .executes(context -> diagnosticToolStatus(context.getSource())))
+                .then(Commands.literal("list")
+                        .executes(context -> diagnosticToolStatus(context.getSource())))
+                .then(Commands.literal("off")
+                        .executes(context -> disableAllDiagnostics(context.getSource())));
         for (DiagnosticToolRegistry.Tool tool : DiagnosticToolRegistry.Tool.values()) {
             root.then(clientDiagnosticTool(tool));
         }
@@ -100,64 +76,49 @@ public final class ClientHudCommand {
     private static LiteralArgumentBuilder<CommandSourceStack> clientDiagnosticTool(DiagnosticToolRegistry.Tool tool) {
         return Commands.literal(tool.id())
                 .executes(context -> toggleDiagnosticTool(context.getSource(), tool))
-                .then(Commands.literal("on")
-                        .executes(context -> setDiagnosticTool(context.getSource(), tool, true)))
-                .then(Commands.literal("off")
-                        .executes(context -> setDiagnosticTool(context.getSource(), tool, false)));
+                .then(Commands.argument("minutes", IntegerArgumentType.integer(
+                                DiagnosticToolRegistry.MIN_MINUTES,
+                                DiagnosticToolRegistry.MAX_MINUTES
+                        ))
+                        .executes(context -> enableDiagnosticTool(
+                                context.getSource(),
+                                tool,
+                                IntegerArgumentType.getInteger(context, "minutes")
+                        )));
     }
 
     private static int diagnosticToolStatus(CommandSourceStack source) {
         source.sendSuccess(() -> Component.literal(
                 DiagnosticToolRegistry.listText()
-                        + "\nThis only controls the local client."
+                        + "\nUse /bandwidthoptimizer debug <name> to toggle for 30m, "
+                        + "/bandwidthoptimizer debug <name> <5-300> to enable for minutes, "
+                        + "or /bandwidthoptimizer debug off."
+                        + " This only controls the local client."
         ), false);
         return Command.SINGLE_SUCCESS;
     }
 
     private static int toggleDiagnosticTool(CommandSourceStack source, DiagnosticToolRegistry.Tool tool) {
-        return setDiagnosticTool(source, tool, DiagnosticToolRegistry.toggle(tool));
+        boolean enabled = DiagnosticToolRegistry.toggle(tool);
+        sendDiagnosticToolState(source, tool, enabled);
+        return Command.SINGLE_SUCCESS;
     }
 
-    private static int setDiagnosticTool(CommandSourceStack source, DiagnosticToolRegistry.Tool tool, boolean enabled) {
-        DiagnosticToolRegistry.setEnabled(tool, enabled);
+    private static int enableDiagnosticTool(CommandSourceStack source, DiagnosticToolRegistry.Tool tool, int minutes) {
+        DiagnosticToolRegistry.enable(tool, minutes);
+        sendDiagnosticToolState(source, tool, true);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static void sendDiagnosticToolState(CommandSourceStack source, DiagnosticToolRegistry.Tool tool, boolean enabled) {
         source.sendSuccess(() -> Component.literal(
-                "BO diagnosetool " + tool.id()
+                "BO debug " + tool.id()
                         + ' ' + onOff(enabled)
+                        + (enabled
+                                ? " expiresIn=" + DiagnosticToolRegistry.formatRemaining(DiagnosticToolRegistry.remainingMillis(tool))
+                                : "")
                         + ". Log prefix " + DiagnosticLog.prefix(tool) + ". This only controls the local client."
         ), false);
-        return Command.SINGLE_SUCCESS;
-    }
-
-    private static LiteralArgumentBuilder<CommandSourceStack> clientDiagnoseTopic(DiagnosticRuntimeSwitch.Topic topic) {
-        return Commands.literal(topic.id())
-                .then(Commands.literal("on")
-                        .executes(context -> setDiagnoseTopic(context.getSource(), topic, true)))
-                .then(Commands.literal("off")
-                        .executes(context -> setDiagnoseTopic(context.getSource(), topic, false)));
-    }
-
-    private static int diagnoseStatus(CommandSourceStack source) {
-        source.sendSuccess(() -> Component.literal(
-                DiagnosticRuntimeSwitch.statusText()
-                        + ". This only controls the local client."
-        ), false);
-        return Command.SINGLE_SUCCESS;
-    }
-
-    private static int setDiagnoseTopic(CommandSourceStack source, DiagnosticRuntimeSwitch.Topic topic, boolean enabled) {
-        DiagnosticRuntimeSwitch.setEnabled(topic, enabled);
-        source.sendSuccess(() -> Component.literal(
-                "BO client diagnose " + topic.id() + ' ' + onOff(enabled) + ". " + DiagnosticRuntimeSwitch.statusText()
-        ), false);
-        return Command.SINGLE_SUCCESS;
-    }
-
-    private static int setDiagnoseAll(CommandSourceStack source, boolean enabled) {
-        DiagnosticRuntimeSwitch.setAll(enabled);
-        source.sendSuccess(() -> Component.literal(
-                "BO client diagnose all " + onOff(enabled) + ". " + DiagnosticRuntimeSwitch.statusText()
-        ), false);
-        return Command.SINGLE_SUCCESS;
     }
 
     private static int disableAllDiagnostics(CommandSourceStack source) {

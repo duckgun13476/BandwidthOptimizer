@@ -3,15 +3,16 @@ package com.PinkCats.bandwidthoptimizer.command;
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.client.hud.BandwidthOptimizerHudOverlay;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
-import com.PinkCats.bandwidthoptimizer.debug.DiagnosticRuntimeSwitch;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticSilencer;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.mojang.brigadier.Command;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.network.chat.Component;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 
+import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.argument;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal;
 
 import java.util.Locale;
@@ -29,12 +30,7 @@ public final class ClientHudCommand {
         dispatcher.register(literal("bandwidthoptimizer")
                 .then(literal("hud")
                         .executes(context -> toggle(context.getSource())))
-                .then(buildDebugCommand())
-                .then(buildDiagnoseCommand())
-                .then(buildDiagnosticToolCommand()));
-        dispatcher.register(literal("bandwidthoptimister")
-                .then(buildDebugCommand())
-                .then(buildDiagnosticToolCommand()));
+                .then(buildDebugCommand()));
     }
 
     private static int toggle(FabricClientCommandSource source) {
@@ -56,34 +52,15 @@ public final class ClientHudCommand {
         return Command.SINGLE_SUCCESS;
     }
 
-    private static LiteralArgumentBuilder<FabricClientCommandSource> buildDiagnoseCommand() {
-        return literal("diagnose")
-                .executes(context -> diagnoseStatus(context.getSource()))
-                .then(literal("status")
-                        .executes(context -> diagnoseStatus(context.getSource())))
-                .then(literal("off")
-                        .executes(context -> disableAllDiagnostics(context.getSource())))
-                .then(literal("all")
-                        .then(literal("on")
-                                .executes(context -> setDiagnoseAll(context.getSource(), true)))
-                        .then(literal("off")
-                                .executes(context -> disableAllDiagnostics(context.getSource()))))
-                .then(clientDiagnoseTopic(DiagnosticRuntimeSwitch.Topic.MOVEMENT))
-                .then(clientDiagnoseTopic(DiagnosticRuntimeSwitch.Topic.TRANSPORT))
-                .then(clientDiagnoseTopic(DiagnosticRuntimeSwitch.Topic.CACHE));
-    }
-
     private static LiteralArgumentBuilder<FabricClientCommandSource> buildDebugCommand() {
-        return literal("debug")
-                .then(literal("off")
-                        .executes(context -> disableAllDiagnostics(context.getSource())));
-    }
-
-    private static LiteralArgumentBuilder<FabricClientCommandSource> buildDiagnosticToolCommand() {
-        LiteralArgumentBuilder<FabricClientCommandSource> root = literal("diagnosetool")
+        LiteralArgumentBuilder<FabricClientCommandSource> root = literal("debug")
                 .executes(context -> diagnosticToolStatus(context.getSource()))
                 .then(literal("status")
-                        .executes(context -> diagnosticToolStatus(context.getSource())));
+                        .executes(context -> diagnosticToolStatus(context.getSource())))
+                .then(literal("list")
+                        .executes(context -> diagnosticToolStatus(context.getSource())))
+                .then(literal("off")
+                        .executes(context -> disableAllDiagnostics(context.getSource())));
         for (DiagnosticToolRegistry.Tool tool : DiagnosticToolRegistry.Tool.values()) {
             root.then(clientDiagnosticTool(tool));
         }
@@ -93,64 +70,49 @@ public final class ClientHudCommand {
     private static LiteralArgumentBuilder<FabricClientCommandSource> clientDiagnosticTool(DiagnosticToolRegistry.Tool tool) {
         return literal(tool.id())
                 .executes(context -> toggleDiagnosticTool(context.getSource(), tool))
-                .then(literal("on")
-                        .executes(context -> setDiagnosticTool(context.getSource(), tool, true)))
-                .then(literal("off")
-                        .executes(context -> setDiagnosticTool(context.getSource(), tool, false)));
+                .then(argument("minutes", IntegerArgumentType.integer(
+                                DiagnosticToolRegistry.MIN_MINUTES,
+                                DiagnosticToolRegistry.MAX_MINUTES
+                        ))
+                        .executes(context -> enableDiagnosticTool(
+                                context.getSource(),
+                                tool,
+                                IntegerArgumentType.getInteger(context, "minutes")
+                        )));
     }
 
     private static int diagnosticToolStatus(FabricClientCommandSource source) {
         source.sendFeedback(Component.literal(
                 DiagnosticToolRegistry.listText()
-                        + "\nThis only controls the local client."
+                        + "\nUse /bandwidthoptimizer debug <name> to toggle for 30m, "
+                        + "/bandwidthoptimizer debug <name> <5-300> to enable for minutes, "
+                        + "or /bandwidthoptimizer debug off."
+                        + " This only controls the local client."
         ));
         return Command.SINGLE_SUCCESS;
     }
 
     private static int toggleDiagnosticTool(FabricClientCommandSource source, DiagnosticToolRegistry.Tool tool) {
-        return setDiagnosticTool(source, tool, DiagnosticToolRegistry.toggle(tool));
+        boolean enabled = DiagnosticToolRegistry.toggle(tool);
+        sendDiagnosticToolState(source, tool, enabled);
+        return Command.SINGLE_SUCCESS;
     }
 
-    private static int setDiagnosticTool(FabricClientCommandSource source, DiagnosticToolRegistry.Tool tool, boolean enabled) {
-        DiagnosticToolRegistry.setEnabled(tool, enabled);
+    private static int enableDiagnosticTool(FabricClientCommandSource source, DiagnosticToolRegistry.Tool tool, int minutes) {
+        DiagnosticToolRegistry.enable(tool, minutes);
+        sendDiagnosticToolState(source, tool, true);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static void sendDiagnosticToolState(FabricClientCommandSource source, DiagnosticToolRegistry.Tool tool, boolean enabled) {
         source.sendFeedback(Component.literal(
-                "BO diagnosetool " + tool.id()
+                "BO debug " + tool.id()
                         + ' ' + onOff(enabled)
+                        + (enabled
+                                ? " expiresIn=" + DiagnosticToolRegistry.formatRemaining(DiagnosticToolRegistry.remainingMillis(tool))
+                                : "")
                         + ". Log prefix " + DiagnosticLog.prefix(tool) + ". This only controls the local client."
         ));
-        return Command.SINGLE_SUCCESS;
-    }
-
-    private static LiteralArgumentBuilder<FabricClientCommandSource> clientDiagnoseTopic(DiagnosticRuntimeSwitch.Topic topic) {
-        return literal(topic.id())
-                .then(literal("on")
-                        .executes(context -> setDiagnoseTopic(context.getSource(), topic, true)))
-                .then(literal("off")
-                        .executes(context -> setDiagnoseTopic(context.getSource(), topic, false)));
-    }
-
-    private static int diagnoseStatus(FabricClientCommandSource source) {
-        source.sendFeedback(Component.literal(
-                DiagnosticRuntimeSwitch.statusText()
-                        + ". This only controls the local client."
-        ));
-        return Command.SINGLE_SUCCESS;
-    }
-
-    private static int setDiagnoseTopic(FabricClientCommandSource source, DiagnosticRuntimeSwitch.Topic topic, boolean enabled) {
-        DiagnosticRuntimeSwitch.setEnabled(topic, enabled);
-        source.sendFeedback(Component.literal(
-                "BO client diagnose " + topic.id() + ' ' + onOff(enabled) + ". " + DiagnosticRuntimeSwitch.statusText()
-        ));
-        return Command.SINGLE_SUCCESS;
-    }
-
-    private static int setDiagnoseAll(FabricClientCommandSource source, boolean enabled) {
-        DiagnosticRuntimeSwitch.setAll(enabled);
-        source.sendFeedback(Component.literal(
-                "BO client diagnose all " + onOff(enabled) + ". " + DiagnosticRuntimeSwitch.statusText()
-        ));
-        return Command.SINGLE_SUCCESS;
     }
 
     private static int disableAllDiagnostics(FabricClientCommandSource source) {

@@ -16,7 +16,7 @@ public final class ChannelTransportCompressionCommand {
     private ChannelTransportCompressionCommand() {}
 
     public static ArgumentBuilder<CommandSourceStack, ?> buildCommand() {
-        return Commands.literal("transportreport")
+        return Commands.literal("transport")
                 .executes(context -> root(context.getSource()))
                 .then(Commands.literal("run")
                         .executes(context -> run(context.getSource(), DEFAULT_CAPTURE_TICKS))
@@ -31,7 +31,7 @@ public final class ChannelTransportCompressionCommand {
 
     private static int root(CommandSourceStack source) {
         CommandSourceCompat.sendSuccess(source, Component.literal(
-                "Transport report commands: /bandwidthoptimizer test transportreport run [ticks] | status"
+                "Transport report commands: /bandwidthoptimizer report transport run [ticks] | status"
                         + " ; defaultTicks=" + DEFAULT_CAPTURE_TICKS
         ), false);
         return Command.SINGLE_SUCCESS;

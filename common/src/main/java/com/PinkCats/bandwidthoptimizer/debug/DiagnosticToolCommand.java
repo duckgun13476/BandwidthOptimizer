@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.debug;
 
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.CommandSourceCompat;
 import com.mojang.brigadier.Command;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -12,9 +13,15 @@ public final class DiagnosticToolCommand {
     private DiagnosticToolCommand() {}
 
     public static LiteralArgumentBuilder<CommandSourceStack> buildCommand() {
-        LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("diagnosetool")
+        LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("debug")
                 .requires(source -> source.hasPermission(2))
-                .executes(context -> list(context.getSource()));
+                .executes(context -> list(context.getSource()))
+                .then(Commands.literal("status")
+                        .executes(context -> list(context.getSource())))
+                .then(Commands.literal("list")
+                        .executes(context -> list(context.getSource())))
+                .then(Commands.literal("off")
+                        .executes(context -> disableAll(context.getSource())));
 
         for (DiagnosticToolRegistry.Tool tool : DiagnosticToolRegistry.Tool.values()) {
             root.then(toolCommand(tool));
@@ -25,17 +32,32 @@ public final class DiagnosticToolCommand {
     private static LiteralArgumentBuilder<CommandSourceStack> toolCommand(DiagnosticToolRegistry.Tool tool) {
         return Commands.literal(tool.id())
                 .executes(context -> toggle(context.getSource(), tool))
-                .then(Commands.literal("on")
-                        .executes(context -> set(context.getSource(), tool, true)))
-                .then(Commands.literal("off")
-                        .executes(context -> set(context.getSource(), tool, false)));
+                .then(Commands.argument("minutes", IntegerArgumentType.integer(
+                                DiagnosticToolRegistry.MIN_MINUTES,
+                                DiagnosticToolRegistry.MAX_MINUTES
+                        ))
+                        .executes(context -> enableFor(
+                                context.getSource(),
+                                tool,
+                                IntegerArgumentType.getInteger(context, "minutes")
+                        )));
     }
 
     private static int list(CommandSourceStack source) {
         CommandSourceCompat.sendSuccess(source, Component.literal(
                 DiagnosticToolRegistry.listText()
-                        + "\nUse /bandwidthoptimizer diagnosetool <name> to toggle once on, once off."
+                        + "\nUse /bandwidthoptimizer debug <name> to toggle for 30m, "
+                        + "/bandwidthoptimizer debug <name> <5-300> to enable for minutes, "
+                        + "or /bandwidthoptimizer debug off."
         ), false);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int disableAll(CommandSourceStack source) {
+        DiagnosticSilencer.disableAll();
+        CommandSourceCompat.sendSuccess(source, Component.literal(
+                DiagnosticSilencer.disabledText("server")
+        ), true);
         return Command.SINGLE_SUCCESS;
     }
 
@@ -45,9 +67,9 @@ public final class DiagnosticToolCommand {
         return Command.SINGLE_SUCCESS;
     }
 
-    private static int set(CommandSourceStack source, DiagnosticToolRegistry.Tool tool, boolean enabled) {
-        DiagnosticToolRegistry.setEnabled(tool, enabled);
-        sendToolState(source, tool, enabled, "set");
+    private static int enableFor(CommandSourceStack source, DiagnosticToolRegistry.Tool tool, int minutes) {
+        DiagnosticToolRegistry.enable(tool, minutes);
+        sendToolState(source, tool, true, "set");
         return Command.SINGLE_SUCCESS;
     }
 
@@ -58,9 +80,12 @@ public final class DiagnosticToolCommand {
             String action
     ) {
         CommandSourceCompat.sendSuccess(source, Component.literal(
-                "BO diagnosetool " + tool.id()
+                "BO debug " + tool.id()
                         + ' ' + action
                         + ' ' + (enabled ? "on" : "off")
+                        + (enabled
+                                ? " expiresIn=" + DiagnosticToolRegistry.formatRemaining(DiagnosticToolRegistry.remainingMillis(tool))
+                                : "")
                         + " cost=" + tool.cost().label()
                         + ". Log prefix " + DiagnosticLog.prefix(tool)
         ), true);

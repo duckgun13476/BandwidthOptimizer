@@ -31,7 +31,7 @@ public final class DiagnosticRuntimeSwitch {
     }
 
     public static String statusText() {
-        StringBuilder builder = new StringBuilder("BO diagnose:");
+        StringBuilder builder = new StringBuilder("BO legacy debug:");
         for (Topic topic : Topic.values()) {
             builder.append(' ')
                     .append(topic.id())

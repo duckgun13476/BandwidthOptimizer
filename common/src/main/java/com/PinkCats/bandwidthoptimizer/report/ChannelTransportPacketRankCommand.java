@@ -32,7 +32,7 @@ public final class ChannelTransportPacketRankCommand {
 
     private static int root(CommandSourceStack source) {
         CommandSourceCompat.sendSuccess(source, Component.literal(
-                "Packet rank commands: /bandwidthoptimizer test packetrank run [ticks] | status"
+                "Packet rank commands: /bandwidthoptimizer report packetrank run [ticks] | status"
                         + " ; defaultTicks=" + DEFAULT_CAPTURE_TICKS
         ), false);
         return Command.SINGLE_SUCCESS;

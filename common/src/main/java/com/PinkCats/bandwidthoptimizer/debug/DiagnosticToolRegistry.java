@@ -2,8 +2,13 @@ package com.PinkCats.bandwidthoptimizer.debug;
 
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 public final class DiagnosticToolRegistry {
+
+    public static final int DEFAULT_MINUTES = 30;
+    public static final int MIN_MINUTES = 5;
+    public static final int MAX_MINUTES = 300;
 
     private DiagnosticToolRegistry() {}
 
@@ -11,6 +16,7 @@ public final class DiagnosticToolRegistry {
         if (tool == null) {
             return false;
         }
+        expireIfNeeded(tool, System.currentTimeMillis());
         return tool.enabled.get();
     }
 
@@ -22,6 +28,11 @@ public final class DiagnosticToolRegistry {
             boolean current = tool.enabled.get();
             boolean next = !current;
             if (tool.enabled.compareAndSet(current, next)) {
+                if (next) {
+                    tool.expiresAtMillis.set(expiresAtMillis(DEFAULT_MINUTES));
+                } else {
+                    tool.expiresAtMillis.set(0L);
+                }
                 return next;
             }
         }
@@ -30,7 +41,19 @@ public final class DiagnosticToolRegistry {
     public static void setEnabled(Tool tool, boolean enabled) {
         if (tool != null) {
             tool.enabled.set(enabled);
+            tool.expiresAtMillis.set(enabled ? expiresAtMillis(DEFAULT_MINUTES) : 0L);
         }
+    }
+
+    public static void enable(Tool tool, int minutes) {
+        if (tool != null) {
+            tool.expiresAtMillis.set(expiresAtMillis(minutes));
+            tool.enabled.set(true);
+        }
+    }
+
+    public static void disable(Tool tool) {
+        setEnabled(tool, false);
     }
 
     public static void setAll(boolean enabled) {
@@ -39,19 +62,68 @@ public final class DiagnosticToolRegistry {
         }
     }
 
+    public static long remainingMillis(Tool tool) {
+        if (tool == null || !isEnabled(tool)) {
+            return 0L;
+        }
+        long expiresAt = tool.expiresAtMillis.get();
+        if (expiresAt <= 0L) {
+            return 0L;
+        }
+        return Math.max(0L, expiresAt - System.currentTimeMillis());
+    }
+
+    public static int validateMinutes(int minutes) {
+        if (minutes < MIN_MINUTES || minutes > MAX_MINUTES) {
+            throw new IllegalArgumentException(
+                    "Diagnostic duration must be between " + MIN_MINUTES + " and " + MAX_MINUTES + " minutes."
+            );
+        }
+        return minutes;
+    }
+
     public static String listText() {
-        StringBuilder builder = new StringBuilder("BO diagnosetool:");
+        StringBuilder builder = new StringBuilder("BO debug tools:");
         for (Tool tool : Tool.values()) {
+            boolean enabled = isEnabled(tool);
             builder.append('\n')
                     .append(tool.cost().label())
                     .append(' ')
                     .append(tool.id())
                     .append('=')
-                    .append(isEnabled(tool) ? "on" : "off")
+                    .append(enabled ? "on" : "off");
+            if (enabled) {
+                builder.append(" expiresIn=").append(formatRemaining(remainingMillis(tool)));
+            }
+            builder
                     .append(" - ")
                     .append(tool.description());
         }
         return builder.toString();
+    }
+
+    public static String formatRemaining(long millis) {
+        long seconds = Math.max(0L, (millis + 999L) / 1000L);
+        long minutes = seconds / 60L;
+        long remainingSeconds = seconds % 60L;
+        if (minutes > 0L) {
+            return remainingSeconds == 0L ? minutes + "m" : minutes + "m" + remainingSeconds + "s";
+        }
+        return remainingSeconds + "s";
+    }
+
+    private static void expireIfNeeded(Tool tool, long nowMillis) {
+        if (!tool.enabled.get()) {
+            return;
+        }
+        long expiresAt = tool.expiresAtMillis.get();
+        if (expiresAt > 0L && nowMillis >= expiresAt && tool.enabled.compareAndSet(true, false)) {
+            tool.expiresAtMillis.compareAndSet(expiresAt, 0L);
+        }
+    }
+
+    private static long expiresAtMillis(int minutes) {
+        return System.currentTimeMillis() + validateMinutes(minutes) * 60_000L;
     }
 
     public enum Cost {
@@ -196,6 +268,7 @@ public final class DiagnosticToolRegistry {
         private final Cost cost;
         private final String description;
         private final AtomicBoolean enabled = new AtomicBoolean();
+        private final AtomicLong expiresAtMillis = new AtomicLong();
 
         Tool(String id, Cost cost, String description) {
             this.id = id;
