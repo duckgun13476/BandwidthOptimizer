@@ -1,3 +1,9 @@
+#### v2.9.18.55-release
+1. Fixed persistent chunk cache I/O pressure during fast exploration.
+2. Added on-demand diagnostics and server BO log export.
+3. Reduced transport diagnostic overhead and added hot-path cost tracing.
+4. Fixed zstd transport session cleanup.
+
 #### v2.8.16.40-release
 
 1. Added Brazilian Portuguese localization.
