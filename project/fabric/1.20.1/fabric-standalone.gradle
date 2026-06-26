@@ -60,11 +60,22 @@ repositories {
 }
 
 configurations {
-    bundledLibs
+    embeddedRuntimeLibs {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
 }
 
 configurations.configureEach {
     resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+}
+
+def embeddedRuntimeLibsOutputDir = layout.buildDirectory.dir('generated/boEmbeddedRuntimeLibs')
+
+tasks.register('prepareEmbeddedRuntimeLibs', Copy) {
+    from(configurations.embeddedRuntimeLibs)
+    into(embeddedRuntimeLibsOutputDir.map { it.dir('META-INF/bandwidthoptimizer/libs') })
 }
 
 dependencies {
@@ -81,9 +92,9 @@ dependencies {
     compileOnly("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}") {
         changing = true
     }
-    implementation "com.github.luben:zstd-jni:${zstdJniVersion}"
-    include "com.github.luben:zstd-jni:${zstdJniVersion}"
-    bundledLibs "com.github.luben:zstd-jni:${zstdJniVersion}"
+    compileOnly "com.github.luben:zstd-jni:${zstdJniVersion}"
+    testRuntimeOnly "com.github.luben:zstd-jni:${zstdJniVersion}"
+    embeddedRuntimeLibs "com.github.luben:zstd-jni:${zstdJniVersion}"
 }
 
 sourceSets {
@@ -138,17 +149,14 @@ processResources {
 }
 
 tasks.named('jar', Jar).configure {
+    dependsOn tasks.named('prepareEmbeddedRuntimeLibs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
         attributes([
                 "MixinConfigs": "bandwidthoptimizer.mixins.json"
         ])
     }
-    from {
-        configurations.bundledLibs.collect { dependency -> zipTree(dependency) }
-    } {
-        exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
-    }
+    from(embeddedRuntimeLibsOutputDir)
 }
 
 tasks.withType(Jar).configureEach {

@@ -1,7 +1,7 @@
 
 tasks.register('verifyFabricPublishJarContents') {
     group = 'Publishing'
-    description = 'Verify Fabric publish jar contains metadata, mixin config, entrypoint class, TorqueAPI and zstd-jni.'
+    description = 'Verify Fabric publish jar contains metadata, mixin config, entrypoint class, TorqueAPI and private zstd-jni runtime resource.'
     dependsOn tasks.named(boReadPublishArtifactTaskName())
 
     doLast {
@@ -32,10 +32,10 @@ tasks.register('verifyFabricPublishJarContents') {
             }
 
             boolean hasZstdJar = entries.any { entryName ->
-                entryName.startsWith('META-INF/jars/zstd-jni-') && entryName.endsWith('.jar')
+                entryName.startsWith('META-INF/bandwidthoptimizer/libs/zstd-jni-') && entryName.endsWith('.jar')
             }
             if (!hasZstdJar) {
-                missing.add('META-INF/jars/zstd-jni-*.jar')
+                missing.add('META-INF/bandwidthoptimizer/libs/zstd-jni-*.jar')
             }
 
             Set<String> declaredRefmaps = []

@@ -120,7 +120,11 @@ repositories {
 }
 
 configurations {
-    bundledLibs
+    embeddedRuntimeLibs {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
 }
 
 configurations.configureEach {
@@ -135,6 +139,13 @@ ext.bo_mapped_create_runtime_mods = [
 ]
 apply from: rootProject.file('gradle/torque-embed-modern.gradle')
 
+def embeddedRuntimeLibsOutputDir = layout.buildDirectory.dir('generated/boEmbeddedRuntimeLibs')
+
+tasks.register('prepareEmbeddedRuntimeLibs', Copy) {
+    from(configurations.embeddedRuntimeLibs)
+    into(embeddedRuntimeLibsOutputDir.map { it.dir('META-INF/bandwidthoptimizer/libs') })
+}
+
 dependencies {
     String zstdJniVersion = '1.5.7-7'
 
@@ -148,9 +159,9 @@ dependencies {
         changing = true
         transitive = false
     }
-    implementation "com.github.luben:zstd-jni:${zstdJniVersion}"
-    minecraftLibrary "com.github.luben:zstd-jni:${zstdJniVersion}"
-    bundledLibs "com.github.luben:zstd-jni:${zstdJniVersion}"
+    compileOnly "com.github.luben:zstd-jni:${zstdJniVersion}"
+    testRuntimeOnly "com.github.luben:zstd-jni:${zstdJniVersion}"
+    embeddedRuntimeLibs "com.github.luben:zstd-jni:${zstdJniVersion}"
 
     // Local Create test runtime.
     bo_mapped_create_runtime_mods.each { String jarPath ->
@@ -178,6 +189,7 @@ tasks.named('processResources', ProcessResources).configure {
 }
 
 tasks.named('jar', Jar).configure {
+    dependsOn tasks.named('prepareEmbeddedRuntimeLibs')
     archiveFileName = "${package_name}-${mod_version}-forge-${minecraft_version}.jar"
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
@@ -191,13 +203,7 @@ tasks.named('jar', Jar).configure {
                     "MixinConfigs"            : "${mod_id}.mixins.json"])
     }
 
-    from {
-        configurations.bundledLibs.collect { dependency ->
-            zipTree(dependency)
-        }
-    } {
-        exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
-    }
+    from(embeddedRuntimeLibsOutputDir)
 
     finalizedBy 'reobfJar'
 }

@@ -136,7 +136,6 @@ dependencies {
     }
     compileOnly "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
     testRuntimeOnly "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
-    minecraftLibrary "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
     embeddedRuntimeLibs "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
     runtimeOnly "io.github.llamalad7:mixinextras-forge:0.4.1"
 

@@ -232,7 +232,6 @@ dependencies {
     }
     compileOnly "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
     testRuntimeOnly "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
-    additionalRuntimeClasspath "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
     embeddedRuntimeLibs "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
 }
 
