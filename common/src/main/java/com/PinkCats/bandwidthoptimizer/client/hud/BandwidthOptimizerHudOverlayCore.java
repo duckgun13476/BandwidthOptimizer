@@ -39,7 +39,11 @@ final class BandwidthOptimizerHudOverlayCore {
     }
 
     static boolean shouldRender(Minecraft minecraft) {
-        return minecraft != null && enabled && !minecraft.options.hideGui && minecraft.player != null;
+        return minecraft != null
+                && enabled
+                && !minecraft.options.hideGui
+                && minecraft.player != null
+                && minecraft.screen == null;
     }
 
     static CachedHud currentHud(Minecraft minecraft) {
@@ -302,7 +306,7 @@ final class BandwidthOptimizerHudOverlayCore {
 
 
     private static String buildTitleLine() {
-        return text("hud.bandwidthoptimizer.title") + " (" + Bandwidthoptimizer.displayVersion() + " beta)";
+        return text("hud.bandwidthoptimizer.title") + " (" + Bandwidthoptimizer.displayVersion() + ")";
     }
 
     private static boolean lineStartsWithText(String trimmedLine, String key) {

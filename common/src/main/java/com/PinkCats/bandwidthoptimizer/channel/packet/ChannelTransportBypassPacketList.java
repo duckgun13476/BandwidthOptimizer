@@ -81,6 +81,8 @@ public final class ChannelTransportBypassPacketList {
             "net.minecraft.network.protocol.game.ClientboundBundleDelimiterPacket",
             "net.minecraft.network.protocol.game.ClientboundChunkBatchFinishedPacket",
             "net.minecraft.network.protocol.game.ClientboundChunkBatchStartPacket",
+            "net.minecraft.network.protocol.game.ClientboundRecipePacket",
+            "net.minecraft.network.protocol.game.ClientboundUpdateRecipesPacket",
             "net.minecraft.network.protocol.game.ClientboundDamageEventPacket",
             "net.minecraft.network.protocol.game.ClientboundHurtAnimationPacket",
             "net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket",

@@ -147,24 +147,22 @@ public final class ChannelTransportControlPlane {
         String packetClassName = packetClassName(packet);
         if (packetClassName.endsWith("ClientboundUpdateRecipesPacket")
                 || packetClassName.endsWith("ClientboundRecipePacket")) {
-            return ListenerTransportPolicy.IMMEDIATE_TRANSPORT;
+            return ListenerTransportPolicy.DIRECT;
         }
         return ListenerTransportPolicy.DIRECT;
     }
 
     private static ImmediateTransportProfile classifyImmediateTransport(Packet<?> packet) {
         String packetClassName = packetClassName(packet);
-        if (packetClassName.endsWith("ClientboundUpdateRecipesPacket")) {
-            return new ImmediateTransportProfile("packet_class_immediate_transport:" + packetClassName);
-        }
-        if (packetClassName.endsWith("ClientboundRecipePacket")) {
-            return new ImmediateTransportProfile("packet_class_immediate_transport:" + packetClassName);
-        }
         return ImmediateTransportProfile.NONE;
     }
 
     private static BoundaryProfile classifyBoundary(Packet<?> packet) {
         String packetClassName = packetClassName(packet);
+        if (packetClassName.endsWith("ClientboundUpdateRecipesPacket")
+                || packetClassName.endsWith("ClientboundRecipePacket")) {
+            return BoundaryProfile.strong(packetClassName);
+        }
         if (packetClassName.endsWith("ClientboundLoginPacket")
                 || packetClassName.endsWith("ClientboundRespawnPacket")
                 || packetClassName.endsWith("ClientboundPlayerPositionPacket")
