@@ -55,6 +55,9 @@ public final class ExperientAutoConnectController {
             if (maybeDisconnectForRejoinCycle(minecraft)) {
                 return;
             }
+            if (maybeStopClientAfterFinalConnectedSample(minecraft)) {
+                return;
+            }
             return;
         }
 
@@ -158,6 +161,28 @@ public final class ExperientAutoConnectController {
                 rejoinDelayTicksRemaining
         );
         minecraft.clearLevel(new JoinMultiplayerScreen(new TitleScreen()));
+        return true;
+    }
+
+    private static boolean maybeStopClientAfterFinalConnectedSample(Minecraft minecraft) {
+        if (!shouldUseRunAllMarkerExit() || completedRejoinCycles < readRejoinCycles()) {
+            return false;
+        }
+
+        connectedTicks++;
+        int requiredConnectedTicks = readRejoinConnectedTicks();
+        if (connectedTicks < requiredConnectedTicks) {
+            return false;
+        }
+
+        if (!shutdownAfterDisconnectLogged) {
+            shutdownAfterDisconnectLogged = true;
+            Bandwidthoptimizer.LOGGER.info(
+                    "[ExperientAutoConnect] Final connected sample reached after {} ticks, stopping client process.",
+                    connectedTicks
+            );
+        }
+        minecraft.stop();
         return true;
     }
 
@@ -335,6 +360,10 @@ public final class ExperientAutoConnectController {
                 Config.RuntimeProperty.Experient.DEFAULT_AUTO_CONNECT_REJOIN_DELAY_TICKS,
                 "rejoin delay ticks"
         );
+    }
+
+    private static boolean shouldUseRunAllMarkerExit() {
+        return Boolean.parseBoolean(System.getProperty(Config.RuntimeProperty.Experient.RUN_ALL_MARKER_EXIT, "false"));
     }
 
     private static int readNonNegativeIntProperty(String propertyName, int fallbackValue, String label) {
