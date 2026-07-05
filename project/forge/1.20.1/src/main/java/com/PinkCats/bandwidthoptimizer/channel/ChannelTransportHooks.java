@@ -97,7 +97,13 @@ public final class ChannelTransportHooks {
         PacketFlow outboundPacketFlow = resolvePacketFlow(packetEncoderFlowAccess, readConnectionProtocolOrNull(context), packet);
         CreateBlockEntityUpdateGate.observeOutboundPacket(context, protocolName, outboundPacketFlow, packet);
         ChunkLoadDelayProbe.logVanillaLevelChunkPacketOutbound(context, packet, originalPacketBytes.length);
-        if (CreateBlockEntityUpdateGate.tryDelayOutboundPacket(context, protocolName, outboundPacketFlow, packet, originalPacketBytes)) {
+        if (!CreateBlockEntityUpdateGate.shouldBypassCreateGateDelay(context, protocolName, outboundPacketFlow, packet)
+                && CreateBlockEntityUpdateGate.tryDelayOutboundPacket(
+                        context,
+                        protocolName,
+                        outboundPacketFlow,
+                        packet,
+                        originalPacketBytes)) {
             out.writerIndex(startIndexInclusive);
             return;
         }
@@ -1491,6 +1497,10 @@ public final class ChannelTransportHooks {
         }
         //Sable compat
         if (SableChunkSyncCompat.shouldBypassTransparentTransport(context, protocolName, packet)) {
+            ChannelTransportBatchManager.flushOutboundBatchNow(context);
+            return true;
+        }
+        if (CreateBlockEntityUpdateGate.shouldBypassTransparentTransport(context, protocolName, packetFlow, packet)) {
             ChannelTransportBatchManager.flushOutboundBatchNow(context);
             return true;
         }

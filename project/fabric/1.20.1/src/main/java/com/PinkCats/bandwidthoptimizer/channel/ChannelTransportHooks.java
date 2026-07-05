@@ -91,7 +91,13 @@ public final class ChannelTransportHooks {
         byte[] originalPacketBytes = ByteBufUtil.getBytes(out, startIndexInclusive, endIndexExclusive - startIndexInclusive, false);
         PacketFlow outboundPacketFlow = resolvePacketFlow(packetEncoderFlowAccess, readConnectionProtocolOrNull(context), packet);
         CreateBlockEntityUpdateGate.observeOutboundPacket(context, protocolName, outboundPacketFlow, packet);
-        if (CreateBlockEntityUpdateGate.tryDelayOutboundPacket(context, protocolName, outboundPacketFlow, packet, originalPacketBytes)) {
+        if (!CreateBlockEntityUpdateGate.shouldBypassCreateGateDelay(context, protocolName, outboundPacketFlow, packet)
+                && CreateBlockEntityUpdateGate.tryDelayOutboundPacket(
+                        context,
+                        protocolName,
+                        outboundPacketFlow,
+                        packet,
+                        originalPacketBytes)) {
             out.writerIndex(startIndexInclusive);
             return;
         }
@@ -1352,6 +1358,10 @@ public final class ChannelTransportHooks {
             return true;
         }
         if (shouldBypassServerboundTransparentTransport(packetFlow)) {
+            ChannelTransportBatchManager.flushOutboundBatchNow(context);
+            return true;
+        }
+        if (CreateBlockEntityUpdateGate.shouldBypassTransparentTransport(context, protocolName, packetFlow, packet)) {
             ChannelTransportBatchManager.flushOutboundBatchNow(context);
             return true;
         }

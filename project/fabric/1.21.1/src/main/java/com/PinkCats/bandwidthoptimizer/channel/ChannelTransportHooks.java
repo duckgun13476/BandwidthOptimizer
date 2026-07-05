@@ -97,7 +97,13 @@ public final class ChannelTransportHooks {
         HotpathCostProbe.end("hook.copyAndResolve", hotpathStartNanos);
         hotpathStartNanos = HotpathCostProbe.start();
         CreateBlockEntityUpdateGate.observeOutboundPacket(context, protocolName, outboundPacketFlow, packet);
-        if (CreateBlockEntityUpdateGate.tryDelayOutboundPacket(context, protocolName, outboundPacketFlow, packet, originalPacketBytes)) {
+        if (!CreateBlockEntityUpdateGate.shouldBypassCreateGateDelay(context, protocolName, outboundPacketFlow, packet)
+                && CreateBlockEntityUpdateGate.tryDelayOutboundPacket(
+                        context,
+                        protocolName,
+                        outboundPacketFlow,
+                        packet,
+                        originalPacketBytes)) {
             HotpathCostProbe.end("hook.createGate", hotpathStartNanos);
             out.writerIndex(startIndexInclusive);
             return;
@@ -1393,6 +1399,10 @@ public final class ChannelTransportHooks {
         }
         //Sable compat
         if (SableChunkSyncCompat.shouldBypassTransparentTransport(context, protocolName, packet)) {
+            ChannelTransportBatchManager.flushOutboundBatchNow(context);
+            return true;
+        }
+        if (CreateBlockEntityUpdateGate.shouldBypassTransparentTransport(context, protocolName, packetFlow, packet)) {
             ChannelTransportBatchManager.flushOutboundBatchNow(context);
             return true;
         }

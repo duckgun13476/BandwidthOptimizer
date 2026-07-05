@@ -22,9 +22,15 @@ import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -52,6 +58,8 @@ public final class CreateBlockEntityUpdateGate {
     private static final AtomicLong SUPERSEDED_SAVED_BYTES = new AtomicLong();
     private static final AtomicLong RELEASED_BYTES = new AtomicLong();
     private static final AtomicLong DROPPED_SAVED_BYTES = new AtomicLong();
+    private static final AtomicLong LAST_CREATE_CONTRAPTION_FALLBACK_WARN_NANOS = new AtomicLong();
+    private static final long CREATE_CONTRAPTION_FALLBACK_WARN_INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(5L);
     private static final Set<String> MECHANICAL_BLOCK_ENTITY_TYPES = Set.of(
             "simple_kinetic",
             "creative_motor",
@@ -126,16 +134,27 @@ public final class CreateBlockEntityUpdateGate {
     );
     private static final Set<String> IMMEDIATE_CONTROL_BLOCK_ENTITY_TYPES = Set.of(
             "analog_lever",
-            "contraption_controls",
             "desk_bell",
             "elevator_contact",
-            "elevator_pulley",
             "factory_panel",
             "lectern_controller",
             "redstone_link",
             "redstone_requester",
             "sliding_door",
             "stock_ticker"
+    );
+    private static final Set<String> MOVING_CONTRAPTION_CONTROLLER_TYPES = Set.of(
+            "mechanical_piston",
+            "windmill_bearing",
+            "mechanical_bearing",
+            "clockwork_bearing",
+            "rope_pulley",
+            "hose_pulley",
+            "elevator_pulley",
+            "gantry_shaft",
+            "gantry_pinion",
+            "cart_assembler",
+            "contraption_controls"
     );
     private CreateBlockEntityUpdateGate() {}
 
@@ -236,9 +255,12 @@ public final class CreateBlockEntityUpdateGate {
         }
         PendingKey key = PendingKey.of(blockEntityTypeKey, blockEntityDataPacket.getPos());
         boolean soundCritical = state.rememberSoundStateAndShouldFlush(key, blockEntityDataPacket.getTag());
-        DynamicTarget dynamicTarget = resolveDynamicTarget(player, blockEntityDataPacket.getPos());
+        DynamicTarget dynamicTarget = resolveDynamicTarget(player, blockEntityDataPacket.getPos(), blockEntityTypeKey);
         if (dynamicTarget.forceImmediate()
-                || shouldSendImmediately(player, dynamicTarget.points(), !chunkBootstrapActive)
+                || shouldSendImmediately(
+                        player,
+                        dynamicTarget.points(),
+                        allowLookDirectionForGatedUpdate(blockEntityTypeKey, chunkBootstrapActive))
                 || soundCritical && isWithinSoundSendDistance(player, dynamicTarget.target(), blockEntityTypeKey)) {
             recordDropped(state.forgetPending(key));
             return false;
@@ -429,9 +451,12 @@ public final class CreateBlockEntityUpdateGate {
         boolean chunkBootstrapActive = state.isChunkBootstrapActive(nowNanos);
         PendingKey key = PendingKey.of(blockEntityTypeKey, blockEntityDataPacket.getPos());
         boolean soundCritical = state.rememberSoundStateAndShouldFlush(key, blockEntityDataPacket.getTag());
-        DynamicTarget dynamicTarget = resolveDynamicTarget(player, blockEntityDataPacket.getPos());
+        DynamicTarget dynamicTarget = resolveDynamicTarget(player, blockEntityDataPacket.getPos(), blockEntityTypeKey);
         if (dynamicTarget.forceImmediate()
-                || shouldSendImmediately(player, dynamicTarget.points(), !chunkBootstrapActive)
+                || shouldSendImmediately(
+                        player,
+                        dynamicTarget.points(),
+                        allowLookDirectionForGatedUpdate(blockEntityTypeKey, chunkBootstrapActive))
                 || soundCritical && isWithinSoundSendDistance(player, dynamicTarget.target(), blockEntityTypeKey)) {
             recordDropped(state.forgetPending(key));
             return false;
@@ -493,6 +518,42 @@ public final class CreateBlockEntityUpdateGate {
                 lookDotThreshold());
     }
 
+    public static boolean shouldBypassTransparentTransport(
+            ChannelHandlerContext context,
+            String protocolName,
+            PacketFlow packetFlow,
+            Packet<?> packet
+    ) {
+        if (!isEnabled()
+                || context == null
+                || packet == null
+                || packetFlow != PacketFlow.CLIENTBOUND
+                || protocolName == null
+                || !"PLAY".equalsIgnoreCase(protocolName)
+                || !(packet instanceof ClientboundBlockEntityDataPacket blockEntityDataPacket)) {
+            return false;
+        }
+        ResourceLocation blockEntityTypeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityDataPacket.getType());
+        if (!isVisibleRawBypassController(blockEntityTypeKey)) {
+            return false;
+        }
+        ServerPlayer player = resolvePlayer(context);
+        if (player == null) {
+            return false;
+        }
+        DynamicTarget dynamicTarget = resolveDynamicTarget(player, blockEntityDataPacket.getPos(), blockEntityTypeKey);
+        return dynamicTarget.forceImmediate() || shouldSendImmediately(player, dynamicTarget.points(), true);
+    }
+
+    public static boolean shouldBypassCreateGateDelay(
+            ChannelHandlerContext context,
+            String protocolName,
+            PacketFlow packetFlow,
+            Packet<?> packet
+    ) {
+        return shouldBypassTransparentTransport(context, protocolName, packetFlow, packet);
+    }
+
     private static boolean isAnyPointInImmediateView(
             Vec3 eyePosition,
             Vec3 lookAngle,
@@ -540,6 +601,20 @@ public final class CreateBlockEntityUpdateGate {
     private static boolean isImmediateControlBlockEntity(ResourceLocation typeKey) {
         return isCreateBlockEntity(typeKey)
                 && IMMEDIATE_CONTROL_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
+    }
+
+    private static boolean isMovingContraptionController(ResourceLocation typeKey) {
+        return isCreateBlockEntity(typeKey)
+                && MOVING_CONTRAPTION_CONTROLLER_TYPES.contains(typeKey.getPath());
+    }
+
+    private static boolean isVisibleRawBypassController(ResourceLocation typeKey) {
+        return isCreateBlockEntity(typeKey)
+                && "mechanical_piston".equals(typeKey.getPath());
+    }
+
+    private static boolean allowLookDirectionForGatedUpdate(ResourceLocation typeKey, boolean chunkBootstrapActive) {
+        return isVisibleRawBypassController(typeKey) || !chunkBootstrapActive;
     }
 
     // Keep interactive controls out of delayed merging.
@@ -631,9 +706,17 @@ public final class CreateBlockEntityUpdateGate {
         return player.getEyePosition().distanceToSqr(target) <= soundDistance * soundDistance;
     }
 
-    private static DynamicTarget resolveDynamicTarget(ServerPlayer player, BlockPos pos) {
+    private static DynamicTarget resolveDynamicTarget(ServerPlayer player, BlockPos pos, ResourceLocation typeKey) {
         Vec3 vanillaTarget = centerOf(pos);
         Vec3[] vanillaPoints = cornersOf(pos);
+        if (isMovingContraptionController(typeKey)) {
+            DynamicTarget createTarget = resolveCreateContraptionTarget(player, pos);
+            if (createTarget != null) {
+                return createTarget;
+            }
+            warnCreateContraptionFallback(player, typeKey, pos);
+            return new DynamicTarget(vanillaTarget, vanillaPoints, true);
+        }
         SableDynamicStructureCompat.DynamicTarget sableTarget =
                 SableDynamicStructureCompat.resolveTarget(player, pos, vanillaTarget);
         if (sableTarget.forceImmediate()) {
@@ -656,6 +739,181 @@ public final class CreateBlockEntityUpdateGate {
                     resolvedPoints.forceImmediate());
         }
         return new DynamicTarget(vanillaTarget, vanillaPoints, false);
+    }
+
+    private static DynamicTarget resolveCreateContraptionTarget(ServerPlayer player, BlockPos pos) {
+        if (player == null || pos == null) {
+            return null;
+        }
+        Level level = player.level();
+        if (level == null) {
+            return null;
+        }
+        BlockEntity blockEntity = level.getBlockEntity(pos);
+        List<Entity> contraptions = new ArrayList<>();
+        collectCreateContraption(contraptions, invokeNoArg(blockEntity, "getAttachedContraption"));
+        collectCreateContraption(contraptions, invokeNoArg(blockEntity, "getMovedContraption"));
+        collectCreateContraption(contraptions, readField(blockEntity, "movedContraption"));
+        collectCreateContraption(contraptions, readField(blockEntity, "hourHand"));
+        collectCreateContraption(contraptions, readField(blockEntity, "minuteHand"));
+        collectCreateContraption(contraptions, readField(blockEntity, "sharedMirrorContraption"));
+        if (contraptions.isEmpty()) {
+            contraptions.addAll(scanNearbyCreateContraptions(level, pos));
+        }
+        AABB bounds = null;
+        for (Entity entity : contraptions) {
+            if (!isUsableCreateContraption(entity)) {
+                continue;
+            }
+            AABB entityBounds = entity.getBoundingBox();
+            if (entityBounds == null) {
+                continue;
+            }
+            bounds = bounds == null ? entityBounds : union(bounds, entityBounds);
+        }
+        if (bounds == null) {
+            return null;
+        }
+        return new DynamicTarget(centerOf(bounds), cornersOf(bounds), false);
+    }
+
+    private static List<Entity> scanNearbyCreateContraptions(Level level, BlockPos pos) {
+        if (level == null || pos == null) {
+            return List.of();
+        }
+        AABB searchBox = new AABB(
+                pos.getX() - 128.0D,
+                pos.getY() - 128.0D,
+                pos.getZ() - 128.0D,
+                pos.getX() + 129.0D,
+                pos.getY() + 129.0D,
+                pos.getZ() + 129.0D);
+        return level.getEntities((Entity) null, searchBox, entity ->
+                isUsableCreateContraption(entity) && isCreateContraptionNearController(entity, pos));
+    }
+
+    private static boolean isCreateContraptionNearController(Entity entity, BlockPos pos) {
+        if (entity == null || pos == null) {
+            return false;
+        }
+        Object anchor = invokeNoArg(entity, "getAnchorVec");
+        Vec3 target = anchor instanceof Vec3 anchorVec ? anchorVec : entity.position();
+        return target.distanceToSqr(centerOf(pos)) <= 128.0D * 128.0D;
+    }
+
+    private static boolean isUsableCreateContraption(Entity entity) {
+        return entity != null && !entity.isRemoved() && isCreateContraptionEntity(entity);
+    }
+
+    private static boolean isCreateContraptionEntity(Entity entity) {
+        Class<?> type = entity == null ? null : entity.getClass();
+        while (type != null) {
+            if ("com.simibubi.create.content.contraptions.AbstractContraptionEntity".equals(type.getName())) {
+                return true;
+            }
+            type = type.getSuperclass();
+        }
+        return false;
+    }
+
+    private static void collectCreateContraption(List<Entity> contraptions, Object value) {
+        if (contraptions == null || value == null) {
+            return;
+        }
+        if (value instanceof java.lang.ref.Reference<?> reference) {
+            collectCreateContraption(contraptions, reference.get());
+            return;
+        }
+        if (value instanceof Entity entity && isUsableCreateContraption(entity) && !contraptions.contains(entity)) {
+            contraptions.add(entity);
+        }
+    }
+
+    private static Object invokeNoArg(Object target, String methodName) {
+        if (target == null || methodName == null || methodName.isBlank()) {
+            return null;
+        }
+        Class<?> type = target.getClass();
+        while (type != null) {
+            try {
+                Method method = type.getDeclaredMethod(methodName);
+                method.setAccessible(true);
+                return method.invoke(target);
+            } catch (ReflectiveOperationException | LinkageError | SecurityException ignored) {
+                type = type.getSuperclass();
+            }
+        }
+        return null;
+    }
+
+    private static Object readField(Object target, String fieldName) {
+        if (target == null || fieldName == null || fieldName.isBlank()) {
+            return null;
+        }
+        Class<?> type = target.getClass();
+        while (type != null) {
+            try {
+                Field field = type.getDeclaredField(fieldName);
+                field.setAccessible(true);
+                return field.get(target);
+            } catch (ReflectiveOperationException | LinkageError | SecurityException ignored) {
+                type = type.getSuperclass();
+            }
+        }
+        return null;
+    }
+
+    private static AABB union(AABB first, AABB second) {
+        return new AABB(
+                Math.min(first.minX, second.minX),
+                Math.min(first.minY, second.minY),
+                Math.min(first.minZ, second.minZ),
+                Math.max(first.maxX, second.maxX),
+                Math.max(first.maxY, second.maxY),
+                Math.max(first.maxZ, second.maxZ));
+    }
+
+    private static Vec3 centerOf(AABB bounds) {
+        if (bounds == null) {
+            return null;
+        }
+        return new Vec3(
+                (bounds.minX + bounds.maxX) * 0.5D,
+                (bounds.minY + bounds.maxY) * 0.5D,
+                (bounds.minZ + bounds.maxZ) * 0.5D);
+    }
+
+    private static Vec3[] cornersOf(AABB bounds) {
+        if (bounds == null) {
+            return new Vec3[0];
+        }
+        return new Vec3[] {
+                new Vec3(bounds.minX, bounds.minY, bounds.minZ),
+                new Vec3(bounds.maxX, bounds.minY, bounds.minZ),
+                new Vec3(bounds.minX, bounds.maxY, bounds.minZ),
+                new Vec3(bounds.maxX, bounds.maxY, bounds.minZ),
+                new Vec3(bounds.minX, bounds.minY, bounds.maxZ),
+                new Vec3(bounds.maxX, bounds.minY, bounds.maxZ),
+                new Vec3(bounds.minX, bounds.maxY, bounds.maxZ),
+                new Vec3(bounds.maxX, bounds.maxY, bounds.maxZ),
+                centerOf(bounds)
+        };
+    }
+
+    private static void warnCreateContraptionFallback(ServerPlayer player, ResourceLocation typeKey, BlockPos pos) {
+        long nowNanos = System.nanoTime();
+        long previousNanos = LAST_CREATE_CONTRAPTION_FALLBACK_WARN_NANOS.get();
+        if (nowNanos - previousNanos < CREATE_CONTRAPTION_FALLBACK_WARN_INTERVAL_NANOS) {
+            return;
+        }
+        if (!LAST_CREATE_CONTRAPTION_FALLBACK_WARN_NANOS.compareAndSet(previousNanos, nowNanos)) {
+            return;
+        }
+        Bandwidthoptimizer.LOGGER.warn(
+                "[BO-CreateGate] Failed to resolve Create contraption bounds; sending update directly. player={}, type={}, pos={}",
+                player == null ? "<unknown>" : player.getGameProfile().getName(),
+                typeKey,
+                pos);
     }
 
     private static Vec3 centerOf(BlockPos pos) {
@@ -1088,9 +1346,17 @@ public final class CreateBlockEntityUpdateGate {
             while (iterator.hasNext()) {
                 Map.Entry<PendingKey, PendingUpdate> entry = iterator.next();
                 PendingUpdate pendingUpdate = entry.getValue();
-                DynamicTarget dynamicTarget = resolveDynamicTarget(player, pendingUpdate.key().pos());
+                DynamicTarget dynamicTarget = resolveDynamicTarget(
+                        player,
+                        pendingUpdate.key().pos(),
+                        pendingUpdate.key().typeKey());
                 boolean visible = dynamicTarget.forceImmediate()
-                        || shouldSendImmediately(player, dynamicTarget.points(), !chunkBootstrapActive);
+                        || shouldSendImmediately(
+                                player,
+                                dynamicTarget.points(),
+                                allowLookDirectionForGatedUpdate(
+                                        pendingUpdate.key().typeKey(),
+                                        chunkBootstrapActive));
                 boolean expired = !chunkBootstrapActive
                         && nowNanos - pendingUpdate.firstQueuedNanos() >= maxDelayNanos;
                 if (!visible && !expired) {

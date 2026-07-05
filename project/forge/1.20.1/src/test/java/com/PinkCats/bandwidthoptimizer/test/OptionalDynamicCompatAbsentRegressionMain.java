@@ -38,14 +38,15 @@ public final class OptionalDynamicCompatAbsentRegressionMain {
                 "rope_pulley",
                 "hose_pulley",
                 "elevator_pulley",
+                "gantry_shaft",
                 "gantry_pinion",
                 "cart_assembler",
                 "contraption_controls"
         }) {
             require(shouldGateCreateBlockEntity(dynamicController, false),
-                    "Create dynamic structure controllers must use the normal delayed gate: " + dynamicController);
+                    "Create dynamic structure controllers must use entity-aware gate: " + dynamicController);
             require(shouldGateCreateBlockEntity(dynamicController, true),
-                    "Create dynamic structure controllers must use the bootstrap delayed gate: " + dynamicController);
+                    "Create dynamic structure controllers must use entity-aware bootstrap gate: " + dynamicController);
         }
         require(shouldGateCreateBlockEntity("belt", false),
                 "Create mechanical block entities should still use the delayed gate");
