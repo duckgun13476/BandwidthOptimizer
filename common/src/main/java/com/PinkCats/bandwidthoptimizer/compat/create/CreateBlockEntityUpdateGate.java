@@ -6,6 +6,7 @@ import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.BlockEntityTypeKeyCompat;
+import com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat;
 import com.PinkCats.bandwidthoptimizer.compat.sable.SableDynamicStructureCompat;
 import com.PinkCats.bandwidthoptimizer.compat.valkyrienskies.ValkyrienSkiesDynamicStructureCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
@@ -745,7 +746,7 @@ public final class CreateBlockEntityUpdateGate {
         if (player == null || pos == null) {
             return null;
         }
-        Level level = player.level();
+        Level level = ServerPlayerLevelCompat.serverLevel(player);
         if (level == null) {
             return null;
         }
