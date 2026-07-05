@@ -21,11 +21,13 @@ import io.netty.channel.Channel;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
@@ -45,6 +47,7 @@ import java.util.stream.Stream;
 import java.util.zip.Deflater;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
 public final class ChunkPersistentClientCache {
@@ -60,6 +63,7 @@ public final class ChunkPersistentClientCache {
     private static final String BACKUP_ENABLED_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheBackupEnabled";
     private static final String BACKUP_INTERVAL_MILLIS_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheBackupMillis";
     private static final String MAX_PENDING_STORE_TASKS_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheMaxPendingStores";
+    private static final String MAX_PENDING_STORE_BYTES_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheMaxPendingStoreBytes";
     private static final boolean DEFAULT_ENABLED = true;
     private static final int DEFAULT_MANIFEST_LIMIT = 512;
     private static final int DEFAULT_MANIFEST_BATCH_ENTRIES = 512;
@@ -71,6 +75,7 @@ public final class ChunkPersistentClientCache {
     private static final boolean DEFAULT_BACKUP_ENABLED = true;
     private static final long DEFAULT_BACKUP_INTERVAL_MILLIS = 600_000L;
     private static final int DEFAULT_MAX_PENDING_STORE_TASKS = 2048;
+    private static final long DEFAULT_MAX_PENDING_STORE_BYTES = 64L * 1024L * 1024L;
     private static final int STORE_DRAIN_BATCH_LIMIT = 256;
     private static final Object LOCK = new Object();
     private static final Object FLUSH_LOCK = new Object();
@@ -78,6 +83,7 @@ public final class ChunkPersistentClientCache {
     private static final ConcurrentHashMap<String, Long> LAST_USED_UPDATES = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, PendingStoreRequest> PENDING_STORE_REQUESTS = new ConcurrentHashMap<>();
     private static final AtomicInteger PENDING_STORE_REQUEST_COUNT = new AtomicInteger();
+    private static final AtomicLong PENDING_STORE_REQUEST_BYTES = new AtomicLong();
     private static final AtomicBoolean STORE_DRAIN_QUEUED = new AtomicBoolean();
     private static final String ZIP_FILE_NAME = "client-persistent-chunk-cache.zip";
     private static final String INDEX_ENTRY_NAME = "index.properties";
@@ -133,7 +139,7 @@ public final class ChunkPersistentClientCache {
                         Bandwidthoptimizer.LOGGER.info(
                                 "[ChunkPersistentCache][Preload] cacheFile={}, blobs={}, millis={}, reason={}",
                                 cacheFile(),
-                                cachedSnapshot.blobs().size(),
+                                cachedSnapshot.verifiedBlobEntries().size(),
                                 System.currentTimeMillis() - startedAtMillis,
                                 safeText(reason, "client_startup")
                         );
@@ -178,13 +184,27 @@ public final class ChunkPersistentClientCache {
         synchronized (FLUSH_LOCK) {
             try {
                 long startedAtMillis = System.currentTimeMillis();
-                writeZipCacheSnapshot(snapshotToWrite);
+                ZipCacheSnapshot writtenSnapshot = writeZipCacheSnapshot(snapshotToWrite);
+                synchronized (LOCK) {
+                    if (cachedSnapshot != null) {
+                        cachedSnapshot.blobs().keySet().removeIf(writtenSnapshot.verifiedBlobEntries()::contains);
+                        Set<String> verifiedBlobEntries = new HashSet<>(cachedSnapshot.verifiedBlobEntries());
+                        verifiedBlobEntries.addAll(writtenSnapshot.verifiedBlobEntries());
+                        cachedSnapshot = new ZipCacheSnapshot(
+                                cachedSnapshot.index(),
+                                cachedSnapshot.blobs(),
+                                verifiedBlobEntries,
+                                cacheFile()
+                        );
+                        publishLoadedHotPathSnapshotLocked();
+                    }
+                }
                 LAST_SUCCESSFUL_FLUSH_MILLIS.set(System.currentTimeMillis());
                 if (shouldLogCacheDiagnose()) {
                     Bandwidthoptimizer.LOGGER.info(
                             "[ChunkPersistentCache][Flush] cacheFile={}, blobs={}, millis={}, reason={}",
                             cacheFile(),
-                            snapshotToWrite.blobs().size(),
+                            writtenSnapshot.verifiedBlobEntries().size(),
                             System.currentTimeMillis() - startedAtMillis,
                             safeReason
                     );
@@ -252,26 +272,49 @@ public final class ChunkPersistentClientCache {
                 reason
         );
         PendingStoreRequest previousRequest = PENDING_STORE_REQUESTS.put(storeKey, request);
+        long pendingBytes = PENDING_STORE_REQUEST_BYTES.addAndGet(request.snapshotBytes().length
+                - (previousRequest == null ? 0L : previousRequest.snapshotBytes().length));
         if (previousRequest == null) {
             int pendingStores = PENDING_STORE_REQUEST_COUNT.incrementAndGet();
-            if (pendingStores > maxPendingStoreTasks()) {
+            if (pendingStores > maxPendingStoreTasks() || pendingBytes > maxPendingStoreBytes()) {
                 if (PENDING_STORE_REQUESTS.remove(storeKey, request)) {
                     pendingStores = PENDING_STORE_REQUEST_COUNT.decrementAndGet();
+                    pendingBytes = PENDING_STORE_REQUEST_BYTES.addAndGet(-request.snapshotBytes().length);
                 } else {
                     pendingStores = PENDING_STORE_REQUEST_COUNT.get();
+                    pendingBytes = PENDING_STORE_REQUEST_BYTES.get();
                 }
                 if (shouldLogCacheDiagnose()) {
                     Bandwidthoptimizer.LOGGER.warn(
-                            "[ChunkPersistentCache][Store][Drop] chunk={}, bytes={}, pending={}, limit={}, reason={}",
+                            "[ChunkPersistentCache][Store][Drop] chunk={}, bytes={}, pending={}, pendingBytes={}, taskLimit={}, byteLimit={}, reason={}",
                             coordinate.logText(),
                             snapshotBytes.length,
                             pendingStores,
+                            pendingBytes,
                             maxPendingStoreTasks(),
+                            maxPendingStoreBytes(),
                             safeText(reason, "persistent_cache_store_queue_full")
                     );
                 }
                 return;
             }
+        } else if (pendingBytes > maxPendingStoreBytes()) {
+            if (PENDING_STORE_REQUESTS.remove(storeKey, request)) {
+                PENDING_STORE_REQUEST_COUNT.decrementAndGet();
+                PENDING_STORE_REQUEST_BYTES.addAndGet(-request.snapshotBytes().length);
+            }
+            if (shouldLogCacheDiagnose()) {
+                Bandwidthoptimizer.LOGGER.warn(
+                        "[ChunkPersistentCache][Store][DropReplace] chunk={}, bytes={}, pending={}, pendingBytes={}, byteLimit={}, reason={}",
+                        coordinate.logText(),
+                        snapshotBytes.length,
+                        PENDING_STORE_REQUEST_COUNT.get(),
+                        PENDING_STORE_REQUEST_BYTES.get(),
+                        maxPendingStoreBytes(),
+                        safeText(reason, "persistent_cache_store_queue_full")
+                );
+            }
+            return;
         }
 
         schedulePendingStoreDrain();
@@ -320,6 +363,7 @@ public final class ChunkPersistentClientCache {
         for (Map.Entry<String, PendingStoreRequest> entry : PENDING_STORE_REQUESTS.entrySet()) {
             if (PENDING_STORE_REQUESTS.remove(entry.getKey(), entry.getValue())) {
                 PENDING_STORE_REQUEST_COUNT.decrementAndGet();
+                PENDING_STORE_REQUEST_BYTES.addAndGet(-entry.getValue().snapshotBytes().length);
                 return entry.getValue();
             }
         }
@@ -405,7 +449,8 @@ public final class ChunkPersistentClientCache {
                 String keyPrefix = entryPrefix(serverScopeHash, frame.coordinate());
                 String blobEntryName = blobEntryName(fingerprint.hashHex());
                 if (fingerprint.hashHex().equals(cacheSnapshot.index().getProperty(keyPrefix + "hash", ""))
-                        && cacheSnapshot.blobs().containsKey(blobEntryName)) {
+                        && (cacheSnapshot.blobs().containsKey(blobEntryName)
+                        || cacheSnapshot.verifiedBlobEntries().contains(blobEntryName))) {
                     cacheSnapshot.verifiedBlobEntries().add(blobEntryName);
                     cacheSnapshot.index().setProperty(keyPrefix + "lastUsedAtMillis", Long.toString(System.currentTimeMillis()));
                     markDirty(0);
@@ -424,6 +469,9 @@ public final class ChunkPersistentClientCache {
                 cacheSnapshot.verifiedBlobEntries().add(blobEntryName);
                 pruneUnreferencedBlobs(cacheSnapshot);
                 markDirty(restoredPacketBytes.length);
+                if (dirtyBytes >= maxPendingStoreBytes()) {
+                    queueAsyncFlushLocked("persistent_cache_dirty_byte_budget");
+                }
                 markManifestRefreshDirty();
                 publishLoadedHotPathSnapshotLocked();
                 logStore(frame, restoredPacketBytes.length, cacheFile());
@@ -450,8 +498,8 @@ public final class ChunkPersistentClientCache {
     }
 
     public static byte[] findLoadedPacketBytes(ChunkHotspotFrame frame) {
-        LoadedHotPathSnapshot cacheSnapshot = loadedHotPathSnapshot;
-        String serverScopeHash = cacheSnapshot.serverScopeHash();
+        LoadedHotPathSnapshot hotPathSnapshot = loadedHotPathSnapshot;
+        String serverScopeHash = hotPathSnapshot.serverScopeHash();
         if (!isEnabled()
                 || !isSafeScopeHash(serverScopeHash)
                 || !isStorableFullSnapshot(frame)) {
@@ -460,38 +508,59 @@ public final class ChunkPersistentClientCache {
 
         long loadStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         String keyPrefix = entryPrefix(serverScopeHash, frame.coordinate());
-        LoadedCacheEntry cacheEntry = cacheSnapshot.entriesByKeyPrefix().get(keyPrefix);
+        LoadedCacheEntry cacheEntry = hotPathSnapshot.entriesByKeyPrefix().get(keyPrefix);
         if (cacheEntry == null || !frame.payloadHash().equals(cacheEntry.payloadHash())) {
             return null;
         }
 
+        byte[] packetBytes;
+        synchronized (LOCK) {
+            try {
+                ZipCacheSnapshot cacheSnapshot = cachedZipCacheSnapshot();
+                packetBytes = readVerifiedBlobBytesLocked(cacheSnapshot, cacheEntry.payloadHash());
+            } catch (IOException exception) {
+                if (shouldLogCacheDiagnose()) {
+                    Bandwidthoptimizer.LOGGER.warn(
+                            "[ChunkPersistentCache][Load][Fail] chunk={}, hash={}, reason={}",
+                            frame.coordinate().logText(),
+                            shortenHash(frame.payloadHash()),
+                            exception.toString()
+                    );
+                }
+                return null;
+            }
+        }
+        boolean matchedHash = packetBytes != null && packetBytes.length > 0;
         ChunkLoadDelayProbe.logStage(
                 (Channel) null,
                 frame,
                 "client",
                 "persistent_loaded_find_verified_check",
                 0L,
-                cacheEntry.encodedBytes(),
-                "matched=true"
+                matchedHash ? packetBytes.length : cacheEntry.encodedBytes(),
+                "matched=" + matchedHash
         );
+        if (!matchedHash) {
+            return null;
+        }
 
         recordLastUsed(serverScopeHash, frame.coordinate());
-        logLoad(frame, cacheEntry.encodedBytes());
+        logLoad(frame, packetBytes.length);
         ChunkLoadDelayProbe.logStage(
                 (Channel) null,
                 frame,
                 "client",
                 "persistent_loaded_find_total",
                 ChunkLoadDelayProbe.elapsedMillisSince(loadStartNanos),
-                cacheEntry.encodedBytes(),
+                packetBytes.length,
                 "hit=true"
         );
-        return cacheEntry.copyPacketBytes();
+        return packetBytes.clone();
     }
 
     public static byte[] findLoadedBasePacketBytes(ChunkHotspotFrame frame) {
-        LoadedHotPathSnapshot cacheSnapshot = loadedHotPathSnapshot;
-        String serverScopeHash = cacheSnapshot.serverScopeHash();
+        LoadedHotPathSnapshot hotPathSnapshot = loadedHotPathSnapshot;
+        String serverScopeHash = hotPathSnapshot.serverScopeHash();
         if (!isEnabled()
                 || !isSafeScopeHash(serverScopeHash)
                 || !isStorableFullSnapshot(frame)
@@ -502,33 +571,54 @@ public final class ChunkPersistentClientCache {
 
         long loadStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         String keyPrefix = entryPrefix(serverScopeHash, frame.coordinate());
-        LoadedCacheEntry cacheEntry = cacheSnapshot.entriesByKeyPrefix().get(keyPrefix);
+        LoadedCacheEntry cacheEntry = hotPathSnapshot.entriesByKeyPrefix().get(keyPrefix);
         if (cacheEntry == null || !frame.baseSnapshotHash().equals(cacheEntry.payloadHash())) {
             return null;
         }
 
+        byte[] packetBytes;
+        synchronized (LOCK) {
+            try {
+                ZipCacheSnapshot cacheSnapshot = cachedZipCacheSnapshot();
+                packetBytes = readVerifiedBlobBytesLocked(cacheSnapshot, cacheEntry.payloadHash());
+            } catch (IOException exception) {
+                if (shouldLogCacheDiagnose()) {
+                    Bandwidthoptimizer.LOGGER.warn(
+                            "[ChunkPersistentCache][LoadBase][Fail] chunk={}, hash={}, reason={}",
+                            frame.coordinate().logText(),
+                            shortenHash(frame.baseSnapshotHash()),
+                            exception.toString()
+                    );
+                }
+                return null;
+            }
+        }
+        boolean matchedHash = packetBytes != null && packetBytes.length > 0;
         ChunkLoadDelayProbe.logStage(
                 (Channel) null,
                 frame,
                 "client",
                 "persistent_loaded_find_base_verified_check",
                 0L,
-                cacheEntry.encodedBytes(),
-                "matched=true"
+                matchedHash ? packetBytes.length : cacheEntry.encodedBytes(),
+                "matched=" + matchedHash
         );
+        if (!matchedHash) {
+            return null;
+        }
 
         recordLastUsed(serverScopeHash, frame.coordinate());
-        logLoad(frame, cacheEntry.encodedBytes());
+        logLoad(frame, packetBytes.length);
         ChunkLoadDelayProbe.logStage(
                 (Channel) null,
                 frame,
                 "client",
                 "persistent_loaded_find_base_total",
                 ChunkLoadDelayProbe.elapsedMillisSince(loadStartNanos),
-                cacheEntry.encodedBytes(),
+                packetBytes.length,
                 "hit=true"
         );
-        return cacheEntry.copyPacketBytes();
+        return packetBytes.clone();
     }
 
 
@@ -548,10 +638,8 @@ public final class ChunkPersistentClientCache {
                     return null;
                 }
 
-                byte[] packetBytes = cacheSnapshot.blobs().get(blobEntryName(cachedHash));
-                boolean matchedHash = packetBytes != null
-                        && packetBytes.length > 0
-                        && cacheSnapshot.verifiedBlobEntries().contains(blobEntryName(cachedHash));
+                byte[] packetBytes = readVerifiedBlobBytesLocked(cacheSnapshot, cachedHash);
+                boolean matchedHash = packetBytes != null && packetBytes.length > 0;
                 ChunkLoadDelayProbe.logStage(
                         (Channel) null,
                         frame,
@@ -611,10 +699,8 @@ public final class ChunkPersistentClientCache {
                     return null;
                 }
 
-                byte[] packetBytes = cacheSnapshot.blobs().get(blobEntryName(cachedHash));
-                boolean matchedHash = packetBytes != null
-                        && packetBytes.length > 0
-                        && cacheSnapshot.verifiedBlobEntries().contains(blobEntryName(cachedHash));
+                byte[] packetBytes = readVerifiedBlobBytesLocked(cacheSnapshot, cachedHash);
+                boolean matchedHash = packetBytes != null && packetBytes.length > 0;
                 ChunkLoadDelayProbe.logStage(
                         (Channel) null,
                         frame,
@@ -1072,8 +1158,7 @@ public final class ChunkPersistentClientCache {
         }
 
         ZipCacheSnapshot migratedSnapshot = new ZipCacheSnapshot(legacyIndex, legacyBlobs);
-        writeZipCacheSnapshot(migratedSnapshot);
-        cachedSnapshot = migratedSnapshot;
+        cachedSnapshot = writeZipCacheSnapshot(migratedSnapshot);
         deleteDirectoryTree(legacyRoot);
         if (shouldLogCacheDiagnose()) {
             Bandwidthoptimizer.LOGGER.info(
@@ -1265,7 +1350,7 @@ public final class ChunkPersistentClientCache {
                 "client",
                 "persistent_cached_snapshot",
                 ChunkLoadDelayProbe.elapsedMillisSince(startNanos),
-                cachedSnapshot == null ? 0 : cachedSnapshot.blobs().size(),
+                cachedSnapshot == null ? 0 : cachedSnapshot.verifiedBlobEntries().size(),
                 "loaded=" + (cachedSnapshot != null)
         );
         return cachedSnapshot;
@@ -1369,6 +1454,7 @@ public final class ChunkPersistentClientCache {
     private static ZipCacheSnapshot readZipCacheSnapshot(Path sourcePath) throws IOException {
         Properties index = new Properties();
         Map<String, byte[]> blobs = new HashMap<>();
+        Set<String> blobEntries = new HashSet<>();
         try (ZipInputStream zipInputStream = new ZipInputStream(Files.newInputStream(sourcePath))) {
             ZipEntry zipEntry;
             while ((zipEntry = zipInputStream.getNextEntry()) != null) {
@@ -1376,18 +1462,18 @@ public final class ChunkPersistentClientCache {
                     continue;
                 }
 
-                byte[] entryBytes = readAllBytes(zipInputStream);
                 String entryName = zipEntry.getName();
                 if (INDEX_ENTRY_NAME.equals(entryName)) {
+                    byte[] entryBytes = readAllBytes(zipInputStream);
                     try (ByteArrayInputStream inputStream = new ByteArrayInputStream(entryBytes)) {
                         index.load(inputStream);
                     }
                 } else if (entryName.startsWith(BLOBS_ENTRY_DIRECTORY) && entryName.endsWith(".bin")) {
-                    blobs.put(entryName, entryBytes);
+                    blobEntries.add(entryName);
                 }
             }
         }
-        return verifyLoadedZipCacheSnapshot(new ZipCacheSnapshot(index, blobs));
+        return verifyLoadedZipCacheSnapshot(new ZipCacheSnapshot(index, blobs, blobEntries, sourcePath));
     }
 
     private static ZipCacheSnapshot verifyLoadedZipCacheSnapshot(ZipCacheSnapshot cacheSnapshot) {
@@ -1407,6 +1493,8 @@ public final class ChunkPersistentClientCache {
             byte[] packetBytes = blobEntryName.isBlank() ? null : cacheSnapshot.blobs().get(blobEntryName);
             if (packetBytes != null && packetBytes.length > 0 && matchesHash(packetBytes, hash)) {
                 cacheSnapshot.verifiedBlobEntries().add(blobEntryName);
+            } else if (!blobEntryName.isBlank() && cacheSnapshot.verifiedBlobEntries().contains(blobEntryName)) {
+                continue;
             } else {
                 staleCoordinateKeys.add(coordinateKey);
             }
@@ -1419,25 +1507,51 @@ public final class ChunkPersistentClientCache {
         return cacheSnapshot;
     }
 
-    private static void writeZipCacheSnapshot(ZipCacheSnapshot cacheSnapshot) throws IOException {
+    private static ZipCacheSnapshot writeZipCacheSnapshot(ZipCacheSnapshot cacheSnapshot) throws IOException {
         pruneUnreferencedBlobs(cacheSnapshot);
+        Path sourcePath = cacheSnapshot.sourcePath() != null && Files.isRegularFile(cacheSnapshot.sourcePath())
+                ? cacheSnapshot.sourcePath()
+                : null;
+        Set<String> sourceBlobEntries = sourcePath == null ? Set.of() : readZipBlobEntryNames(sourcePath);
+        Set<String> referencedBlobEntries = referencedBlobEntries(cacheSnapshot.index());
+        ArrayList<String> staleCoordinateKeys = new ArrayList<>();
+        for (String key : cacheSnapshot.index().stringPropertyNames()) {
+            if (!key.endsWith(".hash")) {
+                continue;
+            }
+            String coordinateKey = key.substring(0, key.length() - ".hash".length());
+            String hash = cacheSnapshot.index().getProperty(key, "");
+            String blobEntryName = isSafeHash(hash) ? blobEntryName(hash) : "";
+            if (blobEntryName.isBlank()
+                    || (!cacheSnapshot.blobs().containsKey(blobEntryName) && !sourceBlobEntries.contains(blobEntryName))) {
+                staleCoordinateKeys.add(coordinateKey);
+            }
+        }
+        for (String coordinateKey : staleCoordinateKeys) {
+            removeSnapshotIndexEntry(cacheSnapshot.index(), coordinateKey);
+        }
+        referencedBlobEntries = referencedBlobEntries(cacheSnapshot.index());
         Files.createDirectories(cacheFile().getParent());
         Path tempPath = cacheFile().resolveSibling(ZIP_FILE_NAME + ".tmp");
+        Set<String> writtenBlobEntries = new HashSet<>();
         try (ZipOutputStream zipOutputStream = new ZipOutputStream(Files.newOutputStream(tempPath))) {
             zipOutputStream.setLevel(zipCompressionLevel());
             writeZipEntry(zipOutputStream, INDEX_ENTRY_NAME, encodeIndex(cacheSnapshot.index()));
-            ArrayList<String> blobEntryNames = new ArrayList<>(cacheSnapshot.blobs().keySet());
+            ArrayList<String> blobEntryNames = new ArrayList<>(referencedBlobEntries);
             blobEntryNames.sort(String::compareTo);
             for (String blobEntryName : blobEntryNames) {
                 byte[] blobBytes = cacheSnapshot.blobs().get(blobEntryName);
+                if ((blobBytes == null || blobBytes.length == 0) && sourcePath != null) {
+                    blobBytes = readZipBlobEntryBytes(sourcePath, blobEntryName);
+                }
                 if (blobBytes != null && blobBytes.length > 0) {
                     writeZipEntry(zipOutputStream, blobEntryName, blobBytes);
+                    writtenBlobEntries.add(blobEntryName);
                 }
             }
         }
         moveReplacing(tempPath, cacheFile());
-        cachedSnapshot = cacheSnapshot;
-        publishLoadedHotPathSnapshotLocked();
+        return new ZipCacheSnapshot(cacheSnapshot.index(), new HashMap<>(), writtenBlobEntries, cacheFile());
     }
 
     private static void publishLoadedHotPathSnapshotLocked() {
@@ -1458,19 +1572,17 @@ public final class ChunkPersistentClientCache {
             ScopedCoordinateKey scopedCoordinateKey = parseScopedCoordinateKey(coordinateKey);
             String hash = index.getProperty(key, "");
             String blobEntryName = isSafeHash(hash) ? blobEntryName(hash) : "";
-            byte[] packetBytes = blobEntryName.isBlank() ? null : cachedSnapshot.blobs().get(blobEntryName);
             if (scopedCoordinateKey == null
                     || !serverScopeHash.equals(scopedCoordinateKey.serverScopeHash())
                     || scopedCoordinateKey.coordinate() == null
                     || !scopedCoordinateKey.coordinate().present()
-                    || packetBytes == null
-                    || packetBytes.length == 0
+                    || blobEntryName.isBlank()
                     || !cachedSnapshot.verifiedBlobEntries().contains(blobEntryName)) {
                 continue;
             }
             entriesByKeyPrefix.put(
                     entryPrefix(serverScopeHash, scopedCoordinateKey.coordinate()),
-                    new LoadedCacheEntry(hash, packetBytes)
+                    new LoadedCacheEntry(hash, readInt(index, coordinateKey + ".encodedBytes", 0))
             );
         }
         loadedHotPathSnapshot = new LoadedHotPathSnapshot(serverScopeHash, entriesByKeyPrefix);
@@ -1523,6 +1635,10 @@ public final class ChunkPersistentClientCache {
 
     private static int maxPendingStoreTasks() {
         return Math.max(readIntProperty(MAX_PENDING_STORE_TASKS_PROPERTY, DEFAULT_MAX_PENDING_STORE_TASKS), 1);
+    }
+
+    private static long maxPendingStoreBytes() {
+        return Math.max(readLongProperty(MAX_PENDING_STORE_BYTES_PROPERTY, DEFAULT_MAX_PENDING_STORE_BYTES), 1024L * 1024L);
     }
 
     private static void recordLastUsed(String serverScopeHash, ChunkPacketCoordinate coordinate) {
@@ -1624,6 +1740,65 @@ public final class ChunkPersistentClientCache {
         }
     }
 
+    private static Set<String> readZipBlobEntryNames(Path sourcePath) throws IOException {
+        if (sourcePath == null || !Files.isRegularFile(sourcePath)) {
+            return Set.of();
+        }
+        Set<String> blobEntries = new HashSet<>();
+        try (ZipFile zipFile = new ZipFile(sourcePath.toFile())) {
+            Enumeration<? extends ZipEntry> zipEntries = zipFile.entries();
+            while (zipEntries.hasMoreElements()) {
+                ZipEntry zipEntry = zipEntries.nextElement();
+                String entryName = zipEntry.getName();
+                if (!zipEntry.isDirectory()
+                        && entryName.startsWith(BLOBS_ENTRY_DIRECTORY)
+                        && entryName.endsWith(".bin")) {
+                    blobEntries.add(entryName);
+                }
+            }
+        }
+        return blobEntries;
+    }
+
+    private static byte[] readZipBlobEntryBytes(Path sourcePath, String blobEntryName) throws IOException {
+        if (sourcePath == null
+                || blobEntryName == null
+                || blobEntryName.isBlank()
+                || !Files.isRegularFile(sourcePath)) {
+            return null;
+        }
+        try (ZipFile zipFile = new ZipFile(sourcePath.toFile())) {
+            ZipEntry zipEntry = zipFile.getEntry(blobEntryName);
+            if (zipEntry == null || zipEntry.isDirectory()) {
+                return null;
+            }
+            try (InputStream inputStream = zipFile.getInputStream(zipEntry)) {
+                return inputStream.readAllBytes();
+            }
+        }
+    }
+
+    private static byte[] readVerifiedBlobBytesLocked(ZipCacheSnapshot cacheSnapshot, String hash) throws IOException {
+        if (cacheSnapshot == null || !isSafeHash(hash)) {
+            return null;
+        }
+        String blobEntryName = blobEntryName(hash);
+        byte[] packetBytes = cacheSnapshot.blobs().get(blobEntryName);
+        if ((packetBytes == null || packetBytes.length == 0) && cacheSnapshot.verifiedBlobEntries().contains(blobEntryName)) {
+            packetBytes = readZipBlobEntryBytes(cacheSnapshot.sourcePath(), blobEntryName);
+        }
+        if (packetBytes == null || packetBytes.length == 0) {
+            return null;
+        }
+        if (!matchesHash(packetBytes, hash)) {
+            cacheSnapshot.verifiedBlobEntries().remove(blobEntryName);
+            cacheSnapshot.blobs().remove(blobEntryName);
+            return null;
+        }
+        cacheSnapshot.verifiedBlobEntries().add(blobEntryName);
+        return packetBytes;
+    }
+
     private static byte[] readAllBytes(ZipInputStream zipInputStream) throws IOException {
         try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
             byte[] buffer = new byte[8192];
@@ -1678,7 +1853,7 @@ public final class ChunkPersistentClientCache {
         Set<String> referencedBlobEntries = referencedBlobEntries(cacheSnapshot.index());
         int before = cacheSnapshot.blobs().size();
         cacheSnapshot.blobs().keySet().removeIf(blobEntryName -> !referencedBlobEntries.contains(blobEntryName));
-        cacheSnapshot.verifiedBlobEntries().removeIf(blobEntryName -> !cacheSnapshot.blobs().containsKey(blobEntryName));
+        cacheSnapshot.verifiedBlobEntries().removeIf(blobEntryName -> !referencedBlobEntries.contains(blobEntryName));
         return Math.max(before - cacheSnapshot.blobs().size(), 0);
     }
 
@@ -1894,19 +2069,11 @@ public final class ChunkPersistentClientCache {
 
     private record LoadedCacheEntry(
             String payloadHash,
-            byte[] packetBytes
+            int encodedBytes
     ) {
         private LoadedCacheEntry {
             payloadHash = payloadHash == null ? "" : payloadHash;
-            packetBytes = packetBytes == null ? new byte[0] : packetBytes;
-        }
-
-        private int encodedBytes() {
-            return packetBytes.length;
-        }
-
-        private byte[] copyPacketBytes() {
-            return packetBytes.clone();
+            encodedBytes = Math.max(encodedBytes, 0);
         }
     }
 
@@ -1933,10 +2100,15 @@ public final class ChunkPersistentClientCache {
     private record ZipCacheSnapshot(
             Properties index,
             Map<String, byte[]> blobs,
-            Set<String> verifiedBlobEntries
+            Set<String> verifiedBlobEntries,
+            Path sourcePath
     ) {
         private ZipCacheSnapshot(Properties index, Map<String, byte[]> blobs) {
-            this(index, blobs, Set.of());
+            this(index, blobs, Set.of(), null);
+        }
+
+        private ZipCacheSnapshot(Properties index, Map<String, byte[]> blobs, Set<String> verifiedBlobEntries) {
+            this(index, blobs, verifiedBlobEntries, null);
         }
 
         private ZipCacheSnapshot {
@@ -1954,7 +2126,7 @@ public final class ChunkPersistentClientCache {
         }
 
         private ZipCacheSnapshot copy() {
-            return new ZipCacheSnapshot(index, blobs, verifiedBlobEntries);
+            return new ZipCacheSnapshot(index, blobs, verifiedBlobEntries, sourcePath);
         }
     }
 
