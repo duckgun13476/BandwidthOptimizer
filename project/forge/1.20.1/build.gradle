@@ -123,6 +123,8 @@ tasks.register('prepareEmbeddedRuntimeLibs', Copy) {
     into(embeddedRuntimeLibsOutputDir.map { it.dir('META-INF/bandwidthoptimizer/libs') })
 }
 
+sourceSets.main.resources.srcDir embeddedRuntimeLibsOutputDir
+
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
 
@@ -149,6 +151,7 @@ dependencies {
 }
 
 tasks.named('processResources', ProcessResources).configure {
+    dependsOn tasks.named('prepareEmbeddedRuntimeLibs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
     var replaceProperties = [minecraft_version   : minecraft_version, minecraft_version_range: minecraft_version_range,

@@ -222,6 +222,8 @@ tasks.register('prepareEmbeddedRuntimeLibs', Copy) {
     into(embeddedRuntimeLibsOutputDir.map { it.dir('META-INF/bandwidthoptimizer/libs') })
 }
 
+sourceSets.main.resources.srcDir embeddedRuntimeLibsOutputDir
+
 dependencies {
     compileOnly("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}") {
         changing = true
@@ -236,6 +238,7 @@ dependencies {
 }
 
 tasks.named('processResources', ProcessResources).configure {
+    dependsOn tasks.named('prepareEmbeddedRuntimeLibs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from(rootProject.file('common/src/main/resources/assets')) {
         into 'assets'
