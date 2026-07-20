@@ -12,6 +12,8 @@ import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkHotspotPathContro
 import com.PinkCats.bandwidthoptimizer.experient.ExperientRunAllProbeHooks;
 import com.PinkCats.bandwidthoptimizer.experient.ExperientServerCommandController;
 import com.PinkCats.bandwidthoptimizer.experient.ExperientWatchBoundaryRefreshPatchController;
+import com.PinkCats.bandwidthoptimizer.idle.IdleGateNetworkChannel;
+import com.PinkCats.bandwidthoptimizer.idle.IdleGateServerState;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportCompressionCaptureManager;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCaptureManager;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsHudSync;
@@ -57,6 +59,7 @@ public class Bandwidthoptimizer implements ModInitializer {
         FabricBandwidthOptimizerLifecycle.register();
         ChannelTransportNetworkChannel.register();
         ServerBandwidthStatsNetworkChannel.register();
+        IdleGateNetworkChannel.register();
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
                 BandwidthOptimizerCommand.register(dispatcher));
         ServerLifecycleEvents.SERVER_STOPPING.register(ServerBandwidthStatsLifecycleHooks::onServerStopping);
@@ -77,6 +80,7 @@ public class Bandwidthoptimizer implements ModInitializer {
             ExperientChunkHotspotPathController.onPlayerLoggedIn(handler.player);
         });
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            IdleGateServerState.onPlayerLoggedOut(handler.player);
             FabricBandwidthOptimizerLifecycle.onPlayerLogout(handler.player);
             ExperientWatchBoundaryRefreshPatchController.onPlayerLoggedOut(handler.player);
             ExperientServerCommandController.onPlayerLoggedOut(handler.player);

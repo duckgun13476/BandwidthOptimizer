@@ -6,6 +6,8 @@ import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCac
 import com.PinkCats.bandwidthoptimizer.command.ClientHudCommand;
 import com.PinkCats.bandwidthoptimizer.experient.ExperientAutoConnectController;
 import com.PinkCats.bandwidthoptimizer.experient.ExperientClientCaptureResetHooks;
+import com.PinkCats.bandwidthoptimizer.idle.IdleGateClientController;
+import com.PinkCats.bandwidthoptimizer.idle.IdleGateClientNetworkSender;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsClientReceiver;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -18,6 +20,7 @@ public class BandwidthOptimizerFabricClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         ClientChunkCacheConfig.applyRuntimeConfig(ClientChunkCacheConfig.currentRuntimeConfig());
+        IdleGateClientNetworkSender.register();
         ServerBandwidthStatsClientReceiver.register();
         ChunkPersistentClientCache.startAsyncPreload("fabric_client_startup");
         ClientLifecycleEvents.CLIENT_STOPPING.register(client ->
@@ -27,8 +30,12 @@ public class BandwidthOptimizerFabricClient implements ClientModInitializer {
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) ->
                 BandwidthOptimizerHudOverlay.onLoggingIn());
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
-                ChunkPersistentClientCache.flushAsync("fabric_client_disconnect"));
+        {
+            IdleGateClientController.onDisconnected();
+            ChunkPersistentClientCache.flushAsync("fabric_client_disconnect");
+        });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            IdleGateClientController.onClientTick(client);
             ExperientClientCaptureResetHooks.onClientTick();
             ExperientAutoConnectController.onClientTick(client);
         });
