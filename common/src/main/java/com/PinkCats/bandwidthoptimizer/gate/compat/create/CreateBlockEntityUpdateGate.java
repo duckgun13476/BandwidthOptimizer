@@ -10,6 +10,7 @@ import com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat;
 import com.PinkCats.bandwidthoptimizer.compat.sable.SableDynamicStructureCompat;
 import com.PinkCats.bandwidthoptimizer.compat.valkyrienskies.ValkyrienSkiesDynamicStructureCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
+import com.PinkCats.bandwidthoptimizer.gate.recovery.IdleGateRecoveryRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.core.BlockPos;
@@ -83,6 +84,7 @@ public final class CreateBlockEntityUpdateGate {
         if (player == null) {
             return;
         }
+        IdleGateRecoveryRegistry.discard(player);
         PlayerState state = PLAYER_STATES.remove(player.getUUID());
         if (state != null) {
             String channelId = state.channelId();
@@ -192,6 +194,9 @@ public final class CreateBlockEntityUpdateGate {
 
     // Move distant Create updates before they enter the Netty send queue.
     public static boolean tryDelayConnectionSend(Channel channel, Packet<?> packet, PacketSendListener listener) {
+        if (IdleGateRecoveryRegistry.tryCapture(channel, packet, listener)) {
+            return true;
+        }
         if (!isEnabled()
                 || channel == null
                 || packet == null
@@ -393,6 +398,10 @@ public final class CreateBlockEntityUpdateGate {
     }
 
     private static ServerPlayer resolvePlayer(Channel channel) {
+        return resolveBoundPlayer(channel);
+    }
+
+    public static ServerPlayer resolveBoundPlayer(Channel channel) {
         if (channel == null) {
             return null;
         }
@@ -484,6 +493,10 @@ public final class CreateBlockEntityUpdateGate {
         player.connection.send(packet);
     }
 
+    public static void sendRecoveryPacket(ServerPlayer player, Packet<?> packet) {
+        sendForced(player, packet);
+    }
+
     private static boolean consumeForcedPacket(Packet<?> packet) {
         if (packet == null) {
             return false;
@@ -495,7 +508,7 @@ public final class CreateBlockEntityUpdateGate {
         return packet != null && FORCED_PACKETS.contains(packet);
     }
 
-    private static boolean isEnabled() {
+    static boolean isEnabled() {
         return Boolean.parseBoolean(System.getProperty(
                 Config.RuntimeProperty.Create.CREATE_BLOCK_ENTITY_UPDATE_GATE_ENABLED,
                 Boolean.toString(Config.RuntimeProperty.Create.DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_ENABLED)));

@@ -49,6 +49,10 @@ final class CreateGateTypePolicy {
         return isCreateBlockEntity(typeKey) && !isImmediateControl(typeKey);
     }
 
+    static boolean shouldHoldWhileBackground(ResourceLocation typeKey) {
+        return shouldGate(typeKey) && !isMovingContraptionController(typeKey);
+    }
+
     static boolean isSoundClassified(ResourceLocation typeKey) {
         return isCreateBlockEntity(typeKey)
                 && SOUND_CLASSIFIED_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());

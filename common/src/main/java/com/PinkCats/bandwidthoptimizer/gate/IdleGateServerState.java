@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.gate;
 
 import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
+import com.PinkCats.bandwidthoptimizer.gate.recovery.IdleGateRecoveryRegistry;
 import io.netty.channel.Channel;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -45,6 +46,11 @@ public final class IdleGateServerState {
                 safePayload.hudVisible(),
                 safePayload.sequence(),
                 System.currentTimeMillis()));
+        if (previousState != null
+                && previousState.mode() == IdleGateMode.BACKGROUND_IDLE
+                && safePayload.mode() != IdleGateMode.BACKGROUND_IDLE) {
+            IdleGateRecoveryRegistry.requestRestore(player);
+        }
     }
 
     public static PlayerIdleState snapshot(ServerPlayer player) {
@@ -60,6 +66,7 @@ public final class IdleGateServerState {
 
     public static void onPlayerLoggedOut(ServerPlayer player) {
         if (player != null) {
+            IdleGateRecoveryRegistry.discard(player);
             PLAYER_STATES.remove(player.getUUID());
             CHANNEL_PLAYERS.entrySet().removeIf(entry -> player.getUUID().equals(entry.getValue()));
         }
