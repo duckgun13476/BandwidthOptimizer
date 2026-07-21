@@ -239,7 +239,7 @@ public final class CreateBlockEntityUpdateGate {
         }
         PlayerState state = PLAYER_STATES.computeIfAbsent(player.getUUID(), ignored -> new PlayerState());
         state.bind(player, com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel));
-        state.markChunkBootstrap(System.nanoTime(), chunkBootstrapNanos());
+        state.markChunkBootstrap(System.nanoTime(), CreateGateQueueConfig.chunkBootstrapNanos());
     }
 
     public static void observeOutboundPacket(
@@ -262,7 +262,7 @@ public final class CreateBlockEntityUpdateGate {
         }
         PlayerState state = PLAYER_STATES.computeIfAbsent(player.getUUID(), ignored -> new PlayerState());
         state.bind(player, com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()));
-        state.markChunkBootstrap(System.nanoTime(), chunkBootstrapNanos());
+        state.markChunkBootstrap(System.nanoTime(), CreateGateQueueConfig.chunkBootstrapNanos());
     }
 
     // TP commands can enqueue the position packet after Create has already filled the send path.
@@ -272,7 +272,7 @@ public final class CreateBlockEntityUpdateGate {
         }
         PlayerState state = PLAYER_STATES.computeIfAbsent(player.getUUID(), ignored -> new PlayerState());
         state.bind(player, currentChannelId(player));
-        state.markChunkBootstrap(System.nanoTime(), chunkBootstrapNanos());
+        state.markChunkBootstrap(System.nanoTime(), CreateGateQueueConfig.chunkBootstrapNanos());
     }
 
     public static void onServerTick() {
@@ -499,30 +499,6 @@ public final class CreateBlockEntityUpdateGate {
         return Boolean.parseBoolean(System.getProperty(
                 Config.RuntimeProperty.Create.CREATE_BLOCK_ENTITY_UPDATE_GATE_ENABLED,
                 Boolean.toString(Config.RuntimeProperty.Create.DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_ENABLED)));
-    }
-
-    private static long maxDelayNanos() {
-        return TimeUnit.MILLISECONDS.toNanos(readLong(
-                Config.RuntimeProperty.Create.CREATE_BLOCK_ENTITY_UPDATE_GATE_MAX_DELAY_MILLIS,
-                Config.RuntimeProperty.Create.DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_MAX_DELAY_MILLIS,
-                50L,
-                10_000L));
-    }
-
-    private static int maxPendingPerPlayer() {
-        return (int) readLong(
-                Config.RuntimeProperty.Create.CREATE_BLOCK_ENTITY_UPDATE_GATE_MAX_PENDING_PER_PLAYER,
-                Config.RuntimeProperty.Create.DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_MAX_PENDING_PER_PLAYER,
-                1L,
-                8192L);
-    }
-
-    private static long chunkBootstrapNanos() {
-        return TimeUnit.MILLISECONDS.toNanos(readLong(
-                Config.RuntimeProperty.Create.CREATE_BLOCK_ENTITY_UPDATE_GATE_CHUNK_BOOTSTRAP_MILLIS,
-                Config.RuntimeProperty.Create.DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_CHUNK_BOOTSTRAP_MILLIS,
-                0L,
-                15_000L));
     }
 
     private static boolean isWithinSoundSendDistance(ServerPlayer player, Vec3 target, ResourceLocation typeKey) {
@@ -800,19 +776,6 @@ public final class CreateBlockEntityUpdateGate {
 
     private static double soundSendDistanceBlocks(ResourceLocation typeKey) {
         return CreateGateTypePolicy.soundSendDistanceBlocks(typeKey);
-    }
-
-    private static long readLong(String propertyName, long defaultValue, long minValue, long maxValue) {
-        String rawValue = System.getProperty(propertyName);
-        if (rawValue == null || rawValue.isBlank()) {
-            return defaultValue;
-        }
-        try {
-            long parsed = Long.parseLong(rawValue.trim());
-            return Math.max(minValue, Math.min(maxValue, parsed));
-        } catch (NumberFormatException ignored) {
-            return defaultValue;
-        }
     }
 
     private static int lengthOf(byte[] bytes) {
@@ -1094,7 +1057,7 @@ public final class CreateBlockEntityUpdateGate {
             if (key == null || !isSoundClassifiedBlockEntity(key.typeKey())) {
                 return false;
             }
-            if (!this.soundStates.containsKey(key) && this.soundStates.size() >= maxPendingPerPlayer()) {
+            if (!this.soundStates.containsKey(key) && this.soundStates.size() >= CreateGateQueueConfig.maxPendingPerPlayer()) {
                 Iterator<PendingKey> iterator = this.soundStates.keySet().iterator();
                 if (iterator.hasNext()) {
                     iterator.next();
@@ -1111,7 +1074,7 @@ public final class CreateBlockEntityUpdateGate {
             if (key == null || packet == null) {
                 return false;
             }
-            int maxPending = maxPendingPerPlayer();
+            int maxPending = CreateGateQueueConfig.maxPendingPerPlayer();
             if (!this.pendingUpdates.containsKey(key) && this.pendingUpdates.size() >= maxPending) {
                 return false;
             }
@@ -1139,7 +1102,7 @@ public final class CreateBlockEntityUpdateGate {
             if (this.pendingUpdates.isEmpty()) {
                 return List.of();
             }
-            long maxDelayNanos = maxDelayNanos();
+            long maxDelayNanos = CreateGateQueueConfig.maxDelayNanos();
             boolean chunkBootstrapActive = isChunkBootstrapActive(nowNanos);
             List<PendingUpdate> readyUpdates = new ArrayList<>();
             Iterator<Map.Entry<PendingKey, PendingUpdate>> iterator = this.pendingUpdates.entrySet().iterator();
