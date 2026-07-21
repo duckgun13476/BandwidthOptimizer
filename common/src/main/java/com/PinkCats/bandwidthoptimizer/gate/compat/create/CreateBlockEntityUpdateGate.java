@@ -39,7 +39,6 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -61,102 +60,6 @@ public final class CreateBlockEntityUpdateGate {
     private static final AtomicLong DROPPED_SAVED_BYTES = new AtomicLong();
     private static final AtomicLong LAST_CREATE_CONTRAPTION_FALLBACK_WARN_NANOS = new AtomicLong();
     private static final long CREATE_CONTRAPTION_FALLBACK_WARN_INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(5L);
-    private static final Set<String> MECHANICAL_BLOCK_ENTITY_TYPES = Set.of(
-            "simple_kinetic",
-            "creative_motor",
-            "gearbox",
-            "encased_shaft",
-            "encased_cogwheel",
-            "encased_large_cogwheel",
-            "adjustable_chain_gearshift",
-            "encased_fan",
-            "nozzle",
-            "clutch",
-            "gearshift",
-            "turntable",
-            "hand_crank",
-            "valve_handle",
-            "cuckoo_clock",
-            "gantry_shaft",
-            "gantry_pinion",
-            "chain_conveyor",
-            "mechanical_pump",
-            "fluid_valve",
-            "hose_pulley",
-            "spout",
-            "belt",
-            "mechanical_arm",
-            "mechanical_piston",
-            "windmill_bearing",
-            "mechanical_bearing",
-            "clockwork_bearing",
-            "rope_pulley",
-            "elevator_pulley",
-            "chassis",
-            "sticker",
-            "contraption_controls",
-            "mechanical_drill",
-            "mechanical_saw",
-            "mechanical_harvester",
-            "mechanical_roller",
-            "portable_storage_interface",
-            "portable_fluid_interface",
-            "steam_engine",
-            "steam_whistle",
-            "powered_shaft",
-            "flywheel",
-            "millstone",
-            "crushing_wheel",
-            "crushing_wheel_controller",
-            "water_wheel",
-            "large_water_wheel",
-            "mechanical_press",
-            "mechanical_mixer",
-            "deployer",
-            "basin",
-            "blaze_burner",
-            "mechanical_crafter",
-            "sequenced_gearshift",
-            "rotation_speed_controller",
-            "speedometer",
-            "stressometer",
-            "cart_assembler",
-            "depot",
-            "weighted_ejector",
-            "flap_display"
-    );
-    private static final Set<String> SOUND_CLASSIFIED_BLOCK_ENTITY_TYPES = Set.of(
-            "cuckoo_clock",
-            "deployer",
-            "mechanical_arm",
-            "mechanical_crafter",
-            "mechanical_press",
-            "steam_whistle"
-    );
-    private static final Set<String> IMMEDIATE_CONTROL_BLOCK_ENTITY_TYPES = Set.of(
-            "analog_lever",
-            "desk_bell",
-            "elevator_contact",
-            "factory_panel",
-            "lectern_controller",
-            "redstone_link",
-            "redstone_requester",
-            "sliding_door",
-            "stock_ticker"
-    );
-    private static final Set<String> MOVING_CONTRAPTION_CONTROLLER_TYPES = Set.of(
-            "mechanical_piston",
-            "windmill_bearing",
-            "mechanical_bearing",
-            "clockwork_bearing",
-            "rope_pulley",
-            "hose_pulley",
-            "elevator_pulley",
-            "gantry_shaft",
-            "gantry_pinion",
-            "cart_assembler",
-            "contraption_controls"
-    );
     private CreateBlockEntityUpdateGate() {}
 
     public static void bindPlayer(ServerPlayer player) {
@@ -594,46 +497,29 @@ public final class CreateBlockEntityUpdateGate {
         return !hadPoint;
     }
 
-    private static boolean isCreateMechanicalBlockEntity(ResourceLocation typeKey) {
-        return isCreateBlockEntity(typeKey)
-                && MECHANICAL_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
-    }
-
-    private static boolean isImmediateControlBlockEntity(ResourceLocation typeKey) {
-        return isCreateBlockEntity(typeKey)
-                && IMMEDIATE_CONTROL_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
-    }
-
     private static boolean isMovingContraptionController(ResourceLocation typeKey) {
-        return isCreateBlockEntity(typeKey)
-                && MOVING_CONTRAPTION_CONTROLLER_TYPES.contains(typeKey.getPath());
+        return CreateGateTypePolicy.isMovingContraptionController(typeKey);
     }
 
     private static boolean isVisibleRawBypassController(ResourceLocation typeKey) {
-        return isCreateBlockEntity(typeKey)
-                && "mechanical_piston".equals(typeKey.getPath());
+        return CreateGateTypePolicy.isVisibleRawBypassController(typeKey);
     }
 
     private static boolean allowLookDirectionForGatedUpdate(ResourceLocation typeKey, boolean chunkBootstrapActive) {
-        return isVisibleRawBypassController(typeKey) || !chunkBootstrapActive;
+        return CreateGateTypePolicy.allowLookDirectionForGatedUpdate(typeKey, chunkBootstrapActive);
     }
 
     // Keep interactive controls out of delayed merging.
     private static boolean shouldGateCreateBlockEntity(ResourceLocation typeKey, boolean chunkBootstrapActive) {
-        if (!isCreateBlockEntity(typeKey)) {
-            return false;
-        }
-        return !isImmediateControlBlockEntity(typeKey);
+        return CreateGateTypePolicy.shouldGate(typeKey);
     }
 
     private static boolean isSoundClassifiedBlockEntity(ResourceLocation typeKey) {
-        return isCreateBlockEntity(typeKey)
-                && SOUND_CLASSIFIED_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
+        return CreateGateTypePolicy.isSoundClassified(typeKey);
     }
 
     private static boolean isCreateBlockEntity(ResourceLocation typeKey) {
-        return typeKey != null
-                && "create".equals(typeKey.getNamespace());
+        return CreateGateTypePolicy.isCreateBlockEntity(typeKey);
     }
 
     // PlayerPosition starts the TP chunk bootstrap earlier than the cache-center control packet.
@@ -973,13 +859,7 @@ public final class CreateBlockEntityUpdateGate {
     }
 
     private static double soundSendDistanceBlocks(ResourceLocation typeKey) {
-        if ("steam_whistle".equals(typeKey.getPath())) {
-            return 64.0D;
-        }
-        if ("cuckoo_clock".equals(typeKey.getPath())) {
-            return 32.0D;
-        }
-        return 16.0D;
+        return CreateGateTypePolicy.soundSendDistanceBlocks(typeKey);
     }
 
     private static double lookDotThreshold() {
