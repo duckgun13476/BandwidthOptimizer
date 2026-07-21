@@ -161,7 +161,7 @@ public final class CreateBlockEntityUpdateGate {
         boolean soundCritical = state.rememberSoundStateAndShouldFlush(key, blockEntityDataPacket.getTag());
         DynamicTarget dynamicTarget = resolveDynamicTarget(player, blockEntityDataPacket.getPos(), blockEntityTypeKey);
         if (dynamicTarget.forceImmediate()
-                || shouldSendImmediately(
+                || CreateGateViewPolicy.shouldSendImmediately(
                         player,
                         dynamicTarget.points(),
                         allowLookDirectionForGatedUpdate(blockEntityTypeKey, chunkBootstrapActive))
@@ -357,7 +357,7 @@ public final class CreateBlockEntityUpdateGate {
         boolean soundCritical = state.rememberSoundStateAndShouldFlush(key, blockEntityDataPacket.getTag());
         DynamicTarget dynamicTarget = resolveDynamicTarget(player, blockEntityDataPacket.getPos(), blockEntityTypeKey);
         if (dynamicTarget.forceImmediate()
-                || shouldSendImmediately(
+                || CreateGateViewPolicy.shouldSendImmediately(
                         player,
                         dynamicTarget.points(),
                         allowLookDirectionForGatedUpdate(blockEntityTypeKey, chunkBootstrapActive))
@@ -409,19 +409,6 @@ public final class CreateBlockEntityUpdateGate {
         return channel == null ? "" : com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel);
     }
 
-    private static boolean shouldSendImmediately(ServerPlayer player, Vec3[] points, boolean allowLookDirection) {
-        if (player == null || points == null || points.length == 0) {
-            return true;
-        }
-        return isAnyPointInImmediateView(
-                player.getEyePosition(),
-                player.getLookAngle(),
-                points,
-                alwaysSendDistanceBlocks(),
-                allowLookDirection,
-                lookDotThreshold());
-    }
-
     public static boolean shouldBypassTransparentTransport(
             ChannelHandlerContext context,
             String protocolName,
@@ -446,7 +433,7 @@ public final class CreateBlockEntityUpdateGate {
             return false;
         }
         DynamicTarget dynamicTarget = resolveDynamicTarget(player, blockEntityDataPacket.getPos(), blockEntityTypeKey);
-        return dynamicTarget.forceImmediate() || shouldSendImmediately(player, dynamicTarget.points(), true);
+        return dynamicTarget.forceImmediate() || CreateGateViewPolicy.shouldSendImmediately(player, dynamicTarget.points(), true);
     }
 
     public static boolean shouldBypassCreateGateDelay(
@@ -456,45 +443,6 @@ public final class CreateBlockEntityUpdateGate {
             Packet<?> packet
     ) {
         return shouldBypassTransparentTransport(context, protocolName, packetFlow, packet);
-    }
-
-    private static boolean isAnyPointInImmediateView(
-            Vec3 eyePosition,
-            Vec3 lookAngle,
-            Vec3[] points,
-            double nearDistance,
-            boolean allowLookDirection,
-            double dotThreshold
-    ) {
-        if (eyePosition == null || points == null || points.length == 0) {
-            return true;
-        }
-        Vec3 normalizedLook = lookAngle == null ? Vec3.ZERO : lookAngle.normalize();
-        double nearDistanceSqr = nearDistance * nearDistance;
-        boolean hadPoint = false;
-        for (Vec3 point : points) {
-            if (point == null) {
-                continue;
-            }
-            hadPoint = true;
-            Vec3 offset = point.subtract(eyePosition);
-            double distanceSqr = offset.lengthSqr();
-            if (distanceSqr <= nearDistanceSqr) {
-                return true;
-            }
-            if (!allowLookDirection) {
-                continue;
-            }
-            double length = Math.sqrt(distanceSqr);
-            if (length <= 0.0001D) {
-                return true;
-            }
-            double dot = normalizedLook.dot(offset.scale(1.0D / length));
-            if (dot >= dotThreshold) {
-                return true;
-            }
-        }
-        return !hadPoint;
     }
 
     private static boolean isMovingContraptionController(ResourceLocation typeKey) {
@@ -575,14 +523,6 @@ public final class CreateBlockEntityUpdateGate {
                 Config.RuntimeProperty.Create.DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_CHUNK_BOOTSTRAP_MILLIS,
                 0L,
                 15_000L));
-    }
-
-    private static double alwaysSendDistanceBlocks() {
-        return readDouble(
-                Config.RuntimeProperty.Create.CREATE_BLOCK_ENTITY_UPDATE_GATE_ALWAYS_SEND_DISTANCE_BLOCKS,
-                Config.RuntimeProperty.Create.DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_ALWAYS_SEND_DISTANCE_BLOCKS,
-                0.0D,
-                128.0D);
     }
 
     private static boolean isWithinSoundSendDistance(ServerPlayer player, Vec3 target, ResourceLocation typeKey) {
@@ -862,14 +802,6 @@ public final class CreateBlockEntityUpdateGate {
         return CreateGateTypePolicy.soundSendDistanceBlocks(typeKey);
     }
 
-    private static double lookDotThreshold() {
-        return readDouble(
-                Config.RuntimeProperty.Create.CREATE_BLOCK_ENTITY_UPDATE_GATE_LOOK_DOT,
-                Config.RuntimeProperty.Create.DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_LOOK_DOT,
-                -1.0D,
-                1.0D);
-    }
-
     private static long readLong(String propertyName, long defaultValue, long minValue, long maxValue) {
         String rawValue = System.getProperty(propertyName);
         if (rawValue == null || rawValue.isBlank()) {
@@ -877,19 +809,6 @@ public final class CreateBlockEntityUpdateGate {
         }
         try {
             long parsed = Long.parseLong(rawValue.trim());
-            return Math.max(minValue, Math.min(maxValue, parsed));
-        } catch (NumberFormatException ignored) {
-            return defaultValue;
-        }
-    }
-
-    private static double readDouble(String propertyName, double defaultValue, double minValue, double maxValue) {
-        String rawValue = System.getProperty(propertyName);
-        if (rawValue == null || rawValue.isBlank()) {
-            return defaultValue;
-        }
-        try {
-            double parsed = Double.parseDouble(rawValue.trim());
             return Math.max(minValue, Math.min(maxValue, parsed));
         } catch (NumberFormatException ignored) {
             return defaultValue;
@@ -1232,7 +1151,7 @@ public final class CreateBlockEntityUpdateGate {
                         pendingUpdate.key().pos(),
                         pendingUpdate.key().typeKey());
                 boolean visible = dynamicTarget.forceImmediate()
-                        || shouldSendImmediately(
+                        || CreateGateViewPolicy.shouldSendImmediately(
                                 player,
                                 dynamicTarget.points(),
                                 allowLookDirectionForGatedUpdate(
