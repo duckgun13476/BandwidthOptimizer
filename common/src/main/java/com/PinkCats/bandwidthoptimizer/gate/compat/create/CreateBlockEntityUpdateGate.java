@@ -889,107 +889,6 @@ public final class CreateBlockEntityUpdateGate {
         }
     }
 
-    private record CreateSoundState(
-            String type,
-            String phase,
-            String state,
-            int ticks,
-            int countDown,
-            int pitch,
-            boolean running,
-            boolean fistBump,
-            boolean hasParticle,
-            boolean hasParticleItems,
-            boolean hasAnimation,
-            String heldItem
-    ) {
-        private static CreateSoundState capture(ResourceLocation typeKey, CompoundTag tag) {
-            String type = typeKey == null ? "" : typeKey.getPath();
-            CompoundTag safeTag = tag == null ? new CompoundTag() : tag;
-            return new CreateSoundState(
-                    type,
-                    safeTag.getString("Phase"),
-                    safeTag.getString("State"),
-                    safeTag.getInt("Ticks"),
-                    safeTag.getInt("CountDown"),
-                    safeTag.getInt("Pitch"),
-                    safeTag.getBoolean("Running"),
-                    safeTag.getBoolean("Fistbump"),
-                    safeTag.contains("Particle"),
-                    safeTag.contains("ParticleItems") && !safeTag.getList("ParticleItems", 10).isEmpty(),
-                    safeTag.contains("Animation") && !"NONE".equals(safeTag.getString("Animation")),
-                    itemFingerprint(safeTag));
-        }
-
-        private static String itemFingerprint(CompoundTag tag) {
-            if (tag == null || !tag.contains("HeldItem")) {
-                return "";
-            }
-            CompoundTag itemTag = tag.getCompound("HeldItem");
-            if (itemTag.isEmpty()) {
-                return "";
-            }
-            return itemTag.getString("id") + "#" + itemTag.getInt("count") + "#" + itemTag.getInt("Count");
-        }
-    }
-
-    private static boolean shouldFlushSoundState(PendingKey key, CreateSoundState previous, CreateSoundState current) {
-        if (key == null || current == null || !isSoundClassifiedBlockEntity(key.typeKey())) {
-            return false;
-        }
-        return switch (current.type()) {
-            case "mechanical_press" -> shouldFlushMechanicalPress(previous, current);
-            case "deployer" -> shouldFlushDeployer(previous, current);
-            case "mechanical_crafter" -> shouldFlushMechanicalCrafter(previous, current);
-            case "mechanical_arm" -> shouldFlushMechanicalArm(previous, current);
-            case "cuckoo_clock" -> current.hasAnimation();
-            case "steam_whistle" -> previous != null && previous.pitch() != current.pitch();
-            default -> false;
-        };
-    }
-
-    private static boolean shouldFlushMechanicalPress(CreateSoundState previous, CreateSoundState current) {
-        if (current.hasParticleItems()) {
-            return true;
-        }
-        if (!current.running() || current.ticks() < 120) {
-            return false;
-        }
-        return previous == null || !previous.running() || previous.ticks() < 120 || previous.ticks() > current.ticks();
-    }
-
-    private static boolean shouldFlushDeployer(CreateSoundState previous, CreateSoundState current) {
-        if (current.hasParticle()) {
-            return true;
-        }
-        if (previous == null) {
-            return false;
-        }
-        if (previous.fistBump() != current.fistBump()) {
-            return true;
-        }
-        return !previous.heldItem().equals(current.heldItem()) && !current.heldItem().isBlank();
-    }
-
-    private static boolean shouldFlushMechanicalCrafter(CreateSoundState previous, CreateSoundState current) {
-        if (previous == null) {
-            return false;
-        }
-        if ("EXPORTING".equals(previous.phase()) && "WAITING".equals(current.phase())) {
-            return true;
-        }
-        return "CRAFTING".equals(current.phase())
-                && current.countDown() <= 1000
-                && previous.countDown() > 1000;
-    }
-
-    private static boolean shouldFlushMechanicalArm(CreateSoundState previous, CreateSoundState current) {
-        return previous != null
-                && "SEARCH_OUTPUTS".equals(current.phase())
-                && !previous.heldItem().equals(current.heldItem())
-                && !current.heldItem().isBlank();
-    }
-
     private record PendingUpdate(
             PendingKey key,
             Packet<?> packet,
@@ -1024,7 +923,7 @@ public final class CreateBlockEntityUpdateGate {
 
     private static final class PlayerState {
         private final Map<PendingKey, PendingUpdate> pendingUpdates = new LinkedHashMap<>();
-        private final Map<PendingKey, CreateSoundState> soundStates = new LinkedHashMap<>();
+        private final Map<PendingKey, CreateGateSoundPolicy.SoundState> soundStates = new LinkedHashMap<>();
         private volatile ServerPlayer player;
         private volatile String channelId = "";
         private long chunkBootstrapDeadlineNanos;
@@ -1064,10 +963,10 @@ public final class CreateBlockEntityUpdateGate {
                     iterator.remove();
                 }
             }
-            CreateSoundState previous = this.soundStates.get(key);
-            CreateSoundState current = CreateSoundState.capture(key.typeKey(), tag);
+            CreateGateSoundPolicy.SoundState previous = this.soundStates.get(key);
+            CreateGateSoundPolicy.SoundState current = CreateGateSoundPolicy.capture(key.typeKey(), tag);
             this.soundStates.put(key, current);
-            return shouldFlushSoundState(key, previous, current);
+            return CreateGateSoundPolicy.shouldFlush(key.typeKey(), previous, current);
         }
 
         private synchronized boolean rememberLatest(PendingKey key, Packet<?> packet, int rawBytes) {
