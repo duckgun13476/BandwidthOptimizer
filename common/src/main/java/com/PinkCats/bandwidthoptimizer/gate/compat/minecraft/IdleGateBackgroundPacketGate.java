@@ -16,10 +16,14 @@ public final class IdleGateBackgroundPacketGate {
 
     private static final Set<String> BACKGROUND_DROP_PAYLOAD_CHANNELS = Set.of(
             "create:clientbound_chain_conveyor",
+            "create:funnel_flap",
             "create:server_speed",
             "neoforge:custom_time_packet",
             "powerful_dummy:damage_data",
             "synaxis:cimulink_view_snapshot"
+    );
+    private static final Set<String> BACKGROUND_DROP_PACKET_TYPES = Set.of(
+            "ClientboundSoundPacket"
     );
     private static final ConcurrentHashMap<String, AtomicLong> DROPPED_BYTES_BY_CLASS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, AtomicLong> DROPPED_PACKETS_BY_CLASS = new ConcurrentHashMap<>();
@@ -40,10 +44,12 @@ public final class IdleGateBackgroundPacketGate {
         if (state.mode() != IdleGateMode.BACKGROUND_IDLE) {
             return false;
         }
-        if (!isClientboundCustomPayloadPacket(packet.getClass().getName())) {
-            return false;
+        String className = packet.getClass().getName();
+        if (BACKGROUND_DROP_PACKET_TYPES.contains(simpleName(className))) {
+            return true;
         }
-        return BACKGROUND_DROP_PAYLOAD_CHANNELS.contains(normalizePayloadChannel(CustomPayloadPacketCompat.payloadChannel(packet)));
+        return isClientboundCustomPayloadPacket(className)
+                && BACKGROUND_DROP_PAYLOAD_CHANNELS.contains(normalizePayloadChannel(CustomPayloadPacketCompat.payloadChannel(packet)));
     }
 
     public static void recordDroppedPacket(Packet<?> packet, int encodedByteLength) {
