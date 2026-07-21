@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.idle;
+package com.PinkCats.bandwidthoptimizer.gate;
 
 import com.PinkCats.bandwidthoptimizer.client.hud.BandwidthOptimizerHudOverlay;
 import net.minecraft.client.Minecraft;

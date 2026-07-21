@@ -24,7 +24,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTranspor
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher.OutboundChunkEncodeResult;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentManifestGate;
-import com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate;
+import com.PinkCats.bandwidthoptimizer.gate.compat.create.CreateBlockEntityUpdateGate;
 import com.PinkCats.bandwidthoptimizer.compat.sable.SableChunkSyncCompat;
 import com.PinkCats.bandwidthoptimizer.debug.ChannelTransportHookDiagnosticProbe;
 import com.PinkCats.bandwidthoptimizer.debug.HotpathCostProbe;

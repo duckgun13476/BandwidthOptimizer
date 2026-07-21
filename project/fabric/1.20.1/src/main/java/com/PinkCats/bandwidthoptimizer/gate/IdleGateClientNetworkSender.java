@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.idle;
+package com.PinkCats.bandwidthoptimizer.gate;
 
 import io.netty.buffer.Unpooled;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;

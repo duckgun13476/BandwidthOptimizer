@@ -11,7 +11,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCac
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.command.BandwidthOptimizerCommand;
 import com.PinkCats.bandwidthoptimizer.debug.ServerBoLogExportNetworkChannel;
-import com.PinkCats.bandwidthoptimizer.idle.IdleGateNetworkChannel;
+import com.PinkCats.bandwidthoptimizer.gate.IdleGateNetworkChannel;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportCompressionCaptureManager;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCaptureManager;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsNetworkChannel;

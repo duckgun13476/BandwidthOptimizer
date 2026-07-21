@@ -200,6 +200,10 @@ final class BandwidthOptimizerHudOverlayCore {
                 + " | gate " + formatCount(snapshot.serverCreateGateSavedPackets())
                 + " | " + text("hud.bandwidthoptimizer.metric.sent") + " "
                 + formatCount(snapshot.serverCreateGateReleasedPackets()));
+        lines.add("  " + text("hud.bandwidthoptimizer.metric.idle_gate") + " "
+                + formatSavedShare(serverBaselineBytes, snapshot.serverIdleGateSavedBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.pkt") + " "
+                + formatCount(snapshot.serverIdleGateSavedPackets()));
         lines.add("  " + text("hud.bandwidthoptimizer.metric.optimized_flow") + " "
                 + formatByteShare(serverBaselineBytes, snapshot.serverOutboundTransportFrameBytes())
                 + " | " + text("hud.bandwidthoptimizer.bypass") + " "
@@ -379,7 +383,8 @@ final class BandwidthOptimizerHudOverlayCore {
         if (snapshot == null) {
             return 0L;
         }
-        long preEncodeSavedBytes = Math.max(snapshot.serverCreateGateSavedBytes(), 0L);
+        long preEncodeSavedBytes = Math.max(snapshot.serverCreateGateSavedBytes(), 0L)
+                + Math.max(snapshot.serverIdleGateSavedBytes(), 0L);
         long baselineBytes = snapshot.serverOutboundVanillaCompressedEstimateBytes() + preEncodeSavedBytes;
         return baselineBytes > preEncodeSavedBytes ? baselineBytes : serverEffectiveRawBytes(snapshot);
     }
@@ -388,7 +393,9 @@ final class BandwidthOptimizerHudOverlayCore {
         if (snapshot == null) {
             return 0L;
         }
-        return Math.max(snapshot.serverOutboundRawEncodedBytes() + Math.max(snapshot.serverCreateGateSavedBytes(), 0L), 0L);
+        return Math.max(snapshot.serverOutboundRawEncodedBytes()
+                + Math.max(snapshot.serverCreateGateSavedBytes(), 0L)
+                + Math.max(snapshot.serverIdleGateSavedBytes(), 0L), 0L);
     }
 
     private static String formatDirectionalRate(long inboundBytesPerSecond, long outboundBytesPerSecond) {

@@ -11,7 +11,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCac
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.command.BandwidthOptimizerCommand;
 import com.PinkCats.bandwidthoptimizer.compat.minecraft.ForgeModLoadingContextCompat;
-import com.PinkCats.bandwidthoptimizer.idle.IdleGateNetworkChannel;
+import com.PinkCats.bandwidthoptimizer.gate.IdleGateNetworkChannel;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsNetworkChannel;
 import com.mojang.logging.LogUtils;
 import com.pinkcats.torque.layer.TorqueLayer;

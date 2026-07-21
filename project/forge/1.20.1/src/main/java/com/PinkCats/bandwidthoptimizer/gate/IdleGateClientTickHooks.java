@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.idle;
+package com.PinkCats.bandwidthoptimizer.gate;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import net.minecraft.client.Minecraft;

@@ -25,3 +25,4 @@ logs
 /COMPAT/
 /tools/
 /update/publish-ledger.json
+/.tmp/

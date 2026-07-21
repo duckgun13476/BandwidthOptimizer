@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.idle;
+package com.PinkCats.bandwidthoptimizer.gate;
 
 import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;

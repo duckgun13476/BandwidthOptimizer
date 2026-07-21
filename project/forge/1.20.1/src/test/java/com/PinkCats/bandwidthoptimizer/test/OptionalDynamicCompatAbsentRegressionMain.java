@@ -84,7 +84,7 @@ public final class OptionalDynamicCompatAbsentRegressionMain {
     }
 
     private static boolean shouldGateCreateBlockEntity(String path, boolean chunkBootstrapActive) throws Exception {
-        Class<?> targetClass = Class.forName("com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate");
+        Class<?> targetClass = Class.forName("com.PinkCats.bandwidthoptimizer.gate.compat.create.CreateBlockEntityUpdateGate");
         Method method = targetClass.getDeclaredMethod(
                 "shouldGateCreateBlockEntity",
                 ResourceLocation.class,
@@ -104,7 +104,7 @@ public final class OptionalDynamicCompatAbsentRegressionMain {
             boolean allowLookDirection,
             double dotThreshold
     ) throws Exception {
-        Class<?> targetClass = Class.forName("com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate");
+        Class<?> targetClass = Class.forName("com.PinkCats.bandwidthoptimizer.gate.compat.create.CreateBlockEntityUpdateGate");
         Method method = targetClass.getDeclaredMethod(
                 "isAnyPointInImmediateView",
                 Vec3.class,

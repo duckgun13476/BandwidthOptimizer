@@ -16,6 +16,8 @@ import com.PinkCats.bandwidthoptimizer.compat.minecraft.CustomPayloadPacketCompa
 import com.PinkCats.bandwidthoptimizer.compat.trueuuid.TrueUuidLateLoginQueryGuard;
 import com.PinkCats.bandwidthoptimizer.debug.HotpathCostProbe;
 import com.PinkCats.bandwidthoptimizer.debug.TransportDiagnosticProbe;
+import com.PinkCats.bandwidthoptimizer.gate.compat.minecraft.IdleGateBackgroundPacketGate;
+import com.PinkCats.bandwidthoptimizer.gate.compat.minecraft.IdleGateClientPacketGate;
 import com.PinkCats.bandwidthoptimizer.server.stat.ChannelBandwidthStats;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
 import com.PinkCats.bandwidthoptimizer.server.stat.VanillaCompressionEstimator;
@@ -105,6 +107,16 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
         }
 
         int encodedByteLength = out.writerIndex() - this.bandwidthoptimizer$writerIndexBefore;
+        if (IdleGateClientPacketGate.shouldDrop(packet, this.flow)) {
+            IdleGateClientPacketGate.recordDroppedPacket(packet, encodedByteLength);
+            out.writerIndex(this.bandwidthoptimizer$writerIndexBefore);
+            return;
+        }
+        if (IdleGateBackgroundPacketGate.shouldDrop(context == null ? null : context.channel(), packet, this.flow)) {
+            IdleGateBackgroundPacketGate.recordDroppedPacket(packet, encodedByteLength);
+            out.writerIndex(this.bandwidthoptimizer$writerIndexBefore);
+            return;
+        }
         long returnHookStartNanos = System.nanoTime();
         long vanillaEncodeNanos = this.bandwidthoptimizer$encodeStartNanos <= 0L
                 ? 0L

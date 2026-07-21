@@ -1,11 +1,11 @@
-package com.PinkCats.bandwidthoptimizer.idle;
+package com.PinkCats.bandwidthoptimizer.gate;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
-import net.minecraftforge.event.entity.player.PlayerEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 
-@Mod.EventBusSubscriber(modid = Bandwidthoptimizer.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE)
+@EventBusSubscriber(modid = Bandwidthoptimizer.MODID)
 public final class IdleGateServerLifecycleHooks {
 
     private IdleGateServerLifecycleHooks() {}

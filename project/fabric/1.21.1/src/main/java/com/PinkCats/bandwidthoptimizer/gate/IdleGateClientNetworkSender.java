@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.idle;
+package com.PinkCats.bandwidthoptimizer.gate;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 

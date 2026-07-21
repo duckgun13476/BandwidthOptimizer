@@ -7,7 +7,8 @@ import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameO
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotReport;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkServerOfflineReuseStats;
-import com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate;
+import com.PinkCats.bandwidthoptimizer.gate.compat.create.CreateBlockEntityUpdateGate;
+import com.PinkCats.bandwidthoptimizer.gate.compat.minecraft.IdleGateBackgroundPacketGate;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportSourceRankCore;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -105,6 +106,7 @@ public final class ServerBandwidthStatsRegistry {
         ChunkHotspotStats.reset();
         ChunkServerOfflineReuseStats.reset();
         CreateBlockEntityUpdateGate.resetStats();
+        IdleGateBackgroundPacketGate.reset();
         ChannelTransportSourceRankCore.resetCreateBlockEntityTransportStats();
         ServerBandwidthRecentWindow.reset();
     }
@@ -148,6 +150,7 @@ public final class ServerBandwidthStatsRegistry {
         int boundPlayers = 0;
         ServerCacheReuseSnapshot serverCacheReuseSnapshot = snapshotServerCacheReuse();
         CreateBlockEntityUpdateGate.Snapshot createGateSnapshot = CreateBlockEntityUpdateGate.snapshotStats();
+        IdleGateBackgroundPacketGate.Snapshot idleGateSnapshot = IdleGateBackgroundPacketGate.snapshot();
 
         for (ChannelBandwidthStats.Snapshot snapshot : channelSnapshots) {
             outboundRawPackets += snapshot.outboundRawEncodedPackets();
@@ -197,7 +200,9 @@ public final class ServerBandwidthStatsRegistry {
                 createGateSnapshot.observedBytes(),
                 createGateSnapshot.savedBytes(),
                 createGateSnapshot.savedPackets(),
-                createGateSnapshot.releasedPackets()
+                createGateSnapshot.releasedPackets(),
+                idleGateSnapshot.savedBytes(),
+                idleGateSnapshot.savedPackets()
         );
     }
 
@@ -320,7 +325,9 @@ public final class ServerBandwidthStatsRegistry {
             long serverCreateGateObservedBytes,
             long serverCreateGateSavedBytes,
             long serverCreateGateSavedPackets,
-            long serverCreateGateReleasedPackets
+            long serverCreateGateReleasedPackets,
+            long serverIdleGateSavedBytes,
+            long serverIdleGateSavedPackets
     ) {
         public TotalsSnapshot(
                 int activeChannels,
@@ -419,14 +426,75 @@ public final class ServerBandwidthStatsRegistry {
                     0L,
                     0L,
                     0L,
+                    0L,
+                    0L,
+                    0L);
+        }
+
+        public TotalsSnapshot(
+                int activeChannels,
+                int boundPlayers,
+                long outboundRawEncodedPackets,
+                long outboundRawEncodedBytes,
+                long outboundVanillaCompressedEstimateBytes,
+                long outboundVanillaEstimateWireBytes,
+                long inboundRawEncodedPackets,
+                long inboundRawEncodedBytes,
+                long outboundTransportFrames,
+                long outboundTransportFrameBytes,
+                long inboundTransportFrames,
+                long inboundTransportFrameBytes,
+                long outboundBypassPackets,
+                long outboundBypassBytes,
+                long inboundBypassPackets,
+                long inboundBypassBytes,
+                long outboundWireBytes,
+                long inboundWireBytes,
+                long serverOfflineReuseConfirmedFrames,
+                long serverOfflineReuseConfirmedSavedBytes,
+                long serverOfflineReuseConfirmedWireBytes,
+                long serverTemporaryReuseSavedBytes,
+                long serverCreateGateObservedBytes,
+                long serverCreateGateSavedBytes,
+                long serverCreateGateSavedPackets,
+                long serverCreateGateReleasedPackets
+        ) {
+            this(
+                    activeChannels,
+                    boundPlayers,
+                    outboundRawEncodedPackets,
+                    outboundRawEncodedBytes,
+                    outboundVanillaCompressedEstimateBytes,
+                    outboundVanillaEstimateWireBytes,
+                    inboundRawEncodedPackets,
+                    inboundRawEncodedBytes,
+                    outboundTransportFrames,
+                    outboundTransportFrameBytes,
+                    inboundTransportFrames,
+                    inboundTransportFrameBytes,
+                    outboundBypassPackets,
+                    outboundBypassBytes,
+                    inboundBypassPackets,
+                    inboundBypassBytes,
+                    outboundWireBytes,
+                    inboundWireBytes,
+                    serverOfflineReuseConfirmedFrames,
+                    serverOfflineReuseConfirmedSavedBytes,
+                    serverOfflineReuseConfirmedWireBytes,
+                    serverTemporaryReuseSavedBytes,
+                    serverCreateGateObservedBytes,
+                    serverCreateGateSavedBytes,
+                    serverCreateGateSavedPackets,
+                    serverCreateGateReleasedPackets,
+                    0L,
                     0L);
         }
 
         public long outboundSavedBytes() {
             if (outboundTransportFrameBytes <= 0L && outboundBypassBytes <= 0L) {
-                return 0L;
+                return Math.max(serverIdleGateSavedBytes, 0L);
             }
-            return Math.max(outboundVanillaCompressedEstimateBytes - outboundWireBytes, 0L);
+            return Math.max(outboundVanillaCompressedEstimateBytes + serverIdleGateSavedBytes - outboundWireBytes, 0L);
         }
 
         public long outboundVanillaEstimateSavedBytes() {

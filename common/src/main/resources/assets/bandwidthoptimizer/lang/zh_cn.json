@@ -50,6 +50,7 @@
   "hud.bandwidthoptimizer.metric.temporary_cache": "临时缓存",
   "hud.bandwidthoptimizer.metric.offline_cache": "离线缓存",
   "hud.bandwidthoptimizer.metric.create_gate": "机械动力",
+  "hud.bandwidthoptimizer.metric.idle_gate": "挂机门控",
   "hud.bandwidthoptimizer.metric.server_memory": "服务端缓存",
   "hud.bandwidthoptimizer.metric.server_jvm": "服务端内存",
   "hud.bandwidthoptimizer.metric.hash": "哈希",

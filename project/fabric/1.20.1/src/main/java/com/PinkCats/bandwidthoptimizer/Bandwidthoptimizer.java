@@ -12,8 +12,8 @@ import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkHotspotPathContro
 import com.PinkCats.bandwidthoptimizer.experient.ExperientRunAllProbeHooks;
 import com.PinkCats.bandwidthoptimizer.experient.ExperientServerCommandController;
 import com.PinkCats.bandwidthoptimizer.experient.ExperientWatchBoundaryRefreshPatchController;
-import com.PinkCats.bandwidthoptimizer.idle.IdleGateNetworkChannel;
-import com.PinkCats.bandwidthoptimizer.idle.IdleGateServerState;
+import com.PinkCats.bandwidthoptimizer.gate.IdleGateNetworkChannel;
+import com.PinkCats.bandwidthoptimizer.gate.IdleGateServerState;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportCompressionCaptureManager;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCaptureManager;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsHudSync;

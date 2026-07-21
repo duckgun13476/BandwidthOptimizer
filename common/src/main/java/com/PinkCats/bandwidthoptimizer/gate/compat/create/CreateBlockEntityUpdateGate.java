@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.compat.create;
+package com.PinkCats.bandwidthoptimizer.gate.compat.create;
 
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 

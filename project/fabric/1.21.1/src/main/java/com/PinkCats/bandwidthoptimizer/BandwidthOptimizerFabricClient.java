@@ -6,8 +6,8 @@ import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCac
 import com.PinkCats.bandwidthoptimizer.command.ClientHudCommand;
 import com.PinkCats.bandwidthoptimizer.experient.ExperientAutoConnectController;
 import com.PinkCats.bandwidthoptimizer.experient.ExperientClientCaptureResetHooks;
-import com.PinkCats.bandwidthoptimizer.idle.IdleGateClientController;
-import com.PinkCats.bandwidthoptimizer.idle.IdleGateClientNetworkSender;
+import com.PinkCats.bandwidthoptimizer.gate.IdleGateClientController;
+import com.PinkCats.bandwidthoptimizer.gate.IdleGateClientNetworkSender;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsClientReceiver;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;

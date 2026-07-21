@@ -50,6 +50,7 @@
   "hud.bandwidthoptimizer.metric.temporary_cache": "cache temp",
   "hud.bandwidthoptimizer.metric.offline_cache": "cache offline",
   "hud.bandwidthoptimizer.metric.create_gate": "Gate Create",
+  "hud.bandwidthoptimizer.metric.idle_gate": "Gate AFK",
   "hud.bandwidthoptimizer.metric.server_memory": "cache servidor",
   "hud.bandwidthoptimizer.metric.server_jvm": "memória servidor",
   "hud.bandwidthoptimizer.metric.hash": "hash",

@@ -90,6 +90,28 @@ def configureBandwidthOptimizerNeoForgeClientRun = { Project projectRef, def run
     runConfig.systemProperty('neoforge.enabledGameTestNamespaces', mod_id)
     runConfig.systemProperty('bandwidthoptimizer.outputDirectory', project.ext.boClientOutputRoot.call(projectRef).absolutePath)
     runConfig.systemProperty('bandwidthoptimizer.sharedOutputDirectory', project.ext.boServerOutputRoot.call(projectRef).absolutePath)
+    String mcpAgentClientJarProperty = (projectRef.findProperty('boMcpAgentClientJar') ?: '').toString().trim()
+    if (!mcpAgentClientJarProperty.isEmpty()) {
+        File mcpAgentClientJar = projectRef.file(mcpAgentClientJarProperty)
+        if (!mcpAgentClientJar.isFile()) {
+            throw new GradleException("MCP client jar was not found: ${mcpAgentClientJar.absolutePath}")
+        }
+        String mcpAgentClientToken = (projectRef.findProperty('boMcpAgentClientToken') ?: '').toString().trim()
+        if (mcpAgentClientToken.isEmpty()) {
+            throw new GradleException('boMcpAgentClientToken is required when boMcpAgentClientJar is set')
+        }
+        TaskProvider<Copy> prepareMcpAgentClientRunMod = projectRef.tasks.register(
+                'prepareMcpAgentClientRunMod',
+                Copy
+        ) {
+            from(mcpAgentClientJar)
+            into(projectRef.file('run/client/mods'))
+        }
+        runConfig.taskBefore(prepareMcpAgentClientRunMod)
+        runConfig.systemProperty('mcp_tool_for_agent_client.bridge.enabled', 'true')
+        runConfig.systemProperty('mcp_tool_for_agent_client.bridge.port', (projectRef.findProperty('boMcpAgentClientPort') ?: '18765').toString())
+        runConfig.systemProperty('mcp_tool_for_agent_client.bridge.token', mcpAgentClientToken)
+    }
     if ((projectRef.findProperty('boExperientEnabled') ?: 'false').toString().toBoolean()) {
         runConfig.systemProperty('bandwidthoptimizer.experient.enabled', 'true')
         if (projectRef.hasProperty('boExperientAutoConnectAddress')) {
@@ -320,7 +342,10 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
             'boClientChunkCacheRecycleTriggerFreeMb',
             'boExperientAutoConnectRejoinCycles',
             'boExperientAutoConnectRejoinConnectedTicks',
-            'boExperientAutoConnectRejoinDelayTicks'
+            'boExperientAutoConnectRejoinDelayTicks',
+            'boMcpAgentClientJar',
+            'boMcpAgentClientPort',
+            'boMcpAgentClientToken'
     ].each { String propertyName ->
         project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, propertyName)
     }

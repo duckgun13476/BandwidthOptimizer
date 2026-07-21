@@ -2,7 +2,7 @@ package com.PinkCats.bandwidthoptimizer.server.stat;
 
 import com.PinkCats.bandwidthoptimizer.client.hud.ClientServerBandwidthHudStats;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
-import com.PinkCats.bandwidthoptimizer.compat.create.CreateBlockEntityUpdateGate;
+import com.PinkCats.bandwidthoptimizer.gate.compat.create.CreateBlockEntityUpdateGate;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportSourceRankCore;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
@@ -44,7 +44,9 @@ public record ServerBandwidthStatsPayload(
         long serverCreateTransportRawBytes,
         long serverCreateTransportActualBytes,
         long serverCreateTransportSavedBytes,
-        long serverCreateTransportPackets
+        long serverCreateTransportPackets,
+        long serverIdleGateSavedBytes,
+        long serverIdleGateSavedPackets
 ) {
 
     public static ServerBandwidthStatsPayload fromTotals(ServerBandwidthStatsRegistry.TotalsSnapshot totals) {
@@ -116,13 +118,15 @@ public record ServerBandwidthStatsPayload(
                 createTransportSnapshot.rawBytes(),
                 createTransportSnapshot.actualBytes(),
                 createTransportSnapshot.savedBytes(),
-                createTransportSnapshot.packets()
+                createTransportSnapshot.packets(),
+                totals.serverIdleGateSavedBytes(),
+                totals.serverIdleGateSavedPackets()
         );
     }
 
 
     public static ServerBandwidthStatsPayload empty() {
-        return new ServerBandwidthStatsPayload(System.currentTimeMillis(), 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false, 0L, 0L, 0L, 0L);
+        return new ServerBandwidthStatsPayload(System.currentTimeMillis(), 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false, 0L, 0L, 0L, 0L, 0L, 0L);
     }
 
     public static void encode(ServerBandwidthStatsPayload payload, FriendlyByteBuf buffer) {
@@ -164,6 +168,8 @@ public record ServerBandwidthStatsPayload(
         buffer.writeVarLong(Math.max(safePayload.serverCreateTransportActualBytes(), 0L));
         buffer.writeVarLong(Math.max(safePayload.serverCreateTransportSavedBytes(), 0L));
         buffer.writeVarLong(Math.max(safePayload.serverCreateTransportPackets(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.serverIdleGateSavedBytes(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.serverIdleGateSavedPackets(), 0L));
     }
 
     public static ServerBandwidthStatsPayload decode(FriendlyByteBuf buffer) {
@@ -204,6 +210,8 @@ public record ServerBandwidthStatsPayload(
         long serverCreateTransportActualBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         long serverCreateTransportSavedBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         long serverCreateTransportPackets = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long serverIdleGateSavedBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long serverIdleGateSavedPackets = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         return new ServerBandwidthStatsPayload(
                 capturedAtMillis,
                 activeChannels,
@@ -241,7 +249,9 @@ public record ServerBandwidthStatsPayload(
                 serverCreateTransportRawBytes,
                 serverCreateTransportActualBytes,
                 serverCreateTransportSavedBytes,
-                serverCreateTransportPackets
+                serverCreateTransportPackets,
+                serverIdleGateSavedBytes,
+                serverIdleGateSavedPackets
         );
     }
 
