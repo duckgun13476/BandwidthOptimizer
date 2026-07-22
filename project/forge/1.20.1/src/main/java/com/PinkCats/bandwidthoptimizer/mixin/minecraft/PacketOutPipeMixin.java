@@ -118,6 +118,7 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
             out.writerIndex(this.bandwidthoptimizer$writerIndexBefore);
             return;
         }
+        IdleGateBackgroundPacketGate.recordPassedPacket(context == null ? null : context.channel(), packet, this.flow, encodedByteLength);
         long returnHookStartNanos = System.nanoTime();
         long vanillaEncodeNanos = this.bandwidthoptimizer$encodeStartNanos <= 0L
                 ? 0L

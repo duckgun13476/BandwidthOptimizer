@@ -267,6 +267,11 @@ public final class DiagnosticToolRegistry {
                 "compatDynamicGates",
                 Cost.MEDIUM,
                 "Dynamic-structure compatibility gates and projection failures"
+        ),
+        IDLE_GATE_TRAFFIC(
+                "idleGateTraffic",
+                Cost.SMALL,
+                "Background-idle clientbound packets that pass the gate"
         );
 
         private final String id;

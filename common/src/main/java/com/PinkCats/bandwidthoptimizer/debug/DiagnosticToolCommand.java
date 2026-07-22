@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.debug;
 
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.CommandSourceCompat;
+import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.IdleGateBackgroundPacketGate;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -77,14 +78,24 @@ public final class DiagnosticToolCommand {
 
     private static int toggle(CommandSourceStack source, DiagnosticToolRegistry.Tool tool) {
         boolean enabled = DiagnosticToolRegistry.toggle(tool);
+        if (enabled) {
+            resetToolSession(tool);
+        }
         sendToolState(source, tool, enabled, "toggled");
         return Command.SINGLE_SUCCESS;
     }
 
     private static int enableFor(CommandSourceStack source, DiagnosticToolRegistry.Tool tool, int minutes) {
         DiagnosticToolRegistry.enable(tool, minutes);
+        resetToolSession(tool);
         sendToolState(source, tool, true, "set");
         return Command.SINGLE_SUCCESS;
+    }
+
+    private static void resetToolSession(DiagnosticToolRegistry.Tool tool) {
+        if (tool == DiagnosticToolRegistry.Tool.IDLE_GATE_TRAFFIC) {
+            IdleGateBackgroundPacketGate.resetPassedPackets();
+        }
     }
 
     private static void sendToolState(

@@ -1,6 +1,8 @@
 package com.PinkCats.bandwidthoptimizer.gate.integration.minecraft;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.integration.create.CreateMainPayloadCompat;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.CustomPayloadPacketCompat;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateMode;
@@ -31,9 +33,12 @@ public final class IdleGateBackgroundPacketGate {
     );
     private static final ConcurrentHashMap<String, AtomicLong> DROPPED_BYTES_BY_CLASS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, AtomicLong> DROPPED_PACKETS_BY_CLASS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, AtomicLong> PASSED_BYTES_BY_CLASS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, AtomicLong> PASSED_PACKETS_BY_CLASS = new ConcurrentHashMap<>();
     private static final AtomicLong TOTAL_DROPPED = new AtomicLong();
     private static final AtomicLong TOTAL_DROPPED_BYTES = new AtomicLong();
     private static final AtomicLong NEXT_LOG_MILLIS = new AtomicLong();
+    private static final AtomicLong NEXT_PASSED_LOG_MILLIS = new AtomicLong();
 
     private IdleGateBackgroundPacketGate() {}
 
@@ -80,6 +85,36 @@ public final class IdleGateBackgroundPacketGate {
         recordDrop(dropKey == null ? keyOf(packet, null) : dropKey, encodedByteLength);
     }
 
+    public static void recordPassedPacket(Channel channel, Packet<?> packet, PacketFlow flow, int encodedByteLength) {
+        if (channel == null
+                || packet == null
+                || flow != PacketFlow.CLIENTBOUND
+                || !DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.IDLE_GATE_TRAFFIC)
+                || IdleGateServerState.isResumeDirectWindow(channel)) {
+            return;
+        }
+        if (!IdleGateServerState.snapshot(channel).mode().suppressesWorldPresentation()) {
+            return;
+        }
+        String key = keyOf(packet, null);
+        if (key.startsWith("ClientboundCustomPayloadPacket:bandwidthoptimizer:transport_")) {
+            return;
+        }
+        PASSED_PACKETS_BY_CLASS.computeIfAbsent(key, ignored -> new AtomicLong()).incrementAndGet();
+        PASSED_BYTES_BY_CLASS.computeIfAbsent(key, ignored -> new AtomicLong()).addAndGet(Math.max(encodedByteLength, 0));
+        long nowMillis = System.currentTimeMillis();
+        long nextMillis = NEXT_PASSED_LOG_MILLIS.get();
+        if (nowMillis >= nextMillis && NEXT_PASSED_LOG_MILLIS.compareAndSet(nextMillis, nowMillis + 10_000L)) {
+            DiagnosticLog.info(
+                    DiagnosticToolRegistry.Tool.IDLE_GATE_TRAFFIC,
+                    "event=idle_gate_background_pass packets={} bytes={} top={}",
+                    total(PASSED_PACKETS_BY_CLASS),
+                    total(PASSED_BYTES_BY_CLASS),
+                    summarize(PASSED_BYTES_BY_CLASS, PASSED_PACKETS_BY_CLASS, 24)
+            );
+        }
+    }
+
     public static Snapshot snapshot() {
         return new Snapshot(TOTAL_DROPPED_BYTES.get(), TOTAL_DROPPED.get());
     }
@@ -90,6 +125,13 @@ public final class IdleGateBackgroundPacketGate {
         TOTAL_DROPPED.set(0L);
         TOTAL_DROPPED_BYTES.set(0L);
         NEXT_LOG_MILLIS.set(0L);
+        resetPassedPackets();
+    }
+
+    public static void resetPassedPackets() {
+        PASSED_BYTES_BY_CLASS.clear();
+        PASSED_PACKETS_BY_CLASS.clear();
+        NEXT_PASSED_LOG_MILLIS.set(0L);
     }
 
     private static boolean isClientboundCustomPayloadPacket(String className) {
@@ -141,14 +183,26 @@ public final class IdleGateBackgroundPacketGate {
     }
 
     private static String summarize(ConcurrentHashMap<String, AtomicLong> bytesByKey, ConcurrentHashMap<String, AtomicLong> packetsByKey) {
+        return summarize(bytesByKey, packetsByKey, 8);
+    }
+
+    private static String summarize(
+            ConcurrentHashMap<String, AtomicLong> bytesByKey,
+            ConcurrentHashMap<String, AtomicLong> packetsByKey,
+            int limit
+    ) {
         return bytesByKey.entrySet().stream()
                 .sorted((left, right) -> Long.compare(right.getValue().get(), left.getValue().get()))
-                .limit(8)
+                .limit(limit)
                 .map(entry -> entry.getKey()
                         + "=" + entry.getValue().get()
                         + "B/" + packetsByKey.getOrDefault(entry.getKey(), new AtomicLong()).get())
                 .reduce((left, right) -> left + ", " + right)
                 .orElse("<none>");
+    }
+
+    private static long total(ConcurrentHashMap<String, AtomicLong> values) {
+        return values.values().stream().mapToLong(AtomicLong::get).sum();
     }
 
     public record Snapshot(long savedBytes, long savedPackets) {
