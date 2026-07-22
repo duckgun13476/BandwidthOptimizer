@@ -8,7 +8,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerChunkStateSnapsh
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.debug.HotpathCostProbe;
-import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkHotspotPathRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.experimental.hotspot.ExperientChunkHotspotPathRuntimeConfig;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -150,7 +150,7 @@ public final class ChunkLifecycleCoordinator {
             ChunkPeerChunkStateSnapshot knownChunkSnapshot
     ) {
         if (!BO_Diag_chunkLifecycle()
-                || !ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()
+                || !com.PinkCats.bandwidthoptimizer.experimental.hotspot.ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()
                 || player == null
                 || coordinate == null) {
             return;

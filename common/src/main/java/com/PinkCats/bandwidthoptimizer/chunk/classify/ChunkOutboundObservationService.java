@@ -18,8 +18,8 @@ import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalSnapshotStore;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalStoreObservation;
-import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkHotspotFullChunkTracker;
-import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkHotspotPathRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.experimental.hotspot.ExperientChunkHotspotFullChunkTracker;
+import com.PinkCats.bandwidthoptimizer.experimental.hotspot.ExperientChunkHotspotPathRuntimeConfig;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
 
@@ -106,7 +106,7 @@ public final class ChunkOutboundObservationService {
             ChunkPeerChunkStateSnapshot chunkSnapshotBeforeObserve,
             ChunkShadowSnapshot localChunkSnapshotBeforeObserve
     ) {
-        if (!ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()
+        if (!com.PinkCats.bandwidthoptimizer.experimental.hotspot.ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()
                 || context == null
                 || descriptor == null
                 || descriptor.hotspotKind() != ChunkHotspotKind.FULL_CHUNK) {
@@ -125,11 +125,11 @@ public final class ChunkOutboundObservationService {
     }
 
     private static void recordTwoPointFullChunkProgress(ChannelHandlerContext context, ChunkPacketDescriptor descriptor) {
-        if (!ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()
+        if (!com.PinkCats.bandwidthoptimizer.experimental.hotspot.ExperientChunkHotspotPathRuntimeConfig.isTwoPointReuseMode()
                 || descriptor == null
                 || descriptor.hotspotKind() != ChunkHotspotKind.FULL_CHUNK) {
             return;
         }
-        ExperientChunkHotspotFullChunkTracker.recordOutboundFullChunk(context);
+        com.PinkCats.bandwidthoptimizer.experimental.hotspot.ExperientChunkHotspotFullChunkTracker.recordOutboundFullChunk(context);
     }
 }

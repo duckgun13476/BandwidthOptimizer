@@ -8,10 +8,10 @@ import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
 import com.PinkCats.bandwidthoptimizer.chunk.lifecycle.ChunkLifecycleCoordinator;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.command.BandwidthOptimizerCommand;
-import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkHotspotPathController;
-import com.PinkCats.bandwidthoptimizer.experient.ExperientRunAllProbeHooks;
-import com.PinkCats.bandwidthoptimizer.experient.ExperientServerCommandController;
-import com.PinkCats.bandwidthoptimizer.experient.ExperientWatchBoundaryRefreshPatchController;
+import com.PinkCats.bandwidthoptimizer.experimental.hotspot.ExperientChunkHotspotPathController;
+import com.PinkCats.bandwidthoptimizer.experimental.runall.ExperientRunAllProbeHooks;
+import com.PinkCats.bandwidthoptimizer.experimental.runtime.ExperientServerCommandController;
+import com.PinkCats.bandwidthoptimizer.experimental.watch.ExperientWatchBoundaryRefreshPatchController;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateNetworkChannel;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateServerState;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportCompressionCaptureManager;
@@ -70,22 +70,22 @@ public class Bandwidthoptimizer implements ModInitializer {
             ServerBandwidthStatsHudSync.onServerTick(server);
             ChannelTransportCompressionCaptureManager.onServerTick();
             ChannelTransportPacketRankCaptureManager.onServerTick();
-            ExperientWatchBoundaryRefreshPatchController.onServerTick(server);
-            ExperientServerCommandController.onServerTick(server);
-            ExperientRunAllProbeHooks.onServerTick(server);
-            ExperientChunkHotspotPathController.onServerTick(server);
+            com.PinkCats.bandwidthoptimizer.experimental.watch.ExperientWatchBoundaryRefreshPatchController.onServerTick(server);
+            com.PinkCats.bandwidthoptimizer.experimental.runtime.ExperientServerCommandController.onServerTick(server);
+            com.PinkCats.bandwidthoptimizer.experimental.runall.ExperientRunAllProbeHooks.onServerTick(server);
+            com.PinkCats.bandwidthoptimizer.experimental.hotspot.ExperientChunkHotspotPathController.onServerTick(server);
         });
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-            ExperientWatchBoundaryRefreshPatchController.onPlayerLoggedIn(handler.player);
-            ExperientServerCommandController.onPlayerLoggedIn(handler.player);
-            ExperientRunAllProbeHooks.onPlayerLoggedIn(handler.player);
-            ExperientChunkHotspotPathController.onPlayerLoggedIn(handler.player);
+            com.PinkCats.bandwidthoptimizer.experimental.watch.ExperientWatchBoundaryRefreshPatchController.onPlayerLoggedIn(handler.player);
+            com.PinkCats.bandwidthoptimizer.experimental.runtime.ExperientServerCommandController.onPlayerLoggedIn(handler.player);
+            com.PinkCats.bandwidthoptimizer.experimental.runall.ExperientRunAllProbeHooks.onPlayerLoggedIn(handler.player);
+            com.PinkCats.bandwidthoptimizer.experimental.hotspot.ExperientChunkHotspotPathController.onPlayerLoggedIn(handler.player);
         });
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             IdleGateServerState.onPlayerLoggedOut(handler.player);
-            ExperientWatchBoundaryRefreshPatchController.onPlayerLoggedOut(handler.player);
-            ExperientServerCommandController.onPlayerLoggedOut(handler.player);
-            ExperientChunkHotspotPathController.onPlayerLoggedOut(handler.player);
+            com.PinkCats.bandwidthoptimizer.experimental.watch.ExperientWatchBoundaryRefreshPatchController.onPlayerLoggedOut(handler.player);
+            com.PinkCats.bandwidthoptimizer.experimental.runtime.ExperientServerCommandController.onPlayerLoggedOut(handler.player);
+            com.PinkCats.bandwidthoptimizer.experimental.hotspot.ExperientChunkHotspotPathController.onPlayerLoggedOut(handler.player);
         });
     }
 

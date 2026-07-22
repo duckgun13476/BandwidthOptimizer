@@ -6,7 +6,7 @@ import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.debug.ChunkClientGapProbe;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.BlockEntityTypeKeyCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
-import com.PinkCats.bandwidthoptimizer.experient.ExperientClientCommandTiming;
+import com.PinkCats.bandwidthoptimizer.experimental.runtime.ExperientClientCommandTiming;
 import net.minecraft.core.BlockPos;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
@@ -117,7 +117,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
             DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LOAD_TIMELINE, "event=first_chunk, round={}, delayMs={}, sinceCommandMs={}, chunk=({}, {}), center=({}, {}), radius={}, inWindow={}, receivedWindow={}/{}",
                     bandwidthoptimizer$currentRound,
                     Math.max(now - bandwidthoptimizer$roundStartMillis, 0L),
-                    ExperientClientCommandTiming.millisSinceLastSent(now),
+                    com.PinkCats.bandwidthoptimizer.experimental.runtime.ExperientClientCommandTiming.millisSinceLastSent(now),
                     packet.getX(),
                     packet.getZ(),
                     bandwidthoptimizer$cacheCenterX,
@@ -192,7 +192,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
             DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LOAD_TIMELINE, "event=first_block_entity, round={}, delayMs={}, sinceCommandMs={}, firstChunkMs={}, type={}, block=({}, {}, {}), chunk=({}, {}), inWindow={}, receivedWindow={}/{}, ignoredBlockEntities={}",
                     bandwidthoptimizer$currentRound,
                     Math.max(now - bandwidthoptimizer$roundStartMillis, 0L),
-                    ExperientClientCommandTiming.millisSinceLastSent(now),
+                    com.PinkCats.bandwidthoptimizer.experimental.runtime.ExperientClientCommandTiming.millisSinceLastSent(now),
                     bandwidthoptimizer$firstChunkDelayMillis(),
                     blockEntityTypeKey,
                     blockPos.getX(),
@@ -252,9 +252,9 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         long now = bandwidthoptimizer$roundStartMillis;
         DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LOAD_TIMELINE, "event=tp_start, round={}, sinceCommandMs={}, commandSequence={}, command={}, packetPos=({}, {}, {}), packetId={}, relative={}, playerPos=({}, {}, {}), playerChunk=({}, {}), center=({}, {}), radius={}",
                 round,
-                ExperientClientCommandTiming.millisSinceLastSent(now),
-                ExperientClientCommandTiming.sequence(),
-                ExperientClientCommandTiming.lastCommand(),
+                com.PinkCats.bandwidthoptimizer.experimental.runtime.ExperientClientCommandTiming.millisSinceLastSent(now),
+                com.PinkCats.bandwidthoptimizer.experimental.runtime.ExperientClientCommandTiming.sequence(),
+                com.PinkCats.bandwidthoptimizer.experimental.runtime.ExperientClientCommandTiming.lastCommand(),
                 packet == null ? 0.0D : packet.getX(),
                 packet == null ? 0.0D : packet.getY(),
                 packet == null ? 0.0D : packet.getZ(),
@@ -285,7 +285,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LOAD_TIMELINE, "event=full_window_received, round={}, sinceTpMs={}, sinceCommandMs={}, firstChunkMs={}, firstBlockEntityMs={}, receivedWindow={}/{}, totalChunks={}, blockEntities={}, ignoredBlockEntities={}",
                 bandwidthoptimizer$currentRound,
                 Math.max(now - bandwidthoptimizer$roundStartMillis, 0L),
-                ExperientClientCommandTiming.millisSinceLastSent(now),
+                com.PinkCats.bandwidthoptimizer.experimental.runtime.ExperientClientCommandTiming.millisSinceLastSent(now),
                 bandwidthoptimizer$firstChunkDelayMillis(),
                 bandwidthoptimizer$firstBlockEntityMillis <= 0L ? -1L : Math.max(bandwidthoptimizer$firstBlockEntityMillis - bandwidthoptimizer$roundStartMillis, 0L),
                 receivedWindow,
@@ -371,7 +371,7 @@ public abstract class ClientPacketListenerChunkHandleMixin {
 
     @Unique
     private static long bandwidthoptimizer$sinceClientCommandMillis() {
-        return ExperientClientCommandTiming.millisSinceLastSent(System.currentTimeMillis());
+        return com.PinkCats.bandwidthoptimizer.experimental.runtime.ExperientClientCommandTiming.millisSinceLastSent(System.currentTimeMillis());
     }
 
     @Unique

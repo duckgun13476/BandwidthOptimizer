@@ -4,8 +4,8 @@ import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
 import com.PinkCats.bandwidthoptimizer.client.hud.BandwidthOptimizerHudOverlay;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
 import com.PinkCats.bandwidthoptimizer.command.ClientHudCommand;
-import com.PinkCats.bandwidthoptimizer.experient.ExperientAutoConnectController;
-import com.PinkCats.bandwidthoptimizer.experient.ExperientClientCaptureResetHooks;
+import com.PinkCats.bandwidthoptimizer.experimental.runall.ExperientAutoConnectController;
+import com.PinkCats.bandwidthoptimizer.experimental.runall.ExperientClientCaptureResetHooks;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateClientController;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateClientNetworkSender;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsClientReceiver;
@@ -36,8 +36,8 @@ public class BandwidthOptimizerFabricClient implements ClientModInitializer {
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             IdleGateClientController.onClientTick(client);
-            ExperientClientCaptureResetHooks.onClientTick();
-            ExperientAutoConnectController.onClientTick(client);
+            com.PinkCats.bandwidthoptimizer.experimental.runall.ExperientClientCaptureResetHooks.onClientTick();
+            com.PinkCats.bandwidthoptimizer.experimental.runall.ExperientAutoConnectController.onClientTick(client);
         });
         HudRenderCallback.EVENT.register((guiGraphics, tickDelta) ->
                 BandwidthOptimizerHudOverlay.render(guiGraphics));
