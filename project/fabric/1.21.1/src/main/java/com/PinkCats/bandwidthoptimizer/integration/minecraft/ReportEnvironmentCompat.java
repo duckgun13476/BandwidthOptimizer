@@ -18,4 +18,8 @@ public final class ReportEnvironmentCompat {
     public static Path packetRankDirectory() {
         return gameDirectory().resolve("transport-packet-rank");
     }
+
+    public static Path compressionDirectory() {
+        return gameDirectory().resolve("run").resolve("transport-report");
+    }
 }

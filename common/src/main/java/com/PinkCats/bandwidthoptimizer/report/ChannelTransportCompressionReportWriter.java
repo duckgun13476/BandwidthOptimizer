@@ -1,7 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.report;
 
-import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
-import net.neoforged.fml.loading.FMLPaths;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.ReportEnvironmentCompat;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -32,7 +31,7 @@ public final class ChannelTransportCompressionReportWriter {
         ChannelTransportCompressionReplaySimulator.ScenarioSimulationResult baselineScenario = findBaselineScenario(scenarioResults);
         ChannelTransportCompressionReplaySimulator.ScenarioSimulationResult bestScenario = findBestScenario(scenarioResults);
 
-        Path reportDirectory = BandwidthOptimizerOutputPaths.resolve("transport-report");
+        Path reportDirectory = ReportEnvironmentCompat.compressionDirectory();
         Files.createDirectories(reportDirectory);
         Path reportPath = reportDirectory.resolve("in-game-transport-report-" + REPORT_FILE_TIMESTAMP.format(LocalDateTime.now()) + ".txt");
         String reportText = buildReportText(captureDurationTicks, captureSummary, scenarioResults, baselineScenario, bestScenario);
@@ -84,7 +83,7 @@ public final class ChannelTransportCompressionReportWriter {
         StringBuilder builder = new StringBuilder(4096);
         builder.append("BandwidthOptimizer In-Game Transport Compression Report").append('\n');
         builder.append("generatedAt=").append(REPORT_DISPLAY_TIMESTAMP.format(LocalDateTime.now())).append('\n');
-        builder.append("gameDir=").append(FMLPaths.GAMEDIR.get().toAbsolutePath()).append('\n');
+        builder.append("gameDir=").append(ReportEnvironmentCompat.gameDirectory().toAbsolutePath()).append('\n');
         builder.append("captureDurationTicks=").append(captureDurationTicks).append('\n');
         builder.append("captureDurationSeconds=").append(String.format(Locale.ROOT, "%.2f", captureDurationTicks / 20.0D)).append('\n');
         builder.append("capturedChannels=").append(captureSummary.channelCount()).append('\n');

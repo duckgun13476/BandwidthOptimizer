@@ -19,4 +19,8 @@ public final class ReportEnvironmentCompat {
     public static Path packetRankDirectory() {
         return BandwidthOptimizerOutputPaths.resolve("transport-packet-rank");
     }
+
+    public static Path compressionDirectory() {
+        return BandwidthOptimizerOutputPaths.resolve("transport-report");
+    }
 }
