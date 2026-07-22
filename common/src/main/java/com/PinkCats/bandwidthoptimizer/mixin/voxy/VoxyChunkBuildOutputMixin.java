@@ -1,6 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.mixin.voxy;
 
-import com.PinkCats.bandwidthoptimizer.compat.voxy.VoxyChunkBoundCompat;
+import com.PinkCats.bandwidthoptimizer.integration.voxy.VoxyChunkBoundCompat;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;

@@ -4,10 +4,10 @@ import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
-import com.PinkCats.bandwidthoptimizer.compat.bungeecord.BungeeCordPluginMessageCompat;
-import com.PinkCats.bandwidthoptimizer.compat.minecraft.CustomPayloadPacketCompat;
-import com.PinkCats.bandwidthoptimizer.compat.sable.SableChunkSyncCompat;
-import com.PinkCats.bandwidthoptimizer.compat.valkyrienskies.ValkyrienSkiesChunkSyncCompat;
+import com.PinkCats.bandwidthoptimizer.integration.bungeecord.BungeeCordPluginMessageCompat;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.CustomPayloadPacketCompat;
+import com.PinkCats.bandwidthoptimizer.integration.sable.SableChunkSyncCompat;
+import com.PinkCats.bandwidthoptimizer.integration.valkyrienskies.ValkyrienSkiesChunkSyncCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;

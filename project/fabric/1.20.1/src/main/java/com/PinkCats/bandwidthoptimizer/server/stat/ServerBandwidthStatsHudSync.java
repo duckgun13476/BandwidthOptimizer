@@ -1,6 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.server.stat;
 
-import com.PinkCats.bandwidthoptimizer.gate.compat.minecraft.IdleGateHudSyncPolicy;
+import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.IdleGateHudSyncPolicy;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 

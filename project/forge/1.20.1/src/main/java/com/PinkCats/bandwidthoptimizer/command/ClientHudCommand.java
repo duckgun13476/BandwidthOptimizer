@@ -3,7 +3,7 @@ package com.PinkCats.bandwidthoptimizer.command;
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.client.hud.BandwidthOptimizerHudOverlay;
 import com.PinkCats.bandwidthoptimizer.chunk.debug.ChunkClientGapProbe;
-import com.PinkCats.bandwidthoptimizer.compat.minecraft.CommandSourceCompat;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.CommandSourceCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticSilencer;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;

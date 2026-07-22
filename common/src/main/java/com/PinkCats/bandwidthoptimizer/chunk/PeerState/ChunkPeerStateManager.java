@@ -90,11 +90,11 @@ public final class ChunkPeerStateManager {
     }
 
     public static long bindPlayerDimensionScope(ServerPlayer player, String reason) {
-        if (player == null || com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(player) == null) {
+        if (player == null || com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(player) == null) {
             return 0L;
         }
 
-        ResourceKey<Level> dimensionKey = com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(player).dimension();
+        ResourceKey<Level> dimensionKey = com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(player).dimension();
         long epoch = resolvePlayerScopeId(player.getUUID(), dimensionKey, reason);
         String channelId = readPlayerChannelId(player);
         if (epoch <= 0L || channelId == null || channelId.isBlank()) {

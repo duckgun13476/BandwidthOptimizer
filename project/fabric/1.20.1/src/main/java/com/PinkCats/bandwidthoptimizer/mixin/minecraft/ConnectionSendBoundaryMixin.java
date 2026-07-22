@@ -5,7 +5,7 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportBypassRankLogger;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportControlPlane;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportTraceJournal;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelDecoderExceptionDumper;
-import com.PinkCats.bandwidthoptimizer.gate.compat.create.CreateBlockEntityUpdateGate;
+import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateBlockEntityUpdateGate;
 import com.PinkCats.bandwidthoptimizer.debug.MovementDiagnosticProbe;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;

@@ -47,14 +47,14 @@ public final class SableChunkSyncCompatRegressionMain {
     }
 
     private static Object newState() throws Exception {
-        Class<?> stateClass = Class.forName("com.PinkCats.bandwidthoptimizer.compat.sable.SableChunkSyncCompat$SableSyncState");
+        Class<?> stateClass = Class.forName("com.PinkCats.bandwidthoptimizer.integration.sable.SableChunkSyncCompat$SableSyncState");
         Constructor<?> constructor = stateClass.getDeclaredConstructor();
         constructor.setAccessible(true);
         return constructor.newInstance();
     }
 
     private static Method method(String name, Class<?>... parameterTypes) throws Exception {
-        Class<?> stateClass = Class.forName("com.PinkCats.bandwidthoptimizer.compat.sable.SableChunkSyncCompat$SableSyncState");
+        Class<?> stateClass = Class.forName("com.PinkCats.bandwidthoptimizer.integration.sable.SableChunkSyncCompat$SableSyncState");
         Method method = stateClass.getDeclaredMethod(name, parameterTypes);
         method.setAccessible(true);
         return method;

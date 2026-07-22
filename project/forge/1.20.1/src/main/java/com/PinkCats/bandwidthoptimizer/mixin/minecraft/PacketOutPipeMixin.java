@@ -12,12 +12,12 @@ import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceSt
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportBoundaryController;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
-import com.PinkCats.bandwidthoptimizer.compat.minecraft.CustomPayloadPacketCompat;
-import com.PinkCats.bandwidthoptimizer.compat.trueuuid.TrueUuidLateLoginQueryGuard;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.CustomPayloadPacketCompat;
+import com.PinkCats.bandwidthoptimizer.integration.trueuuid.TrueUuidLateLoginQueryGuard;
 import com.PinkCats.bandwidthoptimizer.debug.HotpathCostProbe;
 import com.PinkCats.bandwidthoptimizer.debug.TransportDiagnosticProbe;
-import com.PinkCats.bandwidthoptimizer.gate.compat.minecraft.IdleGateBackgroundPacketGate;
-import com.PinkCats.bandwidthoptimizer.gate.compat.minecraft.IdleGateClientPacketGate;
+import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.IdleGateBackgroundPacketGate;
+import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.IdleGateClientPacketGate;
 import com.PinkCats.bandwidthoptimizer.server.stat.ChannelBandwidthStats;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
 import com.PinkCats.bandwidthoptimizer.server.stat.VanillaCompressionEstimator;

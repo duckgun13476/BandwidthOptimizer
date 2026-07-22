@@ -12,7 +12,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotSemanticKeyRe
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.lane.ChunkLanePacketSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.lane.ChunkLaneSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalSnapshotStore;
-import com.PinkCats.bandwidthoptimizer.compat.minecraft.LoaderEnvironmentCompat;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.LoaderEnvironmentCompat;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
 

@@ -1,8 +1,9 @@
 package com.PinkCats.bandwidthoptimizer.gate.recovery;
 
-import com.PinkCats.bandwidthoptimizer.gate.compat.create.CreateGeneralBlockEntityRecoveryPolicy;
-import com.PinkCats.bandwidthoptimizer.gate.compat.create.CreateTransferBlockEntityRecoveryPolicy;
-import com.PinkCats.bandwidthoptimizer.gate.compat.create.CreateWorkerBlockEntityRecoveryPolicy;
+import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateGeneralBlockEntityRecoveryPolicy;
+import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateTransferBlockEntityRecoveryPolicy;
+import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateWorkerBlockEntityRecoveryPolicy;
+import com.PinkCats.bandwidthoptimizer.gate.integration.farm_and_charm.FarmAndCharmSaturationRecoveryPolicy;
 import io.netty.channel.Channel;
 import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
@@ -15,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class IdleGateRecoveryRegistry {
 
     private static final List<IdleGateRecoveryPolicy> POLICIES = List.of(
+            new FarmAndCharmSaturationRecoveryPolicy(),
             new CreateTransferBlockEntityRecoveryPolicy(),
             new CreateWorkerBlockEntityRecoveryPolicy(),
             new CreateGeneralBlockEntityRecoveryPolicy()

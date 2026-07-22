@@ -74,12 +74,12 @@ mixin {
 
 def forge1192ExcludedForge1201Java = [
         'com/PinkCats/bandwidthoptimizer/client/hud/BandwidthOptimizerHudOverlay.java',
-        'com/PinkCats/bandwidthoptimizer/compat/minecraft/BlockEntityTypeKeyCompat.java',
-        'com/PinkCats/bandwidthoptimizer/compat/minecraft/ServerPlayerLevelCompat.java'
+        'com/PinkCats/bandwidthoptimizer/integration/minecraft/BlockEntityTypeKeyCompat.java',
+        'com/PinkCats/bandwidthoptimizer/integration/minecraft/ServerPlayerLevelCompat.java'
 ]
 
 def forge1192ExcludedCommonJava = [
-        'com/PinkCats/bandwidthoptimizer/compat/minecraft/CommandSourceCompat.java'
+        'com/PinkCats/bandwidthoptimizer/integration/minecraft/CommandSourceCompat.java'
 ]
 
 sourceSets {

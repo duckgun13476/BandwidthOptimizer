@@ -1,6 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.mixin.watut;
 
-import com.PinkCats.bandwidthoptimizer.compat.watut.WatutDynamicGuiCompat;
+import com.PinkCats.bandwidthoptimizer.integration.watut.WatutDynamicGuiCompat;
 import org.spongepowered.asm.mixin.Dynamic;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;

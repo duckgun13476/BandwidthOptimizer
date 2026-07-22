@@ -1,6 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.debug;
 
-import com.PinkCats.bandwidthoptimizer.compat.minecraft.CommandSourceCompat;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.CommandSourceCompat;
 import com.mojang.brigadier.Command;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;

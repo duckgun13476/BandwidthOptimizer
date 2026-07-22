@@ -1,7 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.test;
 
-import com.PinkCats.bandwidthoptimizer.compat.sable.SableDynamicStructureCompat;
-import com.PinkCats.bandwidthoptimizer.compat.valkyrienskies.ValkyrienSkiesDynamicStructureCompat;
+import com.PinkCats.bandwidthoptimizer.integration.sable.SableDynamicStructureCompat;
+import com.PinkCats.bandwidthoptimizer.integration.valkyrienskies.ValkyrienSkiesDynamicStructureCompat;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 
@@ -15,9 +15,9 @@ public final class OptionalDynamicCompatAbsentRegressionMain {
         require(!isClassPresent("dev.ryanhcode.sable.Sable"), "Sable is unexpectedly present in the bare test classpath");
         require(!isClassPresent("org.valkyrienskies.mod.common.IShipObjectWorldServerProvider"), "Valkyrien Skies is unexpectedly present in the bare test classpath");
 
-        require(invokePrivateStatic("com.PinkCats.bandwidthoptimizer.compat.sable.SableDynamicStructureCompat", "projectOutMethod") == null,
+        require(invokePrivateStatic("com.PinkCats.bandwidthoptimizer.integration.sable.SableDynamicStructureCompat", "projectOutMethod") == null,
                 "Sable lazy lookup should stay empty when Sable is absent");
-        require(invokePrivateStatic("com.PinkCats.bandwidthoptimizer.compat.valkyrienskies.ValkyrienSkiesDynamicStructureCompat", "serverBridge") == null,
+        require(invokePrivateStatic("com.PinkCats.bandwidthoptimizer.integration.valkyrienskies.ValkyrienSkiesDynamicStructureCompat", "serverBridge") == null,
                 "Valkyrien Skies lazy lookup should stay empty when Valkyrien Skies is absent");
 
         Vec3 fallback = new Vec3(1.0D, 2.0D, 3.0D);
@@ -84,7 +84,7 @@ public final class OptionalDynamicCompatAbsentRegressionMain {
     }
 
     private static boolean shouldGateCreateBlockEntity(String path, boolean chunkBootstrapActive) throws Exception {
-        Class<?> targetClass = Class.forName("com.PinkCats.bandwidthoptimizer.gate.compat.create.CreateBlockEntityUpdateGate");
+        Class<?> targetClass = Class.forName("com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateBlockEntityUpdateGate");
         Method method = targetClass.getDeclaredMethod(
                 "shouldGateCreateBlockEntity",
                 ResourceLocation.class,
@@ -104,7 +104,7 @@ public final class OptionalDynamicCompatAbsentRegressionMain {
             boolean allowLookDirection,
             double dotThreshold
     ) throws Exception {
-        Class<?> targetClass = Class.forName("com.PinkCats.bandwidthoptimizer.gate.compat.create.CreateBlockEntityUpdateGate");
+        Class<?> targetClass = Class.forName("com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateBlockEntityUpdateGate");
         Method method = targetClass.getDeclaredMethod(
                 "isAnyPointInImmediateView",
                 Vec3.class,

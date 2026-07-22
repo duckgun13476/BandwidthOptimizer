@@ -3,7 +3,7 @@ package com.PinkCats.bandwidthoptimizer.command;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportCompressionCommand;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCommand;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsCommand;
-import com.PinkCats.bandwidthoptimizer.compat.minecraft.CommandSourceCompat;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.CommandSourceCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolCommand;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;

@@ -43,7 +43,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalSnapshotSto
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkServerOfflineReuseStats;
-import com.PinkCats.bandwidthoptimizer.compat.sable.SableChunkSyncCompat;
+import com.PinkCats.bandwidthoptimizer.integration.sable.SableChunkSyncCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.debug.HotpathCostProbe;
 import io.netty.channel.ChannelHandlerContext;

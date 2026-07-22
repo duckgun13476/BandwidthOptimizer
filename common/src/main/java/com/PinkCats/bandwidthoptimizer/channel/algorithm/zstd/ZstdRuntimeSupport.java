@@ -1,7 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
-import com.PinkCats.bandwidthoptimizer.compat.minecraft.ZstdNativeTempFolderCompat;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.ZstdNativeTempFolderCompat;
 import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 
 import java.io.IOException;

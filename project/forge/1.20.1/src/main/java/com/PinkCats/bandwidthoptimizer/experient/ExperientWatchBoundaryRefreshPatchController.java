@@ -238,7 +238,7 @@ public final class ExperientWatchBoundaryRefreshPatchController {
             return state.tickWait();
         }
 
-        MutationResult mutationResult = applySingleBlockMutation(com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer), state.layout().targetBlockPos());
+        MutationResult mutationResult = applySingleBlockMutation(com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer), state.layout().targetBlockPos());
         Bandwidthoptimizer.LOGGER.info(
                 "[ExperientWatchBoundary] Watch-boundary retain reached for player={}, chunk={}, mutatedBlock=({}, {}, {}), from={}, to={}, state={}",
                 serverPlayer.getGameProfile().getName(),
@@ -456,7 +456,7 @@ public final class ExperientWatchBoundaryRefreshPatchController {
             return false;
         }
 
-        LevelChunk levelChunk = com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getChunk(coordinate.chunkX(), coordinate.chunkZ());
+        LevelChunk levelChunk = com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getChunk(coordinate.chunkX(), coordinate.chunkZ());
         if (levelChunk == null) {
             Bandwidthoptimizer.LOGGER.warn(
                     "[ExperientWatchBoundary] Skip chunk sender flush because level chunk is missing for player={}, chunk={}",
@@ -468,7 +468,7 @@ public final class ExperientWatchBoundaryRefreshPatchController {
 
         ClientboundLevelChunkWithLightPacket packet = createLevelChunkWithLightPacket(
                 levelChunk,
-                com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getLightEngine()
+                com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getLightEngine()
         );
         serverPlayer.connection.send(packet);
         Bandwidthoptimizer.LOGGER.info(
@@ -502,10 +502,10 @@ public final class ExperientWatchBoundaryRefreshPatchController {
     private static ScenarioLayout buildScenarioLayout(ServerPlayer serverPlayer) {
         ChunkPos chunkPos = serverPlayer.chunkPosition();
         double homeX = (chunkPos.x << 4) + 8.5D;
-        double homeY = resolveSafePathY(com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer));
+        double homeY = resolveSafePathY(com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer));
         double homeZ = (chunkPos.z << 4) + 8.5D;
         int awayOffsetChunks = resolveAwayOffsetChunks(serverPlayer);
-        BlockPos targetBlockPos = resolveTargetMutationBlockPos(com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer), chunkPos);
+        BlockPos targetBlockPos = resolveTargetMutationBlockPos(com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer), chunkPos);
         return new ScenarioLayout(
                 homeX,
                 homeY,
@@ -560,7 +560,7 @@ public final class ExperientWatchBoundaryRefreshPatchController {
                 currentLayout.awayY(),
                 homeZ,
                 bestSelection.coordinate(),
-                resolveTargetMutationBlockPos(com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer), selectedChunkPos)
+                resolveTargetMutationBlockPos(com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer), selectedChunkPos)
         );
     }
 
@@ -604,7 +604,7 @@ public final class ExperientWatchBoundaryRefreshPatchController {
     }
 
     private static void emitBlockEntityCoverageProbe(ServerPlayer serverPlayer, BlockPos probePos) {
-        ServerLevel serverLevel = com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer);
+        ServerLevel serverLevel = com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer);
         serverLevel.setBlockAndUpdate(probePos, Blocks.OAK_SIGN.defaultBlockState());
         BlockEntity blockEntity = serverLevel.getBlockEntity(probePos);
         if (!(blockEntity instanceof SignBlockEntity signBlockEntity)) {

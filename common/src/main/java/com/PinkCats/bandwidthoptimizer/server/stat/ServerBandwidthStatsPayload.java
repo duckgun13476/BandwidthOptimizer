@@ -2,7 +2,7 @@ package com.PinkCats.bandwidthoptimizer.server.stat;
 
 import com.PinkCats.bandwidthoptimizer.client.hud.ClientServerBandwidthHudStats;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
-import com.PinkCats.bandwidthoptimizer.gate.compat.create.CreateBlockEntityUpdateGate;
+import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateBlockEntityUpdateGate;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportSourceRankCore;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;

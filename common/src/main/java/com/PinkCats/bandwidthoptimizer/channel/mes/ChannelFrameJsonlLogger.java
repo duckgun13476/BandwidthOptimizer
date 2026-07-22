@@ -2,7 +2,7 @@ package com.PinkCats.bandwidthoptimizer.channel.mes;
 
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
-import com.PinkCats.bandwidthoptimizer.compat.minecraft.LoaderEnvironmentCompat;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.LoaderEnvironmentCompat;
 import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 
 import java.io.BufferedWriter;

@@ -1,6 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.server.stat;
 
-import com.PinkCats.bandwidthoptimizer.compat.minecraft.CommandSourceCompat;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.CommandSourceCompat;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.builder.ArgumentBuilder;

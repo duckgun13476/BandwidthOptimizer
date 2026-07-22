@@ -487,7 +487,7 @@ public final class ExperientChunkHotspotPathController {
             return null;
         }
 
-        ServerLevel currentLevel = com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer);
+        ServerLevel currentLevel = com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer);
         ServerLevel targetLevel = resolveDimensionHopAlternateLevel(serverPlayer);
         if (targetLevel == null) {
             Bandwidthoptimizer.LOGGER.warn(
@@ -573,7 +573,7 @@ public final class ExperientChunkHotspotPathController {
                 state.originZ()
         );
         boolean placeLightBlock = LIGHT_PULSE_SEQUENCE[state.nextLightPulseIndex()];
-        com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).setBlockAndUpdate(
+        com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).setBlockAndUpdate(
                 probePos,
                 placeLightBlock ? Blocks.SEA_LANTERN.defaultBlockState() : Blocks.AIR.defaultBlockState()
         );
@@ -709,7 +709,7 @@ public final class ExperientChunkHotspotPathController {
     private static void emitBeforeAckSectionBurst(ServerPlayer serverPlayer, double baseX, double baseY, double baseZ) {
         BlockPos anchorPos = resolveSectionProbeAnchor(baseX, baseY, baseZ);
         BlockState firstPatternState = selectFirstBeforeAckSectionProbeState(
-                com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getBlockState(anchorPos)
+                com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getBlockState(anchorPos)
         );
         BlockState secondPatternState = selectSecondBeforeAckSectionProbeState(firstPatternState);
         applyAndSendSectionPattern(serverPlayer, anchorPos, firstPatternState);
@@ -738,7 +738,7 @@ public final class ExperientChunkHotspotPathController {
                     boolean boundary = Math.abs(offsetX) == LIGHT_CHAMBER_RADIUS
                             || Math.abs(offsetY) == LIGHT_CHAMBER_RADIUS
                             || Math.abs(offsetZ) == LIGHT_CHAMBER_RADIUS;
-                    com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).setBlockAndUpdate(
+                    com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).setBlockAndUpdate(
                             currentPos,
                             boundary ? Blocks.DEEPSLATE.defaultBlockState() : Blocks.AIR.defaultBlockState()
                     );
@@ -748,14 +748,14 @@ public final class ExperientChunkHotspotPathController {
     }
 
     private static void setLightProbeState(ServerPlayer serverPlayer, BlockPos probeCenter, boolean enabled) {
-        com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).setBlockAndUpdate(
+        com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).setBlockAndUpdate(
                 probeCenter,
                 enabled ? Blocks.SEA_LANTERN.defaultBlockState() : Blocks.AIR.defaultBlockState()
         );
     }
 
     private static void sendLightUpdateProbePacket(ServerPlayer serverPlayer, BlockPos probeCenter) {
-        LevelLightEngine lightEngine = com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getChunkSource().getLightEngine();
+        LevelLightEngine lightEngine = com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getChunkSource().getLightEngine();
         lightEngine.checkBlock(probeCenter);
         int remainingPasses = MAX_LIGHT_ENGINE_UPDATE_PASSES;
         while (lightEngine.hasLightWork() && remainingPasses-- > 0) {
@@ -777,7 +777,7 @@ public final class ExperientChunkHotspotPathController {
         for (int offsetX = 0; offsetX < SECTION_PROBE_WIDTH; offsetX++) {
             for (int offsetY = 0; offsetY < SECTION_PROBE_HEIGHT; offsetY++) {
                 for (int offsetZ = 0; offsetZ < SECTION_PROBE_DEPTH; offsetZ++) {
-                    com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).setBlockAndUpdate(
+                    com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).setBlockAndUpdate(
                             anchorPos.offset(offsetX, offsetY, offsetZ),
                             blockState
                     );
@@ -792,13 +792,13 @@ public final class ExperientChunkHotspotPathController {
             for (int offsetY = 0; offsetY < SECTION_PROBE_HEIGHT; offsetY++) {
                 for (int offsetZ = 0; offsetZ < SECTION_PROBE_DEPTH; offsetZ++) {
                     BlockPos currentPos = anchorPos.offset(offsetX, offsetY, offsetZ);
-                    com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).setBlockAndUpdate(currentPos, blockState);
+                    com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).setBlockAndUpdate(currentPos, blockState);
                     sectionRelativePositions.add(SectionPos.sectionRelativePos(currentPos));
                 }
             }
         }
 
-        LevelChunk levelChunk = (LevelChunk) com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getChunk(anchorPos);
+        LevelChunk levelChunk = (LevelChunk) com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getChunk(anchorPos);
         LevelChunkSection levelChunkSection = levelChunk.getSection(levelChunk.getSectionIndex(anchorPos.getY()));
         serverPlayer.connection.send(createSectionBlocksUpdatePacket(SectionPos.of(anchorPos), sectionRelativePositions, levelChunkSection));
     }
@@ -844,12 +844,12 @@ public final class ExperientChunkHotspotPathController {
     }
 
     private static SignBlockEntity ensureBlockEntityProbeInstalled(ServerPlayer serverPlayer, BlockPos probePos) {
-        BlockState blockState = com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getBlockState(probePos);
+        BlockState blockState = com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getBlockState(probePos);
         if (!blockState.is(Blocks.OAK_SIGN)) {
-            com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).setBlockAndUpdate(probePos, Blocks.OAK_SIGN.defaultBlockState());
+            com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).setBlockAndUpdate(probePos, Blocks.OAK_SIGN.defaultBlockState());
         }
 
-        BlockEntity blockEntity = com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getBlockEntity(probePos);
+        BlockEntity blockEntity = com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).getBlockEntity(probePos);
         if (blockEntity instanceof SignBlockEntity signBlockEntity) {
             return signBlockEntity;
         }
@@ -1040,7 +1040,7 @@ public final class ExperientChunkHotspotPathController {
             return;
         }
 
-        ServerLevel currentLevel = com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer);
+        ServerLevel currentLevel = com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer);
         if (!isDimensionHopReusableLevel(currentLevel)) {
             ServerLevel overworld = serverPlayer.getServer().getLevel(Level.OVERWORLD);
             if (overworld != null) {
@@ -1060,7 +1060,7 @@ public final class ExperientChunkHotspotPathController {
         Bandwidthoptimizer.LOGGER.info(
                 "[ExperientChunkPath] Prepared dimension-hop player={}, primaryDimension={}, alternateDimension={}, roundTrips={}",
                 serverPlayer.getGameProfile().getName(),
-                resolveDimensionName(com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer)),
+                resolveDimensionName(com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer)),
                 resolveDimensionName(resolveDimensionHopAlternateLevel(serverPlayer)),
                 DIMENSION_HOP_TOTAL_ROUND_TRIPS
         );
@@ -1130,14 +1130,14 @@ public final class ExperientChunkHotspotPathController {
             return null;
         }
 
-        if (Level.NETHER.equals(com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).dimension())) {
+        if (Level.NETHER.equals(com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer).dimension())) {
             return serverPlayer.getServer().getLevel(Level.OVERWORLD);
         }
         return serverPlayer.getServer().getLevel(Level.NETHER);
     }
 
     private static double resolveSafePathY(ServerPlayer serverPlayer) {
-        return resolveSafePathY(serverPlayer == null ? null : com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer));
+        return resolveSafePathY(serverPlayer == null ? null : com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer));
     }
 
     private static double resolveSafePathY(ServerLevel serverLevel) {
@@ -1251,7 +1251,7 @@ public final class ExperientChunkHotspotPathController {
         if (serverPlayer == null || serverPlayer.getServer() == null || targetLevel == null) {
             return false;
         }
-        if (com.PinkCats.bandwidthoptimizer.compat.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer) == targetLevel) {
+        if (com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat.serverLevel(serverPlayer) == targetLevel) {
             return teleportPlayer(serverPlayer, targetX, targetY, targetZ);
         }
 

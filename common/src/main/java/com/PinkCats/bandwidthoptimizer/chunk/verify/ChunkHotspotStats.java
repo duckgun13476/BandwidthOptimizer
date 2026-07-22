@@ -1,6 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.chunk.verify;
 
-import com.PinkCats.bandwidthoptimizer.compat.minecraft.LoaderEnvironmentCompat;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.LoaderEnvironmentCompat;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
 

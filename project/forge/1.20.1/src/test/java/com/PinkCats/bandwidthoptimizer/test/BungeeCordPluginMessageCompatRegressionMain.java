@@ -1,6 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.test;
 
-import com.PinkCats.bandwidthoptimizer.compat.bungeecord.BungeeCordPluginMessageCompat;
+import com.PinkCats.bandwidthoptimizer.integration.bungeecord.BungeeCordPluginMessageCompat;
 
 public final class BungeeCordPluginMessageCompatRegressionMain {
 

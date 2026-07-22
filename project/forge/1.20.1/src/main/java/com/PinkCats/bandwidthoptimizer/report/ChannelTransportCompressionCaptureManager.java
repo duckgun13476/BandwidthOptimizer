@@ -1,7 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.report;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
-import com.PinkCats.bandwidthoptimizer.compat.minecraft.CommandSourceCompat;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.CommandSourceCompat;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;

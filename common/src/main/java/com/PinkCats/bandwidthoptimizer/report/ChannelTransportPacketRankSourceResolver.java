@@ -1,7 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.report;
 
-import com.PinkCats.bandwidthoptimizer.compat.minecraft.BlockEntityTypeKeyCompat;
-import com.PinkCats.bandwidthoptimizer.compat.minecraft.CustomPayloadPacketCompat;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.BlockEntityTypeKeyCompat;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.CustomPayloadPacketCompat;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.resources.ResourceLocation;

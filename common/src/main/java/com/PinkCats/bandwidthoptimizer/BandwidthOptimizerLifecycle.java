@@ -1,7 +1,7 @@
 package com.PinkCats.bandwidthoptimizer;
 
 import com.PinkCats.bandwidthoptimizer.chunk.lifecycle.ChunkLifecycleCoordinator;
-import com.PinkCats.bandwidthoptimizer.gate.compat.create.CreateBlockEntityUpdateGate;
+import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateBlockEntityUpdateGate;
 import com.PinkCats.bandwidthoptimizer.gate.recovery.IdleGateRecoveryRegistry;
 import com.PinkCats.bandwidthoptimizer.experient.ExperientChunkWatchEventTracker;
 import com.PinkCats.bandwidthoptimizer.platform.TorqueNative;

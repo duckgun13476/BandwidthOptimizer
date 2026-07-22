@@ -9,7 +9,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceSt
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportControlFrameSender;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
-import com.PinkCats.bandwidthoptimizer.compat.minecraft.LoaderEnvironmentCompat;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.LoaderEnvironmentCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
