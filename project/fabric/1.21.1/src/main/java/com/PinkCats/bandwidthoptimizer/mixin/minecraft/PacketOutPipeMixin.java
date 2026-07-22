@@ -74,8 +74,9 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
             out.writerIndex(this.bandwidthoptimizer$writerIndexBefore);
             return;
         }
-        if (IdleGateBackgroundPacketGate.shouldDrop(context == null ? null : context.channel(), packet, this.protocolInfo.flow())) {
-            IdleGateBackgroundPacketGate.recordDroppedPacket(packet, encodedByteLength);
+        String backgroundDropKey = IdleGateBackgroundPacketGate.dropKey(context == null ? null : context.channel(), packet, this.protocolInfo.flow());
+        if (backgroundDropKey != null) {
+            IdleGateBackgroundPacketGate.recordDroppedPacket(packet, encodedByteLength, backgroundDropKey);
             out.writerIndex(this.bandwidthoptimizer$writerIndexBefore);
             return;
         }

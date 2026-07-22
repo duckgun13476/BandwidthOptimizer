@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.gate.integration.minecraft;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.integration.create.CreateMainPayloadCompat;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.CustomPayloadPacketCompat;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateMode;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateServerState;
@@ -55,6 +56,10 @@ public final class IdleGateBackgroundPacketGate {
         }
         if (!isClientboundCustomPayloadPacket(className)) {
             return null;
+        }
+        String presentationKey = CreateMainPayloadCompat.presentationOnlyKey(packet);
+        if (presentationKey != null) {
+            return keyOf(packet, presentationKey);
         }
         return BACKGROUND_DROP_PAYLOAD_CHANNELS.contains(normalizePayloadChannel(CustomPayloadPacketCompat.payloadChannel(packet)))
                 ? keyOf(packet, null)
