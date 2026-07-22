@@ -6,6 +6,7 @@
   "refmap": "bandwidthoptimizer.refmap.json",
   "mixins": [
     "minecraft.ClientboundSectionBlocksUpdatePacketAccessor",
+    "minecraft.ClientboundMoveEntityPacketAccessor",
     "minecraft.ClientboundCustomPayloadPacketAccessor",
     "minecraft.ConnectionAccessor",
     "minecraft.ConnectionBandwidthStatsMixin",

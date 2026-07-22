@@ -54,6 +54,7 @@ public final class BandwidthOptimizerLifecycle {
             net.minecraft.world.level.ChunkPos chunkPos = nativeChunkPos(pos);
             com.PinkCats.bandwidthoptimizer.experimental.watch.ExperientChunkWatchEventTracker.recordUnwatch(serverPlayer, chunkPos);
             CreateBlockEntityUpdateGate.dropPendingChunk(serverPlayer, chunkPos, "watch_remove");
+            IdleGateRecoveryRegistry.discardChunk(serverPlayer, chunkPos);
             ChunkLifecycleCoordinator.onPlayerStopWatchingChunk(serverPlayer, chunkPos, TorqueNative.serverLevel(level));
         });
         platform.lifecycle().onChunkUnload((level, pos) -> {

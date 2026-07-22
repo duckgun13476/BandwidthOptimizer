@@ -11,4 +11,8 @@ public interface ClientboundSectionBlocksUpdatePacketAccessor {
     // Fix in some server (Arclight Mohist Youer) mapping failed
     @Accessor("sectionPos")
     SectionPos bandwidthoptimizer$getSectionPos();
+
+    @Accessor("positions")
+    short[] bandwidthoptimizer$getPositions();
+
 }

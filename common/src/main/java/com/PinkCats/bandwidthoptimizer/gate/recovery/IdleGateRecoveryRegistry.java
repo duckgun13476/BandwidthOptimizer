@@ -11,6 +11,11 @@ import io.netty.channel.Channel;
 import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
+import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
+import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -20,11 +25,17 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class IdleGateRecoveryRegistry {
 
     private static final FarmAndCharmSaturationRecoveryPolicy FARM_AND_CHARM = new FarmAndCharmSaturationRecoveryPolicy();
+    private static final AttributeRecoveryPolicy ATTRIBUTES = new AttributeRecoveryPolicy();
+    private static final EntityMotionRecoveryPolicy ENTITY_MOTION = new EntityMotionRecoveryPolicy();
+    private static final VanillaBlockStateRecoveryPolicy VANILLA_BLOCK_STATES = new VanillaBlockStateRecoveryPolicy();
     private static final CreateTransferBlockEntityRecoveryPolicy CREATE_TRANSFER = new CreateTransferBlockEntityRecoveryPolicy();
     private static final CreateWorkerBlockEntityRecoveryPolicy CREATE_WORKER = new CreateWorkerBlockEntityRecoveryPolicy();
     private static final CreateGeneralBlockEntityRecoveryPolicy CREATE_GENERAL = new CreateGeneralBlockEntityRecoveryPolicy();
     private static final IdleGateRecoveryPolicy[] POLICIES = {
+            VANILLA_BLOCK_STATES,
             FARM_AND_CHARM,
+            ATTRIBUTES,
+            ENTITY_MOTION,
             CREATE_TRANSFER,
             CREATE_WORKER,
             CREATE_GENERAL
@@ -37,7 +48,11 @@ public final class IdleGateRecoveryRegistry {
         if (channel == null || packet == null || listener != null) {
             return false;
         }
-        return tryCaptureBackground(channel, packet, IdleGateServerState.snapshot(channel));
+        IdleGateServerState.PlayerIdleState state = IdleGateServerState.snapshot(channel);
+        if (!state.mode().suppressesWorldPresentation()) {
+            return false;
+        }
+        return tryCaptureSpecialized(channel, packet);
     }
 
     public static boolean tryCaptureBackground(
@@ -51,7 +66,37 @@ public final class IdleGateRecoveryRegistry {
                 || !state.mode().suppressesWorldPresentation()) {
             return false;
         }
+        if (packet instanceof ClientboundBlockUpdatePacket blockUpdatePacket) {
+            return VANILLA_BLOCK_STATES.tryCaptureBlockUpdate(channel, blockUpdatePacket);
+        }
+        if (packet instanceof net.minecraft.network.protocol.game.ClientboundUpdateAttributesPacket attributesPacket) {
+            return ATTRIBUTES.tryCapture(channel, attributesPacket);
+        }
+        if (packet instanceof ClientboundRemoveEntitiesPacket removeEntitiesPacket) {
+            ENTITY_MOTION.observeRemoval(channel, removeEntitiesPacket);
+            return false;
+        }
+        if (packet instanceof ClientboundMoveEntityPacket moveEntityPacket) {
+            return ENTITY_MOTION.tryCaptureMovement(channel, moveEntityPacket);
+        }
+        if (packet instanceof ClientboundSetEntityMotionPacket motionPacket) {
+            return ENTITY_MOTION.tryCaptureMotion(channel, motionPacket);
+        }
+        if (packet instanceof ClientboundSectionBlocksUpdatePacket sectionBlocksUpdatePacket) {
+            return VANILLA_BLOCK_STATES.tryCaptureSectionBlocksUpdate(channel, sectionBlocksUpdatePacket);
+        }
+        return tryCaptureSpecialized(channel, packet);
+    }
+
+    public static void discardChunk(ServerPlayer player, net.minecraft.world.level.ChunkPos chunkPos) {
+        VANILLA_BLOCK_STATES.discardChunk(player, chunkPos);
+    }
+
+    private static boolean tryCaptureSpecialized(Channel channel, Packet<?> packet) {
         if (packet instanceof ClientboundBlockEntityDataPacket blockEntityPacket) {
+            if (VANILLA_BLOCK_STATES.tryCaptureBlockEntityData(channel, blockEntityPacket)) {
+                return true;
+            }
             ResourceLocation typeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityPacket.getType());
             return switch (CreateGateTypePolicy.backgroundRecoveryGroup(typeKey)) {
                 case TRANSFER -> CREATE_TRANSFER.tryCaptureBackground(channel, blockEntityPacket, typeKey);
