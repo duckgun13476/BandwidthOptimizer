@@ -51,11 +51,12 @@ public final class IdleGateClientController {
             lastActivityMillis = nowMillis;
         }
 
-        boolean stableWorldReady = observeStableWorldReady(minecraft, nowMillis);
+        boolean backgroundMenu = isBackgroundMenu(minecraft);
+        boolean stableWorldReady = observeStableWorldReady(minecraft, nowMillis, backgroundMenu);
         if (!stableWorldReady) {
             lastActivityMillis = nowMillis;
         }
-        boolean background = stableWorldReady && isBackground(minecraft);
+        boolean background = stableWorldReady && isBackground(minecraft, backgroundMenu);
         IdleGateMode mode = resolveMode(nowMillis, background);
         boolean hudVisible = BandwidthOptimizerHudOverlay.isEnabled()
                 && !minecraft.options.hideGui
@@ -134,25 +135,37 @@ public final class IdleGateClientController {
         return dx * dx + dy * dy + dz * dz;
     }
 
-    private static boolean isBackground(Minecraft minecraft) {
-        if (minecraft.screen != null && !isPauseScreen(minecraft)) {
+    private static boolean isBackground(Minecraft minecraft, boolean backgroundMenu) {
+        if (backgroundMenu) {
+            return true;
+        }
+        if (isNonPauseScreen(minecraft)) {
             return false;
         }
+        return isWindowInactiveOrIconified(minecraft);
+    }
+
+    private static boolean isBackgroundMenu(Minecraft minecraft) {
+        return isNonPauseScreen(minecraft) && isWindowInactiveOrIconified(minecraft);
+    }
+
+    private static boolean isNonPauseScreen(Minecraft minecraft) {
+        return minecraft.screen != null && !isPauseScreen(minecraft);
+    }
+
+    private static boolean isWindowInactiveOrIconified(Minecraft minecraft) {
         if (!isWindowActive(minecraft)) {
             return true;
         }
         try {
             long windowHandle = minecraft.getWindow().getWindow();
-            if (GLFW.glfwGetWindowAttrib(windowHandle, GLFW.GLFW_ICONIFIED) == GLFW.GLFW_TRUE) {
-                return true;
-            }
+            return GLFW.glfwGetWindowAttrib(windowHandle, GLFW.GLFW_ICONIFIED) == GLFW.GLFW_TRUE;
         } catch (RuntimeException exception) {
             return false;
         }
-        return isPauseScreen(minecraft);
     }
 
-    private static boolean observeStableWorldReady(Minecraft minecraft, long nowMillis) {
+    private static boolean observeStableWorldReady(Minecraft minecraft, long nowMillis, boolean backgroundMenu) {
         Object levelIdentity = minecraft.level;
         Object connectionIdentity = minecraft.getConnection();
         if (levelIdentity == null || connectionIdentity == null) {
@@ -165,7 +178,7 @@ public final class IdleGateClientController {
             worldReadySinceMillis = nowMillis;
             return false;
         }
-        if (minecraft.screen != null && !isPauseScreen(minecraft)) {
+        if (isNonPauseScreen(minecraft) && !backgroundMenu) {
             worldReadySinceMillis = nowMillis;
             return false;
         }
