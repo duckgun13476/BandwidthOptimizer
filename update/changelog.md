@@ -1,3 +1,8 @@
+#### v3.9.26.72-release
+1. Added adaptive AFK traffic controls for background clients.
+2. Reduced verified presentation-only Minecraft and mod traffic.
+3. Restored tracked state when returning from AFK.
+
 #### v2.9.18.55-release
 1. Fixed persistent chunk cache I/O pressure during fast exploration.
 2. Added on-demand diagnostics and server BO log export.
