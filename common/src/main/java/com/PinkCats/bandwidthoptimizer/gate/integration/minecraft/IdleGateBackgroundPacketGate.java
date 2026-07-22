@@ -22,9 +22,11 @@ public final class IdleGateBackgroundPacketGate {
             "create:server_speed",
             "neoforge:custom_time_packet",
             "powerful_dummy:damage_data",
-            "synaxis:cimulink_view_snapshot"
+            "synaxis:cimulink_view_snapshot",
+            "watut:main"
     );
     private static final Set<String> BACKGROUND_DROP_PACKET_TYPES = Set.of(
+            "ClientboundLevelEventPacket",
             "ClientboundSoundPacket"
     );
     private static final ConcurrentHashMap<String, AtomicLong> DROPPED_BYTES_BY_CLASS = new ConcurrentHashMap<>();
