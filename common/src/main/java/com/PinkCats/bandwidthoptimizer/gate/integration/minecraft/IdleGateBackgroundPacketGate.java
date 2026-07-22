@@ -34,32 +34,43 @@ public final class IdleGateBackgroundPacketGate {
 
     private IdleGateBackgroundPacketGate() {}
 
-    public static boolean shouldDrop(Channel channel, Packet<?> packet, PacketFlow flow) {
+    public static String dropKey(Channel channel, Packet<?> packet, PacketFlow flow) {
         if (channel == null || packet == null || flow != PacketFlow.CLIENTBOUND) {
-            return false;
-        }
-        // Non-Create recovery policies use the encoder boundary when no earlier send hook applies.
-        if (IdleGateRecoveryRegistry.tryCapture(channel, packet, null)) {
-            return true;
-        }
-        if (IdleGateServerState.isResumeDirectWindow(channel)) {
-            return false;
+            return null;
         }
         IdleGateServerState.PlayerIdleState state = IdleGateServerState.snapshot(channel);
+        // Non-Create recovery policies use the encoder boundary when no earlier send hook applies.
+        if (IdleGateRecoveryRegistry.tryCaptureBackground(channel, packet, state)) {
+            return keyOf(packet, null);
+        }
+        if (IdleGateServerState.isResumeDirectWindow(channel)) {
+            return null;
+        }
         if (!state.mode().suppressesWorldPresentation()) {
-            return false;
+            return null;
         }
         String className = packet.getClass().getName();
         if (BACKGROUND_DROP_PACKET_TYPES.contains(simpleName(className))) {
-            return true;
+            return keyOf(packet, null);
         }
-        return isClientboundCustomPayloadPacket(className)
-                && BACKGROUND_DROP_PAYLOAD_CHANNELS.contains(normalizePayloadChannel(CustomPayloadPacketCompat.payloadChannel(packet)));
+        if (!isClientboundCustomPayloadPacket(className)) {
+            return null;
+        }
+        return BACKGROUND_DROP_PAYLOAD_CHANNELS.contains(normalizePayloadChannel(CustomPayloadPacketCompat.payloadChannel(packet)))
+                ? keyOf(packet, null)
+                : null;
+    }
+
+    public static boolean shouldDrop(Channel channel, Packet<?> packet, PacketFlow flow) {
+        return dropKey(channel, packet, flow) != null;
     }
 
     public static void recordDroppedPacket(Packet<?> packet, int encodedByteLength) {
-        String className = packet == null ? "<unknown>" : packet.getClass().getName();
-        recordDrop(packet, className, encodedByteLength);
+        recordDroppedPacket(packet, encodedByteLength, keyOf(packet, null));
+    }
+
+    public static void recordDroppedPacket(Packet<?> packet, int encodedByteLength, String dropKey) {
+        recordDrop(dropKey == null ? keyOf(packet, null) : dropKey, encodedByteLength);
     }
 
     public static Snapshot snapshot() {
@@ -90,19 +101,19 @@ public final class IdleGateBackgroundPacketGate {
         return index < 0 ? className : className.substring(index + 1);
     }
 
-    private static String keyOf(Packet<?> packet, String className) {
+    private static String keyOf(Packet<?> packet, String detail) {
+        String className = packet == null ? "<unknown>" : packet.getClass().getName();
         String simpleName = simpleName(className);
         if (isClientboundCustomPayloadPacket(className)) {
             String payloadChannel = normalizePayloadChannel(CustomPayloadPacketCompat.payloadChannel(packet));
             if (!payloadChannel.isEmpty()) {
-                return simpleName + ":" + payloadChannel;
+                return simpleName + ":" + payloadChannel + (detail == null ? "" : "/" + detail);
             }
         }
-        return simpleName;
+        return detail == null ? simpleName : simpleName + ":" + detail;
     }
 
-    private static void recordDrop(Packet<?> packet, String className, int encodedByteLength) {
-        String key = keyOf(packet, className);
+    private static void recordDrop(String key, int encodedByteLength) {
         DROPPED_PACKETS_BY_CLASS.computeIfAbsent(key, ignored -> new AtomicLong()).incrementAndGet();
         DROPPED_BYTES_BY_CLASS.computeIfAbsent(key, ignored -> new AtomicLong()).addAndGet(Math.max(encodedByteLength, 0));
         long total = TOTAL_DROPPED.incrementAndGet();
@@ -113,7 +124,7 @@ public final class IdleGateBackgroundPacketGate {
             Bandwidthoptimizer.LOGGER.info("[IdleGate] background drop total={} bytes={} current={} top={}",
                     total,
                     totalBytes,
-                    simpleName(className),
+                    key,
                     topDroppedSummary());
         }
     }

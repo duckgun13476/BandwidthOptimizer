@@ -1,12 +1,10 @@
 package com.PinkCats.bandwidthoptimizer.gate.recovery;
 
-import com.PinkCats.bandwidthoptimizer.integration.minecraft.BlockEntityTypeKeyCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateServerState;
 import io.netty.channel.Channel;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.resources.ResourceLocation;
@@ -32,17 +30,12 @@ public abstract class BlockEntityRecoveryPolicy extends IdleGateRecoveryPolicy {
     private final AtomicLong restoredCount = new AtomicLong();
     private final AtomicLong lastDiagnosticNanos = new AtomicLong();
 
-    @Override
-    public final boolean tryCapture(Channel channel, Packet<?> packet, PacketSendListener listener) {
-        if (channel == null
-                || packet == null
-                || listener != null
-                || !IdleGateServerState.snapshot(channel).mode().suppressesWorldPresentation()
-                || !(packet instanceof ClientboundBlockEntityDataPacket blockEntityPacket)) {
-            return false;
-        }
-        ResourceLocation typeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityPacket.getType());
-        if (!shouldHoldWhileBackground(typeKey, blockEntityPacket)) {
+    public final boolean tryCaptureBackground(
+            Channel channel,
+            ClientboundBlockEntityDataPacket blockEntityPacket,
+            ResourceLocation typeKey
+    ) {
+        if (channel == null || blockEntityPacket == null || typeKey == null) {
             return false;
         }
         ServerPlayer player = resolvePlayer(channel);
@@ -50,7 +43,7 @@ public abstract class BlockEntityRecoveryPolicy extends IdleGateRecoveryPolicy {
             return false;
         }
         CaptureResult result = states.computeIfAbsent(player.getUUID(), ignored -> new PlayerState())
-                .remember(player, typeKey, blockEntityPacket.getPos(), packet, maxPendingPerPlayer());
+                .remember(player, typeKey, blockEntityPacket.getPos(), blockEntityPacket, maxPendingPerPlayer());
         if (!result.captured()) {
             long passThrough = queuePassThroughCount.incrementAndGet();
             if (passThrough == 1L || passThrough % 100L == 0L) {
@@ -96,11 +89,6 @@ public abstract class BlockEntityRecoveryPolicy extends IdleGateRecoveryPolicy {
             states.remove(player.getUUID());
         }
     }
-
-    protected abstract boolean shouldHoldWhileBackground(
-            ResourceLocation typeKey,
-            ClientboundBlockEntityDataPacket packet
-    );
 
     protected abstract ServerPlayer resolvePlayer(Channel channel);
 

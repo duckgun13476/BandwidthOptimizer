@@ -4,7 +4,6 @@ import com.PinkCats.bandwidthoptimizer.integration.minecraft.CustomPayloadPacket
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateServerState;
 import com.PinkCats.bandwidthoptimizer.gate.recovery.IdleGateRecoveryPolicy;
 import io.netty.channel.Channel;
-import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -19,12 +18,9 @@ public final class FarmAndCharmSaturationRecoveryPolicy extends IdleGateRecovery
     private static final String SATURATION_CHANNEL = "farm_and_charm:sync_saturation";
     private final ConcurrentHashMap<UUID, PendingPacket> pendingPackets = new ConcurrentHashMap<>();
 
-    @Override
-    public boolean tryCapture(Channel channel, Packet<?> packet, PacketSendListener listener) {
+    public boolean tryCaptureBackground(Channel channel, Packet<?> packet) {
         if (channel == null
                 || packet == null
-                || listener != null
-                || !IdleGateServerState.snapshot(channel).mode().suppressesWorldPresentation()
                 || !ARCHITECTURY_CHANNEL.equals(CustomPayloadPacketCompat.payloadChannel(packet))
                 || !isSaturationPayload(CustomPayloadPacketCompat.payloadBytes(packet))) {
             return false;

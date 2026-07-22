@@ -1,37 +1,69 @@
 package com.PinkCats.bandwidthoptimizer.gate.recovery;
 
+import com.PinkCats.bandwidthoptimizer.gate.IdleGateServerState;
+import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateGateTypePolicy;
 import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateGeneralBlockEntityRecoveryPolicy;
 import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateTransferBlockEntityRecoveryPolicy;
 import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateWorkerBlockEntityRecoveryPolicy;
 import com.PinkCats.bandwidthoptimizer.gate.integration.farm_and_charm.FarmAndCharmSaturationRecoveryPolicy;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.BlockEntityTypeKeyCompat;
 import io.netty.channel.Channel;
 import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class IdleGateRecoveryRegistry {
 
-    private static final List<IdleGateRecoveryPolicy> POLICIES = List.of(
-            new FarmAndCharmSaturationRecoveryPolicy(),
-            new CreateTransferBlockEntityRecoveryPolicy(),
-            new CreateWorkerBlockEntityRecoveryPolicy(),
-            new CreateGeneralBlockEntityRecoveryPolicy()
-    );
+    private static final FarmAndCharmSaturationRecoveryPolicy FARM_AND_CHARM = new FarmAndCharmSaturationRecoveryPolicy();
+    private static final CreateTransferBlockEntityRecoveryPolicy CREATE_TRANSFER = new CreateTransferBlockEntityRecoveryPolicy();
+    private static final CreateWorkerBlockEntityRecoveryPolicy CREATE_WORKER = new CreateWorkerBlockEntityRecoveryPolicy();
+    private static final CreateGeneralBlockEntityRecoveryPolicy CREATE_GENERAL = new CreateGeneralBlockEntityRecoveryPolicy();
+    private static final IdleGateRecoveryPolicy[] POLICIES = {
+            FARM_AND_CHARM,
+            CREATE_TRANSFER,
+            CREATE_WORKER,
+            CREATE_GENERAL
+    };
     private static final ConcurrentHashMap<UUID, ServerPlayer> PENDING_RESTORES = new ConcurrentHashMap<>();
 
     private IdleGateRecoveryRegistry() {}
 
     public static boolean tryCapture(Channel channel, Packet<?> packet, PacketSendListener listener) {
-        for (IdleGateRecoveryPolicy policy : POLICIES) {
-            if (policy.tryCapture(channel, packet, listener)) {
-                return true;
-            }
+        if (channel == null || packet == null || listener != null) {
+            return false;
         }
-        return false;
+        return tryCaptureBackground(channel, packet, IdleGateServerState.snapshot(channel));
+    }
+
+    public static boolean tryCaptureBackground(
+            Channel channel,
+            Packet<?> packet,
+            IdleGateServerState.PlayerIdleState state
+    ) {
+        if (channel == null
+                || packet == null
+                || state == null
+                || !state.mode().suppressesWorldPresentation()) {
+            return false;
+        }
+        if (packet instanceof ClientboundBlockEntityDataPacket blockEntityPacket) {
+            ResourceLocation typeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityPacket.getType());
+            return switch (CreateGateTypePolicy.backgroundRecoveryGroup(typeKey)) {
+                case TRANSFER -> CREATE_TRANSFER.tryCaptureBackground(channel, blockEntityPacket, typeKey);
+                case WORKER -> CREATE_WORKER.tryCaptureBackground(channel, blockEntityPacket, typeKey);
+                case GENERAL -> CREATE_GENERAL.tryCaptureBackground(channel, blockEntityPacket, typeKey);
+                case NONE -> false;
+            };
+        }
+        if (!packet.getClass().getName().endsWith(".ClientboundCustomPayloadPacket")) {
+            return false;
+        }
+        return FARM_AND_CHARM.tryCaptureBackground(channel, packet);
     }
 
     public static void requestRestore(ServerPlayer player) {

@@ -4,7 +4,14 @@ import net.minecraft.resources.ResourceLocation;
 
 import java.util.Set;
 
-final class CreateGateTypePolicy {
+public final class CreateGateTypePolicy {
+
+    public enum BackgroundRecoveryGroup {
+        NONE,
+        TRANSFER,
+        WORKER,
+        GENERAL
+    }
 
     private static final Set<String> SOUND_CLASSIFIED_BLOCK_ENTITY_TYPES = Set.of(
             "cuckoo_clock",
@@ -83,6 +90,19 @@ final class CreateGateTypePolicy {
         return shouldHoldWhileBackground(typeKey)
                 && !isTransferBlockEntity(typeKey)
                 && !isWorkerBlockEntity(typeKey);
+    }
+
+    public static BackgroundRecoveryGroup backgroundRecoveryGroup(ResourceLocation typeKey) {
+        if (!CreateBlockEntityUpdateGate.isEnabled() || !shouldHoldWhileBackground(typeKey)) {
+            return BackgroundRecoveryGroup.NONE;
+        }
+        if (isTransferBlockEntity(typeKey)) {
+            return BackgroundRecoveryGroup.TRANSFER;
+        }
+        if (isWorkerBlockEntity(typeKey)) {
+            return BackgroundRecoveryGroup.WORKER;
+        }
+        return BackgroundRecoveryGroup.GENERAL;
     }
 
     static boolean isSoundClassified(ResourceLocation typeKey) {
