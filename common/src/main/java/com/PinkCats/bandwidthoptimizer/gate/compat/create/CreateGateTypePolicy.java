@@ -38,6 +38,22 @@ final class CreateGateTypePolicy {
             "cart_assembler",
             "contraption_controls"
     );
+    private static final Set<String> TRANSFER_BLOCK_ENTITY_TYPES = Set.of(
+            "andesite_funnel",
+            "brass_funnel",
+            "belt",
+            "chute",
+            "smart_chute"
+    );
+    private static final Set<String> WORKER_BLOCK_ENTITY_TYPES = Set.of(
+            "deployer",
+            "mechanical_arm",
+            "mechanical_crafter",
+            "mechanical_drill",
+            "mechanical_mixer",
+            "mechanical_press",
+            "mechanical_saw"
+    );
 
     private CreateGateTypePolicy() {}
 
@@ -51,6 +67,22 @@ final class CreateGateTypePolicy {
 
     static boolean shouldHoldWhileBackground(ResourceLocation typeKey) {
         return shouldGate(typeKey) && !isMovingContraptionController(typeKey);
+    }
+
+    static boolean isTransferBlockEntity(ResourceLocation typeKey) {
+        return shouldHoldWhileBackground(typeKey)
+                && TRANSFER_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
+    }
+
+    static boolean isWorkerBlockEntity(ResourceLocation typeKey) {
+        return shouldHoldWhileBackground(typeKey)
+                && WORKER_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
+    }
+
+    static boolean shouldHoldGeneralWhileBackground(ResourceLocation typeKey) {
+        return shouldHoldWhileBackground(typeKey)
+                && !isTransferBlockEntity(typeKey)
+                && !isWorkerBlockEntity(typeKey);
     }
 
     static boolean isSoundClassified(ResourceLocation typeKey) {

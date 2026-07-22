@@ -16,6 +16,7 @@ public final class IdleGateServerState {
     private static final long JOIN_DIRECT_MILLIS = 30_000L;
     private static final ConcurrentHashMap<UUID, PlayerIdleState> PLAYER_STATES = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, UUID> CHANNEL_PLAYERS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<UUID, ServerPlayer> CONNECTED_PLAYERS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Long> RESUME_DIRECT_UNTIL = new ConcurrentHashMap<>();
 
     private IdleGateServerState() {}
@@ -25,6 +26,7 @@ public final class IdleGateServerState {
             return;
         }
         IdleGateStatePayload safePayload = payload == null ? IdleGateStatePayload.active() : payload;
+        CONNECTED_PLAYERS.put(player.getUUID(), player);
         Channel channel = ChunkPeerStateManager.findPlayerChannel(player);
         String channelId = channel == null ? "" : ChannelIdentity.longText(channel);
         if (!channelId.isBlank()) {
@@ -35,8 +37,8 @@ public final class IdleGateServerState {
         }
         PlayerIdleState previousState = PLAYER_STATES.get(player.getUUID());
         if (previousState != null
-                && previousState.mode() == IdleGateMode.BACKGROUND_IDLE
-                && safePayload.mode() != IdleGateMode.BACKGROUND_IDLE
+                && previousState.mode().suppressesWorldPresentation()
+                && !safePayload.mode().suppressesWorldPresentation()
                 && !channelId.isBlank()) {
             RESUME_DIRECT_UNTIL.put(channelId, System.currentTimeMillis() + RESUME_DIRECT_MILLIS);
         }
@@ -47,8 +49,8 @@ public final class IdleGateServerState {
                 safePayload.sequence(),
                 System.currentTimeMillis()));
         if (previousState != null
-                && previousState.mode() == IdleGateMode.BACKGROUND_IDLE
-                && safePayload.mode() != IdleGateMode.BACKGROUND_IDLE) {
+                && previousState.mode().suppressesWorldPresentation()
+                && !safePayload.mode().suppressesWorldPresentation()) {
             IdleGateRecoveryRegistry.requestRestore(player);
         }
     }
@@ -68,8 +70,18 @@ public final class IdleGateServerState {
         if (player != null) {
             IdleGateRecoveryRegistry.discard(player);
             PLAYER_STATES.remove(player.getUUID());
+            CONNECTED_PLAYERS.remove(player.getUUID(), player);
             CHANNEL_PLAYERS.entrySet().removeIf(entry -> player.getUUID().equals(entry.getValue()));
         }
+    }
+
+    public static ServerPlayer resolvePlayer(Channel channel) {
+        String channelId = channel == null ? "" : ChannelIdentity.longText(channel);
+        if (channelId.isBlank()) {
+            return null;
+        }
+        UUID playerId = CHANNEL_PLAYERS.get(channelId);
+        return playerId == null ? null : CONNECTED_PLAYERS.get(playerId);
     }
 
     public static PlayerIdleState snapshot(Channel channel) {

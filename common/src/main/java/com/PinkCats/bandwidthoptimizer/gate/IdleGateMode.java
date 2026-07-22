@@ -19,6 +19,10 @@ public enum IdleGateMode {
         return this != ACTIVE;
     }
 
+    public boolean suppressesWorldPresentation() {
+        return this == BACKGROUND_IDLE;
+    }
+
     public static IdleGateMode byId(int id) {
         for (IdleGateMode mode : values()) {
             if (mode.id == id) {

@@ -16,7 +16,7 @@ public final class IdleGateHudSyncPolicy {
         if (!state.hudVisible()) {
             return false;
         }
-        if (state.mode() == IdleGateMode.BACKGROUND_IDLE) {
+        if (state.mode().suppressesWorldPresentation()) {
             return false;
         }
         int interval = state.mode() == IdleGateMode.FOREGROUND_STILL
