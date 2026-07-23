@@ -16,7 +16,6 @@ import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.ChunkPos;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -301,8 +300,8 @@ public abstract class ClientPacketListenerChunkHandleMixin {
         if (packet == null || packet.getType() == null) {
             return "<unknown>";
         }
-        ResourceLocation typeKey = BlockEntityTypeKeyCompat.keyOf(packet.getType());
-        return typeKey == null ? packet.getType().toString() : typeKey.toString();
+        String typeKey = BlockEntityTypeKeyCompat.keyOf(packet.getType());
+        return typeKey == null ? packet.getType().toString() : typeKey;
     }
 
     @Unique

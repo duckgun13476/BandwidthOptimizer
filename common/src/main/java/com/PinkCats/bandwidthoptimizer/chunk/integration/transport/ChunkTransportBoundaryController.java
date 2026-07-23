@@ -13,7 +13,6 @@ import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
-import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
 import net.minecraft.network.protocol.game.ClientboundLoginPacket;
@@ -60,7 +59,7 @@ public final class ChunkTransportBoundaryController {
     private ChunkTransportBoundaryController() {}
 
 
-    public static void notePacketSendListener(Channel channel, Packet<?> packet, PacketSendListener listener) {
+    public static void notePacketSendListener(Channel channel, Packet<?> packet, Object listener) {
         if (channel == null || listener == null) {
             return;
         }

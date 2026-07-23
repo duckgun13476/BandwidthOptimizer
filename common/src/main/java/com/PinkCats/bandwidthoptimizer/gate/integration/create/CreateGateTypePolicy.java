@@ -1,7 +1,5 @@
 package com.PinkCats.bandwidthoptimizer.gate.integration.create;
 
-import net.minecraft.resources.ResourceLocation;
-
 import java.util.Set;
 
 public final class CreateGateTypePolicy {
@@ -64,35 +62,35 @@ public final class CreateGateTypePolicy {
 
     private CreateGateTypePolicy() {}
 
-    static boolean isCreateBlockEntity(ResourceLocation typeKey) {
-        return typeKey != null && "create".equals(typeKey.getNamespace());
+    static boolean isCreateBlockEntity(String typeKey) {
+        return typeKey != null && typeKey.startsWith("create:");
     }
 
-    static boolean shouldGate(ResourceLocation typeKey) {
+    static boolean shouldGate(String typeKey) {
         return isCreateBlockEntity(typeKey) && !isImmediateControl(typeKey);
     }
 
-    static boolean shouldHoldWhileBackground(ResourceLocation typeKey) {
+    static boolean shouldHoldWhileBackground(String typeKey) {
         return shouldGate(typeKey) && !isMovingContraptionController(typeKey);
     }
 
-    static boolean isTransferBlockEntity(ResourceLocation typeKey) {
+    static boolean isTransferBlockEntity(String typeKey) {
         return shouldHoldWhileBackground(typeKey)
-                && TRANSFER_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
+                && TRANSFER_BLOCK_ENTITY_TYPES.contains(path(typeKey));
     }
 
-    static boolean isWorkerBlockEntity(ResourceLocation typeKey) {
+    static boolean isWorkerBlockEntity(String typeKey) {
         return shouldHoldWhileBackground(typeKey)
-                && WORKER_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
+                && WORKER_BLOCK_ENTITY_TYPES.contains(path(typeKey));
     }
 
-    static boolean shouldHoldGeneralWhileBackground(ResourceLocation typeKey) {
+    static boolean shouldHoldGeneralWhileBackground(String typeKey) {
         return shouldHoldWhileBackground(typeKey)
                 && !isTransferBlockEntity(typeKey)
                 && !isWorkerBlockEntity(typeKey);
     }
 
-    public static BackgroundRecoveryGroup backgroundRecoveryGroup(ResourceLocation typeKey) {
+    public static BackgroundRecoveryGroup backgroundRecoveryGroup(String typeKey) {
         if (!CreateBlockEntityUpdateGate.isEnabled() || !shouldHoldWhileBackground(typeKey)) {
             return BackgroundRecoveryGroup.NONE;
         }
@@ -105,37 +103,45 @@ public final class CreateGateTypePolicy {
         return BackgroundRecoveryGroup.GENERAL;
     }
 
-    static boolean isSoundClassified(ResourceLocation typeKey) {
+    static boolean isSoundClassified(String typeKey) {
         return isCreateBlockEntity(typeKey)
-                && SOUND_CLASSIFIED_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
+                && SOUND_CLASSIFIED_BLOCK_ENTITY_TYPES.contains(path(typeKey));
     }
 
-    static boolean isMovingContraptionController(ResourceLocation typeKey) {
+    static boolean isMovingContraptionController(String typeKey) {
         return isCreateBlockEntity(typeKey)
-                && MOVING_CONTRAPTION_CONTROLLER_TYPES.contains(typeKey.getPath());
+                && MOVING_CONTRAPTION_CONTROLLER_TYPES.contains(path(typeKey));
     }
 
-    static boolean isVisibleRawBypassController(ResourceLocation typeKey) {
+    static boolean isVisibleRawBypassController(String typeKey) {
         return isCreateBlockEntity(typeKey)
-                && "mechanical_piston".equals(typeKey.getPath());
+                && "mechanical_piston".equals(path(typeKey));
     }
 
-    static boolean allowLookDirectionForGatedUpdate(ResourceLocation typeKey, boolean chunkBootstrapActive) {
+    static boolean allowLookDirectionForGatedUpdate(String typeKey, boolean chunkBootstrapActive) {
         return isVisibleRawBypassController(typeKey) || !chunkBootstrapActive;
     }
 
-    static double soundSendDistanceBlocks(ResourceLocation typeKey) {
-        if (typeKey != null && "steam_whistle".equals(typeKey.getPath())) {
+    static double soundSendDistanceBlocks(String typeKey) {
+        if ("steam_whistle".equals(path(typeKey))) {
             return 64.0D;
         }
-        if (typeKey != null && "cuckoo_clock".equals(typeKey.getPath())) {
+        if ("cuckoo_clock".equals(path(typeKey))) {
             return 32.0D;
         }
         return 16.0D;
     }
 
-    private static boolean isImmediateControl(ResourceLocation typeKey) {
+    private static boolean isImmediateControl(String typeKey) {
         return isCreateBlockEntity(typeKey)
-                && IMMEDIATE_CONTROL_BLOCK_ENTITY_TYPES.contains(typeKey.getPath());
+                && IMMEDIATE_CONTROL_BLOCK_ENTITY_TYPES.contains(path(typeKey));
+    }
+
+    private static String path(String typeKey) {
+        if (typeKey == null) {
+            return "";
+        }
+        int namespaceSeparator = typeKey.indexOf(':');
+        return namespaceSeparator < 0 ? typeKey : typeKey.substring(namespaceSeparator + 1);
     }
 }

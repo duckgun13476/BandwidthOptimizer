@@ -7,7 +7,6 @@ import io.netty.channel.Channel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.LinkedHashMap;
@@ -33,7 +32,7 @@ public abstract class BlockEntityRecoveryPolicy extends IdleGateRecoveryPolicy {
     public final boolean tryCaptureBackground(
             Channel channel,
             ClientboundBlockEntityDataPacket blockEntityPacket,
-            ResourceLocation typeKey
+            String typeKey
     ) {
         if (channel == null || blockEntityPacket == null || typeKey == null) {
             return false;
@@ -140,7 +139,7 @@ public abstract class BlockEntityRecoveryPolicy extends IdleGateRecoveryPolicy {
         );
     }
 
-    private record PendingKey(ResourceLocation typeKey, BlockPos pos) {}
+    private record PendingKey(String typeKey, BlockPos pos) {}
 
     private static final class PlayerState {
         private final Map<PendingKey, Packet<?>> latestPackets = new LinkedHashMap<>();
@@ -148,7 +147,7 @@ public abstract class BlockEntityRecoveryPolicy extends IdleGateRecoveryPolicy {
 
         private synchronized CaptureResult remember(
                 ServerPlayer player,
-                ResourceLocation typeKey,
+                String typeKey,
                 BlockPos pos,
                 Packet<?> packet,
                 int maxPending

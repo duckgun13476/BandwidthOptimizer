@@ -1,14 +1,13 @@
 package com.PinkCats.bandwidthoptimizer.gate.integration.create;
 
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.ResourceLocation;
 
 final class CreateGateSoundPolicy {
 
     private CreateGateSoundPolicy() {}
 
-    static SoundState capture(ResourceLocation typeKey, CompoundTag tag) {
-        String type = typeKey == null ? "" : typeKey.getPath();
+    static SoundState capture(String typeKey, CompoundTag tag) {
+        String type = path(typeKey);
         CompoundTag safeTag = tag == null ? new CompoundTag() : tag;
         return new SoundState(
                 type, safeTag.getString("Phase"), safeTag.getString("State"), safeTag.getInt("Ticks"),
@@ -19,7 +18,7 @@ final class CreateGateSoundPolicy {
                 itemFingerprint(safeTag));
     }
 
-    static boolean shouldFlush(ResourceLocation typeKey, SoundState previous, SoundState current) {
+    static boolean shouldFlush(String typeKey, SoundState previous, SoundState current) {
         if (!CreateGateTypePolicy.isSoundClassified(typeKey) || current == null) {
             return false;
         }
@@ -46,6 +45,14 @@ final class CreateGateSoundPolicy {
         }
         CompoundTag itemTag = tag.getCompound("HeldItem");
         return itemTag.isEmpty() ? "" : itemTag.getString("id") + "#" + itemTag.getInt("count") + "#" + itemTag.getInt("Count");
+    }
+
+    private static String path(String typeKey) {
+        if (typeKey == null) {
+            return "";
+        }
+        int namespaceSeparator = typeKey.indexOf(':');
+        return namespaceSeparator < 0 ? typeKey : typeKey.substring(namespaceSeparator + 1);
     }
 
     record SoundState(

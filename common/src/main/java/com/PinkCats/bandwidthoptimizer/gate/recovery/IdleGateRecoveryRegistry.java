@@ -8,7 +8,6 @@ import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateWorkerBlock
 import com.PinkCats.bandwidthoptimizer.gate.integration.farm_and_charm.FarmAndCharmSaturationRecoveryPolicy;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.BlockEntityTypeKeyCompat;
 import io.netty.channel.Channel;
-import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
@@ -16,7 +15,6 @@ import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.UUID;
@@ -44,7 +42,7 @@ public final class IdleGateRecoveryRegistry {
 
     private IdleGateRecoveryRegistry() {}
 
-    public static boolean tryCapture(Channel channel, Packet<?> packet, PacketSendListener listener) {
+    public static boolean tryCapture(Channel channel, Packet<?> packet, Object listener) {
         if (channel == null || packet == null || listener != null) {
             return false;
         }
@@ -97,7 +95,7 @@ public final class IdleGateRecoveryRegistry {
             if (VANILLA_BLOCK_STATES.tryCaptureBlockEntityData(channel, blockEntityPacket)) {
                 return true;
             }
-            ResourceLocation typeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityPacket.getType());
+            String typeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityPacket.getType());
             return switch (CreateGateTypePolicy.backgroundRecoveryGroup(typeKey)) {
                 case TRANSFER -> CREATE_TRANSFER.tryCaptureBackground(channel, blockEntityPacket, typeKey);
                 case WORKER -> CREATE_WORKER.tryCaptureBackground(channel, blockEntityPacket, typeKey);

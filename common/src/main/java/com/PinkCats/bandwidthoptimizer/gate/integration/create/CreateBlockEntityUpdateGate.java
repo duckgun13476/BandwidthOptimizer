@@ -16,13 +16,11 @@ import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
-import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
@@ -143,7 +141,7 @@ public final class CreateBlockEntityUpdateGate {
         if (!(packet instanceof ClientboundBlockEntityDataPacket blockEntityDataPacket)) {
             return false;
         }
-        ResourceLocation blockEntityTypeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityDataPacket.getType());
+        String blockEntityTypeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityDataPacket.getType());
         if (!isCreateBlockEntity(blockEntityTypeKey)) {
             return false;
         }
@@ -193,7 +191,7 @@ public final class CreateBlockEntityUpdateGate {
     }
 
     // Move distant Create updates before they enter the Netty send queue.
-    public static boolean tryDelayConnectionSend(Channel channel, Packet<?> packet, PacketSendListener listener) {
+    public static boolean tryDelayConnectionSend(Channel channel, Packet<?> packet, Object listener) {
         if (IdleGateRecoveryRegistry.tryCapture(channel, packet, listener)) {
             return true;
         }
@@ -205,7 +203,7 @@ public final class CreateBlockEntityUpdateGate {
                 || !(packet instanceof ClientboundBlockEntityDataPacket blockEntityDataPacket)) {
             return false;
         }
-        ResourceLocation blockEntityTypeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityDataPacket.getType());
+        String blockEntityTypeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityDataPacket.getType());
         if (!isCreateBlockEntity(blockEntityTypeKey)) {
             return false;
         }
@@ -352,7 +350,7 @@ public final class CreateBlockEntityUpdateGate {
             ServerPlayer player,
             PlayerState state,
             ClientboundBlockEntityDataPacket blockEntityDataPacket,
-            ResourceLocation blockEntityTypeKey,
+            String blockEntityTypeKey,
             Packet<?> packet,
             int originalRawBytes
     ) {
@@ -433,7 +431,7 @@ public final class CreateBlockEntityUpdateGate {
                 || !(packet instanceof ClientboundBlockEntityDataPacket blockEntityDataPacket)) {
             return false;
         }
-        ResourceLocation blockEntityTypeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityDataPacket.getType());
+        String blockEntityTypeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityDataPacket.getType());
         if (!isVisibleRawBypassController(blockEntityTypeKey)) {
             return false;
         }
@@ -454,28 +452,28 @@ public final class CreateBlockEntityUpdateGate {
         return shouldBypassTransparentTransport(context, protocolName, packetFlow, packet);
     }
 
-    private static boolean isMovingContraptionController(ResourceLocation typeKey) {
+    private static boolean isMovingContraptionController(String typeKey) {
         return CreateGateTypePolicy.isMovingContraptionController(typeKey);
     }
 
-    private static boolean isVisibleRawBypassController(ResourceLocation typeKey) {
+    private static boolean isVisibleRawBypassController(String typeKey) {
         return CreateGateTypePolicy.isVisibleRawBypassController(typeKey);
     }
 
-    private static boolean allowLookDirectionForGatedUpdate(ResourceLocation typeKey, boolean chunkBootstrapActive) {
+    private static boolean allowLookDirectionForGatedUpdate(String typeKey, boolean chunkBootstrapActive) {
         return CreateGateTypePolicy.allowLookDirectionForGatedUpdate(typeKey, chunkBootstrapActive);
     }
 
     // Keep interactive controls out of delayed merging.
-    private static boolean shouldGateCreateBlockEntity(ResourceLocation typeKey, boolean chunkBootstrapActive) {
+    private static boolean shouldGateCreateBlockEntity(String typeKey, boolean chunkBootstrapActive) {
         return CreateGateTypePolicy.shouldGate(typeKey);
     }
 
-    private static boolean isSoundClassifiedBlockEntity(ResourceLocation typeKey) {
+    private static boolean isSoundClassifiedBlockEntity(String typeKey) {
         return CreateGateTypePolicy.isSoundClassified(typeKey);
     }
 
-    private static boolean isCreateBlockEntity(ResourceLocation typeKey) {
+    private static boolean isCreateBlockEntity(String typeKey) {
         return CreateGateTypePolicy.isCreateBlockEntity(typeKey);
     }
 
@@ -514,7 +512,7 @@ public final class CreateBlockEntityUpdateGate {
                 Boolean.toString(Config.RuntimeProperty.Create.DEFAULT_CREATE_BLOCK_ENTITY_UPDATE_GATE_ENABLED)));
     }
 
-    private static boolean isWithinSoundSendDistance(ServerPlayer player, Vec3 target, ResourceLocation typeKey) {
+    private static boolean isWithinSoundSendDistance(ServerPlayer player, Vec3 target, String typeKey) {
         if (player == null || target == null || typeKey == null) {
             return true;
         }
@@ -522,7 +520,7 @@ public final class CreateBlockEntityUpdateGate {
         return player.getEyePosition().distanceToSqr(target) <= soundDistance * soundDistance;
     }
 
-    private static DynamicTarget resolveDynamicTarget(ServerPlayer player, BlockPos pos, ResourceLocation typeKey) {
+    private static DynamicTarget resolveDynamicTarget(ServerPlayer player, BlockPos pos, String typeKey) {
         Vec3 vanillaTarget = centerOf(pos);
         Vec3[] vanillaPoints = cornersOf(pos);
         if (isMovingContraptionController(typeKey)) {
@@ -716,7 +714,7 @@ public final class CreateBlockEntityUpdateGate {
         };
     }
 
-    private static void warnCreateContraptionFallback(ServerPlayer player, ResourceLocation typeKey, BlockPos pos) {
+    private static void warnCreateContraptionFallback(ServerPlayer player, String typeKey, BlockPos pos) {
         long nowNanos = System.nanoTime();
         long previousNanos = LAST_CREATE_CONTRAPTION_FALLBACK_WARN_NANOS.get();
         if (nowNanos - previousNanos < CREATE_CONTRAPTION_FALLBACK_WARN_INTERVAL_NANOS) {
@@ -787,7 +785,7 @@ public final class CreateBlockEntityUpdateGate {
         return new ResolvedPoints(resolved, false);
     }
 
-    private static double soundSendDistanceBlocks(ResourceLocation typeKey) {
+    private static double soundSendDistanceBlocks(String typeKey) {
         return CreateGateTypePolicy.soundSendDistanceBlocks(typeKey);
     }
 
@@ -854,8 +852,8 @@ public final class CreateBlockEntityUpdateGate {
         return DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.COMPAT_DYNAMIC_GATES);
     }
 
-    private record PendingKey(ResourceLocation typeKey, BlockPos pos, int chunkX, int chunkZ) {
-        private static PendingKey of(ResourceLocation typeKey, BlockPos pos) {
+    private record PendingKey(String typeKey, BlockPos pos, int chunkX, int chunkZ) {
+        private static PendingKey of(String typeKey, BlockPos pos) {
             return new PendingKey(typeKey, pos, pos.getX() >> 4, pos.getZ() >> 4);
         }
     }

@@ -4,7 +4,6 @@ import com.PinkCats.bandwidthoptimizer.integration.minecraft.BlockEntityTypeKeyC
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.CustomPayloadPacketCompat;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 
 public final class ChannelTransportPacketRankSourceResolver {
@@ -33,7 +32,7 @@ public final class ChannelTransportPacketRankSourceResolver {
         if (blockEntityType == null) {
             return "<unknown>";
         }
-        ResourceLocation typeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityType);
+        String typeKey = BlockEntityTypeKeyCompat.keyOf(blockEntityType);
         return typeKey == null ? blockEntityType.toString() : typeKey.toString();
     }
 
