@@ -105,7 +105,7 @@ public final class ChunkPeerStateManager {
         ChunkPeerStateSnapshot snapshot = state.setEpoch(epoch);
         if (shouldLogDiagnose()) {
             DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_PEER_STATE, "event=bind player={}, uuid={}, reason={}, dimension={}, channel={}, epoch={}",
-                    player.getGameProfile().getName(),
+                    player.getName().getString(),
                     player.getUUID(),
                     reason,
                     dimensionKey.location(),
@@ -133,7 +133,7 @@ public final class ChunkPeerStateManager {
         }
         if (shouldLogDiagnose()) {
             DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_PEER_STATE, "event=lifecycle player={}, uuid={}, reason={}, retainedScope={}, scopeState={}, clearedChannelState={}",
-                    player.getGameProfile().getName(),
+                    player.getName().getString(),
                     player.getUUID(),
                     reason,
                     retainedPlayerScope,
@@ -333,7 +333,7 @@ public final class ChunkPeerStateManager {
         ChunkShadowSnapshotManager.invalidateChunk(ChannelIdentity.longText(channel), scopeId, coordinate);
         if (shouldLogDiagnose()) {
             DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_PEER_STATE, "event=lifecycleInvalidate player={}, uuid={}, channel={}, reason={}, chunk={}, state={}",
-                    player.getGameProfile().getName(),
+                    player.getName().getString(),
                     player.getUUID(),
                     ChannelIdentity.longText(channel),
                     reason,
@@ -384,7 +384,7 @@ public final class ChunkPeerStateManager {
         ChunkPeerChunkStateSnapshot chunkSnapshot = state == null ? null : state.markChunkAwaitingFullReplay(scopeId, coordinate);
         if (shouldLogDiagnose()) {
             DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_PEER_STATE, "event=lifecycleRetain player={}, uuid={}, channel={}, reason={}, chunk={}, state={}",
-                    player.getGameProfile().getName(),
+                    player.getName().getString(),
                     player.getUUID(),
                     ChannelIdentity.longText(channel),
                     reason,

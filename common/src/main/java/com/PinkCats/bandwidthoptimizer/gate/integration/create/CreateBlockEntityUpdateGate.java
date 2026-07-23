@@ -93,7 +93,7 @@ public final class CreateBlockEntityUpdateGate {
             if (!dropped.isEmpty()) {
                 recordDropped(dropped);
                 logDiagnose("event=create_update_clear player={}, reason={}, dropped={}",
-                        player.getGameProfile().getName(),
+                        player.getName().getString(),
                         reason == null ? "" : reason,
                         dropped.count());
             }
@@ -112,7 +112,7 @@ public final class CreateBlockEntityUpdateGate {
         if (!dropped.isEmpty()) {
             recordDropped(dropped);
             logDiagnose("event=create_update_drop_chunk player={}, chunk=({}, {}), reason={}, dropped={}",
-                    player.getGameProfile().getName(),
+                    player.getName().getString(),
                     chunkPos.x,
                     chunkPos.z,
                     reason == null ? "" : reason,
@@ -179,7 +179,7 @@ public final class CreateBlockEntityUpdateGate {
         DELAYED_BYTES.addAndGet(originalRawBytes);
         if (shouldLogSample(delayed)) {
             logDiagnose("event=create_update_delay player={}, type={}, pos={}, delayed={}, superseded={}, released={}, dropped={}",
-                    player.getGameProfile().getName(),
+                    player.getName().getString(),
                     blockEntityTypeKey,
                     blockEntityDataPacket.getPos(),
                     delayed,
@@ -295,7 +295,7 @@ public final class CreateBlockEntityUpdateGate {
                 RELEASED_BYTES.addAndGet(pendingUpdate.rawBytes());
                 if (shouldLogSample(released)) {
                     logDiagnose("event=create_update_release player={}, type={}, pos={}, reason={}, rawBytes={}, superseded={}",
-                            player.getGameProfile().getName(),
+                            player.getName().getString(),
                             pendingUpdate.key().typeKey(),
                             pendingUpdate.key().pos(),
                             pendingUpdate.releaseReason(),
@@ -377,7 +377,7 @@ public final class CreateBlockEntityUpdateGate {
         DELAYED_BYTES.addAndGet(originalRawBytes);
         if (shouldLogSample(delayed)) {
             logDiagnose("event=create_update_delay player={}, type={}, pos={}, delayed={}, superseded={}, released={}, dropped={}",
-                    player.getGameProfile().getName(),
+                    player.getName().getString(),
                     blockEntityTypeKey,
                     blockEntityDataPacket.getPos(),
                     delayed,
@@ -725,7 +725,7 @@ public final class CreateBlockEntityUpdateGate {
         }
         Bandwidthoptimizer.LOGGER.warn(
                 "[BO-CreateGate] Failed to resolve Create contraption bounds; sending update directly. player={}, type={}, pos={}",
-                player == null ? "<unknown>" : player.getGameProfile().getName(),
+                player == null ? "<unknown>" : player.getName().getString(),
                 typeKey,
                 pos);
     }

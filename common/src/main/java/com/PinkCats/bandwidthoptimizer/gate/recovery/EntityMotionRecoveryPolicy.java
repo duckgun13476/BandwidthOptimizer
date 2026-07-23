@@ -146,7 +146,7 @@ public final class EntityMotionRecoveryPolicy extends IdleGateRecoveryPolicy {
             DiagnosticLog.info(
                     DiagnosticToolRegistry.Tool.COMPAT_DYNAMIC_GATES,
                     "event=idle_gate_entity_restore player={} teleports={} motions={} skipped={} capturedMoves={} capturedMotions={} totalTeleports={} totalMotions={} totalSkipped={}",
-                    player.getGameProfile().getName(),
+                    player.getName().getString(),
                     teleports,
                     motions,
                     skipped,

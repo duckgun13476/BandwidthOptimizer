@@ -72,7 +72,7 @@ public final class ServerBandwidthStatsRegistry {
 
         ServerBandwidthStatsPersistence.flushBeforeBind(player, stats);
         UUID playerId = player.getUUID();
-        String playerName = player.getGameProfile() == null ? "<unknown-player>" : player.getGameProfile().getName();
+        String playerName = player.getGameProfile() == null ? "<unknown-player>" : player.getName().getString();
         stats.bindPlayer(playerId, playerName);
         PLAYER_CHANNELS.put(playerId, ChannelIdentity.longText(channel));
     }

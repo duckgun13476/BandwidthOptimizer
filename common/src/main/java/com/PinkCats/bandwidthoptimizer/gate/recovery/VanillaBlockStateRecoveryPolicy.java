@@ -202,7 +202,7 @@ public final class VanillaBlockStateRecoveryPolicy extends IdleGateRecoveryPolic
             DiagnosticLog.info(
                     DiagnosticToolRegistry.Tool.COMPAT_DYNAMIC_GATES,
                     "event=idle_gate_vanilla_block_restore player={} restored={} skipped={} capturedPackets={} capturedPositions={}",
-                    player.getGameProfile().getName(),
+                    player.getName().getString(),
                     restored,
                     skippedPositions.get(),
                     capturedPackets.get(),

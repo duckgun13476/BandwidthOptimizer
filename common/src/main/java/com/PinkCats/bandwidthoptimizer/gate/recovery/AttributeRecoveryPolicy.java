@@ -97,7 +97,7 @@ public final class AttributeRecoveryPolicy extends IdleGateRecoveryPolicy {
             DiagnosticLog.info(
                     DiagnosticToolRegistry.Tool.COMPAT_DYNAMIC_GATES,
                     "event=idle_gate_attribute_restore player={} restored={} skipped={} capturedPackets={} totalRestored={} totalSkipped={}",
-                    player.getGameProfile().getName(),
+                    player.getName().getString(),
                     restored,
                     skipped,
                     capturedPackets.get(),

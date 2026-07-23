@@ -29,7 +29,7 @@ public final class RunAllProbeFiles {
 
         String markerText = "captured_at_ms=" + System.currentTimeMillis()
                 + System.lineSeparator()
-                + "player_name=" + serverPlayer.getGameProfile().getName()
+                + "player_name=" + serverPlayer.getName().getString()
                 + System.lineSeparator()
                 + "player_uuid=" + serverPlayer.getUUID()
                 + System.lineSeparator();
@@ -70,7 +70,7 @@ public final class RunAllProbeFiles {
 
         String markerText = "captured_at_ms=" + System.currentTimeMillis()
                 + System.lineSeparator()
-                + "player_name=" + serverPlayer.getGameProfile().getName()
+                + "player_name=" + serverPlayer.getName().getString()
                 + System.lineSeparator()
                 + "player_uuid=" + serverPlayer.getUUID()
                 + System.lineSeparator()
@@ -119,7 +119,7 @@ public final class RunAllProbeFiles {
 
         String markerText = "captured_at_ms=" + System.currentTimeMillis()
                 + System.lineSeparator()
-                + "player_name=" + serverPlayer.getGameProfile().getName()
+                + "player_name=" + serverPlayer.getName().getString()
                 + System.lineSeparator()
                 + "player_uuid=" + serverPlayer.getUUID()
                 + System.lineSeparator();

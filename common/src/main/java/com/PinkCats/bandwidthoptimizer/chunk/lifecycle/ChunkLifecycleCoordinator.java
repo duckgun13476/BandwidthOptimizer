@@ -42,7 +42,7 @@ public final class ChunkLifecycleCoordinator {
         if (sameDimensionRespawn) {
             if (BO_Diag_chunkLifecycle()) {
                 DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LIFECYCLE, "event=respawn_same_dimension_new_scope player={}, uuid={}, dimension={}",
-                        player.getGameProfile().getName(),
+                        player.getName().getString(),
                         player.getUUID(),
                         currentDimension.location()
                 );
@@ -100,7 +100,7 @@ public final class ChunkLifecycleCoordinator {
         HotpathCostProbe.Trace trace = HotpathCostProbe.begin(reason.equals("watch_remove") ? "watchRemoveRetain" : "chunkLifecycleRetain");
         if (trace.isActive()) {
             trace.detail("reason=" + reason
-                    + ", player=" + player.getGameProfile().getName()
+                    + ", player=" + player.getName().getString()
                     + ", chunk=" + chunkPos.x + "," + chunkPos.z);
         }
         try (trace) {
@@ -130,7 +130,7 @@ public final class ChunkLifecycleCoordinator {
             if (BO_Diag_chunkLifecycle()) {
                 stageStartNanos = HotpathCostProbe.start();
                 DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LIFECYCLE, "event=retain player={}, uuid={}, reason={}, chunk={}, snapshotBefore={}, snapshotAfter={}",
-                        player.getGameProfile().getName(),
+                        player.getName().getString(),
                         player.getUUID(),
                         reason,
                         coordinate.logText(),
@@ -157,7 +157,7 @@ public final class ChunkLifecycleCoordinator {
         }
 
         DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LIFECYCLE, "event=two_point_lifecycle_skip player={}, uuid={}, reason={}, chunk={}, snapshotBefore={}",
-                player.getGameProfile().getName(),
+                player.getName().getString(),
                 player.getUUID(),
                 reason,
                 coordinate.logText(),
