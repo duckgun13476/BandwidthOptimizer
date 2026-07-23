@@ -18,7 +18,7 @@ public final class BandwidthOptimizerCommand {
         dispatcher.register(Commands.literal("bandwidthoptimizer")
                 .executes(context -> root(context.getSource()))
                 .then(Commands.literal("report")
-                        .requires(source -> source.hasPermission(2))
+                        .requires(source -> CommandSourceCompat.hasPermission(source, 2))
                         .then(ChannelTransportCompressionCommand.buildCommand())
                         .then(ChannelTransportPacketRankCommand.buildCommand()))
                 .then(DiagnosticToolCommand.buildCommand())

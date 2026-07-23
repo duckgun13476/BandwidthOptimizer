@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.gate.integration.create;
 
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.NbtCompoundCompat;
 import net.minecraft.nbt.CompoundTag;
 
 final class CreateGateSoundPolicy {
@@ -10,11 +11,11 @@ final class CreateGateSoundPolicy {
         String type = path(typeKey);
         CompoundTag safeTag = tag == null ? new CompoundTag() : tag;
         return new SoundState(
-                type, safeTag.getString("Phase"), safeTag.getString("State"), safeTag.getInt("Ticks"),
-                safeTag.getInt("CountDown"), safeTag.getInt("Pitch"), safeTag.getBoolean("Running"),
-                safeTag.getBoolean("Fistbump"), safeTag.contains("Particle"),
-                safeTag.contains("ParticleItems") && !safeTag.getList("ParticleItems", 10).isEmpty(),
-                safeTag.contains("Animation") && !"NONE".equals(safeTag.getString("Animation")),
+                type, NbtCompoundCompat.string(safeTag, "Phase"), NbtCompoundCompat.string(safeTag, "State"), NbtCompoundCompat.intValue(safeTag, "Ticks"),
+                NbtCompoundCompat.intValue(safeTag, "CountDown"), NbtCompoundCompat.intValue(safeTag, "Pitch"), NbtCompoundCompat.booleanValue(safeTag, "Running"),
+                NbtCompoundCompat.booleanValue(safeTag, "Fistbump"), safeTag.contains("Particle"),
+                safeTag.contains("ParticleItems") && !NbtCompoundCompat.listIsEmpty(safeTag, "ParticleItems", 10),
+                safeTag.contains("Animation") && !"NONE".equals(NbtCompoundCompat.string(safeTag, "Animation")),
                 itemFingerprint(safeTag));
     }
 
@@ -43,8 +44,8 @@ final class CreateGateSoundPolicy {
         if (tag == null || !tag.contains("HeldItem")) {
             return "";
         }
-        CompoundTag itemTag = tag.getCompound("HeldItem");
-        return itemTag.isEmpty() ? "" : itemTag.getString("id") + "#" + itemTag.getInt("count") + "#" + itemTag.getInt("Count");
+        CompoundTag itemTag = NbtCompoundCompat.compoundOrEmpty(tag, "HeldItem");
+        return itemTag.isEmpty() ? "" : NbtCompoundCompat.string(itemTag, "id") + "#" + NbtCompoundCompat.intValue(itemTag, "count") + "#" + NbtCompoundCompat.intValue(itemTag, "Count");
     }
 
     private static String path(String typeKey) {

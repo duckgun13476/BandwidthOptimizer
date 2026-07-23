@@ -185,6 +185,12 @@ neoForge {
 }
 
 def neoforgeExcludedCommonJava = [
+        'com/PinkCats/bandwidthoptimizer/debug/ClientPacketHandleDiagnosticProbe.java',
+        'com/PinkCats/bandwidthoptimizer/debug/MovementDiagnosticProbe.java',
+        'com/PinkCats/bandwidthoptimizer/integration/minecraft/ClientWindowCompat.java',
+        'com/PinkCats/bandwidthoptimizer/integration/minecraft/CommandSourceCompat.java',
+        'com/PinkCats/bandwidthoptimizer/integration/minecraft/EntityMotionPacketCompat.java',
+        'com/PinkCats/bandwidthoptimizer/integration/minecraft/NbtCompoundCompat.java',
         'com/PinkCats/bandwidthoptimizer/chunk/packet/ClientboundPlayPacketCodec.java'
 ]
 

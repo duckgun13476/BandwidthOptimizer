@@ -20,7 +20,7 @@ public final class ServerBandwidthStatsCommand {
 
     public static ArgumentBuilder<CommandSourceStack, ?> buildCommand() {
         return Commands.literal("stats")
-                .requires(source -> source.hasPermission(2))
+                .requires(source -> CommandSourceCompat.hasPermission(source, 2))
                 .executes(context -> total(context.getSource()))
                 .then(Commands.literal("total")
                         .executes(context -> total(context.getSource())))

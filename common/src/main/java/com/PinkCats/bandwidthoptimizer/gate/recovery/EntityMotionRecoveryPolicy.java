@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.gate.recovery;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateServerState;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.EntityMotionPacketCompat;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ClientboundMoveEntityPacketAccessor;
 import io.netty.channel.Channel;
@@ -11,7 +12,6 @@ import it.unimi.dsi.fastutil.ints.Int2ByteMap;
 import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
-import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
@@ -51,7 +51,7 @@ public final class EntityMotionRecoveryPolicy extends IdleGateRecoveryPolicy {
         if (packet == null) {
             return false;
         }
-        boolean captured = capture(channel, packet.getId(), MOTION);
+        boolean captured = capture(channel, EntityMotionPacketCompat.entityId(packet), MOTION);
         if (captured) {
             capturedMotionPackets.incrementAndGet();
         }
@@ -131,7 +131,7 @@ public final class EntityMotionRecoveryPolicy extends IdleGateRecoveryPolicy {
             }
             byte updateMask = entry.getByteValue();
             if ((updateMask & POSITION) != 0) {
-                player.connection.send(new ClientboundTeleportEntityPacket(entity));
+                player.connection.send(EntityMotionPacketCompat.teleport(entity));
                 teleports++;
             }
             if ((updateMask & MOTION) != 0) {

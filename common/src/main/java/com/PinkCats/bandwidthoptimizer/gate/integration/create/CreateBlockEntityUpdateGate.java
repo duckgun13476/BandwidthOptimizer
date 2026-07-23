@@ -11,6 +11,7 @@ import com.PinkCats.bandwidthoptimizer.integration.sable.SableDynamicStructureCo
 import com.PinkCats.bandwidthoptimizer.integration.valkyrienskies.ValkyrienSkiesDynamicStructureCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.gate.recovery.IdleGateRecoveryRegistry;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.NbtCompoundCompat;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.core.BlockPos;
@@ -814,7 +815,7 @@ public final class CreateBlockEntityUpdateGate {
             return 64;
         }
         int bytes = 1; // TAG_End marker
-        for (String key : tag.getAllKeys()) {
+        for (String key : NbtCompoundCompat.keys(tag)) {
             bytes += 1 + 2 + key.length();
             bytes += estimateTagPayloadBytes(tag.get(key), depth + 1);
         }

@@ -15,7 +15,7 @@ public final class DiagnosticToolCommand {
 
     public static LiteralArgumentBuilder<CommandSourceStack> buildCommand() {
         LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("debug")
-                .requires(source -> source.hasPermission(2))
+                .requires(source -> CommandSourceCompat.hasPermission(source, 2))
                 .executes(context -> list(context.getSource()))
                 .then(Commands.literal("status")
                         .executes(context -> list(context.getSource())))

@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.integration.minecraft;
 
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 
 public final class CommandSourceCompat {
     private CommandSourceCompat() {
@@ -15,6 +16,12 @@ public final class CommandSourceCompat {
     }
 
     public static boolean hasPermission(CommandSourceStack source, int level) {
-        return source != null && source.hasPermission(level);
+        if (source == null) {
+            return false;
+        }
+        if (!(source.getEntity() instanceof ServerPlayer player)) {
+            return true;
+        }
+        return source.getServer().getPlayerList().isOp(player.nameAndId());
     }
 }

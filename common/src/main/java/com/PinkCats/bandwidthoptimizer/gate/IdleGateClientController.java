@@ -1,9 +1,9 @@
 package com.PinkCats.bandwidthoptimizer.gate;
 
 import com.PinkCats.bandwidthoptimizer.client.hud.BandwidthOptimizerHudOverlay;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.ClientWindowCompat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.function.Consumer;
 
@@ -157,12 +157,7 @@ public final class IdleGateClientController {
         if (!isWindowActive(minecraft)) {
             return true;
         }
-        try {
-            long windowHandle = minecraft.getWindow().getWindow();
-            return GLFW.glfwGetWindowAttrib(windowHandle, GLFW.GLFW_ICONIFIED) == GLFW.GLFW_TRUE;
-        } catch (RuntimeException exception) {
-            return false;
-        }
+        return ClientWindowCompat.isIconified(minecraft);
     }
 
     private static boolean observeStableWorldReady(Minecraft minecraft, long nowMillis, boolean backgroundMenu) {

@@ -12,4 +12,8 @@ public final class CommandSourceCompat {
         }
         source.sendSuccess(component, broadcastToAdmins);
     }
+
+    public static boolean hasPermission(CommandSourceStack source, int level) {
+        return source != null && source.hasPermission(level);
+    }
 }
