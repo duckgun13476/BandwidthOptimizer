@@ -2,7 +2,6 @@ package com.PinkCats.bandwidthoptimizer.server.stat;
 
 import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateBlockEntityUpdateGate;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
@@ -39,8 +38,9 @@ public final class ServerBandwidthStatsPersistence {
     public static void flushBeforeBind(ServerPlayer player, ChannelBandwidthStats stats) {
         if (player == null || stats == null)
             return;
-        rememberServer(player.server);
-        flushSnapshot(player.server, stats.snapshot());
+        MinecraftServer server = player.level().getServer();
+        rememberServer(server);
+        flushSnapshot(server, stats.snapshot());
     }
 
 
@@ -104,13 +104,7 @@ public final class ServerBandwidthStatsPersistence {
     }
 
     private static ServerBandwidthPersistentStats get(MinecraftServer server) {
-        return server.overworld().getDataStorage().computeIfAbsent(
-                new SavedData.Factory<>(
-                        ServerBandwidthPersistentStats::new,
-                        (tag, provider) -> ServerBandwidthPersistentStats.load(tag)
-                ),
-                ServerBandwidthPersistentStats.DATA_NAME
-        );
+        return server.overworld().getDataStorage().computeIfAbsent(ServerBandwidthPersistentStats.TYPE);
     }
 
     private static void flushAll(MinecraftServer server) {

@@ -1,10 +1,13 @@
 package com.PinkCats.bandwidthoptimizer.server.stat;
 
 import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateBlockEntityUpdateGate;
+import com.mojang.serialization.Codec;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.core.HolderLookup;
+import net.minecraft.core.UUIDUtil;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.level.saveddata.SavedDataType;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -18,6 +21,11 @@ public final class ServerBandwidthPersistentStats extends SavedData {
 
     static final String DATA_NAME = "bandwidthoptimizer_server_bandwidth_stats";
     private static final int DATA_VERSION = 2;
+    static final SavedDataType<ServerBandwidthPersistentStats> TYPE = new SavedDataType<>(
+            Identifier.withDefaultNamespace(DATA_NAME),
+            ServerBandwidthPersistentStats::new,
+            CompoundTag.CODEC.xmap(ServerBandwidthPersistentStats::load, ServerBandwidthPersistentStats::saveTag)
+    );
 
     private final MutableCounters totals = new MutableCounters();
     private final Map<UUID, PlayerCounters> players = new LinkedHashMap<>();
@@ -28,25 +36,27 @@ public final class ServerBandwidthPersistentStats extends SavedData {
             return stats;
         }
 
-        stats.totals.read(tag.getCompound("totals"));
-        ListTag playerList = tag.getList("players", 10);
+        stats.totals.read(tag.getCompoundOrEmpty("totals"));
+        ListTag playerList = tag.getListOrEmpty("players");
         for (int i = 0; i < playerList.size(); i++) {
-            CompoundTag playerTag = playerList.getCompound(i);
-            if (!playerTag.hasUUID("uuid")) {
+            CompoundTag playerTag = playerList.getCompoundOrEmpty(i);
+            UUID playerId = playerTag.getIntArray("uuid")
+                    .filter(value -> value.length == 4)
+                    .map(UUIDUtil::uuidFromIntArray)
+                    .orElse(null);
+            if (playerId == null) {
                 continue;
             }
-            UUID playerId = playerTag.getUUID("uuid");
             PlayerCounters counters = new PlayerCounters(playerId);
-            counters.playerName = playerTag.getString("name");
-            counters.read(playerTag.getCompound("counters"));
+            counters.playerName = playerTag.getStringOr("name", "");
+            counters.read(playerTag.getCompoundOrEmpty("counters"));
             stats.players.put(playerId, counters);
         }
         return stats;
     }
 
-
-    @Override
-    public CompoundTag save(CompoundTag tag, HolderLookup.Provider provider) {
+    private CompoundTag saveTag() {
+        CompoundTag tag = new CompoundTag();
         tag.putInt("version", DATA_VERSION);
         tag.putLong("updatedAtMillis", System.currentTimeMillis());
         tag.put("totals", this.totals.write());
@@ -54,7 +64,7 @@ public final class ServerBandwidthPersistentStats extends SavedData {
         ListTag playerList = new ListTag();
         for (PlayerCounters counters : this.players.values()) {
             CompoundTag playerTag = new CompoundTag();
-            playerTag.putUUID("uuid", counters.playerId);
+            playerTag.putIntArray("uuid", UUIDUtil.uuidToIntArray(counters.playerId));
             playerTag.putString("name", counters.playerName == null ? "" : counters.playerName);
             playerTag.put("counters", counters.write());
             playerList.add(playerTag);
@@ -282,30 +292,30 @@ public final class ServerBandwidthPersistentStats extends SavedData {
             if (tag == null) {
                 return;
             }
-            this.outboundRawEncodedPackets = tag.getLong("outboundRawEncodedPackets");
-            this.outboundRawEncodedBytes = tag.getLong("outboundRawEncodedBytes");
-            this.outboundVanillaCompressedEstimateBytes = tag.getLong("outboundVanillaCompressedEstimateBytes");
-            this.outboundVanillaEstimateWireBytes = tag.getLong("outboundVanillaEstimateWireBytes");
-            this.inboundRawEncodedPackets = tag.getLong("inboundRawEncodedPackets");
-            this.inboundRawEncodedBytes = tag.getLong("inboundRawEncodedBytes");
-            this.outboundTransportFrames = tag.getLong("outboundTransportFrames");
-            this.outboundTransportFrameBytes = tag.getLong("outboundTransportFrameBytes");
-            this.inboundTransportFrames = tag.getLong("inboundTransportFrames");
-            this.inboundTransportFrameBytes = tag.getLong("inboundTransportFrameBytes");
-            this.outboundBypassPackets = tag.getLong("outboundBypassPackets");
-            this.outboundBypassBytes = tag.getLong("outboundBypassBytes");
-            this.inboundBypassPackets = tag.getLong("inboundBypassPackets");
-            this.inboundBypassBytes = tag.getLong("inboundBypassBytes");
-            this.outboundWireBytes = tag.getLong("outboundWireBytes");
-            this.inboundWireBytes = tag.getLong("inboundWireBytes");
-            this.serverOfflineReuseConfirmedFrames = tag.getLong("serverOfflineReuseConfirmedFrames");
-            this.serverOfflineReuseConfirmedSavedBytes = tag.getLong("serverOfflineReuseConfirmedSavedBytes");
-            this.serverOfflineReuseConfirmedWireBytes = tag.getLong("serverOfflineReuseConfirmedWireBytes");
-            this.serverTemporaryReuseSavedBytes = tag.getLong("serverTemporaryReuseSavedBytes");
-            this.serverCreateGateObservedBytes = tag.getLong("serverCreateGateObservedBytes");
-            this.serverCreateGateSavedBytes = tag.getLong("serverCreateGateSavedBytes");
-            this.serverCreateGateSavedPackets = tag.getLong("serverCreateGateSavedPackets");
-            this.serverCreateGateReleasedPackets = tag.getLong("serverCreateGateReleasedPackets");
+            this.outboundRawEncodedPackets = tag.getLongOr("outboundRawEncodedPackets", 0L);
+            this.outboundRawEncodedBytes = tag.getLongOr("outboundRawEncodedBytes", 0L);
+            this.outboundVanillaCompressedEstimateBytes = tag.getLongOr("outboundVanillaCompressedEstimateBytes", 0L);
+            this.outboundVanillaEstimateWireBytes = tag.getLongOr("outboundVanillaEstimateWireBytes", 0L);
+            this.inboundRawEncodedPackets = tag.getLongOr("inboundRawEncodedPackets", 0L);
+            this.inboundRawEncodedBytes = tag.getLongOr("inboundRawEncodedBytes", 0L);
+            this.outboundTransportFrames = tag.getLongOr("outboundTransportFrames", 0L);
+            this.outboundTransportFrameBytes = tag.getLongOr("outboundTransportFrameBytes", 0L);
+            this.inboundTransportFrames = tag.getLongOr("inboundTransportFrames", 0L);
+            this.inboundTransportFrameBytes = tag.getLongOr("inboundTransportFrameBytes", 0L);
+            this.outboundBypassPackets = tag.getLongOr("outboundBypassPackets", 0L);
+            this.outboundBypassBytes = tag.getLongOr("outboundBypassBytes", 0L);
+            this.inboundBypassPackets = tag.getLongOr("inboundBypassPackets", 0L);
+            this.inboundBypassBytes = tag.getLongOr("inboundBypassBytes", 0L);
+            this.outboundWireBytes = tag.getLongOr("outboundWireBytes", 0L);
+            this.inboundWireBytes = tag.getLongOr("inboundWireBytes", 0L);
+            this.serverOfflineReuseConfirmedFrames = tag.getLongOr("serverOfflineReuseConfirmedFrames", 0L);
+            this.serverOfflineReuseConfirmedSavedBytes = tag.getLongOr("serverOfflineReuseConfirmedSavedBytes", 0L);
+            this.serverOfflineReuseConfirmedWireBytes = tag.getLongOr("serverOfflineReuseConfirmedWireBytes", 0L);
+            this.serverTemporaryReuseSavedBytes = tag.getLongOr("serverTemporaryReuseSavedBytes", 0L);
+            this.serverCreateGateObservedBytes = tag.getLongOr("serverCreateGateObservedBytes", 0L);
+            this.serverCreateGateSavedBytes = tag.getLongOr("serverCreateGateSavedBytes", 0L);
+            this.serverCreateGateSavedPackets = tag.getLongOr("serverCreateGateSavedPackets", 0L);
+            this.serverCreateGateReleasedPackets = tag.getLongOr("serverCreateGateReleasedPackets", 0L);
         }
 
 
