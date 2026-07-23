@@ -108,7 +108,7 @@ public final class ChunkPeerStateManager {
                     player.getName().getString(),
                     player.getUUID(),
                     reason,
-                    dimensionKey.location(),
+                    com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.dimensionId(dimensionKey),
                     snapshot.channelId(),
                     snapshot.epoch()
             );
@@ -515,7 +515,8 @@ public final class ChunkPeerStateManager {
             return "nextScopeId=" + this.nextScopeId.get()
                     + ", preparedRespawnScopeId=" + this.preparedRespawnScopeId
                     + ", preparedRespawnDimension="
-                    + (this.preparedRespawnDimension == null ? "<none>" : this.preparedRespawnDimension.location());
+                    + (this.preparedRespawnDimension == null ? "<none>"
+                    : com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.dimensionId(this.preparedRespawnDimension));
         }
     }
 }

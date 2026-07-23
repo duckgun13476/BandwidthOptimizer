@@ -108,13 +108,16 @@ public final class CreateBlockEntityUpdateGate {
         if (state == null) {
             return;
         }
-        PendingDropStats dropped = state.dropChunk(chunkPos.x, chunkPos.z);
+        PendingDropStats dropped = state.dropChunk(
+                com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.x(chunkPos),
+                com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.z(chunkPos)
+        );
         if (!dropped.isEmpty()) {
             recordDropped(dropped);
             logDiagnose("event=create_update_drop_chunk player={}, chunk=({}, {}), reason={}, dropped={}",
                     player.getName().getString(),
-                    chunkPos.x,
-                    chunkPos.z,
+                    com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.x(chunkPos),
+                    com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.z(chunkPos),
                     reason == null ? "" : reason,
                     dropped.count());
         }

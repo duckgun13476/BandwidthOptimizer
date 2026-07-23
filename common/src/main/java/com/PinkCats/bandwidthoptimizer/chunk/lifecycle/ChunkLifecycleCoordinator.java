@@ -44,7 +44,7 @@ public final class ChunkLifecycleCoordinator {
                 DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_LIFECYCLE, "event=respawn_same_dimension_new_scope player={}, uuid={}, dimension={}",
                         player.getName().getString(),
                         player.getUUID(),
-                        currentDimension.location()
+                        com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.dimensionId(currentDimension)
                 );
             }
             ChunkPeerStateManager.bindPlayerDimensionScope(player, "respawn_same_dimension_rebind");
@@ -101,11 +101,15 @@ public final class ChunkLifecycleCoordinator {
         if (trace.isActive()) {
             trace.detail("reason=" + reason
                     + ", player=" + player.getName().getString()
-                    + ", chunk=" + chunkPos.x + "," + chunkPos.z);
+                    + ", chunk=" + com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.x(chunkPos)
+                    + "," + com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.z(chunkPos));
         }
         try (trace) {
             long stageStartNanos = HotpathCostProbe.start();
-            ChunkPacketCoordinate coordinate = ChunkPacketCoordinate.ofChunk(chunkPos.x, chunkPos.z);
+            ChunkPacketCoordinate coordinate = ChunkPacketCoordinate.ofChunk(
+                    com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.x(chunkPos),
+                    com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.z(chunkPos)
+            );
             HotpathCostProbe.end("coordinate", stageStartNanos);
 
             stageStartNanos = HotpathCostProbe.start();

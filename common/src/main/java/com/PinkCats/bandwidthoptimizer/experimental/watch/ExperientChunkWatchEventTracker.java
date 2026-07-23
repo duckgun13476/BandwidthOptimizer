@@ -19,21 +19,21 @@ public final class ExperientChunkWatchEventTracker {
         if (serverPlayer == null || chunkPos == null) {
             return;
         }
-        resolvePlayerProgress(serverPlayer).recordWatch(chunkPos.toLong());
+        resolvePlayerProgress(serverPlayer).recordWatch(com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.packedKey(chunkPos));
     }
 
     public static void recordSent(ServerPlayer serverPlayer, ChunkPos chunkPos) {
         if (serverPlayer == null || chunkPos == null) {
             return;
         }
-        resolvePlayerProgress(serverPlayer).recordSent(chunkPos.toLong());
+        resolvePlayerProgress(serverPlayer).recordSent(com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.packedKey(chunkPos));
     }
 
     public static void recordUnwatch(ServerPlayer serverPlayer, ChunkPos chunkPos) {
         if (serverPlayer == null || chunkPos == null) {
             return;
         }
-        resolvePlayerProgress(serverPlayer).recordUnwatch(chunkPos.toLong());
+        resolvePlayerProgress(serverPlayer).recordUnwatch(com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.packedKey(chunkPos));
     }
 
     public static ChunkWatchProgressSnapshot snapshot(ServerPlayer serverPlayer, ChunkPacketCoordinate coordinate) {
@@ -45,7 +45,8 @@ public final class ExperientChunkWatchEventTracker {
         if (playerChunkWatchProgress == null) {
             return ChunkWatchProgressSnapshot.empty();
         }
-        return playerChunkWatchProgress.snapshot(ChunkPos.asLong(coordinate.chunkX(), coordinate.chunkZ()));
+        return playerChunkWatchProgress.snapshot(com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.packedKey(
+                coordinate.chunkX(), coordinate.chunkZ()));
     }
 
     public static void clearPlayer(ServerPlayer serverPlayer) {

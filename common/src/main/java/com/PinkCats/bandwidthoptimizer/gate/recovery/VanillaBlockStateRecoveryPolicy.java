@@ -295,7 +295,8 @@ public final class VanillaBlockStateRecoveryPolicy extends IdleGateRecoveryPolic
         private synchronized void discardChunk(ChunkPos chunkPos) {
             for (LongIterator iterator = positions.iterator(); iterator.hasNext();) {
                 BlockPos pos = BlockPos.of(iterator.nextLong());
-                if ((pos.getX() >> 4) == chunkPos.x && (pos.getZ() >> 4) == chunkPos.z) {
+                if ((pos.getX() >> 4) == com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.x(chunkPos)
+                        && (pos.getZ() >> 4) == com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.z(chunkPos)) {
                     iterator.remove();
                 }
             }
