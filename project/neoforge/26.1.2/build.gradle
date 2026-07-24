@@ -511,7 +511,7 @@ def forceStopRunAllProcesses(Project projectRef, File projectDirFile, boolean is
 
 tasks.register('runChannelJsonlCompare', JavaExec) {
     group = 'verification'
-    description = 'Compares NeoForge 1.21.1 runAll jsonl traffic.'
+    description = 'Compares NeoForge 26.1.2 runAll jsonl traffic.'
     dependsOn(tasks.named('testClasses'))
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
@@ -519,7 +519,7 @@ tasks.register('runChannelJsonlCompare', JavaExec) {
 
 tasks.register('runChunkBranchCoverageVerify', JavaExec) {
     group = 'verification'
-    description = 'Verifies NeoForge 1.21.1 runAll chunk transport branch coverage.'
+    description = 'Verifies NeoForge 26.1.2 runAll chunk transport branch coverage.'
     dependsOn(tasks.named('testClasses'))
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'com.PinkCats.bandwidthoptimizer.test.RunAllChunkBranchCoverageMain'
@@ -534,7 +534,7 @@ gradle.taskGraph.whenReady { TaskExecutionGraph taskGraph ->
 
 tasks.register('runAll') {
     group = 'application'
-    description = 'Starts NeoForge 1.21.1 server and client from this subproject, then verifies four-way jsonl traffic.'
+    description = 'Starts NeoForge 26.1.2 server and client from this subproject, then verifies four-way jsonl traffic.'
     dependsOn(tasks.named('testClasses'))
 
     doLast {
@@ -587,7 +587,7 @@ tasks.register('runAll') {
         Process serverProcess = null
         Process clientProcess = null
         try {
-            println 'runAll: starting NeoForge 1.21.1 local server.'
+            println 'runAll: starting NeoForge 26.1.2 local server.'
             serverProcess = startNeoForgeRunTaskProcess(rootDirFile, projectDirFile, isWindows, wrapperPath, 'runServer', buildRunAllSharedGradleArgs(project), serverTaskLog, 'runServer')
             project.ext.boWaitForLogMarker.call(
                     serverTaskLog,
@@ -598,7 +598,7 @@ tasks.register('runAll') {
             )
 
             List<String> clientGradleArgs = buildExperientAutoConnectGradleArgs(project, '127.0.0.1:25565', 'BO NeoForge RunAll Local', 20L)
-            println 'runAll: server is ready, starting NeoForge 1.21.1 client.'
+            println 'runAll: server is ready, starting NeoForge 26.1.2 client.'
             clientProcess = startNeoForgeRunTaskProcess(rootDirFile, projectDirFile, isWindows, wrapperPath, 'runClient', clientGradleArgs, clientTaskLog, 'runClient')
             project.ext.boWaitForLogMarker.call(
                     clientTaskLog,
@@ -635,7 +635,7 @@ tasks.register('runAll') {
                 } else {
                     println 'runAll: 跳过 NeoForge jsonl compare，因为当前是多次退出重进场景。'
                 }
-                println 'runAll: NeoForge 1.21.1 runAll completed.'
+                println 'runAll: NeoForge 26.1.2 runAll completed.'
                 return
             }
 
@@ -665,7 +665,7 @@ tasks.register('runAll') {
             } else {
                 println 'runAll: 跳过 NeoForge jsonl compare，因为当前是多次退出重进场景。'
             }
-            println 'runAll: NeoForge 1.21.1 runAll completed.'
+            println 'runAll: NeoForge 26.1.2 runAll completed.'
         } finally {
             forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess])
         }
