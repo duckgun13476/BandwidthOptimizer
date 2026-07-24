@@ -31,6 +31,10 @@ java {
     toolchain.languageVersion = JavaLanguageVersion.of(25)
 }
 
+def boJava25Launcher = javaToolchains.launcherFor {
+    languageVersion = JavaLanguageVersion.of(25)
+}
+
 def applyOptionalNeoForgeRunProperty = { Project projectRef, def runConfig, String gradlePropertyName, String runtimePropertyName ->
     if (projectRef.hasProperty(gradlePropertyName)) {
         runConfig.systemProperty(runtimePropertyName, projectRef.property(gradlePropertyName).toString())
@@ -515,6 +519,7 @@ tasks.register('runChannelJsonlCompare', JavaExec) {
     dependsOn(tasks.named('testClasses'))
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
+    javaLauncher = boJava25Launcher
 }
 
 tasks.register('runChunkBranchCoverageVerify', JavaExec) {
@@ -523,6 +528,7 @@ tasks.register('runChunkBranchCoverageVerify', JavaExec) {
     dependsOn(tasks.named('testClasses'))
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'com.PinkCats.bandwidthoptimizer.test.RunAllChunkBranchCoverageMain'
+    javaLauncher = boJava25Launcher
 }
 
 gradle.taskGraph.whenReady { TaskExecutionGraph taskGraph ->
@@ -628,6 +634,7 @@ tasks.register('runAll') {
                 )
                 if (shouldRunNeoForgeRunAllCompare(project)) {
                     javaexec {
+                        executable = boJava25Launcher.get().executablePath.asFile.absolutePath
                         classpath = sourceSets.test.runtimeClasspath
                         mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
                         systemProperty 'bandwidthoptimizer.compare.allowTrailingPacketStreamFrames', 'true'
@@ -658,6 +665,7 @@ tasks.register('runAll') {
             )
             if (shouldRunNeoForgeRunAllCompare(project)) {
                 javaexec {
+                    executable = boJava25Launcher.get().executablePath.asFile.absolutePath
                     classpath = sourceSets.test.runtimeClasspath
                     mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
                     systemProperty 'bandwidthoptimizer.compare.allowTrailingPacketStreamFrames', 'true'
