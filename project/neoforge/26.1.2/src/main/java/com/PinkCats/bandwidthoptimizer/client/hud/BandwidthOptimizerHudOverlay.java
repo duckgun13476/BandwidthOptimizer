@@ -29,6 +29,10 @@ public final class BandwidthOptimizerHudOverlay {
     public static void render(RenderGuiEvent.Post event) {
         Minecraft minecraft = Minecraft.getInstance();
         if (!BandwidthOptimizerHudOverlayCore.shouldRender(minecraft)) {
+            String idleIndicator = BandwidthOptimizerHudOverlayCore.idleIndicator(minecraft);
+            if (idleIndicator != null) {
+                event.getGuiGraphics().textRenderer().accept(6, 6, Component.literal(idleIndicator));
+            }
             return;
         }
 

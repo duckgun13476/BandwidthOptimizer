@@ -4,6 +4,7 @@
   "hud.bandwidthoptimizer.server": "服务器会话",
   "hud.bandwidthoptimizer.summary": "综合统计",
   "hud.bandwidthoptimizer.server.waiting": "正在等待 4Hz 同步",
+  "hud.bandwidthoptimizer.idle": "挂机",
   "hud.bandwidthoptimizer.total_save": "总流量",
   "hud.bandwidthoptimizer.optimize": "优化流量",
   "hud.bandwidthoptimizer.chunk_cache": "区块缓存",

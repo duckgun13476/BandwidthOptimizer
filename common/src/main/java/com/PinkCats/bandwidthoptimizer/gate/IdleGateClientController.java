@@ -9,7 +9,7 @@ import java.util.function.Consumer;
 
 public final class IdleGateClientController {
 
-    private static final long FOREGROUND_STILL_DELAY_MILLIS = 10_000L;
+    private static final long FOREGROUND_STILL_DELAY_MILLIS = 20_000L;
     private static final long BACKGROUND_IDLE_DELAY_MILLIS = 2_000L;
     private static final long WORLD_READY_GRACE_MILLIS = 30_000L;
     private static final long ACTIVE_REPORT_MILLIS = 15_000L;

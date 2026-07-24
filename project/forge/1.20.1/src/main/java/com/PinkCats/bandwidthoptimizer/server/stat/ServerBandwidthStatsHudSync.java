@@ -8,6 +8,7 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Mod.EventBusSubscriber(modid = Bandwidthoptimizer.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE)
@@ -29,12 +30,20 @@ public final class ServerBandwidthStatsHudSync {
             return;
         }
 
-        ServerBandwidthStatsPayload payload =
-                ServerBandwidthStatsPayload.fromTotals(ServerBandwidthStatsRegistry.snapshotSessionTotals());
+        List<ServerPlayer> recipients = new ArrayList<>();
         for (ServerPlayer player : players) {
             if (IdleGateHudSyncPolicy.shouldSend(player, server.getTickCount())) {
-                ServerBandwidthStatsNetworkChannel.sendToPlayer(player, payload);
+                recipients.add(player);
             }
+        }
+        if (recipients.isEmpty()) {
+            return;
+        }
+
+        ServerBandwidthStatsPayload payload =
+                ServerBandwidthStatsPayload.fromTotals(ServerBandwidthStatsRegistry.snapshotSessionTotals());
+        for (ServerPlayer player : recipients) {
+            ServerBandwidthStatsNetworkChannel.sendToPlayer(player, payload);
         }
     }
 }

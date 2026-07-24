@@ -7,7 +7,7 @@ import net.minecraft.server.level.ServerPlayer;
 public final class IdleGateHudSyncPolicy {
 
     private static final int ACTIVE_HUD_INTERVAL_TICKS = 5;
-    private static final int STILL_HUD_INTERVAL_TICKS = 20;
+    private static final int STILL_HUD_INTERVAL_TICKS = 20 * 5;
 
     private IdleGateHudSyncPolicy() {}
 

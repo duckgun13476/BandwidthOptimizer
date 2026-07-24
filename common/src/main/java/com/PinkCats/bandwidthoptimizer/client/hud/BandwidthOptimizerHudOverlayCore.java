@@ -3,6 +3,8 @@ package com.PinkCats.bandwidthoptimizer.client.hud;
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
+import com.PinkCats.bandwidthoptimizer.gate.IdleGateClientController;
+import com.PinkCats.bandwidthoptimizer.gate.IdleGateMode;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.resources.language.I18n;
@@ -44,6 +46,18 @@ final class BandwidthOptimizerHudOverlayCore {
                 && !minecraft.options.hideGui
                 && minecraft.player != null
                 && minecraft.screen == null;
+    }
+
+    static String idleIndicator(Minecraft minecraft) {
+        if (minecraft == null
+                || !enabled
+                || minecraft.options.hideGui
+                || minecraft.player == null
+                || shouldRender(minecraft)
+                || !IdleGateClientController.currentMode().isIdle()) {
+            return null;
+        }
+        return text("hud.bandwidthoptimizer.idle");
     }
 
     static CachedHud currentHud(Minecraft minecraft) {
@@ -310,7 +324,10 @@ final class BandwidthOptimizerHudOverlayCore {
 
 
     private static String buildTitleLine() {
-        return text("hud.bandwidthoptimizer.title") + " (" + Bandwidthoptimizer.displayVersion() + ")";
+        String title = text("hud.bandwidthoptimizer.title") + " (" + Bandwidthoptimizer.displayVersion() + ")";
+        return IdleGateClientController.currentMode() == IdleGateMode.FOREGROUND_STILL
+                ? title + " | " + text("hud.bandwidthoptimizer.idle")
+                : title;
     }
 
     private static boolean lineStartsWithText(String trimmedLine, String key) {

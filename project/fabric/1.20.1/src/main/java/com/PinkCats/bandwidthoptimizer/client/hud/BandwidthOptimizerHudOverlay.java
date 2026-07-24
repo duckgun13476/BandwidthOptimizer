@@ -16,6 +16,10 @@ public final class BandwidthOptimizerHudOverlay {
     public static void render(GuiGraphics guiGraphics) {
         Minecraft minecraft = Minecraft.getInstance();
         if (!BandwidthOptimizerHudOverlayCore.shouldRender(minecraft)) {
+            String idleIndicator = BandwidthOptimizerHudOverlayCore.idleIndicator(minecraft);
+            if (idleIndicator != null) {
+                guiGraphics.drawString(minecraft.font, idleIndicator, 6, 6, 0xFFD166, false);
+            }
             return;
         }
 

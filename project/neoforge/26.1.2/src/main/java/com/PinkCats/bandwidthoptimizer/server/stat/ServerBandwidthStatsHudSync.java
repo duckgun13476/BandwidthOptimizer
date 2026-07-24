@@ -10,6 +10,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.common.EventBusSubscriber;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @EventBusSubscriber(modid = Bandwidthoptimizer.MODID)
@@ -31,12 +32,20 @@ public final class ServerBandwidthStatsHudSync {
             return;
         }
 
-        ServerBandwidthStatsPayload payload =
-                ServerBandwidthStatsPayload.fromTotals(ServerBandwidthStatsRegistry.snapshotSessionTotals());
+        List<ServerPlayer> recipients = new ArrayList<>();
         for (ServerPlayer player : players) {
             if (IdleGateHudSyncPolicy.shouldSend(player, server.getTickCount())) {
-                ServerBandwidthStatsNetworkChannel.sendToPlayer(player, payload);
+                recipients.add(player);
             }
+        }
+        if (recipients.isEmpty()) {
+            return;
+        }
+
+        ServerBandwidthStatsPayload payload =
+                ServerBandwidthStatsPayload.fromTotals(ServerBandwidthStatsRegistry.snapshotSessionTotals());
+        for (ServerPlayer player : recipients) {
+            ServerBandwidthStatsNetworkChannel.sendToPlayer(player, payload);
         }
     }
 }

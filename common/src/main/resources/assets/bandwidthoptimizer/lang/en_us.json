@@ -4,6 +4,7 @@
   "hud.bandwidthoptimizer.server": "Server session",
   "hud.bandwidthoptimizer.summary": "Summary",
   "hud.bandwidthoptimizer.server.waiting": "waiting for 4Hz sync",
+  "hud.bandwidthoptimizer.idle": "Idle",
   "hud.bandwidthoptimizer.total_save": "Total flow",
   "hud.bandwidthoptimizer.optimize": "Optimized flow",
   "hud.bandwidthoptimizer.chunk_cache": "ChunkCache",
