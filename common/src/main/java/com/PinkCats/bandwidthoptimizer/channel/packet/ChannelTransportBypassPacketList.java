@@ -5,7 +5,6 @@ import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundCommandSuggestionsPacket;
 import net.minecraft.network.protocol.game.ClientboundCommandsPacket;
-import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
 import net.minecraft.network.protocol.game.ClientboundLoginPacket;
@@ -17,8 +16,6 @@ import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundRotateHeadPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
-import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
-import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
 import net.minecraft.network.protocol.game.ClientboundSetExperiencePacket;
 import net.minecraft.network.protocol.game.ClientboundSetHealthPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
@@ -43,7 +40,6 @@ public final class ChannelTransportBypassPacketList {
             ClientboundBlockUpdatePacket.class,
             ClientboundCommandsPacket.class,
             ClientboundCommandSuggestionsPacket.class,
-            ClientboundContainerSetSlotPacket.class,
             ClientboundEntityEventPacket.class,
             ClientboundForgetLevelChunkPacket.class,
             ClientboundLoginPacket.class,
@@ -57,9 +53,7 @@ public final class ChannelTransportBypassPacketList {
             ClientboundRotateHeadPacket.class,
             ClientboundSetChunkCacheCenterPacket.class,
             ClientboundSetChunkCacheRadiusPacket.class,
-            ClientboundSetEntityDataPacket.class,
             ClientboundSetEntityMotionPacket.class,
-            ClientboundSetEquipmentPacket.class,
             ClientboundSetExperiencePacket.class,
             ClientboundSetHealthPacket.class,
             ClientboundSetTimePacket.class,
@@ -85,7 +79,6 @@ public final class ChannelTransportBypassPacketList {
             "net.minecraft.network.protocol.game.ClientboundUpdateRecipesPacket",
             "net.minecraft.network.protocol.game.ClientboundDamageEventPacket",
             "net.minecraft.network.protocol.game.ClientboundHurtAnimationPacket",
-            "net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket",
             "net.minecraft.network.protocol.game.ServerboundChatCommandPacket",
             "net.minecraft.network.protocol.game.ServerboundChatPacket"
     );
