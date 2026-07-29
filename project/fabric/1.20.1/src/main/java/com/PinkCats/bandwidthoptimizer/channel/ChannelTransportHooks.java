@@ -37,6 +37,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelPromise;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.network.Connection;
 import net.minecraft.network.ConnectionProtocol;
@@ -52,6 +53,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 public final class ChannelTransportHooks {
@@ -60,7 +63,6 @@ public final class ChannelTransportHooks {
             ChannelTransportNetworkChannel.TRANSPORT_PAYLOAD_ID;
     private static final int CLIENTBOUND_CUSTOM_PAYLOAD_MAX_BYTES = 1_048_576;
     private static final int SERVERBOUND_CUSTOM_PAYLOAD_MAX_BYTES = 32767;
-    private static final int SERVERBOUND_CUSTOM_PAYLOAD_SAFE_INPUT_BYTES = 24000;
     private static final int SERVER_CACHE_SCOPE_MAX_RETRY_ATTEMPTS = 3;
     private static final long SERVER_CACHE_SCOPE_RETRY_DELAY_MILLIS = 50L;
     private static final AtomicLong OUTBOUND_TRANSPORT_TRACE_COUNTER = new AtomicLong();
@@ -594,6 +596,17 @@ public final class ChannelTransportHooks {
                 continue;
             }
 
+            ChannelTransportFragmentReassembler.ReceiveResult fragmentResult =
+                    ChannelTransportStateManager.acceptInboundFragment(context.channel(), transportFrameBytes);
+            if (fragmentResult.kind() == ChannelTransportFragmentReassembler.ReceiveResult.Kind.INCOMPLETE) {
+                expandedAny = true;
+                index = replaceDecodedCarrierWithRestoredPackets(out, index, List.of());
+                continue;
+            }
+            if (fragmentResult.kind() == ChannelTransportFragmentReassembler.ReceiveResult.Kind.COMPLETE) {
+                transportFrameBytes = fragmentResult.transportFrameBytes();
+            }
+
             ChannelTransportSession transportSession = ChannelTransportStateManager.getOrCreateSession(context.channel());
             ChannelTransportPacketCodec.UnwrappedTransportFrame unwrappedFrame;
             try {
@@ -681,13 +694,25 @@ public final class ChannelTransportHooks {
         if (context == null || packetFlow == null || out == null || transportFrameBytes == null) {
             return false;
         }
-        if (packetFlow == PacketFlow.CLIENTBOUND && transportFrameBytes.length > CLIENTBOUND_CUSTOM_PAYLOAD_MAX_BYTES) {
-            return false;
+        List<byte[]> carrierPayloads = ChannelTransportFragmentCodec.fragmentTransportFrame(
+                transportFrameBytes,
+                payloadLimitBytes(packetFlow),
+                ChannelTransportStateManager.nextOutboundFragmentStreamId(context.channel())
+        );
+        for (byte[] carrierPayload : carrierPayloads) {
+            if (!writeSingleTransportCarrierPacket(context, packetFlow, out, carrierPayload)) {
+                return false;
+            }
         }
-        if (packetFlow == PacketFlow.SERVERBOUND && transportFrameBytes.length > SERVERBOUND_CUSTOM_PAYLOAD_MAX_BYTES) {
-            return false;
-        }
+        return true;
+    }
 
+    private static boolean writeSingleTransportCarrierPacket(
+            ChannelHandlerContext context,
+            PacketFlow packetFlow,
+            ByteBuf out,
+            byte[] transportFrameBytes
+    ) {
         ConnectionProtocol protocol = readConnectionProtocol(context);
         FriendlyByteBuf payloadBuffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(transportFrameBytes));
         FriendlyByteBuf outputBuffer = new FriendlyByteBuf(out);
@@ -717,32 +742,52 @@ public final class ChannelTransportHooks {
         if (channel == null || packetFlow == null || transportFrameBytes == null) {
             return null;
         }
-        if (packetFlow == PacketFlow.CLIENTBOUND && transportFrameBytes.length > CLIENTBOUND_CUSTOM_PAYLOAD_MAX_BYTES) {
-            throw new IllegalStateException("Clientbound transport carrier exceeds payload limit: " + transportFrameBytes.length);
+        List<byte[]> carrierPayloads = ChannelTransportFragmentCodec.fragmentTransportFrame(
+                transportFrameBytes,
+                payloadLimitBytes(packetFlow),
+                ChannelTransportStateManager.nextOutboundFragmentStreamId(channel)
+        );
+        ChannelPromise aggregatePromise = channel.newPromise();
+        AtomicInteger remainingWrites = new AtomicInteger(carrierPayloads.size());
+        AtomicBoolean failed = new AtomicBoolean();
+        for (byte[] carrierPayload : carrierPayloads) {
+            FriendlyByteBuf payloadBuffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(carrierPayload));
+            try {
+                Packet<?> carrierPacket = packetFlow == PacketFlow.CLIENTBOUND
+                        ? new ClientboundCustomPayloadPacket(TRANSPORT_PAYLOAD_ID, payloadBuffer)
+                        : new ServerboundCustomPayloadPacket(TRANSPORT_PAYLOAD_ID, payloadBuffer);
+                logOutboundCarrierTrace(channel.pipeline().context("encoder"), packetFlow, -1, carrierPayload);
+                ChannelFuture writeFuture = channel.write(carrierPacket);
+                writeFuture.addListener(future -> {
+                    payloadBuffer.release();
+                    if (!future.isSuccess()) {
+                        if (failed.compareAndSet(false, true)) {
+                            Throwable cause = future.cause();
+                            aggregatePromise.tryFailure(cause != null ? cause : new IllegalStateException("Fragment carrier write failed"));
+                        }
+                    } else if (remainingWrites.decrementAndGet() == 0 && !failed.get()) {
+                        aggregatePromise.trySuccess();
+                    }
+                });
+            } catch (RuntimeException exception) {
+                payloadBuffer.release();
+                throw exception;
+            }
         }
-        if (packetFlow == PacketFlow.SERVERBOUND && transportFrameBytes.length > SERVERBOUND_CUSTOM_PAYLOAD_MAX_BYTES) {
-            throw new IllegalStateException("Serverbound transport carrier exceeds payload limit: " + transportFrameBytes.length);
-        }
+        channel.flush();
+        return aggregatePromise;
+    }
 
-        FriendlyByteBuf payloadBuffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(transportFrameBytes));
-        try {
-            Packet<?> carrierPacket = packetFlow == PacketFlow.CLIENTBOUND
-                    ? new ClientboundCustomPayloadPacket(TRANSPORT_PAYLOAD_ID, payloadBuffer)
-                    : new ServerboundCustomPayloadPacket(TRANSPORT_PAYLOAD_ID, payloadBuffer);
-            logOutboundCarrierTrace(channel.pipeline().context("encoder"), packetFlow, -1, transportFrameBytes);
-            ChannelFuture writeFuture = channel.writeAndFlush(carrierPacket);
-            writeFuture.addListener(future -> payloadBuffer.release());
-            return writeFuture;
-        } catch (RuntimeException e) {
-            payloadBuffer.release();
-            throw e;
-        }
+    private static int payloadLimitBytes(PacketFlow packetFlow) {
+        return packetFlow == PacketFlow.CLIENTBOUND
+                ? CLIENTBOUND_CUSTOM_PAYLOAD_MAX_BYTES
+                : SERVERBOUND_CUSTOM_PAYLOAD_MAX_BYTES;
     }
 
 
     public static boolean shouldBypassServerboundCarrierByInputSize(PacketFlow packetFlow, int transportInputBytes) {
-        return packetFlow == PacketFlow.SERVERBOUND
-                && transportInputBytes > SERVERBOUND_CUSTOM_PAYLOAD_SAFE_INPUT_BYTES;
+        // Bounded outer fragments replace the old custom-payload size guard.
+        return false;
     }
 
     // Stateful wraps must be committed.

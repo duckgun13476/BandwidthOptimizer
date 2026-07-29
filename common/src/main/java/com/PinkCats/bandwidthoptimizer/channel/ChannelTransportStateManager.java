@@ -5,6 +5,7 @@ import io.netty.channel.Channel;
 import io.netty.util.AttributeKey;
 
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class ChannelTransportStateManager {
 
@@ -16,6 +17,12 @@ public final class ChannelTransportStateManager {
 
     private static final AttributeKey<ProxyServerSwitchBoundaryState> PROXY_SERVER_SWITCH_BOUNDARY_KEY =
             AttributeKey.valueOf("bandwidthoptimizer:proxy_server_switch_boundary");
+
+    private static final AttributeKey<AtomicInteger> OUTBOUND_FRAGMENT_STREAM_ID_KEY =
+            AttributeKey.valueOf("bandwidthoptimizer:channel_transport_fragment_stream_id");
+
+    private static final AttributeKey<ChannelTransportFragmentReassembler> INBOUND_FRAGMENT_REASSEMBLER_KEY =
+            AttributeKey.valueOf("bandwidthoptimizer:channel_transport_fragment_reassembler");
 
     private ChannelTransportStateManager() {}
 
@@ -48,6 +55,37 @@ public final class ChannelTransportStateManager {
         if (existingSession != null) {
             closeSession(existingSession, reason);
         }
+        ChannelTransportFragmentReassembler reassembler = channel.attr(INBOUND_FRAGMENT_REASSEMBLER_KEY).getAndSet(null);
+        if (reassembler != null) {
+            reassembler.clear();
+        }
+        channel.attr(OUTBOUND_FRAGMENT_STREAM_ID_KEY).set(null);
+    }
+
+    public static int nextOutboundFragmentStreamId(Channel channel) {
+        if (channel == null) {
+            throw new IllegalArgumentException("channel");
+        }
+        AtomicInteger counter = channel.attr(OUTBOUND_FRAGMENT_STREAM_ID_KEY).get();
+        if (counter == null) {
+            AtomicInteger created = new AtomicInteger();
+            AtomicInteger raced = channel.attr(OUTBOUND_FRAGMENT_STREAM_ID_KEY).setIfAbsent(created);
+            counter = raced == null ? created : raced;
+        }
+        return counter.updateAndGet(previous -> previous == Integer.MAX_VALUE ? 1 : previous + 1);
+    }
+
+    public static ChannelTransportFragmentReassembler.ReceiveResult acceptInboundFragment(Channel channel, byte[] payloadBytes) {
+        if (channel == null) {
+            throw new IllegalArgumentException("channel");
+        }
+        ChannelTransportFragmentReassembler reassembler = channel.attr(INBOUND_FRAGMENT_REASSEMBLER_KEY).get();
+        if (reassembler == null) {
+            ChannelTransportFragmentReassembler created = new ChannelTransportFragmentReassembler();
+            ChannelTransportFragmentReassembler raced = channel.attr(INBOUND_FRAGMENT_REASSEMBLER_KEY).setIfAbsent(created);
+            reassembler = raced == null ? created : raced;
+        }
+        return reassembler.accept(payloadBytes);
     }
 
     private static void closeSession(ChannelTransportSession session, String reason) {

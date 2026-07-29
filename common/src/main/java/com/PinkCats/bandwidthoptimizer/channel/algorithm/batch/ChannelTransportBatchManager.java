@@ -175,13 +175,13 @@ public final class ChannelTransportBatchManager {
     ) {
         if (shouldPreSplitBatch(packetFlow, drainedBatch)) {
             if (drainedBatch.pendingPackets().size() <= 1) {
-                writePendingPacketsDirectly(drainedBatch, "batch_carrier_payload_budget_direct");
+                // A complete BO frame may use bounded outer fragments.
+            } else {
+                for (OutboundBatchDrain splitDrain : splitDrainInHalf(drainedBatch)) {
+                    writeBatchCarrierOrSplit(channel, splitDrain, packetFlow, transportSession, flushMode);
+                }
                 return;
             }
-            for (OutboundBatchDrain splitDrain : splitDrainInHalf(drainedBatch)) {
-                writeBatchCarrierOrSplit(channel, splitDrain, packetFlow, transportSession, flushMode);
-            }
-            return;
         }
 
         ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame = wrapBatchFrame(
@@ -191,19 +191,6 @@ public final class ChannelTransportBatchManager {
         );
         if (wrappedFrame == null) {
             writePendingPacketsDirectly(drainedBatch, "batch_carrier_wrap_direct");
-            return;
-        }
-
-        int payloadLimitBytes = carrierPayloadLimitBytes(packetFlow);
-        if (wrappedFrame.transportFrameLength() > payloadLimitBytes) {
-            failConnection(
-                    channel,
-                    "outbound-batch-carrier-size",
-                    new IllegalStateException("Transport batch carrier exceeds payload limit after pre-split: "
-                            + wrappedFrame.transportFrameLength()
-                            + " > "
-                            + payloadLimitBytes)
-            );
             return;
         }
 
@@ -267,12 +254,6 @@ public final class ChannelTransportBatchManager {
                         List.copyOf(drainedBatch.pendingPackets().subList(midpoint, drainedBatch.pendingPackets().size()))
                 )
         );
-    }
-
-    private static int carrierPayloadLimitBytes(PacketFlow packetFlow) {
-        return packetFlow == PacketFlow.SERVERBOUND
-                ? SERVERBOUND_BATCH_CARRIER_MAX_BYTES
-                : CLIENTBOUND_BATCH_CARRIER_MAX_BYTES;
     }
 
     private static boolean shouldPreSplitBatch(PacketFlow packetFlow, OutboundBatchDrain drainedBatch) {

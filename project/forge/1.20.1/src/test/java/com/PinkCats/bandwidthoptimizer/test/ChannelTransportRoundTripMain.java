@@ -2,6 +2,8 @@ package com.PinkCats.bandwidthoptimizer.test;
 
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportFragmentCodec;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportFragmentReassembler;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStateManager;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportAdaptiveBypass;
@@ -22,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Random;
 
 public final class ChannelTransportRoundTripMain {
 
@@ -56,6 +59,8 @@ public final class ChannelTransportRoundTripMain {
         verifyAdaptiveBypassLearnsAfterSixteenUnprofitableCarriers();
         verifyOversizedBatchRejectedAtEncode();
         verifyOversizedSinglePacketRejectedAtEncode();
+        verifyFragmentedTransportReplayPreservesBytesAndOrder();
+        reportFragmentedTransportLatency();
         verifyStreamingRejectsMergedCarrierFrames();
         verifyStreamingRecoversAfterIncompleteCarrier();
         verifyProxySwitchBoundaryKeepsInboundTransportEnabled();
@@ -307,6 +312,146 @@ public final class ChannelTransportRoundTripMain {
         throw new IllegalStateException("Oversized single packet should be rejected by the encoder before it reaches the decoder.");
     }
 
+    // Reassembly must restore the exact completed BO frame before the stateful decoder runs.
+    private static void verifyFragmentedTransportReplayPreservesBytesAndOrder() {
+        ChannelTransportSession senderSession = new ChannelTransportSession();
+        ChannelTransportSession receiverSession = new ChannelTransportSession();
+        byte[] beforePacket = utf8Bytes("before-fragmented-frame");
+        byte[] oversizedPacket = randomLargeBytes(3 * 1024 * 1024 + 257);
+        byte[] afterPacket = utf8Bytes("after-fragmented-frame");
+
+        var beforeFrame = ChannelTransportPacketCodec.wrapPacket(senderSession, beforePacket);
+        var oversizedFrame = ChannelTransportPacketCodec.wrapPacket(senderSession, oversizedPacket);
+        var afterFrame = ChannelTransportPacketCodec.wrapPacket(senderSession, afterPacket);
+        if (oversizedFrame.transportFrameLength() <= 32_767) {
+            throw new IllegalStateException("Fragment regression input did not exceed the carrier limit.");
+        }
+
+        List<byte[]> fragments = ChannelTransportFragmentCodec.fragmentTransportFrame(
+                oversizedFrame.transportFrameBytes(),
+                32_767,
+                17
+        );
+        if (fragments.size() <= 1) {
+            throw new IllegalStateException("Oversized transport frame was not fragmented.");
+        }
+
+        List<byte[]> replayFrames = new java.util.ArrayList<>();
+        replayFrames.add(beforeFrame.transportFrameBytes());
+        ChannelTransportFragmentReassembler reassembler = new ChannelTransportFragmentReassembler();
+        for (byte[] fragment : fragments) {
+            ChannelTransportFragmentReassembler.ReceiveResult result = reassembler.accept(fragment);
+            if (result.kind() == ChannelTransportFragmentReassembler.ReceiveResult.Kind.COMPLETE) {
+                if (!Arrays.equals(oversizedFrame.transportFrameBytes(), result.transportFrameBytes())) {
+                    throw new IllegalStateException("Fragment reassembly changed BO frame bytes.");
+                }
+                replayFrames.add(result.transportFrameBytes());
+            } else if (result.kind() != ChannelTransportFragmentReassembler.ReceiveResult.Kind.INCOMPLETE) {
+                throw new IllegalStateException("Fragment payload was not recognized as a fragment.");
+            }
+        }
+        replayFrames.add(afterFrame.transportFrameBytes());
+
+        List<byte[]> restoredPackets = new java.util.ArrayList<>();
+        for (byte[] replayFrame : replayFrames) {
+            var unwrapped = ChannelTransportPacketCodec.tryUnwrapPacket(receiverSession, replayFrame);
+            if (unwrapped == null || unwrapped.restoredPacketCount() != 1) {
+                throw new IllegalStateException("Fragment replay did not restore exactly one packet.");
+            }
+            restoredPackets.add(unwrapped.restoredPacketBytesList().get(0));
+        }
+        List<byte[]> expectedPackets = List.of(beforePacket, oversizedPacket, afterPacket);
+        if (restoredPackets.size() != expectedPackets.size()) {
+            throw new IllegalStateException("Fragment replay changed the packet count.");
+        }
+        for (int index = 0; index < expectedPackets.size(); index++) {
+            if (!Arrays.equals(expectedPackets.get(index), restoredPackets.get(index))) {
+                throw new IllegalStateException("Fragment replay changed packet bytes or ordering at index " + index);
+            }
+        }
+    }
+
+    // Test-only timing: measures the new outer carrier work separately from the existing BO codec.
+    private static void reportFragmentedTransportLatency() {
+        byte[] oversizedPacket = randomLargeBytes(3 * 1024 * 1024 + 257);
+        int sampleCount = 9;
+        long[] encodeNanos = new long[sampleCount];
+        long[] fragmentNanos = new long[sampleCount];
+        long[] reassemblyNanos = new long[sampleCount];
+        long[] decodeNanos = new long[sampleCount];
+        int fragmentCount = 0;
+        int outerPayloadBytes = 0;
+
+        for (int iteration = -3; iteration < sampleCount; iteration++) {
+            ChannelTransportSession senderSession = new ChannelTransportSession();
+            ChannelTransportSession receiverSession = new ChannelTransportSession();
+
+            long startedEncode = System.nanoTime();
+            var frame = ChannelTransportPacketCodec.wrapPacket(senderSession, oversizedPacket);
+            long finishedEncode = System.nanoTime();
+
+            long startedFragment = System.nanoTime();
+            List<byte[]> fragments = ChannelTransportFragmentCodec.fragmentTransportFrame(
+                    frame.transportFrameBytes(),
+                    32_767,
+                    iteration + 4
+            );
+            long finishedFragment = System.nanoTime();
+
+            ChannelTransportFragmentReassembler reassembler = new ChannelTransportFragmentReassembler();
+            byte[] reassembledFrame = null;
+            long startedReassembly = System.nanoTime();
+            for (byte[] fragment : fragments) {
+                ChannelTransportFragmentReassembler.ReceiveResult result = reassembler.accept(fragment);
+                if (result.kind() == ChannelTransportFragmentReassembler.ReceiveResult.Kind.COMPLETE) {
+                    reassembledFrame = result.transportFrameBytes();
+                }
+            }
+            long finishedReassembly = System.nanoTime();
+            if (reassembledFrame == null) {
+                throw new IllegalStateException("Fragment latency sample did not complete reassembly.");
+            }
+
+            long startedDecode = System.nanoTime();
+            var decoded = ChannelTransportPacketCodec.tryUnwrapPacket(receiverSession, reassembledFrame);
+            long finishedDecode = System.nanoTime();
+            if (decoded == null
+                    || decoded.restoredPacketCount() != 1
+                    || !Arrays.equals(oversizedPacket, decoded.restoredPacketBytesList().get(0))) {
+                throw new IllegalStateException("Fragment latency sample changed the decoded packet.");
+            }
+
+            if (iteration >= 0) {
+                encodeNanos[iteration] = finishedEncode - startedEncode;
+                fragmentNanos[iteration] = finishedFragment - startedFragment;
+                reassemblyNanos[iteration] = finishedReassembly - startedReassembly;
+                decodeNanos[iteration] = finishedDecode - startedDecode;
+                fragmentCount = fragments.size();
+                outerPayloadBytes = fragments.stream().mapToInt(bytes -> bytes.length).sum();
+            }
+        }
+
+        System.out.println("fragmented-3MiB latency: fragments=" + fragmentCount
+                + ", outerBytes=" + outerPayloadBytes
+                + ", encode=" + describeLatency(encodeNanos)
+                + ", fragment=" + describeLatency(fragmentNanos)
+                + ", reassemble=" + describeLatency(reassemblyNanos)
+                + ", decode=" + describeLatency(decodeNanos));
+    }
+
+    private static String describeLatency(long[] samples) {
+        long[] sorted = Arrays.copyOf(samples, samples.length);
+        Arrays.sort(sorted);
+        long median = sorted[sorted.length / 2];
+        int percentile95Index = (int) Math.ceil(sorted.length * 0.95D) - 1;
+        long percentile95 = sorted[Math.max(0, Math.min(percentile95Index, sorted.length - 1))];
+        return "median=" + formatMillis(median) + "ms,p95=" + formatMillis(percentile95) + "ms";
+    }
+
+    private static String formatMillis(long nanos) {
+        return String.format(Locale.ROOT, "%.3f", nanos / 1_000_000.0D);
+    }
+
     // A transport body may deliver only one clear-text frame.
     private static void verifyStreamingRejectsMergedCarrierFrames() {
         KineticStreamingLayer senderLayer = new KineticStreamingLayer(4);
@@ -399,6 +544,12 @@ public final class ChannelTransportRoundTripMain {
         for (int index = 0; index < 1024; index++) {
             bytes[index] = (byte) ((index * 31 + 17) & 0xFF);
         }
+        return bytes;
+    }
+
+    private static byte[] randomLargeBytes(int length) {
+        byte[] bytes = new byte[length];
+        new Random(0xB0F00DL).nextBytes(bytes);
         return bytes;
     }
 

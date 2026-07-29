@@ -158,7 +158,7 @@ public final class VanillaBlockStateRecoveryPolicy extends IdleGateRecoveryPolic
                 continue;
             }
             LevelChunk chunk = level.getChunkAt(anchor);
-            int sectionIndex = sectionPos.y() - (level.getMinBuildHeight() >> 4);
+            int sectionIndex = chunk.getSectionIndex(SectionPos.sectionToBlockCoord(sectionPos.y()));
             if (sectionIndex < 0 || sectionIndex >= chunk.getSections().length) {
                 skippedPositions.addAndGet(group.positions().size());
                 continue;
