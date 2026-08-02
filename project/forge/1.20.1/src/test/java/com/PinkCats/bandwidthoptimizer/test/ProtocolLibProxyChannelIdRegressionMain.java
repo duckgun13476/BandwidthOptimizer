@@ -7,23 +7,28 @@ import io.netty.util.DefaultAttributeMap;
 
 import java.lang.reflect.Proxy;
 import java.net.InetSocketAddress;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class ProtocolLibProxyChannelIdRegressionMain {
 
     private ProtocolLibProxyChannelIdRegressionMain() {}
 
     public static void main(String[] args) throws Exception {
-        Channel proxyChannel = newBrokenIdChannelProxy();
+        AtomicInteger idCalls = new AtomicInteger();
+        Channel proxyChannel = newBrokenIdChannelProxy(idCalls);
         String firstId = ChannelIdentity.longText(proxyChannel);
-        String secondId = ChannelIdentity.longText(proxyChannel);
+        for (int index = 0; index < 1_000; index++) {
+            require(firstId.equals(ChannelIdentity.longText(proxyChannel)), "Fallback id should remain stable");
+            require(firstId.equals(ChannelIdentity.shortText(proxyChannel)), "Fallback id should be shared by both renderings");
+        }
 
         require(firstId.startsWith("fallback:"), "Broken proxy channel should use a fallback id");
-        require(firstId.equals(secondId), "Fallback channel id should be stable for one connection");
+        require(idCalls.get() == 1, "Broken proxy Channel.id() must be attempted only once");
 
         System.out.println("ProtocolLib proxy channel id regression matched");
     }
 
-    private static Channel newBrokenIdChannelProxy() {
+    private static Channel newBrokenIdChannelProxy(AtomicInteger idCalls) {
         DefaultAttributeMap attributes = new DefaultAttributeMap();
         return (Channel) Proxy.newProxyInstance(
                 ProtocolLibProxyChannelIdRegressionMain.class.getClassLoader(),
@@ -31,6 +36,7 @@ public final class ProtocolLibProxyChannelIdRegressionMain {
                 (proxy, method, args) -> {
                     String methodName = method.getName();
                     if ("id".equals(methodName)) {
+                        idCalls.incrementAndGet();
                         throw new AbstractMethodError("ProtocolLib proxy channel does not implement Channel.id()");
                     }
                     if ("attr".equals(methodName)) {
