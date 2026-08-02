@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.channel;
 
+import com.PinkCats.bandwidthoptimizer.debug.CompatibilityIssueReporter;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelId;
 import io.netty.util.AttributeKey;
@@ -19,6 +20,7 @@ public final class ChannelIdentity {
             ChannelId channelId = channel.id();
             return channelId == null ? fallbackLongText(channel) : channelId.asLongText();
         } catch (LinkageError error) {
+            CompatibilityIssueReporter.report(channelIdIssueKey(channel), error, "ChannelIdentity.longText");
             return fallbackLongText(channel);
         }
     }
@@ -31,8 +33,13 @@ public final class ChannelIdentity {
             ChannelId channelId = channel.id();
             return channelId == null ? fallbackLongText(channel) : channelId.asShortText();
         } catch (LinkageError error) {
+            CompatibilityIssueReporter.report(channelIdIssueKey(channel), error, "ChannelIdentity.shortText");
             return fallbackLongText(channel);
         }
+    }
+
+    private static String channelIdIssueKey(Channel channel) {
+        return "channel_identity.id_linkage:" + channel.getClass().getName();
     }
 
     private static String fallbackLongText(Channel channel) {
