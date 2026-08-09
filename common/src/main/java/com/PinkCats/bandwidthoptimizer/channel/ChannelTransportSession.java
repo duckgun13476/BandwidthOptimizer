@@ -19,6 +19,7 @@ public final class ChannelTransportSession implements AutoCloseable {
     private boolean crossFrameZstdEnabled;
     private final ChannelTransportAlgorithmSession outboundStreamingSession;
     private final ChannelTransportAlgorithmSession inboundStreamingSession;
+    private final ChannelTransportStreamingRecoveryState streamingRecoveryState = new ChannelTransportStreamingRecoveryState();
     private int outboundStreamingEpoch = 1;
     private int outboundStreamingSequence;
 
@@ -134,6 +135,30 @@ public final class ChannelTransportSession implements AutoCloseable {
         return new PacketResult(copyBytesOrEmpty(result.bytes()), fallbackTelemetry(result.telemetry(), safeBytes.length));
     }
 
+    public synchronized void acceptInboundStreamingFrame(int epoch, int sequence) {
+        this.streamingRecoveryState.acceptInboundFrame(epoch, sequence);
+    }
+
+    public synchronized void completeInboundStreamingFrame(int epoch, int sequence) {
+        this.streamingRecoveryState.completeInboundFrame(epoch, sequence);
+    }
+
+    public synchronized void failInboundStreamingFrame(int epoch, int sequence) {
+        this.streamingRecoveryState.failInboundFrame(epoch, sequence);
+    }
+
+    public synchronized void prepareInboundStreamingReplay(int epoch, int expectedSequence) {
+        this.streamingRecoveryState.prepareInboundReplay(epoch, expectedSequence);
+    }
+
+    public synchronized void retainOutboundStreamingFrame(int epoch, int sequence, byte[] transportFrameBytes) {
+        this.streamingRecoveryState.retainOutboundFrame(epoch, sequence, transportFrameBytes);
+    }
+
+    public synchronized java.util.List<byte[]> replayOutboundStreamingFrames(int epoch, int expectedSequence) {
+        return this.streamingRecoveryState.replayOutboundFrames(epoch, expectedSequence);
+    }
+
     private void resetStreamingSessions() {
         if (this.outboundStreamingSession != null) {
             this.outboundStreamingSession.reset();
@@ -141,6 +166,8 @@ public final class ChannelTransportSession implements AutoCloseable {
         if (this.inboundStreamingSession != null) {
             this.inboundStreamingSession.reset();
         }
+        this.streamingRecoveryState.resetInbound();
+        this.streamingRecoveryState.resetOutbound();
         this.outboundStreamingEpoch = this.outboundStreamingEpoch == Integer.MAX_VALUE
                 ? 1
                 : this.outboundStreamingEpoch + 1;

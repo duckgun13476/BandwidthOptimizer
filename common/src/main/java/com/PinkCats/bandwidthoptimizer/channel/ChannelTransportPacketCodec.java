@@ -62,6 +62,7 @@ public final class ChannelTransportPacketCodec {
             ChannelTransportSession.StreamingPacketResult streamingResult =
                     transportSession.encodeBatchWithStreamingZstd(batchPayloadBytes);
             return wrapStreamingTransportBody(
+                    transportSession,
                     streamingResult.epoch(),
                     streamingResult.sequence(),
                     totalPacketBytes(safePacketBytesList),
@@ -116,9 +117,19 @@ public final class ChannelTransportPacketCodec {
 
             byte[] transportBodyBytes = new byte[buffer.readableBytes()];
             buffer.readBytes(transportBodyBytes);
-            ChannelTransportSession.PacketResult packetResult = frameVersion == FRAME_VERSION
-                    ? transportSession.decodeBatchWithStreamingZstd(transportBodyBytes)
-                    : transportSession.decodeSinglePacketWithTelemetry(transportBodyBytes);
+            ChannelTransportSession.PacketResult packetResult;
+            if (frameVersion == FRAME_VERSION) {
+                transportSession.acceptInboundStreamingFrame(streamingEpoch, streamingSequence);
+                try {
+                    packetResult = transportSession.decodeBatchWithStreamingZstd(transportBodyBytes);
+                } catch (RuntimeException exception) {
+                    transportSession.failInboundStreamingFrame(streamingEpoch, streamingSequence);
+                    throw exception;
+                }
+                transportSession.completeInboundStreamingFrame(streamingEpoch, streamingSequence);
+            } else {
+                packetResult = transportSession.decodeSinglePacketWithTelemetry(transportBodyBytes);
+            }
             List<byte[]> restoredPacketBytesList = switch (frameKind) {
                 case SINGLE -> {
                     byte[] packetBytes = copyBytesOrEmpty(packetResult.bytes());
@@ -173,6 +184,7 @@ public final class ChannelTransportPacketCodec {
     }
 
     private static WrappedTransportFrame wrapStreamingTransportBody(
+            ChannelTransportSession transportSession,
             int epoch,
             int sequence,
             int originalPacketBytes,
@@ -191,7 +203,7 @@ public final class ChannelTransportPacketCodec {
             buffer.writeBytes(safeTransportBodyBytes);
             byte[] wrappedBytes = new byte[buffer.readableBytes()];
             buffer.getBytes(0, wrappedBytes);
-            return new WrappedTransportFrame(
+            WrappedTransportFrame wrappedFrame = new WrappedTransportFrame(
                     FrameKind.STREAM_BATCH,
                     wrappedBytes,
                     Math.max(originalPacketBytes, 0),
@@ -199,6 +211,8 @@ public final class ChannelTransportPacketCodec {
                     safeTransportBodyBytes.length,
                     telemetry
             );
+            transportSession.retainOutboundStreamingFrame(epoch, sequence, wrappedFrame.transportFrameBytes());
+            return wrappedFrame;
         } finally {
             buffer.release();
         }

@@ -66,6 +66,7 @@ public final class ChannelTransportRoundTripMain {
         verifyFlushStreamingCrossFrameReuse();
         verifyFlushStreamingRequiresCoordinatedReset();
         verifyStreamingBatchFrameRoundTrip();
+        verifyStreamingGapReplayRestoresOrder();
         verifyProxySwitchBoundaryKeepsInboundTransportEnabled();
         verifyNonTransportPassThrough(receiverSession);
         System.out.println("All channel transport round trips passed.");
@@ -586,6 +587,52 @@ public final class ChannelTransportRoundTripMain {
                     throw new IllegalStateException("Cross-frame Zstd batch changed packet bytes at index " + index);
                 }
             }
+        } finally {
+            sender.close();
+            receiver.close();
+        }
+    }
+
+    private static void verifyStreamingGapReplayRestoresOrder() {
+        ChannelTransportSession sender = new ChannelTransportSession();
+        ChannelTransportSession receiver = new ChannelTransportSession();
+        sender.setCrossFrameZstdEnabled(true);
+        receiver.setCrossFrameZstdEnabled(true);
+        try {
+            List<ChannelTransportPacketCodec.WrappedTransportFrame> frames = List.of(
+                    ChannelTransportPacketCodec.wrapBatchPackets(sender, List.of(utf8Bytes("stream-one"))),
+                    ChannelTransportPacketCodec.wrapBatchPackets(sender, List.of(utf8Bytes("stream-two"))),
+                    ChannelTransportPacketCodec.wrapBatchPackets(sender, List.of(utf8Bytes("stream-three"))),
+                    ChannelTransportPacketCodec.wrapBatchPackets(sender, List.of(utf8Bytes("stream-four")))
+            );
+            var first = ChannelTransportPacketCodec.tryUnwrapPacket(receiver, frames.get(0).transportFrameBytes());
+            if (first == null || !Arrays.equals(utf8Bytes("stream-one"), first.restoredPacketBytesList().get(0))) {
+                throw new IllegalStateException("Streaming replay baseline did not decode the first frame.");
+            }
+            int epoch = first.streamingEpoch();
+            try {
+                ChannelTransportPacketCodec.tryUnwrapPacket(receiver, frames.get(2).transportFrameBytes());
+            } catch (IllegalStateException expected) {
+                if (!expected.getMessage().contains("sequence-gap")) {
+                    throw expected;
+                }
+                List<byte[]> replayFrames = sender.replayOutboundStreamingFrames(epoch, 2);
+                if (replayFrames.size() != 3) {
+                    throw new IllegalStateException("Streaming replay did not retain the missing suffix.");
+                }
+                receiver.prepareInboundStreamingReplay(epoch, 2);
+                String[] expectedValues = {"stream-two", "stream-three", "stream-four"};
+                for (int index = 0; index < replayFrames.size(); index++) {
+                    var restored = ChannelTransportPacketCodec.tryUnwrapPacket(receiver, replayFrames.get(index));
+                    if (restored == null || !Arrays.equals(
+                            utf8Bytes(expectedValues[index]),
+                            restored.restoredPacketBytesList().get(0))) {
+                        throw new IllegalStateException("Streaming replay changed packet order at index " + index);
+                    }
+                }
+                return;
+            }
+            throw new IllegalStateException("Streaming gap should block decode before the Zstd body is consumed.");
         } finally {
             sender.close();
             receiver.close();
