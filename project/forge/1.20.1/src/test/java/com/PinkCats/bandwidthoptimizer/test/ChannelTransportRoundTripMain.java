@@ -63,6 +63,9 @@ public final class ChannelTransportRoundTripMain {
         reportFragmentedTransportLatency();
         verifyStreamingRejectsMergedCarrierFrames();
         verifyStreamingRecoversAfterIncompleteCarrier();
+        verifyFlushStreamingCrossFrameReuse();
+        verifyFlushStreamingRequiresCoordinatedReset();
+        verifyStreamingBatchFrameRoundTrip();
         verifyProxySwitchBoundaryKeepsInboundTransportEnabled();
         verifyNonTransportPassThrough(receiverSession);
         System.out.println("All channel transport round trips passed.");
@@ -494,6 +497,101 @@ public final class ChannelTransportRoundTripMain {
         throw new IllegalStateException("Incomplete carrier should be rejected before the next frame.");
     }
 
+    private static void verifyFlushStreamingCrossFrameReuse() {
+        KineticStreamingLayer endSender = new KineticStreamingLayer(4);
+        KineticStreamingLayer endReceiver = new KineticStreamingLayer(4);
+        KineticStreamingLayer flushSender = new KineticStreamingLayer(
+                4,
+                KineticStreamingLayer.FrameTermination.FLUSH
+        );
+        KineticStreamingLayer flushReceiver = new KineticStreamingLayer(
+                4,
+                KineticStreamingLayer.FrameTermination.FLUSH
+        );
+        long endBytes = 0L;
+        long flushBytes = 0L;
+        for (int index = 0; index < 48; index++) {
+            byte[] payload = repeatedDynamicPayload(index);
+            byte[] endFrame = endSender.encode(payload);
+            byte[] flushFrame = flushSender.encode(payload);
+            endBytes += endFrame.length;
+            flushBytes += flushFrame.length;
+            if (!Arrays.equals(payload, endReceiver.decode(endFrame))) {
+                throw new IllegalStateException("END streaming payload mismatch at frame " + index);
+            }
+            if (!Arrays.equals(payload, flushReceiver.decode(flushFrame))) {
+                throw new IllegalStateException("FLUSH streaming payload mismatch at frame " + index);
+            }
+        }
+        if (flushBytes >= endBytes) {
+            throw new IllegalStateException(
+                    "FLUSH streaming did not reuse cross-frame history: flush=" + flushBytes + ", end=" + endBytes
+            );
+        }
+        System.out.printf(
+                Locale.ROOT,
+                "flush-reuse corpus: endBytes=%d, flushBytes=%d, saved=%.2f%%%n",
+                endBytes,
+                flushBytes,
+                100.0D * (endBytes - flushBytes) / endBytes
+        );
+    }
+
+    private static void verifyFlushStreamingRequiresCoordinatedReset() {
+        KineticStreamingLayer sender = new KineticStreamingLayer(4, KineticStreamingLayer.FrameTermination.FLUSH);
+        KineticStreamingLayer receiver = new KineticStreamingLayer(4, KineticStreamingLayer.FrameTermination.FLUSH);
+        receiver.decode(sender.encode(repeatedDynamicPayload(0)));
+        byte[] staleEpochFrame = sender.encode(repeatedDynamicPayload(1));
+        receiver.reset();
+        try {
+            receiver.decode(staleEpochFrame);
+        } catch (RuntimeException expected) {
+            sender.reset();
+            receiver.reset();
+            byte[] synchronizedEpochPayload = repeatedDynamicPayload(2);
+            byte[] synchronizedEpochFrame = sender.encode(synchronizedEpochPayload);
+            if (!Arrays.equals(synchronizedEpochPayload, receiver.decode(synchronizedEpochFrame))) {
+                throw new IllegalStateException("Coordinated FLUSH reset did not restore the next epoch.");
+            }
+            return;
+        }
+        throw new IllegalStateException("FLUSH receiver reset accepted a stale-epoch carrier without a synchronized reset.");
+    }
+
+    private static void verifyStreamingBatchFrameRoundTrip() {
+        ChannelTransportSession sender = new ChannelTransportSession();
+        ChannelTransportSession receiver = new ChannelTransportSession();
+        sender.setCrossFrameZstdEnabled(true);
+        receiver.setCrossFrameZstdEnabled(true);
+        try {
+            List<byte[]> expectedPackets = List.of(
+                    repeatedDynamicPayload(7),
+                    repeatedDynamicPayload(8),
+                    repeatedDynamicPayload(9)
+            );
+            var wrapped = ChannelTransportPacketCodec.wrapBatchPackets(sender, expectedPackets);
+            if (wrapped == null || wrapped.frameKind() != ChannelTransportPacketCodec.FrameKind.STREAM_BATCH) {
+                throw new IllegalStateException("Cross-frame Zstd batch did not select the streaming carrier format.");
+            }
+            var unwrapped = ChannelTransportPacketCodec.tryUnwrapPacket(receiver, wrapped.transportFrameBytes());
+            if (unwrapped == null
+                    || unwrapped.frameKind() != ChannelTransportPacketCodec.FrameKind.STREAM_BATCH
+                    || unwrapped.streamingEpoch() <= 0
+                    || unwrapped.streamingSequence() != 1
+                    || unwrapped.restoredPacketBytesList().size() != expectedPackets.size()) {
+                throw new IllegalStateException("Cross-frame Zstd batch frame lost its stream metadata.");
+            }
+            for (int index = 0; index < expectedPackets.size(); index++) {
+                if (!Arrays.equals(expectedPackets.get(index), unwrapped.restoredPacketBytesList().get(index))) {
+                    throw new IllegalStateException("Cross-frame Zstd batch changed packet bytes at index " + index);
+                }
+            }
+        } finally {
+            sender.close();
+            receiver.close();
+        }
+    }
+
     // Proxy switch guards must not block inbound transport decode.
     private static void verifyProxySwitchBoundaryKeepsInboundTransportEnabled() {
         EmbeddedChannel channel = new EmbeddedChannel();
@@ -562,6 +660,17 @@ public final class ChannelTransportRoundTripMain {
     private static byte[] smallCustomPayloadPacket(int variant) {
         byte[] bytes = ("aether:main:setLifeShardCount:" + variant).getBytes(StandardCharsets.UTF_8);
         bytes[0] = 0x2D;
+        return bytes;
+    }
+
+    private static byte[] repeatedDynamicPayload(int frameIndex) {
+        byte[] bytes = new byte[4 * 1024];
+        Arrays.fill(bytes, (byte) 0x4D);
+        byte[] prefix = "create:main:contraption-update:".getBytes(StandardCharsets.UTF_8);
+        System.arraycopy(prefix, 0, bytes, 0, prefix.length);
+        bytes[512] = (byte) frameIndex;
+        bytes[513] = (byte) (frameIndex >>> 8);
+        bytes[2048] = (byte) (frameIndex * 31);
         return bytes;
     }
 

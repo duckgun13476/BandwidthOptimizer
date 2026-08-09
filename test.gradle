@@ -204,6 +204,18 @@ tasks.register('runChannelTransportRoundTrip', JavaExec) {
     )
 }
 
+tasks.register('runZstdReplayComparison', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Compares independent and cross-frame Zstd bodies using a captured raw packet replay.',
+            'com.PinkCats.bandwidthoptimizer.test.ZstdReplayComparisonMain'
+    )
+    if (project.hasProperty('boReplayRawPath')) {
+        systemProperty 'bandwidthoptimizer.replayRawPath', project.property('boReplayRawPath').toString()
+    }
+}
+
 tasks.register('runSableChunkSyncCompatRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,

@@ -12,11 +12,18 @@ public final class KineticStreamingLayer implements TransportLayer, AutoCloseabl
     private static final int DIRECT_BUFFER_BYTES = 64 * 1024;
 
     private final int compressionLevel;
+    private final FrameTermination frameTermination;
     private final ZstdRuntimeBridge.Context zstdContext;
     private byte[] pendingDecodedBytes = new byte[0];
 
     public KineticStreamingLayer(int compressionLevel) {
+        this(compressionLevel, FrameTermination.END);
+    }
+
+    // The default keeps each carrier independently decodable.
+    public KineticStreamingLayer(int compressionLevel, FrameTermination frameTermination) {
         this.compressionLevel = compressionLevel;
+        this.frameTermination = frameTermination == null ? FrameTermination.END : frameTermination;
         this.zstdContext = ZstdRuntimeBridge.createContext(compressionLevel);
     }
 
@@ -72,7 +79,11 @@ public final class KineticStreamingLayer implements TransportLayer, AutoCloseabl
 
         while (sourceBuffer.hasRemaining()) {
             targetBuffer.clear();
-            boolean flushed = this.zstdContext.compressDirectByteBufferStream(targetBuffer, sourceBuffer, false);
+            boolean flushed = this.zstdContext.compressDirectByteBufferStream(
+                    targetBuffer,
+                    sourceBuffer,
+                    ZstdRuntimeBridge.StreamDirective.CONTINUE
+            );
             writeBuffer(output, targetBuffer);
             if (flushed && !sourceBuffer.hasRemaining()) {
                 break;
@@ -81,7 +92,13 @@ public final class KineticStreamingLayer implements TransportLayer, AutoCloseabl
 
         while (true) {
             targetBuffer.clear();
-            boolean flushed = this.zstdContext.compressDirectByteBufferStream(targetBuffer, sourceBuffer, true);
+            boolean flushed = this.zstdContext.compressDirectByteBufferStream(
+                    targetBuffer,
+                    sourceBuffer,
+                    this.frameTermination == FrameTermination.FLUSH
+                            ? ZstdRuntimeBridge.StreamDirective.FLUSH
+                            : ZstdRuntimeBridge.StreamDirective.END
+            );
             writeBuffer(output, targetBuffer);
             if (flushed) {
                 break;
@@ -103,8 +120,20 @@ public final class KineticStreamingLayer implements TransportLayer, AutoCloseabl
         while (sourceBuffer.hasRemaining()) {
             targetBuffer.clear();
             this.zstdContext.decompressDirectByteBufferStream(targetBuffer, sourceBuffer);
+            int writtenBytes = targetBuffer.position();
             writeBuffer(output, targetBuffer);
             ensureDecodedSizeWithinLimit(output);
+            // A full direct output buffer can leave decoded bytes pending after input is consumed.
+            while (!sourceBuffer.hasRemaining() && writtenBytes == DIRECT_BUFFER_BYTES) {
+                targetBuffer.clear();
+                this.zstdContext.decompressDirectByteBufferStream(targetBuffer, sourceBuffer);
+                writtenBytes = targetBuffer.position();
+                if (writtenBytes == 0) {
+                    break;
+                }
+                writeBuffer(output, targetBuffer);
+                ensureDecodedSizeWithinLimit(output);
+            }
         }
 
         return output.toByteArray();
@@ -185,5 +214,10 @@ public final class KineticStreamingLayer implements TransportLayer, AutoCloseabl
     // This function turns a nullable byte array into a private immutable working copy.
     private static byte[] copyBytesOrEmpty(byte[] sourceBytes) {
         return sourceBytes == null ? new byte[0] : Arrays.copyOf(sourceBytes, sourceBytes.length);
+    }
+
+    public enum FrameTermination {
+        END,
+        FLUSH
     }
 }

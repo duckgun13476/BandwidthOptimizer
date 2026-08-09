@@ -22,7 +22,11 @@ public final class KineticStreaming implements TransportAlgorithm {
 
     @Override
     public ChannelTransportAlgorithmSession createSession() {
-        return new StreamingSession();
+        return createSession(KineticStreamingLayer.FrameTermination.END);
+    }
+
+    public ChannelTransportAlgorithmSession createFlushSession() {
+        return createSession(KineticStreamingLayer.FrameTermination.FLUSH);
     }
 
 
@@ -31,11 +35,19 @@ public final class KineticStreaming implements TransportAlgorithm {
     }
 
 
+    private static ChannelTransportAlgorithmSession createSession(KineticStreamingLayer.FrameTermination frameTermination) {
+        return new StreamingSession(frameTermination);
+    }
+
     private static final class StreamingSession implements ChannelTransportAlgorithmSession {
 
         private final KineticBatchLayer batchLayer = new KineticBatchLayer();
         private final KineticMapTableLayer mapTableLayer = new KineticMapTableLayer();
-        private final KineticStreamingLayer zstdLayer = new KineticStreamingLayer(compressionLevel());
+        private final KineticStreamingLayer zstdLayer;
+
+        private StreamingSession(KineticStreamingLayer.FrameTermination frameTermination) {
+            this.zstdLayer = new KineticStreamingLayer(compressionLevel(), frameTermination);
+        }
 
         @Override
         public byte[] encodePacket(byte[] packetBytes) {

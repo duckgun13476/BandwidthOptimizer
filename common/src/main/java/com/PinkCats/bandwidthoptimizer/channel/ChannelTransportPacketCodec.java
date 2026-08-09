@@ -14,7 +14,8 @@ import java.util.List;
 public final class ChannelTransportPacketCodec {
 
     private static final int MAGIC_PACKET_ID = 0x1F_FFFF;
-    private static final int FRAME_VERSION = 2;
+    private static final int FRAME_VERSION = 3;
+    private static final int BATCH_FRAME_VERSION = 2;
     private static final KineticBatchLayer BATCH_LAYER = new KineticBatchLayer();
 
     private ChannelTransportPacketCodec() {}
@@ -57,6 +58,18 @@ public final class ChannelTransportPacketCodec {
 
         // Batch carriers must be self-contained across session rebuilds.
         byte[] batchPayloadBytes = BATCH_LAYER.encodePacketBatch(safePacketBytesList);
+        if (transportSession.isCrossFrameZstdEnabled()) {
+            ChannelTransportSession.StreamingPacketResult streamingResult =
+                    transportSession.encodeBatchWithStreamingZstd(batchPayloadBytes);
+            return wrapStreamingTransportBody(
+                    streamingResult.epoch(),
+                    streamingResult.sequence(),
+                    totalPacketBytes(safePacketBytesList),
+                    safePacketBytesList.size(),
+                    streamingResult.packetResult().bytes(),
+                    streamingResult.packetResult().telemetry()
+            );
+        }
         ChannelTransportSession.PacketResult packetResult = encodingProfile == BatchEncodingProfile.LITERAL_MAPPING
                 ? transportSession.encodeSinglePacketWithLiteralMappingTelemetry(batchPayloadBytes)
                 : transportSession.encodeSinglePacketWithTelemetry(batchPayloadBytes);
@@ -83,22 +96,36 @@ public final class ChannelTransportPacketCodec {
             }
 
             int frameVersion = buffer.readVarInt();
-            if (frameVersion != 1 && frameVersion != FRAME_VERSION) {
+            if (frameVersion != 1 && frameVersion != BATCH_FRAME_VERSION && frameVersion != FRAME_VERSION) {
                 throw new IllegalStateException("Unsupported transport frame version: " + frameVersion);
             }
 
             FrameKind frameKind = frameVersion == 1 ? FrameKind.SINGLE : FrameKind.fromId(buffer.readVarInt());
+            int streamingEpoch = 0;
+            int streamingSequence = 0;
+            if (frameVersion == FRAME_VERSION) {
+                if (frameKind != FrameKind.STREAM_BATCH) {
+                    throw new IllegalStateException("Transport streaming frame must be a batch");
+                }
+                streamingEpoch = buffer.readVarInt();
+                streamingSequence = buffer.readVarInt();
+                if (streamingEpoch <= 0 || streamingSequence <= 0) {
+                    throw new IllegalStateException("Invalid transport streaming epoch or sequence");
+                }
+            }
 
             byte[] transportBodyBytes = new byte[buffer.readableBytes()];
             buffer.readBytes(transportBodyBytes);
-            ChannelTransportSession.PacketResult packetResult = transportSession.decodeSinglePacketWithTelemetry(transportBodyBytes);
+            ChannelTransportSession.PacketResult packetResult = frameVersion == FRAME_VERSION
+                    ? transportSession.decodeBatchWithStreamingZstd(transportBodyBytes)
+                    : transportSession.decodeSinglePacketWithTelemetry(transportBodyBytes);
             List<byte[]> restoredPacketBytesList = switch (frameKind) {
                 case SINGLE -> {
                     byte[] packetBytes = copyBytesOrEmpty(packetResult.bytes());
                     validateSinglePacketBytes(packetBytes.length);
                     yield List.of(packetBytes);
                 }
-                case BATCH -> BATCH_LAYER.decodePacketBatch(packetResult.bytes());
+                case BATCH, STREAM_BATCH -> BATCH_LAYER.decodePacketBatch(packetResult.bytes());
             };
             return new UnwrappedTransportFrame(
                     frameKind,
@@ -107,7 +134,9 @@ public final class ChannelTransportPacketCodec {
                     restoredPacketBytesList.size(),
                     inboundPacketBytes.length,
                     transportBodyBytes.length,
-                    packetResult.telemetry()
+                    packetResult.telemetry(),
+                    streamingEpoch,
+                    streamingSequence
             );
         } finally {
             buffer.release();
@@ -125,13 +154,45 @@ public final class ChannelTransportPacketCodec {
         FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
         try {
             buffer.writeVarInt(MAGIC_PACKET_ID);
-            buffer.writeVarInt(FRAME_VERSION);
+            buffer.writeVarInt(BATCH_FRAME_VERSION);
             buffer.writeVarInt(frameKind.id());
             buffer.writeBytes(safeTransportBodyBytes);
             byte[] wrappedBytes = new byte[buffer.readableBytes()];
             buffer.getBytes(0, wrappedBytes);
             return new WrappedTransportFrame(
                     frameKind,
+                    wrappedBytes,
+                    Math.max(originalPacketBytes, 0),
+                    Math.max(originalPacketCount, 0),
+                    safeTransportBodyBytes.length,
+                    telemetry
+            );
+        } finally {
+            buffer.release();
+        }
+    }
+
+    private static WrappedTransportFrame wrapStreamingTransportBody(
+            int epoch,
+            int sequence,
+            int originalPacketBytes,
+            int originalPacketCount,
+            byte[] transportBodyBytes,
+            ChannelTransportOperationTelemetry telemetry
+    ) {
+        byte[] safeTransportBodyBytes = copyBytesOrEmpty(transportBodyBytes);
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            buffer.writeVarInt(MAGIC_PACKET_ID);
+            buffer.writeVarInt(FRAME_VERSION);
+            buffer.writeVarInt(FrameKind.STREAM_BATCH.id());
+            buffer.writeVarInt(epoch);
+            buffer.writeVarInt(sequence);
+            buffer.writeBytes(safeTransportBodyBytes);
+            byte[] wrappedBytes = new byte[buffer.readableBytes()];
+            buffer.getBytes(0, wrappedBytes);
+            return new WrappedTransportFrame(
+                    FrameKind.STREAM_BATCH,
                     wrappedBytes,
                     Math.max(originalPacketBytes, 0),
                     Math.max(originalPacketCount, 0),
@@ -199,12 +260,37 @@ public final class ChannelTransportPacketCodec {
             int restoredPacketCount,
             int inboundFrameBytes,
             int zstdBodyBytes,
-            ChannelTransportOperationTelemetry telemetry
-    ) { }
+            ChannelTransportOperationTelemetry telemetry,
+            int streamingEpoch,
+            int streamingSequence
+    ) {
+        public UnwrappedTransportFrame(
+                FrameKind frameKind,
+                List<byte[]> restoredPacketBytesList,
+                int restoredPacketBytes,
+                int restoredPacketCount,
+                int inboundFrameBytes,
+                int zstdBodyBytes,
+                ChannelTransportOperationTelemetry telemetry
+        ) {
+            this(
+                    frameKind,
+                    restoredPacketBytesList,
+                    restoredPacketBytes,
+                    restoredPacketCount,
+                    inboundFrameBytes,
+                    zstdBodyBytes,
+                    telemetry,
+                    0,
+                    0
+            );
+        }
+    }
 
     public enum FrameKind {
         SINGLE(0),
-        BATCH(1);
+        BATCH(1),
+        STREAM_BATCH(2);
 
         private final int id;
 

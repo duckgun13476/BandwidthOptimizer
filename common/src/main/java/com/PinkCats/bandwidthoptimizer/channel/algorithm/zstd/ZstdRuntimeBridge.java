@@ -99,6 +99,7 @@ final class ZstdRuntimeBridge {
         Method compressClose = compressContextClass.getMethod("close");
         Method decompressClose = decompressContextClass.getMethod("close");
         Object continueDirective = endDirectiveClass.getField("CONTINUE").get(null);
+        Object flushDirective = endDirectiveClass.getField("FLUSH").get(null);
         Object endDirective = endDirectiveClass.getField("END").get(null);
         return new Bindings(
                 classLoader,
@@ -112,6 +113,7 @@ final class ZstdRuntimeBridge {
                 compressClose,
                 decompressClose,
                 continueDirective,
+                flushDirective,
                 endDirective
         );
     }
@@ -345,14 +347,18 @@ final class ZstdRuntimeBridge {
             this.decompressContext = bindings.newDecompressContext();
         }
 
-        boolean compressDirectByteBufferStream(ByteBuffer targetBuffer, ByteBuffer sourceBuffer, boolean end) {
+        boolean compressDirectByteBufferStream(
+                ByteBuffer targetBuffer,
+                ByteBuffer sourceBuffer,
+                StreamDirective directive
+        ) {
             ensureOpen();
             return (Boolean) this.bindings.invoke(
                     this.bindings.compressStream,
                     this.compressContext,
                     targetBuffer,
                     sourceBuffer,
-                    end ? this.bindings.endDirective : this.bindings.continueDirective
+                    this.bindings.directive(directive)
             );
         }
 
@@ -405,6 +411,12 @@ final class ZstdRuntimeBridge {
         }
     }
 
+    enum StreamDirective {
+        CONTINUE,
+        FLUSH,
+        END
+    }
+
     private static final class Bindings {
 
         private final ClassLoader classLoader;
@@ -418,6 +430,7 @@ final class ZstdRuntimeBridge {
         private final Method compressClose;
         private final Method decompressClose;
         private final Object continueDirective;
+        private final Object flushDirective;
         private final Object endDirective;
 
         private Bindings(
@@ -432,6 +445,7 @@ final class ZstdRuntimeBridge {
                 Method compressClose,
                 Method decompressClose,
                 Object continueDirective,
+                Object flushDirective,
                 Object endDirective
         ) {
             this.classLoader = classLoader;
@@ -445,7 +459,16 @@ final class ZstdRuntimeBridge {
             this.compressClose = compressClose;
             this.decompressClose = decompressClose;
             this.continueDirective = continueDirective;
+            this.flushDirective = flushDirective;
             this.endDirective = endDirective;
+        }
+
+        private Object directive(StreamDirective directive) {
+            return switch (directive) {
+                case CONTINUE -> this.continueDirective;
+                case FLUSH -> this.flushDirective;
+                case END -> this.endDirective;
+            };
         }
 
         private Context createContext(int compressionLevel) {
