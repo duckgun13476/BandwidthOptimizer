@@ -151,12 +151,59 @@ public final class ChannelTransportSession implements AutoCloseable {
         this.streamingRecoveryState.prepareInboundReplay(epoch, expectedSequence);
     }
 
-    public synchronized void retainOutboundStreamingFrame(int epoch, int sequence, byte[] transportFrameBytes) {
-        this.streamingRecoveryState.retainOutboundFrame(epoch, sequence, transportFrameBytes);
+    public synchronized void retainOutboundStreamingFrame(
+            int epoch,
+            int sequence,
+            byte[] transportFrameBytes,
+            byte[] fallbackBatchPayloadBytes,
+            int originalPacketBytes,
+            int originalPacketCount
+    ) {
+        this.streamingRecoveryState.retainOutboundFrame(
+                epoch,
+                sequence,
+                transportFrameBytes,
+                fallbackBatchPayloadBytes,
+                originalPacketBytes,
+                originalPacketCount
+        );
     }
 
     public synchronized java.util.List<byte[]> replayOutboundStreamingFrames(int epoch, int expectedSequence) {
         return this.streamingRecoveryState.replayOutboundFrames(epoch, expectedSequence);
+    }
+
+    public synchronized java.util.List<StreamingFallbackBatch> fallbackOutboundStreamingBatches(
+            int epoch,
+            int expectedSequence
+    ) {
+        return this.streamingRecoveryState.fallbackOutboundBatches(epoch, expectedSequence).stream()
+                .map(batch -> new StreamingFallbackBatch(
+                        batch.sequence(),
+                        batch.batchPayloadBytes(),
+                        batch.originalPacketBytes(),
+                        batch.originalPacketCount()
+                ))
+                .toList();
+    }
+
+    public synchronized PacketResult encodeStreamingFallbackBatch(byte[] batchPayloadBytes) {
+        byte[] safeBytes = copyBytesOrEmpty(batchPayloadBytes);
+        ChannelTransportAlgorithmSession.OperationResult result =
+                this.outboundSession.encodePacketWithLiteralMappingTelemetry(safeBytes);
+        return new PacketResult(copyBytesOrEmpty(result.bytes()), fallbackTelemetry(result.telemetry(), safeBytes.length));
+    }
+
+    public synchronized void resetInboundStreamingForRecovery() {
+        if (this.inboundStreamingSession != null) {
+            this.inboundStreamingSession.reset();
+        }
+        this.streamingRecoveryState.resetInbound();
+    }
+
+    public synchronized void restartOutboundStreamingEpoch() {
+        resetStreamingSessions();
+        this.crossFrameZstdEnabled = this.outboundStreamingSession != null;
     }
 
     private void resetStreamingSessions() {
@@ -220,6 +267,14 @@ public final class ChannelTransportSession implements AutoCloseable {
     }
 
     public record StreamingPacketResult(int epoch, int sequence, PacketResult packetResult) {
+    }
+
+    public record StreamingFallbackBatch(
+            int sequence,
+            byte[] batchPayloadBytes,
+            int originalPacketBytes,
+            int originalPacketCount
+    ) {
     }
 
 

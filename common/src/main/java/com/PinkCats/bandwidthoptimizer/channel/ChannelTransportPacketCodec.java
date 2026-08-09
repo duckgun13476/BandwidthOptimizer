@@ -67,6 +67,7 @@ public final class ChannelTransportPacketCodec {
                     streamingResult.sequence(),
                     totalPacketBytes(safePacketBytesList),
                     safePacketBytesList.size(),
+                    batchPayloadBytes,
                     streamingResult.packetResult().bytes(),
                     streamingResult.packetResult().telemetry()
             );
@@ -189,6 +190,7 @@ public final class ChannelTransportPacketCodec {
             int sequence,
             int originalPacketBytes,
             int originalPacketCount,
+            byte[] fallbackBatchPayloadBytes,
             byte[] transportBodyBytes,
             ChannelTransportOperationTelemetry telemetry
     ) {
@@ -211,11 +213,36 @@ public final class ChannelTransportPacketCodec {
                     safeTransportBodyBytes.length,
                     telemetry
             );
-            transportSession.retainOutboundStreamingFrame(epoch, sequence, wrappedFrame.transportFrameBytes());
+            transportSession.retainOutboundStreamingFrame(
+                    epoch,
+                    sequence,
+                    wrappedFrame.transportFrameBytes(),
+                    fallbackBatchPayloadBytes,
+                    originalPacketBytes,
+                    originalPacketCount
+            );
             return wrappedFrame;
         } finally {
             buffer.release();
         }
+    }
+
+    public static WrappedTransportFrame wrapStreamingFallbackBatch(
+            ChannelTransportSession transportSession,
+            ChannelTransportSession.StreamingFallbackBatch fallbackBatch
+    ) {
+        if (transportSession == null || fallbackBatch == null) {
+            return null;
+        }
+        ChannelTransportSession.PacketResult packetResult =
+                transportSession.encodeStreamingFallbackBatch(fallbackBatch.batchPayloadBytes());
+        return wrapTransportBody(
+                FrameKind.BATCH,
+                fallbackBatch.originalPacketBytes(),
+                fallbackBatch.originalPacketCount(),
+                packetResult.bytes(),
+                packetResult.telemetry()
+        );
     }
 
     private static int totalPacketBytes(List<byte[]> packetBytesList) {

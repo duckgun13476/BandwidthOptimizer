@@ -66,7 +66,7 @@ public final class ChannelTransportRoundTripMain {
         verifyFlushStreamingCrossFrameReuse();
         verifyFlushStreamingRequiresCoordinatedReset();
         verifyStreamingBatchFrameRoundTrip();
-        verifyStreamingGapReplayRestoresOrder();
+        verifyStreamingGapFallsBackToIndependentBatches();
         verifyProxySwitchBoundaryKeepsInboundTransportEnabled();
         verifyNonTransportPassThrough(receiverSession);
         System.out.println("All channel transport round trips passed.");
@@ -593,7 +593,7 @@ public final class ChannelTransportRoundTripMain {
         }
     }
 
-    private static void verifyStreamingGapReplayRestoresOrder() {
+    private static void verifyStreamingGapFallsBackToIndependentBatches() {
         ChannelTransportSession sender = new ChannelTransportSession();
         ChannelTransportSession receiver = new ChannelTransportSession();
         sender.setCrossFrameZstdEnabled(true);
@@ -616,19 +616,30 @@ public final class ChannelTransportRoundTripMain {
                 if (!expected.getMessage().contains("sequence-gap")) {
                     throw expected;
                 }
-                List<byte[]> replayFrames = sender.replayOutboundStreamingFrames(epoch, 2);
-                if (replayFrames.size() != 3) {
-                    throw new IllegalStateException("Streaming replay did not retain the missing suffix.");
+                List<ChannelTransportSession.StreamingFallbackBatch> fallbackBatches =
+                        sender.fallbackOutboundStreamingBatches(epoch, 2);
+                if (fallbackBatches.size() != 3) {
+                    throw new IllegalStateException("Streaming fallback did not retain the missing suffix.");
                 }
-                receiver.prepareInboundStreamingReplay(epoch, 2);
+                receiver.resetInboundStreamingForRecovery();
                 String[] expectedValues = {"stream-two", "stream-three", "stream-four"};
-                for (int index = 0; index < replayFrames.size(); index++) {
-                    var restored = ChannelTransportPacketCodec.tryUnwrapPacket(receiver, replayFrames.get(index));
+                for (int index = 0; index < fallbackBatches.size(); index++) {
+                    var fallbackFrame = ChannelTransportPacketCodec.wrapStreamingFallbackBatch(sender, fallbackBatches.get(index));
+                    var restored = ChannelTransportPacketCodec.tryUnwrapPacket(receiver, fallbackFrame.transportFrameBytes());
                     if (restored == null || !Arrays.equals(
                             utf8Bytes(expectedValues[index]),
                             restored.restoredPacketBytesList().get(0))) {
-                        throw new IllegalStateException("Streaming replay changed packet order at index " + index);
+                        throw new IllegalStateException("Streaming fallback changed packet order at index " + index);
                     }
+                }
+                sender.restartOutboundStreamingEpoch();
+                var resumed = ChannelTransportPacketCodec.wrapBatchPackets(sender, List.of(utf8Bytes("stream-resumed")));
+                var restoredResumed = ChannelTransportPacketCodec.tryUnwrapPacket(receiver, resumed.transportFrameBytes());
+                if (restoredResumed == null
+                        || restoredResumed.streamingSequence() != 1
+                        || restoredResumed.streamingEpoch() == epoch
+                        || !Arrays.equals(utf8Bytes("stream-resumed"), restoredResumed.restoredPacketBytesList().get(0))) {
+                    throw new IllegalStateException("Streaming fallback did not restart a fresh epoch.");
                 }
                 return;
             }
