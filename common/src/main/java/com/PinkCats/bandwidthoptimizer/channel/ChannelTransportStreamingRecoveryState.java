@@ -35,7 +35,15 @@ final class ChannelTransportStreamingRecoveryState {
             throw new IllegalStateException("Invalid streaming epoch or sequence");
         }
         if (this.inboundRecoveryPending) {
-            throw new StreamingGapException(this.inboundEpoch, this.nextInboundSequence, sequence, "recovery-pending");
+            if (epoch == this.inboundEpoch) {
+                throw new StreamingGapException(this.inboundEpoch, this.nextInboundSequence, sequence, "recovery-pending");
+            }
+            if (sequence != 1) {
+                throw new StreamingGapException(this.inboundEpoch, this.nextInboundSequence, sequence, "recovery-new-epoch-sequence");
+            }
+            this.inboundEpoch = epoch;
+            this.nextInboundSequence = 1;
+            this.inboundRecoveryPending = false;
         }
         if (this.inboundEpoch == 0) {
             this.inboundEpoch = epoch;
@@ -69,6 +77,21 @@ final class ChannelTransportStreamingRecoveryState {
             throw new IllegalStateException("Streaming replay does not match the pending recovery point");
         }
         this.inboundRecoveryPending = false;
+    }
+
+    void beginInboundRecovery(int epoch, int expectedSequence) {
+        if (!this.inboundRecoveryPending
+                || this.inboundEpoch != epoch
+                || this.nextInboundSequence != expectedSequence) {
+            throw new IllegalStateException("Streaming recovery does not match the pending recovery point");
+        }
+    }
+
+    ChannelTransportStreamingControlCodec.RecoveryRequest inboundRecoveryPoint() {
+        if (!this.inboundRecoveryPending || this.inboundEpoch <= 0 || this.nextInboundSequence <= 0) {
+            throw new IllegalStateException("No streaming recovery is pending");
+        }
+        return new ChannelTransportStreamingControlCodec.RecoveryRequest(this.inboundEpoch, this.nextInboundSequence);
     }
 
     void retainOutboundFrame(

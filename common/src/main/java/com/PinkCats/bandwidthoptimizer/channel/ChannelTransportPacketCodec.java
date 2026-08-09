@@ -120,12 +120,25 @@ public final class ChannelTransportPacketCodec {
             buffer.readBytes(transportBodyBytes);
             ChannelTransportSession.PacketResult packetResult;
             if (frameVersion == FRAME_VERSION) {
-                transportSession.acceptInboundStreamingFrame(streamingEpoch, streamingSequence);
+                try {
+                    transportSession.acceptInboundStreamingFrame(streamingEpoch, streamingSequence);
+                } catch (ChannelTransportStreamingRecoveryState.StreamingGapException exception) {
+                    throw new StreamingRecoveryException(
+                            new ChannelTransportStreamingControlCodec.RecoveryRequest(
+                                    exception.epoch(),
+                                    exception.expectedSequence()
+                            ),
+                            exception
+                    );
+                }
                 try {
                     packetResult = transportSession.decodeBatchWithStreamingZstd(transportBodyBytes);
                 } catch (RuntimeException exception) {
                     transportSession.failInboundStreamingFrame(streamingEpoch, streamingSequence);
-                    throw exception;
+                    throw new StreamingRecoveryException(
+                            transportSession.inboundStreamingRecoveryPoint(),
+                            exception
+                    );
                 }
                 transportSession.completeInboundStreamingFrame(streamingEpoch, streamingSequence);
             } else {
@@ -325,6 +338,24 @@ public final class ChannelTransportPacketCodec {
                     0,
                     0
             );
+        }
+    }
+
+    public static final class StreamingRecoveryException extends IllegalStateException {
+
+        private final ChannelTransportStreamingControlCodec.RecoveryRequest recoveryRequest;
+
+        private StreamingRecoveryException(
+                ChannelTransportStreamingControlCodec.RecoveryRequest recoveryRequest,
+                RuntimeException cause
+        ) {
+            super("Streaming Zstd recovery required: epoch=" + recoveryRequest.epoch()
+                    + ", expected=" + recoveryRequest.expectedSequence(), cause);
+            this.recoveryRequest = recoveryRequest;
+        }
+
+        public ChannelTransportStreamingControlCodec.RecoveryRequest recoveryRequest() {
+            return this.recoveryRequest;
         }
     }
 

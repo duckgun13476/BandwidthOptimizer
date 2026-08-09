@@ -562,8 +562,18 @@ public final class ChannelTransportHooks {
         }
 
         ChannelTransportSession transportSession = ChannelTransportStateManager.getOrCreateSession(context.channel());
-        ChannelTransportPacketCodec.UnwrappedTransportFrame unwrappedFrame =
-                KineticChannel.tryUnpackInboundPacket(transportSession, inboundPacketBytes);
+        if (handleInboundStreamingControlFrame(context, packetDecoderFlowAccess, transportSession, inboundPacketBytes)) {
+            in.readerIndex(in.writerIndex());
+            return true;
+        }
+        ChannelTransportPacketCodec.UnwrappedTransportFrame unwrappedFrame;
+        try {
+            unwrappedFrame = KineticChannel.tryUnpackInboundPacket(transportSession, inboundPacketBytes);
+        } catch (ChannelTransportPacketCodec.StreamingRecoveryException exception) {
+            requestInboundStreamingRecovery(context, packetDecoderFlowAccess, transportSession, exception);
+            in.readerIndex(in.writerIndex());
+            return true;
+        }
         if (unwrappedFrame == null) {
             return false;
         }
@@ -610,7 +620,22 @@ public final class ChannelTransportHooks {
             ChannelTransportSession transportSession = ChannelTransportStateManager.getOrCreateSession(context.channel());
             ChannelTransportPacketCodec.UnwrappedTransportFrame unwrappedFrame;
             try {
+                if (handleInboundStreamingControlFrame(
+                        context,
+                        packetDecoderFlowAccess,
+                        transportSession,
+                        transportFrameBytes
+                )) {
+                    expandedAny = true;
+                    index = replaceDecodedCarrierWithRestoredPackets(out, index, List.of());
+                    continue;
+                }
                 unwrappedFrame = KineticChannel.tryUnpackInboundPacket(transportSession, transportFrameBytes);
+            } catch (ChannelTransportPacketCodec.StreamingRecoveryException exception) {
+                requestInboundStreamingRecovery(context, packetDecoderFlowAccess, transportSession, exception);
+                expandedAny = true;
+                index = replaceDecodedCarrierWithRestoredPackets(out, index, List.of());
+                continue;
             } catch (RuntimeException exception) {
                 logInboundCarrierFailure(context, transportFrameBytes, exception);
                 throw exception;
@@ -627,6 +652,57 @@ public final class ChannelTransportHooks {
             index = replaceDecodedCarrierWithRestoredPackets(out, index, restoredPackets);
         }
         return expandedAny;
+    }
+
+    private static boolean handleInboundStreamingControlFrame(
+            ChannelHandlerContext context,
+            PacketDecoderFlowAccess packetDecoderFlowAccess,
+            ChannelTransportSession transportSession,
+            byte[] transportFrameBytes
+    ) {
+        ChannelTransportStreamingControlCodec.RecoveryRequest request =
+                ChannelTransportStreamingControlCodec.tryDecodeRecoveryRequest(transportFrameBytes);
+        if (request == null) {
+            return false;
+        }
+        if (packetDecoderFlowAccess.bandwidthoptimizer$getPacketFlow() != PacketFlow.SERVERBOUND) {
+            throw new IllegalStateException("Received streaming recovery request in the wrong direction");
+        }
+        List<ChannelTransportSession.StreamingFallbackBatch> fallbackBatches =
+                transportSession.fallbackOutboundStreamingBatches(request.epoch(), request.expectedSequence());
+        if (fallbackBatches.isEmpty()) {
+            context.close();
+            return true;
+        }
+        for (ChannelTransportSession.StreamingFallbackBatch fallbackBatch : fallbackBatches) {
+            ChannelTransportPacketCodec.WrappedTransportFrame fallbackFrame =
+                    ChannelTransportPacketCodec.wrapStreamingFallbackBatch(transportSession, fallbackBatch);
+            writeTransportCarrierPacketToPipeline(
+                    context.channel(),
+                    PacketFlow.CLIENTBOUND,
+                    fallbackFrame.transportFrameBytes()
+            );
+        }
+        transportSession.restartOutboundStreamingEpoch();
+        return true;
+    }
+
+    private static void requestInboundStreamingRecovery(
+            ChannelHandlerContext context,
+            PacketDecoderFlowAccess packetDecoderFlowAccess,
+            ChannelTransportSession transportSession,
+            ChannelTransportPacketCodec.StreamingRecoveryException exception
+    ) {
+        if (packetDecoderFlowAccess.bandwidthoptimizer$getPacketFlow() != PacketFlow.CLIENTBOUND) {
+            throw exception;
+        }
+        ChannelTransportStreamingControlCodec.RecoveryRequest request = exception.recoveryRequest();
+        transportSession.beginInboundStreamingRecovery(request);
+        writeTransportCarrierPacketToPipeline(
+                context.channel(),
+                PacketFlow.SERVERBOUND,
+                ChannelTransportStreamingControlCodec.encodeRecoveryRequest(request.epoch(), request.expectedSequence())
+        );
     }
 
     // Fix decode handshake problem (not support for index)

@@ -195,10 +195,26 @@ public final class ChannelTransportSession implements AutoCloseable {
     }
 
     public synchronized void resetInboundStreamingForRecovery() {
+        beginInboundStreamingRecovery(this.streamingRecoveryState.inboundRecoveryPoint());
+    }
+
+    public synchronized void beginInboundStreamingRecovery(
+            ChannelTransportStreamingControlCodec.RecoveryRequest recoveryRequest
+    ) {
+        if (recoveryRequest == null) {
+            throw new IllegalArgumentException("Streaming recovery request is required");
+        }
+        this.streamingRecoveryState.beginInboundRecovery(
+                recoveryRequest.epoch(),
+                recoveryRequest.expectedSequence()
+        );
         if (this.inboundStreamingSession != null) {
             this.inboundStreamingSession.reset();
         }
-        this.streamingRecoveryState.resetInbound();
+    }
+
+    public synchronized ChannelTransportStreamingControlCodec.RecoveryRequest inboundStreamingRecoveryPoint() {
+        return this.streamingRecoveryState.inboundRecoveryPoint();
     }
 
     public synchronized void restartOutboundStreamingEpoch() {

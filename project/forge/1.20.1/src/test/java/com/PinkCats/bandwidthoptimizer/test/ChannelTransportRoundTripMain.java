@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.test;
 
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStreamingControlCodec;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportFragmentCodec;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportFragmentReassembler;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStateManager;
@@ -67,6 +68,7 @@ public final class ChannelTransportRoundTripMain {
         verifyFlushStreamingRequiresCoordinatedReset();
         verifyStreamingBatchFrameRoundTrip();
         verifyStreamingGapFallsBackToIndependentBatches();
+        verifyStreamingRecoveryControlRoundTrip();
         verifyProxySwitchBoundaryKeepsInboundTransportEnabled();
         verifyNonTransportPassThrough(receiverSession);
         System.out.println("All channel transport round trips passed.");
@@ -612,9 +614,10 @@ public final class ChannelTransportRoundTripMain {
             int epoch = first.streamingEpoch();
             try {
                 ChannelTransportPacketCodec.tryUnwrapPacket(receiver, frames.get(2).transportFrameBytes());
-            } catch (IllegalStateException expected) {
-                if (!expected.getMessage().contains("sequence-gap")) {
-                    throw expected;
+            } catch (ChannelTransportPacketCodec.StreamingRecoveryException expected) {
+                if (expected.recoveryRequest().epoch() != epoch
+                        || expected.recoveryRequest().expectedSequence() != 2) {
+                    throw new IllegalStateException("Streaming gap exposed the wrong recovery point.", expected);
                 }
                 List<ChannelTransportSession.StreamingFallbackBatch> fallbackBatches =
                         sender.fallbackOutboundStreamingBatches(epoch, 2);
@@ -622,6 +625,14 @@ public final class ChannelTransportRoundTripMain {
                     throw new IllegalStateException("Streaming fallback did not retain the missing suffix.");
                 }
                 receiver.resetInboundStreamingForRecovery();
+                try {
+                    ChannelTransportPacketCodec.tryUnwrapPacket(receiver, frames.get(3).transportFrameBytes());
+                    throw new IllegalStateException("A stale streaming epoch was accepted while recovery was pending.");
+                } catch (ChannelTransportPacketCodec.StreamingRecoveryException staleEpoch) {
+                    if (staleEpoch.recoveryRequest().epoch() != epoch) {
+                        throw staleEpoch;
+                    }
+                }
                 String[] expectedValues = {"stream-two", "stream-three", "stream-four"};
                 for (int index = 0; index < fallbackBatches.size(); index++) {
                     var fallbackFrame = ChannelTransportPacketCodec.wrapStreamingFallbackBatch(sender, fallbackBatches.get(index));
@@ -647,6 +658,27 @@ public final class ChannelTransportRoundTripMain {
         } finally {
             sender.close();
             receiver.close();
+        }
+    }
+
+    private static void verifyStreamingRecoveryControlRoundTrip() {
+        byte[] encoded = ChannelTransportStreamingControlCodec.encodeRecoveryRequest(7, 13);
+        ChannelTransportStreamingControlCodec.RecoveryRequest decoded =
+                ChannelTransportStreamingControlCodec.tryDecodeRecoveryRequest(encoded);
+        if (decoded == null || decoded.epoch() != 7 || decoded.expectedSequence() != 13) {
+            throw new IllegalStateException("Streaming recovery control did not round trip.");
+        }
+        if (ChannelTransportStreamingControlCodec.tryDecodeRecoveryRequest(utf8Bytes("not-a-control-frame")) != null) {
+            throw new IllegalStateException("Non-transport bytes were accepted as streaming recovery control.");
+        }
+        byte[] trailing = Arrays.copyOf(encoded, encoded.length + 1);
+        try {
+            ChannelTransportStreamingControlCodec.tryDecodeRecoveryRequest(trailing);
+            throw new IllegalStateException("Streaming recovery control accepted trailing bytes.");
+        } catch (IllegalStateException expected) {
+            if (!expected.getMessage().contains("Invalid streaming recovery request")) {
+                throw expected;
+            }
         }
     }
 
