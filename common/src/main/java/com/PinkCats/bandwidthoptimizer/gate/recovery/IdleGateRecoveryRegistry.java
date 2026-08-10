@@ -7,6 +7,7 @@ import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateGeneralBloc
 import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateTransferBlockEntityRecoveryPolicy;
 import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateWorkerBlockEntityRecoveryPolicy;
 import com.PinkCats.bandwidthoptimizer.gate.integration.farm_and_charm.FarmAndCharmSaturationRecoveryPolicy;
+import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.IdleGateForegroundEntityViewPolicy;
 import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.IdleGateForegroundViewPolicy;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.BlockEntityTypeKeyCompat;
 import io.netty.channel.Channel;
@@ -49,6 +50,9 @@ public final class IdleGateRecoveryRegistry {
             return false;
         }
         IdleGateServerState.PlayerIdleState state = IdleGateServerState.snapshot(channel);
+        if (state.mode() == IdleGateMode.FOREGROUND_STILL) {
+            return tryCaptureForegroundEntityOnServerThread(channel, packet);
+        }
         if (!state.mode().suppressesWorldPresentation()) {
             return false;
         }
@@ -104,6 +108,36 @@ public final class IdleGateRecoveryRegistry {
             return IdleGateForegroundViewPolicy.shouldDefer(player, sectionBlocksUpdatePacket)
                     && VANILLA_BLOCK_STATES.tryCaptureSectionBlocksUpdate(channel, sectionBlocksUpdatePacket);
         }
+        if (packet instanceof ClientboundRemoveEntitiesPacket removeEntitiesPacket) {
+            ENTITY_MOTION.observeRemoval(channel, removeEntitiesPacket);
+        }
+        return false;
+    }
+
+    private static boolean tryCaptureForegroundEntityOnServerThread(Channel channel, Packet<?> packet) {
+        ServerPlayer player = IdleGateServerState.resolvePlayer(channel);
+        if (player == null) {
+            return false;
+        }
+        if (packet instanceof ClientboundRemoveEntitiesPacket removeEntitiesPacket) {
+            ENTITY_MOTION.observeRemoval(channel, removeEntitiesPacket);
+            return false;
+        }
+        if (packet instanceof ClientboundMoveEntityPacket moveEntityPacket) {
+            int entityId = ((com.PinkCats.bandwidthoptimizer.mixin.minecraft.ClientboundMoveEntityPacketAccessor) moveEntityPacket)
+                    .bandwidthoptimizer$getEntityId();
+            return IdleGateForegroundEntityViewPolicy.shouldDefer(player, entityId)
+                    && ENTITY_MOTION.tryCaptureMovement(channel, moveEntityPacket);
+        }
+        if (packet instanceof ClientboundSetEntityMotionPacket motionPacket) {
+            int entityId = com.PinkCats.bandwidthoptimizer.integration.minecraft.EntityMotionPacketCompat.entityId(motionPacket);
+            return IdleGateForegroundEntityViewPolicy.shouldDefer(player, entityId)
+                    && ENTITY_MOTION.tryCaptureMotion(channel, motionPacket);
+        }
+        if (packet instanceof net.minecraft.network.protocol.game.ClientboundUpdateAttributesPacket attributesPacket) {
+            return IdleGateForegroundEntityViewPolicy.shouldDefer(player, attributesPacket.getEntityId())
+                    && ATTRIBUTES.tryCapture(channel, attributesPacket);
+        }
         return false;
     }
 
@@ -155,6 +189,7 @@ public final class IdleGateRecoveryRegistry {
             return;
         }
         PENDING_RESTORES.remove(player.getUUID());
+        IdleGateForegroundEntityViewPolicy.discard(player);
         for (IdleGateRecoveryPolicy policy : POLICIES) {
             policy.discard(player);
         }

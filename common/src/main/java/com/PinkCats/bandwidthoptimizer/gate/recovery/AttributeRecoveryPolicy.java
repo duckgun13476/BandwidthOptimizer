@@ -53,7 +53,7 @@ public final class AttributeRecoveryPolicy extends IdleGateRecoveryPolicy {
             PlayerState state = entry.getValue();
             ServerPlayer player = state.player();
             if (player == null
-                    || IdleGateServerState.snapshot(player).mode().suppressesWorldPresentation()
+                    || IdleGateServerState.snapshot(player).mode().isIdle()
                     || !states.remove(entry.getKey(), state)) {
                 continue;
             }
