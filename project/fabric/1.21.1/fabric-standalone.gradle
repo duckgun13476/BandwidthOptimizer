@@ -113,6 +113,7 @@ sourceSets {
         resources.exclude 'META-INF/mods.toml'
     }
     test {
+        java.srcDir '../../../common/src/test/java'
         java.srcDir 'src/test/java'
         resources.srcDir 'src/test/resources'
     }

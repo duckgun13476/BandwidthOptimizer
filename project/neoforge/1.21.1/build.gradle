@@ -197,6 +197,7 @@ sourceSets {
         resources.srcDir rootProject.file('src/generated/resources')
     }
     test {
+        java.srcDir rootProject.file('common/src/test/java')
         java.srcDir project.file('src/test/java')
         resources.srcDir project.file('src/test/resources')
     }
@@ -507,6 +508,14 @@ tasks.register('runChannelJsonlCompare', JavaExec) {
     dependsOn(tasks.named('testClasses'))
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
+}
+
+tasks.register('runCrossFrameZstdRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies NeoForge 1.21.1 cross-frame Zstd reuse and recovery.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.test.CrossFrameZstdRegressionMain'
 }
 
 tasks.register('runChunkBranchCoverageVerify', JavaExec) {

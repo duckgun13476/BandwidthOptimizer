@@ -206,6 +206,15 @@ tasks.register('runChannelTransportRoundTrip', JavaExec) {
     )
 }
 
+tasks.register('runCrossFrameZstdRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies sustained cross-frame Zstd reuse and gap recovery.',
+            'com.PinkCats.bandwidthoptimizer.test.CrossFrameZstdRegressionMain'
+    )
+}
+
 tasks.register('runZstdReplayComparison', JavaExec) {
     configureTestJavaExecTask(
             delegate,

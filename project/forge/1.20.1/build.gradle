@@ -81,6 +81,7 @@ sourceSets {
         resources.srcDir rootProject.file('src/generated/resources')
     }
     test {
+        java.srcDir rootProject.file('common/src/test/java')
         java.srcDir project.file('src/test/java')
         resources.srcDir project.file('src/test/resources')
     }
