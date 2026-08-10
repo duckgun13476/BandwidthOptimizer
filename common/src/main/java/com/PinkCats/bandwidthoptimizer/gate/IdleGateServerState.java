@@ -36,10 +36,12 @@ public final class IdleGateServerState {
             }
         }
         PlayerIdleState previousState = PLAYER_STATES.get(player.getUUID());
-        if (previousState != null
-                && previousState.mode().suppressesWorldPresentation()
-                && !safePayload.mode().suppressesWorldPresentation()
-                && !channelId.isBlank()) {
+        boolean presentationResumed = previousState != null
+                && previousState.mode().isIdle()
+                && (!safePayload.mode().isIdle()
+                || (previousState.mode().suppressesWorldPresentation()
+                && !safePayload.mode().suppressesWorldPresentation()));
+        if (presentationResumed && !channelId.isBlank()) {
             RESUME_DIRECT_UNTIL.put(channelId, System.currentTimeMillis() + RESUME_DIRECT_MILLIS);
         }
         // A stale state resolves to ACTIVE so a lost client report cannot suppress delivery.
@@ -48,9 +50,7 @@ public final class IdleGateServerState {
                 safePayload.hudVisible(),
                 safePayload.sequence(),
                 System.currentTimeMillis()));
-        if (previousState != null
-                && previousState.mode().suppressesWorldPresentation()
-                && !safePayload.mode().suppressesWorldPresentation()) {
+        if (presentationResumed) {
             IdleGateRecoveryRegistry.requestRestore(player);
         }
     }

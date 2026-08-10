@@ -47,12 +47,12 @@ public final class IdleGateBackgroundPacketGate {
             return null;
         }
         IdleGateServerState.PlayerIdleState state = IdleGateServerState.snapshot(channel);
-        // Non-Create recovery policies use the encoder boundary when no earlier send hook applies.
-        if (IdleGateRecoveryRegistry.tryCaptureBackground(channel, packet, state)) {
-            return keyOf(packet, null);
-        }
         if (IdleGateServerState.isResumeDirectWindow(channel)) {
             return null;
+        }
+        // Non-Create recovery policies use the encoder boundary when no earlier send hook applies.
+        if (IdleGateRecoveryRegistry.tryCaptureForIdleGate(channel, packet, state)) {
+            return keyOf(packet, null);
         }
         if (!state.mode().suppressesWorldPresentation()) {
             return null;

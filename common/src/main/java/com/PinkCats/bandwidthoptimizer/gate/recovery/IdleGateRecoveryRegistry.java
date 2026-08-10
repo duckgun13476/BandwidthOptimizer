@@ -1,11 +1,13 @@
 package com.PinkCats.bandwidthoptimizer.gate.recovery;
 
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateServerState;
+import com.PinkCats.bandwidthoptimizer.gate.IdleGateMode;
 import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateGateTypePolicy;
 import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateGeneralBlockEntityRecoveryPolicy;
 import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateTransferBlockEntityRecoveryPolicy;
 import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateWorkerBlockEntityRecoveryPolicy;
 import com.PinkCats.bandwidthoptimizer.gate.integration.farm_and_charm.FarmAndCharmSaturationRecoveryPolicy;
+import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.IdleGateForegroundViewPolicy;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.BlockEntityTypeKeyCompat;
 import io.netty.channel.Channel;
 import net.minecraft.network.protocol.Packet;
@@ -53,7 +55,7 @@ public final class IdleGateRecoveryRegistry {
         return tryCaptureSpecialized(channel, packet);
     }
 
-    public static boolean tryCaptureBackground(
+    public static boolean tryCaptureForIdleGate(
             Channel channel,
             Packet<?> packet,
             IdleGateServerState.PlayerIdleState state
@@ -61,8 +63,11 @@ public final class IdleGateRecoveryRegistry {
         if (channel == null
                 || packet == null
                 || state == null
-                || !state.mode().suppressesWorldPresentation()) {
+                || !state.mode().isIdle()) {
             return false;
+        }
+        if (state.mode() == IdleGateMode.FOREGROUND_STILL) {
+            return tryCaptureForegroundStill(channel, packet);
         }
         if (packet instanceof ClientboundBlockUpdatePacket blockUpdatePacket) {
             return VANILLA_BLOCK_STATES.tryCaptureBlockUpdate(channel, blockUpdatePacket);
@@ -84,6 +89,22 @@ public final class IdleGateRecoveryRegistry {
             return VANILLA_BLOCK_STATES.tryCaptureSectionBlocksUpdate(channel, sectionBlocksUpdatePacket);
         }
         return tryCaptureSpecialized(channel, packet);
+    }
+
+    private static boolean tryCaptureForegroundStill(Channel channel, Packet<?> packet) {
+        ServerPlayer player = IdleGateServerState.resolvePlayer(channel);
+        if (player == null) {
+            return false;
+        }
+        if (packet instanceof ClientboundBlockUpdatePacket blockUpdatePacket) {
+            return IdleGateForegroundViewPolicy.shouldDefer(player, blockUpdatePacket.getPos())
+                    && VANILLA_BLOCK_STATES.tryCaptureBlockUpdate(channel, blockUpdatePacket);
+        }
+        if (packet instanceof ClientboundSectionBlocksUpdatePacket sectionBlocksUpdatePacket) {
+            return IdleGateForegroundViewPolicy.shouldDefer(player, sectionBlocksUpdatePacket)
+                    && VANILLA_BLOCK_STATES.tryCaptureSectionBlocksUpdate(channel, sectionBlocksUpdatePacket);
+        }
+        return false;
     }
 
     public static void discardChunk(ServerPlayer player, net.minecraft.world.level.ChunkPos chunkPos) {
