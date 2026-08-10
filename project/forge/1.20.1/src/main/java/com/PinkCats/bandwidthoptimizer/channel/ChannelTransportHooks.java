@@ -446,10 +446,32 @@ public final class ChannelTransportHooks {
                     chunkTransportEncodedBytes != null
             );
 
+            ChannelTransportSession.StreamingEpochBoundary epochBoundary =
+                    transportSession.outboundStreamingEpochBoundary();
+            if (epochBoundary != null) {
+                ChannelTransportStreamingEpochGate.closeForEpoch(
+                        context.channel(),
+                        epochBoundary.epoch(),
+                        epochBoundary.lastSequence()
+                );
+            }
+
             out.writerIndex(startIndexInclusive);
             recordCommittedOutboundPacketStream(context, packet, originalPacketBytes);
             if (!writeTransportCarrierPacket(context, outboundPacketFlow, out, wrappedFrame.transportFrameBytes())) {
                 throw new IllegalStateException("Stateful transport carrier was not committed");
+            }
+            if (epochBoundary != null) {
+                context.channel().eventLoop().execute(
+                        () -> writeTransportCarrierPacketToPipeline(
+                                context.channel(),
+                                outboundPacketFlow,
+                                ChannelTransportStreamingControlCodec.encodeEpochComplete(
+                                        epochBoundary.epoch(),
+                                        epochBoundary.lastSequence()
+                                )
+                        )
+                );
             }
             if (forceImmediateTransport && ChannelTransportHookDiagnosticProbe.BO_Diag_chunkTransportFrames()) {
                 DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES, "event=immediate_policy_result path=single_transport, reason={}, protocol={}, packetClass={}, rawBytes={}, inputBytes={}, frameKind={}, frameBytes={}, channel={}",
@@ -703,30 +725,91 @@ public final class ChannelTransportHooks {
             ChannelTransportSession transportSession,
             byte[] transportFrameBytes
     ) {
-        ChannelTransportStreamingControlCodec.RecoveryRequest request =
-                ChannelTransportStreamingControlCodec.tryDecodeRecoveryRequest(transportFrameBytes);
-        if (request == null) {
+        ChannelTransportStreamingControlCodec.ControlMessage message =
+                ChannelTransportStreamingControlCodec.tryDecodeControlMessage(transportFrameBytes);
+        if (message == null) {
             return false;
         }
-        if (packetDecoderFlowAccess.bandwidthoptimizer$getPacketFlow() != PacketFlow.SERVERBOUND) {
-            throw new IllegalStateException("Received streaming recovery request in the wrong direction");
+        PacketFlow flow = packetDecoderFlowAccess.bandwidthoptimizer$getPacketFlow();
+        PacketFlow responseFlow = flow == PacketFlow.CLIENTBOUND
+                ? PacketFlow.SERVERBOUND
+                : PacketFlow.CLIENTBOUND;
+        if (message instanceof ChannelTransportStreamingControlCodec.EpochComplete complete) {
+            if (!transportSession.acceptInboundStreamingEpochComplete(complete.epoch(), complete.lastSequence())) {
+                requestInboundStreamingRecovery(
+                        context,
+                        transportSession,
+                        transportSession.inboundStreamingRecoveryPoint(),
+                        responseFlow
+                );
+                return true;
+            }
+            writeTransportCarrierPacketToPipeline(context.channel(), responseFlow,
+                    ChannelTransportStreamingControlCodec.encodeEpochOk(complete.epoch(), complete.lastSequence()));
+            transportSession.resetInboundStreamingEpoch();
+            return true;
         }
+        if (message instanceof ChannelTransportStreamingControlCodec.EpochOk ok) {
+            if (!ChannelTransportStreamingEpochGate.matchesClosedEpoch(context.channel(), ok.epoch(), ok.lastSequence())) {
+                throw new IllegalStateException("Received an unexpected streaming epoch acknowledgement");
+            }
+            transportSession.acceptOutboundStreamingEpochOk(ok.epoch(), ok.lastSequence());
+            transportSession.restartOutboundStreamingEpoch();
+            ChannelTransportStreamingEpochGate.release(context.channel());
+            return true;
+        }
+        if (message instanceof ChannelTransportStreamingControlCodec.EpochReset reset) {
+            transportSession.resetInboundStreamingEpoch();
+            if (ChannelTransportStateManager.isTestStreamingEnabled()) {
+                Bandwidthoptimizer.LOGGER.info(
+                        "[StreamingRecoveryTest] Applied inbound epoch reset, nextEpoch={}",
+                        reset.epoch()
+                );
+            }
+            return true;
+        }
+        ChannelTransportStreamingControlCodec.RecoveryRequest request =
+                (ChannelTransportStreamingControlCodec.RecoveryRequest) message;
         List<ChannelTransportSession.StreamingFallbackBatch> fallbackBatches =
                 transportSession.fallbackOutboundStreamingBatches(request.epoch(), request.expectedSequence());
+        if (ChannelTransportStateManager.isTestStreamingEnabled()) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[StreamingRecoveryTest] Received recovery request, epoch={}, expectedSequence={}, fallbackBatches={}",
+                    request.epoch(),
+                    request.expectedSequence(),
+                    fallbackBatches.size()
+            );
+        }
         if (fallbackBatches.isEmpty()) {
             context.close();
             return true;
         }
+        ChannelTransportStreamingEpochGate.closeForEpoch(
+                context.channel(),
+                request.epoch(),
+                fallbackBatches.get(fallbackBatches.size() - 1).sequence()
+        );
         for (ChannelTransportSession.StreamingFallbackBatch fallbackBatch : fallbackBatches) {
             ChannelTransportPacketCodec.WrappedTransportFrame fallbackFrame =
                     ChannelTransportPacketCodec.wrapStreamingFallbackBatch(transportSession, fallbackBatch);
             writeTransportCarrierPacketToPipeline(
                     context.channel(),
-                    PacketFlow.CLIENTBOUND,
+                    responseFlow,
                     fallbackFrame.transportFrameBytes()
             );
         }
         transportSession.restartOutboundStreamingEpoch();
+        writeTransportCarrierPacketToPipeline(context.channel(), responseFlow,
+                ChannelTransportStreamingControlCodec.encodeEpochReset(transportSession.outboundStreamingEpoch()));
+        ChannelTransportStreamingEpochGate.release(context.channel());
+        if (ChannelTransportStateManager.isTestStreamingEnabled()) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[StreamingRecoveryTest] Completed recovery output, previousEpoch={}, nextEpoch={}, fallbackBatches={}",
+                    request.epoch(),
+                    transportSession.outboundStreamingEpoch(),
+                    fallbackBatches.size()
+            );
+        }
         return true;
     }
 
@@ -736,14 +819,34 @@ public final class ChannelTransportHooks {
             ChannelTransportSession transportSession,
             ChannelTransportPacketCodec.StreamingRecoveryException exception
     ) {
-        if (packetDecoderFlowAccess.bandwidthoptimizer$getPacketFlow() != PacketFlow.CLIENTBOUND) {
-            throw exception;
+        PacketFlow inboundFlow = packetDecoderFlowAccess.bandwidthoptimizer$getPacketFlow();
+        requestInboundStreamingRecovery(
+                context,
+                transportSession,
+                exception.recoveryRequest(),
+                inboundFlow == PacketFlow.CLIENTBOUND ? PacketFlow.SERVERBOUND : PacketFlow.CLIENTBOUND
+        );
+    }
+
+    private static void requestInboundStreamingRecovery(
+            ChannelHandlerContext context,
+            ChannelTransportSession transportSession,
+            ChannelTransportStreamingControlCodec.RecoveryRequest request,
+            PacketFlow responseFlow
+    ) {
+        if (!transportSession.beginInboundStreamingRecovery(request)) {
+            return;
         }
-        ChannelTransportStreamingControlCodec.RecoveryRequest request = exception.recoveryRequest();
-        transportSession.beginInboundStreamingRecovery(request);
+        if (ChannelTransportStateManager.isTestStreamingEnabled()) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[StreamingRecoveryTest] Requested recovery, epoch={}, expectedSequence={}",
+                    request.epoch(),
+                    request.expectedSequence()
+            );
+        }
         writeTransportCarrierPacketToPipeline(
                 context.channel(),
-                PacketFlow.SERVERBOUND,
+                responseFlow,
                 ChannelTransportStreamingControlCodec.encodeRecoveryRequest(request.epoch(), request.expectedSequence())
         );
     }
@@ -940,6 +1043,14 @@ public final class ChannelTransportHooks {
         if (channel == null || packetFlow == null || transportFrameBytes == null) {
             return null;
         }
+        if (transportFrameBytes.length <= payloadLimitBytes(packetFlow)
+                && ChannelTransportStateManager.consumeTestClientboundStreamingDrop(
+                channel,
+                packetFlow,
+                transportFrameBytes
+        )) {
+            return channel.newSucceededFuture();
+        }
         List<byte[]> carrierPayloads = ChannelTransportFragmentCodec.fragmentTransportFrame(
                 transportFrameBytes,
                 payloadLimitBytes(packetFlow),
@@ -1044,7 +1155,7 @@ public final class ChannelTransportHooks {
         ChannelCaptureHooks.captureOutboundPacketStream(context, packetClassName, packetId, encodedPacketBytes);
     }
 
-    private static void recordCommittedOutboundPacketStream(
+    public static void recordCommittedOutboundPacketStream(
             ChannelHandlerContext context,
             Packet<?> packet,
             byte[] encodedPacketBytes
@@ -1055,7 +1166,7 @@ public final class ChannelTransportHooks {
         ChannelCaptureHooks.captureOutboundPacketStream(context, packet, encodedPacketBytes);
     }
 
-    private static boolean isInternalTransportCarrierPacket(Packet<?> packet) {
+    public static boolean isInternalTransportCarrierPacket(Packet<?> packet) {
         if (packet instanceof ClientboundCustomPayloadPacket customPayloadPacket) {
             return TRANSPORT_PAYLOAD_ID.equals(customPayloadPacket.getIdentifier());
         }

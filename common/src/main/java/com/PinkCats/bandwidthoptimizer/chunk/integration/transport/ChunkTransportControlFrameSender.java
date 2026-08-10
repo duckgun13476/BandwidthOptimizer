@@ -8,6 +8,8 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStateManager;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStreamingControlCodec;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStreamingEpochGate;
 import com.PinkCats.bandwidthoptimizer.channel.access.PacketEncoderFlowAccess;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.KineticChannel;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
@@ -332,6 +334,15 @@ public final class ChunkTransportControlFrameSender {
             return false;
         }
 
+        byte[] safePayloadBytes = payloadBytes == null ? new byte[0] : payloadBytes.clone();
+        if (ChannelTransportStreamingEpochGate.deferTaskIfClosed(
+                channel,
+                safePayloadBytes.length + 256,
+                () -> sendEnvelopeFrame(channel, frame, safePayloadBytes, logicalPacketBytes)
+        )) {
+            return true;
+        }
+
         ChannelHandlerContext encoderContext = channel.pipeline().context("encoder");
         if (encoderContext == null) {
             return false;
@@ -341,7 +352,7 @@ public final class ChunkTransportControlFrameSender {
             long totalStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
             long envelopeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
             byte[] encodedEnvelopeBytes = ChunkTransportEnvelopeCodec.encodeEnvelope(
-                    new ChunkTransportEnvelope(frame, payloadBytes)
+                    new ChunkTransportEnvelope(frame, safePayloadBytes)
             );
             ChunkLoadDelayProbe.logStage(
                     channel,
@@ -374,6 +385,16 @@ public final class ChunkTransportControlFrameSender {
                 return false;
             }
 
+            ChannelTransportSession.StreamingEpochBoundary epochBoundary =
+                    transportSession.outboundStreamingEpochBoundary();
+            if (epochBoundary != null) {
+                ChannelTransportStreamingEpochGate.closeForEpoch(
+                        channel,
+                        epochBoundary.epoch(),
+                        epochBoundary.lastSequence()
+                );
+            }
+
             long writeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
             ChannelFuture writeFuture = ChannelTransportHooks.writeTransportCarrierPacketToPipeline(
                     channel,
@@ -391,6 +412,16 @@ public final class ChunkTransportControlFrameSender {
             );
             if (writeFuture == null) {
                 return false;
+            }
+            if (epochBoundary != null) {
+                ChannelTransportHooks.writeTransportCarrierPacketToPipeline(
+                        channel,
+                        outboundPacketFlow,
+                        ChannelTransportStreamingControlCodec.encodeEpochComplete(
+                                epochBoundary.epoch(),
+                                epochBoundary.lastSequence()
+                        )
+                );
             }
 
             writeFuture.addListener(future -> {

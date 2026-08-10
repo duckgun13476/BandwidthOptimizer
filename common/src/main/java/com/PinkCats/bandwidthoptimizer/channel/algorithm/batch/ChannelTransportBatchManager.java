@@ -6,6 +6,8 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStateManager;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStreamingControlCodec;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStreamingEpochGate;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
@@ -194,7 +196,7 @@ public final class ChannelTransportBatchManager {
             return;
         }
 
-        writeWrappedBatchCarrier(channel, drainedBatch, packetFlow, wrappedFrame);
+        writeWrappedBatchCarrier(channel, drainedBatch, packetFlow, transportSession, wrappedFrame);
     }
 
     private static ChannelTransportPacketCodec.WrappedTransportFrame wrapBatchFrame(
@@ -211,8 +213,18 @@ public final class ChannelTransportBatchManager {
             Channel channel,
             OutboundBatchDrain drainedBatch,
             PacketFlow packetFlow,
+            ChannelTransportSession transportSession,
             ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame
     ) {
+        ChannelTransportSession.StreamingEpochBoundary epochBoundary =
+                transportSession.outboundStreamingEpochBoundary();
+        if (epochBoundary != null) {
+            ChannelTransportStreamingEpochGate.closeForEpoch(
+                    channel,
+                    epochBoundary.epoch(),
+                    epochBoundary.lastSequence()
+            );
+        }
         var writeFuture = ChannelTransportHooks.writeTransportCarrierPacketToPipeline(
                 channel,
                 packetFlow,
@@ -221,6 +233,16 @@ public final class ChannelTransportBatchManager {
         if (writeFuture == null) {
             writePendingPacketsDirectly(drainedBatch, "batch_carrier_pipeline_direct");
             return;
+        }
+        if (epochBoundary != null) {
+            ChannelTransportHooks.writeTransportCarrierPacketToPipeline(
+                    channel,
+                    packetFlow,
+                    ChannelTransportStreamingControlCodec.encodeEpochComplete(
+                            epochBoundary.epoch(),
+                            epochBoundary.lastSequence()
+                    )
+            );
         }
 
         recordOutboundBatchPacketStream(drainedBatch.context(), drainedBatch.pendingPackets());

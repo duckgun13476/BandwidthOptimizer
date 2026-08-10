@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.locks.LockSupport;
 
 /** Offline comparison only; it never changes a live transport session. */
 public final class ZstdReplayComparisonMain {
@@ -24,8 +25,31 @@ public final class ZstdReplayComparisonMain {
 
     public static void main(String[] args) throws IOException {
         Path replayPath = requireReplayPath();
+        long startedNanos = System.nanoTime();
+        long startHeapBytes = usedHeapBytes();
         ReplayMetrics metrics = replay(replayPath);
-        metrics.print(replayPath);
+        long endHeapBytes = usedHeapBytes();
+        forceGc();
+        metrics.print(
+                replayPath,
+                System.nanoTime() - startedNanos,
+                startHeapBytes,
+                endHeapBytes,
+                usedHeapBytes()
+        );
+    }
+
+    private static long usedHeapBytes() {
+        Runtime runtime = Runtime.getRuntime();
+        return runtime.totalMemory() - runtime.freeMemory();
+    }
+
+    private static void forceGc() {
+        for (int attempt = 0; attempt < 3; attempt++) {
+            System.gc();
+            System.runFinalization();
+            LockSupport.parkNanos(50_000_000L);
+        }
     }
 
     private static ReplayMetrics replay(Path replayPath) throws IOException {
@@ -202,6 +226,7 @@ public final class ZstdReplayComparisonMain {
         private long mappingBytes;
         private long endBytes;
         private long flushBytes;
+        private long peakHeapBytes;
 
         private void record(List<byte[]> packets, int batchLength, int mappingLength, int endLength, int flushLength) {
             this.batchCount++;
@@ -213,9 +238,16 @@ public final class ZstdReplayComparisonMain {
             for (byte[] packet : packets) {
                 this.rawBytes += packet.length;
             }
+            this.peakHeapBytes = Math.max(this.peakHeapBytes, usedHeapBytes());
         }
 
-        private void print(Path replayPath) {
+        private void print(
+                Path replayPath,
+                long elapsedNanos,
+                long startHeapBytes,
+                long endHeapBytes,
+                long afterGcHeapBytes
+        ) {
             System.out.printf(Locale.ROOT, "zstd-replay path=%s%n", replayPath);
             System.out.printf(Locale.ROOT, "packets=%d batches=%d raw=%d batch=%d mapping=%d%n",
                     this.packetCount, this.batchCount, this.rawBytes, this.batchBytes, this.mappingBytes);
@@ -227,6 +259,15 @@ public final class ZstdReplayComparisonMain {
             System.out.printf(Locale.ROOT, "end_saved_vs_raw=%.3f%% flush_saved_vs_raw=%.3f%%%n",
                     percent(this.rawBytes - this.endBytes, this.rawBytes),
                     percent(this.rawBytes - this.flushBytes, this.rawBytes));
+            double elapsedSeconds = elapsedNanos / 1_000_000_000.0D;
+            System.out.printf(Locale.ROOT,
+                    "elapsed=%.3fs throughput=%.0f packets/s heap_start=%.2fMiB heap_peak=%.2fMiB heap_end=%.2fMiB heap_after_gc=%.2fMiB%n",
+                    elapsedSeconds,
+                    elapsedSeconds <= 0.0D ? 0.0D : this.packetCount / elapsedSeconds,
+                    startHeapBytes / 1048576.0D,
+                    this.peakHeapBytes / 1048576.0D,
+                    endHeapBytes / 1048576.0D,
+                    afterGcHeapBytes / 1048576.0D);
         }
 
         private static double percent(long numerator, long denominator) {

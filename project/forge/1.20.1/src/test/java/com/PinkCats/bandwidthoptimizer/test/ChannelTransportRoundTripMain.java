@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.test;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStreamingControlCodec;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStreamingEpochGate;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportFragmentCodec;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportFragmentReassembler;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStateManager;
@@ -15,6 +16,7 @@ import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.ChannelTransportOpe
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.KineticStreamingLayer;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.channel.ChannelOutboundHandlerAdapter;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
@@ -48,6 +50,8 @@ public final class ChannelTransportRoundTripMain {
         System.out.println("=== Channel Transport Round Trip Verification ===");
         System.out.println("algorithmId=" + algorithmId);
 
+        verifyManagedSessionEnablesStreamingByDefault();
+
         for (TestCase testCase : testCases) {
             verifyRoundTrip(senderSession, receiverSession, algorithmId, testCase);
         }
@@ -67,11 +71,25 @@ public final class ChannelTransportRoundTripMain {
         verifyFlushStreamingCrossFrameReuse();
         verifyFlushStreamingRequiresCoordinatedReset();
         verifyStreamingBatchFrameRoundTrip();
+        verifyImmediateSingleJoinsStreamingSequence();
         verifyStreamingGapFallsBackToIndependentBatches();
         verifyStreamingRecoveryControlRoundTrip();
+        verifyOpenEpochDoesNotAccumulateInternalWritePermits();
         verifyProxySwitchBoundaryKeepsInboundTransportEnabled();
         verifyNonTransportPassThrough(receiverSession);
         System.out.println("All channel transport round trips passed.");
+    }
+
+    private static void verifyManagedSessionEnablesStreamingByDefault() {
+        EmbeddedChannel channel = new EmbeddedChannel();
+        try {
+            if (!ChannelTransportStateManager.getOrCreateSession(channel).isCrossFrameZstdEnabled()) {
+                throw new IllegalStateException("Managed transport sessions did not enable streaming Zstd by default.");
+            }
+        } finally {
+            ChannelTransportStateManager.clearSession(channel, "round-trip-default-streaming");
+            channel.finishAndReleaseAll();
+        }
     }
 
     private static void verifyRoundTrip(
@@ -633,9 +651,16 @@ public final class ChannelTransportRoundTripMain {
                         throw staleEpoch;
                     }
                 }
+                if (receiver.acceptInboundStreamingEpochComplete(epoch, 4)) {
+                    throw new IllegalStateException("A recovering streaming epoch was acknowledged before fallback completed.");
+                }
                 String[] expectedValues = {"stream-two", "stream-three", "stream-four"};
                 for (int index = 0; index < fallbackBatches.size(); index++) {
                     var fallbackFrame = ChannelTransportPacketCodec.wrapStreamingFallbackBatch(sender, fallbackBatches.get(index));
+                    if (fallbackFrame == null
+                            || fallbackFrame.frameKind() != ChannelTransportPacketCodec.FrameKind.RECOVERY_BATCH) {
+                        throw new IllegalStateException("Streaming fallback was not independently framed.");
+                    }
                     var restored = ChannelTransportPacketCodec.tryUnwrapPacket(receiver, fallbackFrame.transportFrameBytes());
                     if (restored == null || !Arrays.equals(
                             utf8Bytes(expectedValues[index]),
@@ -644,6 +669,7 @@ public final class ChannelTransportRoundTripMain {
                     }
                 }
                 sender.restartOutboundStreamingEpoch();
+                receiver.resetInboundStreamingEpoch();
                 var resumed = ChannelTransportPacketCodec.wrapBatchPackets(sender, List.of(utf8Bytes("stream-resumed")));
                 var restoredResumed = ChannelTransportPacketCodec.tryUnwrapPacket(receiver, resumed.transportFrameBytes());
                 if (restoredResumed == null
@@ -661,12 +687,65 @@ public final class ChannelTransportRoundTripMain {
         }
     }
 
+    private static void verifyImmediateSingleJoinsStreamingSequence() {
+        ChannelTransportSession sender = new ChannelTransportSession();
+        ChannelTransportSession receiver = new ChannelTransportSession();
+        sender.setCrossFrameZstdEnabled(true);
+        receiver.setCrossFrameZstdEnabled(true);
+        try {
+            var missing = ChannelTransportPacketCodec.wrapBatchPackets(
+                    sender,
+                    List.of(utf8Bytes("missing-stream-frame"))
+            );
+            int missingEpoch = sender.outboundStreamingEpoch();
+            var afterGap = ChannelTransportPacketCodec.wrapPacket(sender, utf8Bytes("immediate-after-gap"));
+            if (afterGap == null || afterGap.frameKind() != ChannelTransportPacketCodec.FrameKind.STREAM_BATCH) {
+                throw new IllegalStateException("Streaming mode left an immediate packet outside the ordered stream.");
+            }
+            try {
+                ChannelTransportPacketCodec.tryUnwrapPacket(receiver, afterGap.transportFrameBytes());
+                throw new IllegalStateException("The stream gap was not detected before the immediate packet.");
+            } catch (ChannelTransportPacketCodec.StreamingRecoveryException expected) {
+                if (expected.recoveryRequest().epoch() != missingEpoch
+                        || expected.recoveryRequest().expectedSequence() != 1) {
+                    throw expected;
+                }
+            }
+        } finally {
+            sender.close();
+            receiver.close();
+        }
+    }
+
     private static void verifyStreamingRecoveryControlRoundTrip() {
         byte[] encoded = ChannelTransportStreamingControlCodec.encodeRecoveryRequest(7, 13);
         ChannelTransportStreamingControlCodec.RecoveryRequest decoded =
                 ChannelTransportStreamingControlCodec.tryDecodeRecoveryRequest(encoded);
         if (decoded == null || decoded.epoch() != 7 || decoded.expectedSequence() != 13) {
             throw new IllegalStateException("Streaming recovery control did not round trip.");
+        }
+        var complete = ChannelTransportStreamingControlCodec.tryDecodeControlMessage(
+                ChannelTransportStreamingControlCodec.encodeEpochComplete(8, 21)
+        );
+        if (!(complete instanceof ChannelTransportStreamingControlCodec.EpochComplete completeMessage)
+                || completeMessage.epoch() != 8
+                || completeMessage.lastSequence() != 21) {
+            throw new IllegalStateException("Streaming epoch completion did not round trip.");
+        }
+        var ok = ChannelTransportStreamingControlCodec.tryDecodeControlMessage(
+                ChannelTransportStreamingControlCodec.encodeEpochOk(8, 21)
+        );
+        if (!(ok instanceof ChannelTransportStreamingControlCodec.EpochOk okMessage)
+                || okMessage.epoch() != 8
+                || okMessage.lastSequence() != 21) {
+            throw new IllegalStateException("Streaming epoch acknowledgement did not round trip.");
+        }
+        var reset = ChannelTransportStreamingControlCodec.tryDecodeControlMessage(
+                ChannelTransportStreamingControlCodec.encodeEpochReset(9)
+        );
+        if (!(reset instanceof ChannelTransportStreamingControlCodec.EpochReset resetMessage)
+                || resetMessage.epoch() != 9) {
+            throw new IllegalStateException("Streaming epoch reset did not round trip.");
         }
         if (ChannelTransportStreamingControlCodec.tryDecodeRecoveryRequest(utf8Bytes("not-a-control-frame")) != null) {
             throw new IllegalStateException("Non-transport bytes were accepted as streaming recovery control.");
@@ -679,6 +758,52 @@ public final class ChannelTransportRoundTripMain {
             if (!expected.getMessage().contains("Invalid streaming recovery request")) {
                 throw expected;
             }
+        }
+    }
+
+    private static void verifyOpenEpochDoesNotAccumulateInternalWritePermits() {
+        EmbeddedChannel channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
+        try {
+            ChannelTransportStreamingEpochGate.closeForEpoch(channel, 3, 7);
+            var internalOutput = Unpooled.buffer();
+            try {
+                internalOutput.writeByte(0x19);
+                if (ChannelTransportStreamingEpochGate.deferIfClosed(
+                        channel.pipeline().firstContext(),
+                        true,
+                        internalOutput,
+                        0
+                ) || internalOutput.readableBytes() != 1) {
+                    throw new IllegalStateException("The streaming epoch gate deferred an internal transport carrier.");
+                }
+            } finally {
+                internalOutput.release();
+            }
+            var output = Unpooled.buffer();
+            try {
+                output.writeByte(0x2A);
+                if (!ChannelTransportStreamingEpochGate.deferIfClosed(
+                        channel.pipeline().firstContext(),
+                        false,
+                        output,
+                        0
+                ) || output.isReadable()) {
+                    throw new IllegalStateException("Open streaming epochs accumulated stale internal-write permits.");
+                }
+            } finally {
+                output.release();
+            }
+            ChannelTransportStreamingEpochGate.release(channel);
+            Object released = channel.readOutbound();
+            if (!(released instanceof io.netty.buffer.ByteBuf releasedBytes)
+                    || releasedBytes.readableBytes() != 1
+                    || releasedBytes.readUnsignedByte() != 0x2A) {
+                throw new IllegalStateException("Streaming epoch gate did not release the deferred packet.");
+            }
+            releasedBytes.release();
+        } finally {
+            ChannelTransportStreamingEpochGate.clear(channel);
+            channel.finishAndReleaseAll();
         }
     }
 

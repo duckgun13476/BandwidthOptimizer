@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.channel;
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import io.netty.channel.Channel;
 import io.netty.util.AttributeKey;
+import net.minecraft.network.protocol.PacketFlow;
 
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -24,6 +25,19 @@ public final class ChannelTransportStateManager {
     private static final AttributeKey<ChannelTransportFragmentReassembler> INBOUND_FRAGMENT_REASSEMBLER_KEY =
             AttributeKey.valueOf("bandwidthoptimizer:channel_transport_fragment_reassembler");
 
+    private static final AttributeKey<Boolean> TEST_STREAMING_DROP_CONSUMED_KEY =
+            AttributeKey.valueOf("bandwidthoptimizer:test_streaming_drop_consumed");
+
+    private static final boolean TEST_STREAMING_ENABLED =
+            Boolean.getBoolean("bandwidthoptimizer.test.streamingZstd");
+
+    private static final boolean STREAMING_ENABLED =
+            TEST_STREAMING_ENABLED
+                    || Boolean.parseBoolean(System.getProperty("bandwidthoptimizer.streamingZstd", "true"));
+
+    private static final boolean TEST_DROP_FIRST_CLIENTBOUND_STREAMING_FRAME =
+            Boolean.getBoolean("bandwidthoptimizer.test.dropFirstClientboundStreamingFrame");
+
     private ChannelTransportStateManager() {}
 
     public static ChannelTransportSession getOrCreateSession(Channel channel) {
@@ -38,12 +52,45 @@ public final class ChannelTransportStateManager {
             return existingSession;
 
         ChannelTransportSession newSession = new ChannelTransportSession();
+        if (STREAMING_ENABLED) {
+            newSession.setCrossFrameZstdEnabled(true);
+        }
         ChannelTransportSession racedSession = channel.attr(TRANSPORT_SESSION_KEY).setIfAbsent(newSession);
         if (racedSession != null) {
             closeSession(newSession, "create-race");
             return racedSession;
         }
         return newSession;
+    }
+
+    public static boolean consumeTestClientboundStreamingDrop(
+            Channel channel,
+            PacketFlow packetFlow,
+            byte[] transportFrameBytes
+    ) {
+        if (!STREAMING_ENABLED
+                || !TEST_DROP_FIRST_CLIENTBOUND_STREAMING_FRAME
+                || channel == null
+                || packetFlow != PacketFlow.CLIENTBOUND
+                || !ChannelTransportPacketCodec.isStreamingFrame(transportFrameBytes)) {
+            return false;
+        }
+        Boolean consumed = channel.attr(TEST_STREAMING_DROP_CONSUMED_KEY).get();
+        if (Boolean.TRUE.equals(consumed)) {
+            return false;
+        }
+        boolean consumedNow = channel.attr(TEST_STREAMING_DROP_CONSUMED_KEY).setIfAbsent(Boolean.TRUE) == null;
+        if (consumedNow) {
+            Bandwidthoptimizer.LOGGER.info(
+                    "[StreamingRecoveryTest] Dropped complete clientbound v4 frame, bytes={}",
+                    transportFrameBytes.length
+            );
+        }
+        return consumedNow;
+    }
+
+    public static boolean isTestStreamingEnabled() {
+        return TEST_STREAMING_ENABLED;
     }
 
 
@@ -60,6 +107,7 @@ public final class ChannelTransportStateManager {
             reassembler.clear();
         }
         channel.attr(OUTBOUND_FRAGMENT_STREAM_ID_KEY).set(null);
+        ChannelTransportStreamingEpochGate.clear(channel);
     }
 
     public static int nextOutboundFragmentStreamId(Channel channel) {

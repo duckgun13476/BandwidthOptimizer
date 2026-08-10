@@ -87,6 +87,8 @@ def applySharedBandwidthOptimizerRunProperties = { Project projectRef, def runCo
             ['boTransportBatchEnabled', 'bandwidthoptimizer.transport.batchEnabled'],
             ['boTransportBatchWindowMillis', 'bandwidthoptimizer.transport.batchWindowMillis'],
             ['boTransportPacketIdMappingEnabled', 'bandwidthoptimizer.transport.packetIdMappingEnabled'],
+            ['boTestStreamingZstd', 'bandwidthoptimizer.test.streamingZstd'],
+            ['boTestDropFirstClientboundStreamingFrame', 'bandwidthoptimizer.test.dropFirstClientboundStreamingFrame'],
             ['boTransportTelemetryDumpFileName', 'bandwidthoptimizer.transport.telemetryDumpFileName'],
             ['boTransportDebugTraceSampleLimit', 'bandwidthoptimizer.transport.debugTraceSampleLimit'],
             ['boTransportDebugTracePrefixBytes', 'bandwidthoptimizer.transport.debugTracePrefixBytes'],
@@ -465,6 +467,8 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportBatchEnabled')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportBatchWindowMillis')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportPacketIdMappingEnabled')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTestStreamingZstd')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTestDropFirstClientboundStreamingFrame')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportTelemetryDumpFileName')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportDebugTraceSampleLimit')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportDebugTracePrefixBytes')

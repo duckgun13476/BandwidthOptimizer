@@ -14,7 +14,7 @@ import java.util.List;
 public final class ChannelTransportPacketCodec {
 
     private static final int MAGIC_PACKET_ID = 0x1F_FFFF;
-    private static final int FRAME_VERSION = 3;
+    private static final int STREAMING_FRAME_VERSION = 4;
     private static final int BATCH_FRAME_VERSION = 2;
     private static final KineticBatchLayer BATCH_LAYER = new KineticBatchLayer();
 
@@ -27,7 +27,23 @@ public final class ChannelTransportPacketCodec {
 
         byte[] safePacketBytes = Arrays.copyOf(originalPacketBytes, originalPacketBytes.length);
         validateSinglePacketBytes(safePacketBytes.length);
-        ChannelTransportSession.PacketResult packetResult = transportSession.encodeSinglePacketWithTelemetry(safePacketBytes);
+        if (transportSession.isCrossFrameZstdEnabled()) {
+            byte[] batchPayloadBytes = BATCH_LAYER.encodePacketBatch(List.of(safePacketBytes));
+            ChannelTransportSession.StreamingPacketResult streamingResult =
+                    transportSession.encodeBatchWithStreamingZstd(batchPayloadBytes);
+            return wrapStreamingTransportBody(
+                    transportSession,
+                    streamingResult.epoch(),
+                    streamingResult.sequence(),
+                    safePacketBytes.length,
+                    1,
+                    batchPayloadBytes,
+                    streamingResult.packetResult().bytes(),
+                    streamingResult.packetResult().telemetry()
+            );
+        }
+        ChannelTransportSession.PacketResult packetResult =
+                transportSession.encodeSinglePacketWithTelemetry(safePacketBytes);
         return wrapTransportBody(
                 FrameKind.SINGLE,
                 safePacketBytes.length,
@@ -98,14 +114,14 @@ public final class ChannelTransportPacketCodec {
             }
 
             int frameVersion = buffer.readVarInt();
-            if (frameVersion != 1 && frameVersion != BATCH_FRAME_VERSION && frameVersion != FRAME_VERSION) {
+            if (frameVersion != 1 && frameVersion != BATCH_FRAME_VERSION && frameVersion != STREAMING_FRAME_VERSION) {
                 throw new IllegalStateException("Unsupported transport frame version: " + frameVersion);
             }
 
             FrameKind frameKind = frameVersion == 1 ? FrameKind.SINGLE : FrameKind.fromId(buffer.readVarInt());
             int streamingEpoch = 0;
             int streamingSequence = 0;
-            if (frameVersion == FRAME_VERSION) {
+            if (frameVersion == STREAMING_FRAME_VERSION) {
                 if (frameKind != FrameKind.STREAM_BATCH) {
                     throw new IllegalStateException("Transport streaming frame must be a batch");
                 }
@@ -119,7 +135,7 @@ public final class ChannelTransportPacketCodec {
             byte[] transportBodyBytes = new byte[buffer.readableBytes()];
             buffer.readBytes(transportBodyBytes);
             ChannelTransportSession.PacketResult packetResult;
-            if (frameVersion == FRAME_VERSION) {
+            if (frameVersion == STREAMING_FRAME_VERSION) {
                 try {
                     transportSession.acceptInboundStreamingFrame(streamingEpoch, streamingSequence);
                 } catch (ChannelTransportStreamingRecoveryState.StreamingGapException exception) {
@@ -141,6 +157,8 @@ public final class ChannelTransportPacketCodec {
                     );
                 }
                 transportSession.completeInboundStreamingFrame(streamingEpoch, streamingSequence);
+            } else if (frameKind == FrameKind.RECOVERY_BATCH) {
+                packetResult = transportSession.decodeStreamingFallbackBatch(transportBodyBytes);
             } else {
                 packetResult = transportSession.decodeSinglePacketWithTelemetry(transportBodyBytes);
             }
@@ -150,7 +168,7 @@ public final class ChannelTransportPacketCodec {
                     validateSinglePacketBytes(packetBytes.length);
                     yield List.of(packetBytes);
                 }
-                case BATCH, STREAM_BATCH -> BATCH_LAYER.decodePacketBatch(packetResult.bytes());
+                case BATCH, STREAM_BATCH, RECOVERY_BATCH -> BATCH_LAYER.decodePacketBatch(packetResult.bytes());
             };
             return new UnwrappedTransportFrame(
                     frameKind,
@@ -211,7 +229,7 @@ public final class ChannelTransportPacketCodec {
         FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
         try {
             buffer.writeVarInt(MAGIC_PACKET_ID);
-            buffer.writeVarInt(FRAME_VERSION);
+            buffer.writeVarInt(STREAMING_FRAME_VERSION);
             buffer.writeVarInt(FrameKind.STREAM_BATCH.id());
             buffer.writeVarInt(epoch);
             buffer.writeVarInt(sequence);
@@ -250,12 +268,28 @@ public final class ChannelTransportPacketCodec {
         ChannelTransportSession.PacketResult packetResult =
                 transportSession.encodeStreamingFallbackBatch(fallbackBatch.batchPayloadBytes());
         return wrapTransportBody(
-                FrameKind.BATCH,
+                FrameKind.RECOVERY_BATCH,
                 fallbackBatch.originalPacketBytes(),
                 fallbackBatch.originalPacketCount(),
                 packetResult.bytes(),
                 packetResult.telemetry()
         );
+    }
+
+    public static boolean isStreamingFrame(byte[] frameBytes) {
+        if (frameBytes == null || frameBytes.length == 0) {
+            return false;
+        }
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(frameBytes));
+        try {
+            return buffer.readVarInt() == MAGIC_PACKET_ID
+                    && buffer.readVarInt() == STREAMING_FRAME_VERSION
+                    && FrameKind.fromId(buffer.readVarInt()) == FrameKind.STREAM_BATCH;
+        } catch (RuntimeException ignored) {
+            return false;
+        } finally {
+            buffer.release();
+        }
     }
 
     private static int totalPacketBytes(List<byte[]> packetBytesList) {
@@ -362,7 +396,8 @@ public final class ChannelTransportPacketCodec {
     public enum FrameKind {
         SINGLE(0),
         BATCH(1),
-        STREAM_BATCH(2);
+        STREAM_BATCH(2),
+        RECOVERY_BATCH(3);
 
         private final int id;
 

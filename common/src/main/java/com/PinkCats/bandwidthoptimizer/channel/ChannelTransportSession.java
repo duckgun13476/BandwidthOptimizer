@@ -112,6 +112,9 @@ public final class ChannelTransportSession implements AutoCloseable {
         if (!isCrossFrameZstdEnabled()) {
             throw new IllegalStateException("Cross-frame Zstd is not enabled for this transport session");
         }
+        if (this.streamingRecoveryState.outboundEpochClosed()) {
+            throw new IllegalStateException("Cross-frame Zstd epoch is awaiting confirmation");
+        }
         byte[] safeBytes = copyBytesOrEmpty(encodedPacketBytes);
         ChannelTransportAlgorithmSession.OperationResult result =
                 this.outboundStreamingSession.encodePacketWithLiteralMappingTelemetry(safeBytes);
@@ -123,6 +126,35 @@ public final class ChannelTransportSession implements AutoCloseable {
                 this.outboundStreamingSequence,
                 new PacketResult(copyBytesOrEmpty(result.bytes()), fallbackTelemetry(result.telemetry(), safeBytes.length))
         );
+    }
+
+    public synchronized boolean isOutboundStreamingEpochClosed() {
+        return this.streamingRecoveryState.outboundEpochClosed();
+    }
+
+    public synchronized StreamingEpochBoundary outboundStreamingEpochBoundary() {
+        ChannelTransportStreamingRecoveryState.EpochBoundary boundary =
+                this.streamingRecoveryState.outboundEpochBoundary();
+        return boundary == null ? null : new StreamingEpochBoundary(boundary.epoch(), boundary.lastSequence());
+    }
+
+    public synchronized void acceptOutboundStreamingEpochOk(int epoch, int lastSequence) {
+        this.streamingRecoveryState.acceptOutboundEpochOk(epoch, lastSequence);
+    }
+
+    public synchronized void resetInboundStreamingEpoch() {
+        if (this.inboundStreamingSession != null) {
+            this.inboundStreamingSession.reset();
+        }
+        this.streamingRecoveryState.resetInbound();
+    }
+
+    public synchronized boolean acceptInboundStreamingEpochComplete(int epoch, int lastSequence) {
+        return this.streamingRecoveryState.acceptInboundEpochComplete(epoch, lastSequence);
+    }
+
+    public synchronized int outboundStreamingEpoch() {
+        return this.outboundStreamingEpoch;
     }
 
     public synchronized PacketResult decodeBatchWithStreamingZstd(byte[] transportBytes) {
@@ -189,28 +221,43 @@ public final class ChannelTransportSession implements AutoCloseable {
 
     public synchronized PacketResult encodeStreamingFallbackBatch(byte[] batchPayloadBytes) {
         byte[] safeBytes = copyBytesOrEmpty(batchPayloadBytes);
-        ChannelTransportAlgorithmSession.OperationResult result =
-                this.outboundSession.encodePacketWithLiteralMappingTelemetry(safeBytes);
-        return new PacketResult(copyBytesOrEmpty(result.bytes()), fallbackTelemetry(result.telemetry(), safeBytes.length));
+        return encodeIndependentPacket(safeBytes);
+    }
+
+    public synchronized PacketResult decodeStreamingFallbackBatch(byte[] transportBytes) {
+        return decodeIndependentPacket(transportBytes);
+    }
+
+    private PacketResult decodeIndependentPacket(byte[] transportBytes) {
+        byte[] safeBytes = copyBytesOrEmpty(transportBytes);
+        try (ChannelTransportAlgorithmSession recoverySession = this.algorithm.createSession()) {
+            ChannelTransportAlgorithmSession.OperationResult result =
+                    recoverySession.decodePacketWithTelemetry(safeBytes);
+            return new PacketResult(
+                    copyBytesOrEmpty(result.bytes()),
+                    fallbackTelemetry(result.telemetry(), safeBytes.length)
+            );
+        }
     }
 
     public synchronized void resetInboundStreamingForRecovery() {
         beginInboundStreamingRecovery(this.streamingRecoveryState.inboundRecoveryPoint());
     }
 
-    public synchronized void beginInboundStreamingRecovery(
+    public synchronized boolean beginInboundStreamingRecovery(
             ChannelTransportStreamingControlCodec.RecoveryRequest recoveryRequest
     ) {
         if (recoveryRequest == null) {
             throw new IllegalArgumentException("Streaming recovery request is required");
         }
-        this.streamingRecoveryState.beginInboundRecovery(
+        boolean firstRequest = this.streamingRecoveryState.beginInboundRecovery(
                 recoveryRequest.epoch(),
                 recoveryRequest.expectedSequence()
         );
-        if (this.inboundStreamingSession != null) {
+        if (firstRequest && this.inboundStreamingSession != null) {
             this.inboundStreamingSession.reset();
         }
+        return firstRequest;
     }
 
     public synchronized ChannelTransportStreamingControlCodec.RecoveryRequest inboundStreamingRecoveryPoint() {
@@ -218,8 +265,26 @@ public final class ChannelTransportSession implements AutoCloseable {
     }
 
     public synchronized void restartOutboundStreamingEpoch() {
-        resetStreamingSessions();
+        if (this.outboundStreamingSession != null) {
+            this.outboundStreamingSession.reset();
+        }
+        this.streamingRecoveryState.resetOutbound();
+        this.outboundStreamingEpoch = this.outboundStreamingEpoch == Integer.MAX_VALUE
+                ? 1
+                : this.outboundStreamingEpoch + 1;
+        this.outboundStreamingSequence = 0;
         this.crossFrameZstdEnabled = this.outboundStreamingSession != null;
+    }
+
+    private PacketResult encodeIndependentPacket(byte[] packetBytes) {
+        try (ChannelTransportAlgorithmSession recoverySession = this.algorithm.createSession()) {
+            ChannelTransportAlgorithmSession.OperationResult result =
+                    recoverySession.encodePacketWithLiteralMappingTelemetry(packetBytes);
+            return new PacketResult(
+                    copyBytesOrEmpty(result.bytes()),
+                    fallbackTelemetry(result.telemetry(), packetBytes.length)
+            );
+        }
     }
 
     private void resetStreamingSessions() {
@@ -291,6 +356,9 @@ public final class ChannelTransportSession implements AutoCloseable {
             int originalPacketBytes,
             int originalPacketCount
     ) {
+    }
+
+    public record StreamingEpochBoundary(int epoch, int lastSequence) {
     }
 
 

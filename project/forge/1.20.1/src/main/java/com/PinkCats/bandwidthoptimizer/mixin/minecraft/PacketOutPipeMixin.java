@@ -2,9 +2,11 @@ package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
+import com.PinkCats.bandwidthoptimizer.channel.capture.RawReplayFrameCapture;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStateManager;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStreamingEpochGate;
 import com.PinkCats.bandwidthoptimizer.channel.access.PacketEncoderFlowAccess;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.batch.ChannelTransportBatchManager;
 import com.PinkCats.bandwidthoptimizer.chunk.budget.ChunkClientTrimmedFullBaseStore;
@@ -119,6 +121,15 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
             return;
         }
         IdleGateBackgroundPacketGate.recordPassedPacket(context == null ? null : context.channel(), packet, this.flow, encodedByteLength);
+        if (ChannelTransportStreamingEpochGate.deferIfClosed(
+                context,
+                ChannelTransportHooks.isInternalTransportCarrierPacket(packet),
+                out,
+                this.bandwidthoptimizer$writerIndexBefore,
+                bytes -> ChannelTransportHooks.recordCommittedOutboundPacketStream(context, packet, bytes)
+        )) {
+            return;
+        }
         long returnHookStartNanos = System.nanoTime();
         long vanillaEncodeNanos = this.bandwidthoptimizer$encodeStartNanos <= 0L
                 ? 0L
@@ -145,6 +156,7 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
 
             stageStartNanos = HotpathCostProbe.start();
             ChannelCaptureHooks.captureOutboundEncodedPacket(context, packet, out, this.bandwidthoptimizer$writerIndexBefore);
+            RawReplayFrameCapture.captureOutbound(context, packet, out, this.bandwidthoptimizer$writerIndexBefore);
             HotpathCostProbe.end("capture", stageStartNanos);
 
             stageStartNanos = HotpathCostProbe.start();

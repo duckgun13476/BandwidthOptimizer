@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
 
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStreamingEpochGate;
 import com.PinkCats.bandwidthoptimizer.channel.access.PacketEncoderFlowAccess;
 import com.PinkCats.bandwidthoptimizer.channel.access.PacketEncoderProtocolInfoAccess;
 import com.PinkCats.bandwidthoptimizer.debug.HotpathCostProbe;
@@ -81,6 +82,15 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
             return;
         }
         IdleGateBackgroundPacketGate.recordPassedPacket(context == null ? null : context.channel(), packet, this.protocolInfo.flow(), encodedByteLength);
+        if (ChannelTransportStreamingEpochGate.deferIfClosed(
+                context,
+                ChannelTransportHooks.isInternalTransportCarrierPacket(packet),
+                out,
+                this.bandwidthoptimizer$writerIndexBefore,
+                bytes -> ChannelTransportHooks.recordCommittedOutboundPacketStream(context, packet, bytes)
+        )) {
+            return;
+        }
         long returnHookStartNanos = System.nanoTime();
         long vanillaEncodeNanos = this.bandwidthoptimizer$encodeStartNanos <= 0L
                 ? 0L

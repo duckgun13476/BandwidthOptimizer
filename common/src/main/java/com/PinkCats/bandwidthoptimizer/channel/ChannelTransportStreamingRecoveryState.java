@@ -8,26 +8,32 @@ import java.util.Map;
 
 final class ChannelTransportStreamingRecoveryState {
 
-    private static final int MAX_RETAINED_FRAMES = 128;
-    private static final int MAX_RETAINED_BYTES = 16 * 1024 * 1024;
+    private static final int MAX_RETAINED_FRAMES = 64;
+    private static final int MAX_RETAINED_BYTES = 8 * 1024 * 1024;
 
     private final Map<Integer, RetainedOutboundFrame> retainedOutboundFrames = new LinkedHashMap<>();
     private int retainedOutboundBytes;
     private int retainedOutboundEpoch;
+    private int retainedOutboundLastSequence;
+    private boolean outboundEpochClosed;
     private int inboundEpoch;
     private int nextInboundSequence = 1;
     private boolean inboundRecoveryPending;
+    private boolean inboundRecoveryRequested;
 
     void resetInbound() {
         this.inboundEpoch = 0;
         this.nextInboundSequence = 1;
         this.inboundRecoveryPending = false;
+        this.inboundRecoveryRequested = false;
     }
 
     void resetOutbound() {
         this.retainedOutboundFrames.clear();
         this.retainedOutboundBytes = 0;
         this.retainedOutboundEpoch = 0;
+        this.retainedOutboundLastSequence = 0;
+        this.outboundEpochClosed = false;
     }
 
     void acceptInboundFrame(int epoch, int sequence) {
@@ -64,6 +70,30 @@ final class ChannelTransportStreamingRecoveryState {
         }
     }
 
+    boolean acceptInboundEpochComplete(int epoch, int lastSequence) {
+        int expectedNext = lastSequence == Integer.MAX_VALUE ? 1 : lastSequence + 1;
+        if (this.inboundEpoch == 0) {
+            this.inboundEpoch = epoch;
+            this.nextInboundSequence = 1;
+            this.inboundRecoveryPending = true;
+            return false;
+        }
+        if (this.inboundEpoch != epoch) {
+            throw new IllegalStateException("Streaming epoch completed before all frames were restored");
+        }
+        if (this.inboundRecoveryPending) {
+            if (lastSequence < this.nextInboundSequence) {
+                throw new IllegalStateException("Streaming epoch boundary precedes the recovery point");
+            }
+            return false;
+        }
+        if (this.nextInboundSequence != expectedNext) {
+            this.inboundRecoveryPending = true;
+            return false;
+        }
+        return true;
+    }
+
     void failInboundFrame(int epoch, int sequence) {
         if (this.inboundEpoch == epoch && this.nextInboundSequence == sequence) {
             this.inboundRecoveryPending = true;
@@ -79,12 +109,17 @@ final class ChannelTransportStreamingRecoveryState {
         this.inboundRecoveryPending = false;
     }
 
-    void beginInboundRecovery(int epoch, int expectedSequence) {
+    boolean beginInboundRecovery(int epoch, int expectedSequence) {
         if (!this.inboundRecoveryPending
                 || this.inboundEpoch != epoch
                 || this.nextInboundSequence != expectedSequence) {
             throw new IllegalStateException("Streaming recovery does not match the pending recovery point");
         }
+        if (this.inboundRecoveryRequested) {
+            return false;
+        }
+        this.inboundRecoveryRequested = true;
+        return true;
     }
 
     ChannelTransportStreamingControlCodec.RecoveryRequest inboundRecoveryPoint() {
@@ -123,12 +158,32 @@ final class ChannelTransportStreamingRecoveryState {
             this.retainedOutboundBytes -= previous.retainedBytes();
         }
         this.retainedOutboundBytes += copiedFrame.retainedBytes();
-        while (!this.retainedOutboundFrames.isEmpty()
-                && (this.retainedOutboundFrames.size() > MAX_RETAINED_FRAMES
-                || this.retainedOutboundBytes > MAX_RETAINED_BYTES)) {
-            Map.Entry<Integer, RetainedOutboundFrame> oldest = this.retainedOutboundFrames.entrySet().iterator().next();
-            this.retainedOutboundFrames.remove(oldest.getKey());
-            this.retainedOutboundBytes -= oldest.getValue().retainedBytes();
+        this.retainedOutboundLastSequence = Math.max(this.retainedOutboundLastSequence, sequence);
+        int retainedFrameLimit = Boolean.getBoolean("bandwidthoptimizer.test.dropFirstClientboundStreamingFrame")
+                ? 1
+                : MAX_RETAINED_FRAMES;
+        if (this.retainedOutboundFrames.size() >= retainedFrameLimit
+                || this.retainedOutboundBytes >= MAX_RETAINED_BYTES) {
+            this.outboundEpochClosed = true;
+        }
+    }
+
+    boolean outboundEpochClosed() {
+        return this.outboundEpochClosed;
+    }
+
+    EpochBoundary outboundEpochBoundary() {
+        if (!this.outboundEpochClosed || this.retainedOutboundEpoch <= 0 || this.retainedOutboundLastSequence <= 0) {
+            return null;
+        }
+        return new EpochBoundary(this.retainedOutboundEpoch, this.retainedOutboundLastSequence);
+    }
+
+    void acceptOutboundEpochOk(int epoch, int lastSequence) {
+        if (!this.outboundEpochClosed
+                || epoch != this.retainedOutboundEpoch
+                || lastSequence != this.retainedOutboundLastSequence) {
+            throw new IllegalStateException("Streaming epoch acknowledgement does not match the closed epoch");
         }
     }
 
@@ -179,6 +234,9 @@ final class ChannelTransportStreamingRecoveryState {
             int originalPacketBytes,
             int originalPacketCount
     ) {
+    }
+
+    record EpochBoundary(int epoch, int lastSequence) {
     }
 
     private record RetainedOutboundFrame(
