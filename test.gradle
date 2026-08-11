@@ -215,6 +215,15 @@ tasks.register('runCrossFrameZstdRegression', JavaExec) {
     )
 }
 
+tasks.register('runPersistentChunkCacheDiskStoreRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies incremental persistent chunk storage, index fallback, and cleanup.',
+            'com.PinkCats.bandwidthoptimizer.chunk.persistent.PersistentChunkCacheDiskStoreRegressionMain'
+    )
+}
+
 tasks.register('runPacketClassTraceDiagnosticRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,
