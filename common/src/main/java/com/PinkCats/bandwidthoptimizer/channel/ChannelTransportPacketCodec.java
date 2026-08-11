@@ -62,6 +62,26 @@ public final class ChannelTransportPacketCodec {
         return wrapBatchPackets(transportSession, originalPacketBytesList, BatchEncodingProfile.LITERAL_MAPPING);
     }
 
+    public static WrappedTransportFrame wrapIndependentBatchPackets(
+            ChannelTransportSession transportSession,
+            List<byte[]> originalPacketBytesList
+    ) {
+        List<byte[]> safePacketBytesList = copyPacketBytesList(originalPacketBytesList);
+        if (transportSession == null || safePacketBytesList.isEmpty()) {
+            return null;
+        }
+        byte[] batchPayloadBytes = BATCH_LAYER.encodePacketBatch(safePacketBytesList);
+        ChannelTransportSession.PacketResult packetResult =
+                transportSession.encodeStreamingFallbackBatch(batchPayloadBytes);
+        return wrapTransportBody(
+                FrameKind.RECOVERY_BATCH,
+                totalPacketBytes(safePacketBytesList),
+                safePacketBytesList.size(),
+                packetResult.bytes(),
+                packetResult.telemetry()
+        );
+    }
+
     private static WrappedTransportFrame wrapBatchPackets(
             ChannelTransportSession transportSession,
             List<byte[]> originalPacketBytesList,

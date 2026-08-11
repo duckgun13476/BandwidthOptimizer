@@ -29,6 +29,7 @@ public final class EntityMotionRecoveryPolicy extends IdleGateRecoveryPolicy {
     private static final int MAX_PENDING_ENTITIES_PER_PLAYER = 4_096;
 
     private final ConcurrentHashMap<UUID, PlayerState> states = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, Integer> fishingHookEntityIds = new ConcurrentHashMap<>();
     private final AtomicLong capturedMovementPackets = new AtomicLong();
     private final AtomicLong capturedMotionPackets = new AtomicLong();
     private final AtomicLong restoredTeleports = new AtomicLong();
@@ -94,6 +95,7 @@ public final class EntityMotionRecoveryPolicy extends IdleGateRecoveryPolicy {
     public void discard(ServerPlayer player) {
         if (player != null) {
             states.remove(player.getUUID());
+            fishingHookEntityIds.remove(player.getUUID());
         }
     }
 
@@ -105,8 +107,21 @@ public final class EntityMotionRecoveryPolicy extends IdleGateRecoveryPolicy {
         if (player == null || player.getId() == entityId) {
             return false;
         }
+        if (isOwnFishingHook(player, entityId)) {
+            return false;
+        }
         PlayerState state = states.computeIfAbsent(player.getUUID(), ignored -> new PlayerState());
         return state.bind(player).remember(entityId, updateMask);
+    }
+
+    private boolean isOwnFishingHook(ServerPlayer player, int entityId) {
+        UUID playerId = player.getUUID();
+        if (player.fishing != null) {
+            int currentFishingHookId = player.fishing.getId();
+            fishingHookEntityIds.put(playerId, currentFishingHookId);
+            return currentFishingHookId == entityId;
+        }
+        return fishingHookEntityIds.getOrDefault(playerId, Integer.MIN_VALUE) == entityId;
     }
 
     private void restore(PlayerState state) {

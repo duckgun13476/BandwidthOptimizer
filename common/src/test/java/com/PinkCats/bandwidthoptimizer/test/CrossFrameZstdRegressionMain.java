@@ -17,6 +17,7 @@ public final class CrossFrameZstdRegressionMain {
     public static void main(String[] args) {
         verifySustainedCrossFrameReuse();
         verifyGapRecoveryAndResume();
+        verifyClosedEpochIndependentSpillover();
         System.out.println("Cross-frame Zstd regression passed.");
     }
 
@@ -156,6 +157,40 @@ public final class CrossFrameZstdRegressionMain {
             }
         }
         System.out.println("gap-recovery: missing suffix restored and fresh epoch resumed");
+    }
+
+    private static void verifyClosedEpochIndependentSpillover() {
+        try (ChannelTransportSession sender = new ChannelTransportSession();
+             ChannelTransportSession receiver = new ChannelTransportSession()) {
+            sender.setCrossFrameZstdEnabled(true);
+            receiver.setCrossFrameZstdEnabled(true);
+            for (int index = 0; index < FRAMES_PER_EPOCH; index++) {
+                List<byte[]> packets = List.of(bytes("stream-" + index));
+                assertRestored(packets, ChannelTransportPacketCodec.tryUnwrapPacket(
+                        receiver,
+                        wrapStreaming(sender, "stream-" + index).transportFrameBytes()
+                ));
+            }
+            ChannelTransportSession.StreamingEpochBoundary boundary = sender.outboundStreamingEpochBoundary();
+            if (boundary == null || !receiver.acceptInboundStreamingEpochComplete(
+                    boundary.epoch(),
+                    boundary.lastSequence()
+            )) {
+                throw new IllegalStateException("Streaming epoch did not close before spillover");
+            }
+            receiver.resetInboundStreamingEpoch();
+
+            List<byte[]> spilloverPackets = List.of(bytes("spillover-one"), bytes("spillover-two"));
+            var spillover = ChannelTransportPacketCodec.wrapIndependentBatchPackets(sender, spilloverPackets);
+            if (spillover == null || spillover.frameKind() != ChannelTransportPacketCodec.FrameKind.RECOVERY_BATCH) {
+                throw new IllegalStateException("Closed epoch spillover was not independently framed");
+            }
+            assertRestored(spilloverPackets, ChannelTransportPacketCodec.tryUnwrapPacket(
+                    receiver,
+                    spillover.transportFrameBytes()
+            ));
+        }
+        System.out.println("epoch-spillover: closed epoch continued with an independent batch");
     }
 
     private static ChannelTransportPacketCodec.WrappedTransportFrame wrapStreaming(

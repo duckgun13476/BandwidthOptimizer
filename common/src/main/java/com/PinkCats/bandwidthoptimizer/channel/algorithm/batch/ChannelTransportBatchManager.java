@@ -207,6 +207,12 @@ public final class ChannelTransportBatchManager {
             ChannelTransportSession transportSession,
             OutboundBatchFlushMode flushMode
     ) {
+        if (transportSession.isOutboundStreamingEpochClosed()) {
+            return ChannelTransportPacketCodec.wrapIndependentBatchPackets(
+                    transportSession,
+                    drainedBatch.packetBytesList()
+            );
+        }
         return shouldUseLightBatchEncoding(flushMode, drainedBatch)
                 ? ChannelTransportPacketCodec.wrapBatchPacketsLight(transportSession, drainedBatch.packetBytesList())
                 : ChannelTransportPacketCodec.wrapBatchPackets(transportSession, drainedBatch.packetBytesList());
@@ -220,7 +226,9 @@ public final class ChannelTransportBatchManager {
             ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame
     ) {
         ChannelTransportSession.StreamingEpochBoundary epochBoundary =
-                transportSession.outboundStreamingEpochBoundary();
+                wrappedFrame.frameKind() == ChannelTransportPacketCodec.FrameKind.STREAM_BATCH
+                        ? transportSession.outboundStreamingEpochBoundary()
+                        : null;
         if (epochBoundary != null) {
             ChannelTransportStreamingEpochGate.closeForEpoch(
                     channel,
