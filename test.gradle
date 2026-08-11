@@ -215,6 +215,15 @@ tasks.register('runCrossFrameZstdRegression', JavaExec) {
     )
 }
 
+tasks.register('runPacketClassTraceDiagnosticRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies exact packet-class allowlisting, hashing, and default-off behavior.',
+            'com.PinkCats.bandwidthoptimizer.debug.PacketClassTraceDiagnosticRegressionMain'
+    )
+}
+
 tasks.register('runZstdReplayComparison', JavaExec) {
     configureTestJavaExecTask(
             delegate,

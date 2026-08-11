@@ -12,6 +12,7 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
+import com.PinkCats.bandwidthoptimizer.debug.PacketClassTraceDiagnostic;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.ConnectionProtocolNameCompat;
 import com.PinkCats.bandwidthoptimizer.report.ChunkBoundaryBandwidthRecorder;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCaptureManager;
@@ -67,7 +68,8 @@ public final class ChannelTransportBatchManager {
             byte[] directFallbackPacketBytes,
             PacketFlow packetFlow,
             ChannelTransportPacketRankCaptureManager.OutboundPacketCapture outboundPacketCapture,
-            ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace
+            ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace,
+            PacketClassTraceDiagnostic.OutboundBatchToken packetClassTraceToken
     ) {
         if (context == null || transportPacketBytes == null || !isChannelUsable(context.channel())) {
             return false;
@@ -80,7 +82,8 @@ public final class ChannelTransportBatchManager {
                 copyBytesOrEmpty(directFallbackPacketBytes),
                 packetFlow,
                 outboundPacketCapture,
-                boundaryPacketTrace
+                boundaryPacketTrace,
+                packetClassTraceToken
         );
         batchState.scheduleFlushIfNeeded(context.channel());
         return true;
@@ -250,8 +253,10 @@ public final class ChannelTransportBatchManager {
             if (!future.isSuccess()) {
                 Throwable failure = future.cause() == null ? new IllegalStateException("Unknown outbound batch flush failure") : future.cause();
                 if (shouldIgnoreBatchFlushFailure(channel, failure)) {
+                    completeBatchPacketTrace(drainedBatch.pendingPackets(), "discarded", "channel_closing", new byte[0]);
                     return;
                 }
+                completeBatchPacketTrace(drainedBatch.pendingPackets(), "failed", "write_failure", new byte[0]);
                 failStatefulBatchCommit(channel, "outbound-batch-flush", failure);
                 return;
             }
@@ -261,6 +266,12 @@ public final class ChannelTransportBatchManager {
                     wrappedFrame
             );
             completeBatchBoundaryTrace(drainedBatch.pendingPackets(), wrappedFrame);
+            completeBatchPacketTrace(
+                    drainedBatch.pendingPackets(),
+                    "batch",
+                    wrappedFrame.frameKind().name(),
+                    wrappedFrame.transportFrameBytes()
+            );
         });
     }
 
@@ -357,6 +368,13 @@ public final class ChannelTransportBatchManager {
                 );
             }
             recordOutboundBatchBypassStats(context, protocolName, directPacketBytes.length);
+            PacketClassTraceDiagnostic.completeOutboundBatch(
+                    pendingPacket.packetClassTraceToken(),
+                    "direct",
+                    reason,
+                    directPacketBytes,
+                    1
+            );
         }
         context.flush();
         ChannelTransportPacketRankCaptureManager.completeDirectFallbackCapture(drainedBatch.packetCaptures());
@@ -404,6 +422,26 @@ public final class ChannelTransportBatchManager {
                     directPacketBytes.length,
                     false,
                     1
+            );
+        }
+    }
+
+    private static void completeBatchPacketTrace(
+            List<PendingOutboundPacket> pendingPackets,
+            String route,
+            String detail,
+            byte[] encodedBytes
+    ) {
+        if (pendingPackets == null || pendingPackets.isEmpty()) {
+            return;
+        }
+        for (PendingOutboundPacket pendingPacket : pendingPackets) {
+            PacketClassTraceDiagnostic.completeOutboundBatch(
+                    pendingPacket.packetClassTraceToken(),
+                    route,
+                    detail,
+                    encodedBytes,
+                    pendingPackets.size()
             );
         }
     }
@@ -701,7 +739,8 @@ public final class ChannelTransportBatchManager {
             byte[] directFallbackPacketBytes,
             PacketFlow packetFlow,
             ChannelTransportPacketRankCaptureManager.OutboundPacketCapture packetCapture,
-            ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace
+            ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace,
+            PacketClassTraceDiagnostic.OutboundBatchToken packetClassTraceToken
     ) {
         private PendingOutboundPacket {
             packetBytes = copyBytesOrEmpty(packetBytes);
@@ -773,7 +812,8 @@ public final class ChannelTransportBatchManager {
                 byte[] directFallbackPacketBytes,
                 PacketFlow packetFlow,
                 ChannelTransportPacketRankCaptureManager.OutboundPacketCapture outboundPacketCapture,
-                ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace
+                ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace,
+                PacketClassTraceDiagnostic.OutboundBatchToken packetClassTraceToken
         ) {
             synchronized (this.pendingPackets) {
                 this.lastContext = context;
@@ -782,7 +822,8 @@ public final class ChannelTransportBatchManager {
                         directFallbackPacketBytes,
                         packetFlow,
                         outboundPacketCapture,
-                        boundaryPacketTrace
+                        boundaryPacketTrace,
+                        packetClassTraceToken
                 ));
             }
         }
@@ -816,6 +857,7 @@ public final class ChannelTransportBatchManager {
         }
 
         private void clearPendingLocked() {
+            completeBatchPacketTrace(this.pendingPackets, "discarded", "batch_state_cleared", new byte[0]);
             this.pendingPackets.clear();
             this.lastContext = null;
         }

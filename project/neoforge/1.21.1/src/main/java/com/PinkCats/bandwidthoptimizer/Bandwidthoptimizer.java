@@ -10,6 +10,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.lifecycle.ChunkLifecycleCoordinator
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.command.BandwidthOptimizerCommand;
+import com.PinkCats.bandwidthoptimizer.debug.PacketClassTraceNetworkChannel;
 import com.PinkCats.bandwidthoptimizer.debug.ServerBoLogExportNetworkChannel;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateNetworkChannel;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportCompressionCaptureManager;
@@ -70,6 +71,8 @@ public class Bandwidthoptimizer {
         IdleGateNetworkChannel.register();
         ServerBoLogExportNetworkChannel.setModEventBus(modEventBus);
         ServerBoLogExportNetworkChannel.register();
+        PacketClassTraceNetworkChannel.setModEventBus(modEventBus);
+        PacketClassTraceNetworkChannel.register();
         NeoForge.EVENT_BUS.register(this);
         modEventBus.addListener(this::commonSetup);
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
@@ -81,6 +84,7 @@ public class Bandwidthoptimizer {
         ServerBandwidthStatsNetworkChannel.register();
         IdleGateNetworkChannel.register();
         ServerBoLogExportNetworkChannel.register();
+        PacketClassTraceNetworkChannel.register();
         BandwidthOptimizerLifecycle.register(TorqueLayer.platform());
     }
 

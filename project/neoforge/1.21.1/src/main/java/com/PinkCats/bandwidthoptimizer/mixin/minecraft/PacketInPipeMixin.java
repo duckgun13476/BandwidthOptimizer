@@ -8,6 +8,7 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
 import com.PinkCats.bandwidthoptimizer.debug.MovementDiagnosticProbe;
+import com.PinkCats.bandwidthoptimizer.debug.PacketClassTraceDiagnostic;
 import com.PinkCats.bandwidthoptimizer.integration.trueuuid.TrueUuidLateLoginQueryGuard;
 import com.PinkCats.bandwidthoptimizer.server.stat.ChannelBandwidthStats;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
@@ -102,6 +103,13 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
         MovementDiagnosticProbe.BO_Diag_movementBurst(
                 context,
                 this.protocolInfo.flow(),
+                out,
+                this.bandwidthoptimizer$outputSizeBeforeDecode
+        );
+        PacketClassTraceDiagnostic.recordInboundDirect(
+                context,
+                this.protocolInfo.flow(),
+                this.bandwidthoptimizer$pendingInboundFrame,
                 out,
                 this.bandwidthoptimizer$outputSizeBeforeDecode
         );

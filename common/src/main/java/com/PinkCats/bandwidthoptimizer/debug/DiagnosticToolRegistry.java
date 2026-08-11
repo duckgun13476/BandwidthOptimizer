@@ -272,6 +272,11 @@ public final class DiagnosticToolRegistry {
                 "idleGateTraffic",
                 Cost.SMALL,
                 "Background-idle clientbound packets that pass the gate"
+        ),
+        PACKET_CLASS_TRACE(
+                "packetClassTrace",
+                Cost.MEDIUM,
+                "Exact packet-class encode, route, and decode correlation"
         );
 
         private final String id;

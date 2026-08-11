@@ -4,10 +4,12 @@ import com.PinkCats.bandwidthoptimizer.integration.minecraft.CommandSourceCompat
 import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.IdleGateBackgroundPacketGate;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 
 public final class DiagnosticToolCommand {
 
@@ -35,12 +37,31 @@ public final class DiagnosticToolCommand {
                                 .executes(context -> ServerBoLogExportService.request(
                                         context.getSource(),
                                         IntegerArgumentType.getInteger(context, "minutes")
-                                ))));
+                                ))))
+                .then(packetClassTraceCommand());
 
         for (DiagnosticToolRegistry.Tool tool : DiagnosticToolRegistry.Tool.values()) {
+            if (tool == DiagnosticToolRegistry.Tool.PACKET_CLASS_TRACE) {
+                continue;
+            }
             root.then(toolCommand(tool));
         }
         return root;
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> packetClassTraceCommand() {
+        return Commands.literal(DiagnosticToolRegistry.Tool.PACKET_CLASS_TRACE.id())
+                .executes(context -> PacketClassTraceControlService.disable(context.getSource()))
+                .then(Commands.argument("minutes", IntegerArgumentType.integer(
+                                DiagnosticToolRegistry.MIN_MINUTES,
+                                DiagnosticToolRegistry.MAX_MINUTES
+                        ))
+                        .then(Commands.argument("packetClasses", StringArgumentType.greedyString())
+                                .executes(context -> PacketClassTraceControlService.enable(
+                                        context.getSource(),
+                                        IntegerArgumentType.getInteger(context, "minutes"),
+                                        StringArgumentType.getString(context, "packetClasses")
+                                ))));
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> toolCommand(DiagnosticToolRegistry.Tool tool) {
@@ -62,6 +83,7 @@ public final class DiagnosticToolCommand {
                 DiagnosticToolRegistry.listText()
                         + "\nUse /bandwidthoptimizer debug <name> to toggle for 30m, "
                         + "/bandwidthoptimizer debug <name> <5-300> to enable for minutes, "
+                        + "/bandwidthoptimizer debug packetClassTrace <5-300> <exact.class.Name[,more]>, "
                         + "/bandwidthoptimizer debug download-log <5-300> to save BO server logs on your client, "
                         + "or /bandwidthoptimizer debug off."
         ), false);
@@ -69,6 +91,10 @@ public final class DiagnosticToolCommand {
     }
 
     private static int disableAll(CommandSourceStack source) {
+        if (source.getEntity() instanceof ServerPlayer) {
+            PacketClassTraceControlService.disable(source);
+        }
+        PacketClassTraceDiagnostic.clearSessions();
         DiagnosticSilencer.disableAll();
         CommandSourceCompat.sendSuccess(source, Component.literal(
                 DiagnosticSilencer.disabledText("server")

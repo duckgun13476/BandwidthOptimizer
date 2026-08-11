@@ -6,6 +6,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCac
 import com.PinkCats.bandwidthoptimizer.command.ClientHudCommand;
 import com.PinkCats.bandwidthoptimizer.experimental.runall.ExperientAutoConnectController;
 import com.PinkCats.bandwidthoptimizer.experimental.runall.ExperientClientCaptureResetHooks;
+import com.PinkCats.bandwidthoptimizer.debug.PacketClassTraceClientReceiver;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateClientController;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateClientNetworkSender;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsClientReceiver;
@@ -22,6 +23,7 @@ public class BandwidthOptimizerFabricClient implements ClientModInitializer {
         ClientChunkCacheConfig.applyRuntimeConfig(ClientChunkCacheConfig.currentRuntimeConfig());
         IdleGateClientNetworkSender.register();
         ServerBandwidthStatsClientReceiver.register();
+        PacketClassTraceClientReceiver.register();
         ChunkPersistentClientCache.startAsyncPreload("fabric_client_startup");
         ClientLifecycleEvents.CLIENT_STOPPING.register(client ->
                 ChunkPersistentClientCache.flushAsync("fabric_client_stopping"));

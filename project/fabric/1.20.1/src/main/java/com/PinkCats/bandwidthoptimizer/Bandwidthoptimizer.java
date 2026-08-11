@@ -8,6 +8,7 @@ import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
 import com.PinkCats.bandwidthoptimizer.chunk.lifecycle.ChunkLifecycleCoordinator;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.command.BandwidthOptimizerCommand;
+import com.PinkCats.bandwidthoptimizer.debug.PacketClassTraceNetworkChannel;
 import com.PinkCats.bandwidthoptimizer.experimental.hotspot.ExperientChunkHotspotPathController;
 import com.PinkCats.bandwidthoptimizer.experimental.runall.ExperientRunAllProbeHooks;
 import com.PinkCats.bandwidthoptimizer.experimental.runtime.ExperientServerCommandController;
@@ -63,6 +64,7 @@ public class Bandwidthoptimizer implements ModInitializer {
         ChannelTransportNetworkChannel.register();
         ServerBandwidthStatsNetworkChannel.register();
         IdleGateNetworkChannel.register();
+        PacketClassTraceNetworkChannel.register();
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
                 BandwidthOptimizerCommand.register(dispatcher));
         ServerLifecycleEvents.SERVER_STOPPING.register(ServerBandwidthStatsLifecycleHooks::onServerStopping);

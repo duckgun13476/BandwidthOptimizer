@@ -10,6 +10,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.lifecycle.ChunkLifecycleCoordinator
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.command.BandwidthOptimizerCommand;
+import com.PinkCats.bandwidthoptimizer.debug.PacketClassTraceNetworkChannel;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.ForgeModLoadingContextCompat;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateNetworkChannel;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsNetworkChannel;
@@ -76,6 +77,7 @@ public class Bandwidthoptimizer {
         ChannelTransportNetworkChannel.register();
         ServerBandwidthStatsNetworkChannel.register();
         IdleGateNetworkChannel.register();
+        PacketClassTraceNetworkChannel.register();
         BandwidthOptimizerLifecycle.register(TorqueLayer.platform());
     }
 

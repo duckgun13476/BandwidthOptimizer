@@ -77,6 +77,10 @@ public final class ServerBandwidthStatsRegistry {
         PLAYER_CHANNELS.put(playerId, ChannelIdentity.longText(channel));
     }
 
+    public static Channel channelForPlayer(ServerPlayer player) {
+        return readPlayerChannel(player);
+    }
+
 
     public static void unbindPlayer(ServerPlayer player) {
         if (player == null) {

@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
+import com.PinkCats.bandwidthoptimizer.debug.PacketClassTraceDiagnostic;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
@@ -354,7 +355,14 @@ public final class ChannelTransportHooks {
                         directFallbackPacketBytes,
                         outboundPacketFlow,
                         outboundPacketCapture,
-                        boundaryPacketTrace
+                        boundaryPacketTrace,
+                        PacketClassTraceDiagnostic.beginOutboundBatch(
+                                context,
+                                protocolName,
+                                packet,
+                                outboundPacketFlow,
+                                originalPacketBytes
+                        )
                 );
                 return;
             }
@@ -577,7 +585,7 @@ public final class ChannelTransportHooks {
                             inboundPacketBytes.length,
                             null
                     );
-            decodeInboundPacketsIntoOutput(context, directEnvelopeFrame, out, packetDecoderFlowAccess);
+            decodeInboundPacketsIntoOutput(context, directEnvelopeFrame, inboundPacketBytes, out, packetDecoderFlowAccess);
             in.readerIndex(in.writerIndex());
             recordInboundTransportStats(context, readProtocolName(context), directEnvelopeFrame);
             return true;
@@ -600,7 +608,7 @@ public final class ChannelTransportHooks {
             return false;
         }
 
-        decodeInboundPacketsIntoOutput(context, unwrappedFrame, out, packetDecoderFlowAccess);
+        decodeInboundPacketsIntoOutput(context, unwrappedFrame, inboundPacketBytes, out, packetDecoderFlowAccess);
         in.readerIndex(in.writerIndex());
         recordInboundTransportStats(context, readProtocolName(context), unwrappedFrame);
         return true;
@@ -668,7 +676,7 @@ public final class ChannelTransportHooks {
             logInboundCarrierTrace(context, packetDecoderFlowAccess, transportFrameBytes, unwrappedFrame);
 
             List<Object> restoredPackets = new ArrayList<>();
-            decodeInboundPacketsIntoOutput(context, unwrappedFrame, restoredPackets, packetDecoderFlowAccess);
+            decodeInboundPacketsIntoOutput(context, unwrappedFrame, transportFrameBytes, restoredPackets, packetDecoderFlowAccess);
             recordInboundTransportStats(context, readProtocolName(context), unwrappedFrame);
             expandedAny = true;
             index = replaceDecodedCarrierWithRestoredPackets(out, index, restoredPackets);
@@ -799,6 +807,7 @@ public final class ChannelTransportHooks {
     private static <T extends PacketListener> void decodeInboundPacketsIntoOutput(
             ChannelHandlerContext context,
             ChannelTransportPacketCodec.UnwrappedTransportFrame unwrappedFrame,
+            byte[] transportFrameBytes,
             List<Object> out,
             PacketDecoderFlowAccess packetDecoderFlowAccess
     ) throws Exception {
@@ -820,6 +829,16 @@ public final class ChannelTransportHooks {
             }
             logRestoredPacketTrace(context, packetDecoderFlowAccess, restoredPacketBytes, restoredPacket);
             out.add(restoredPacket);
+            PacketClassTraceDiagnostic.recordInboundTransport(
+                    context,
+                    readProtocolName(context),
+                    packetDecoderFlowAccess.bandwidthoptimizer$getPacketFlow(),
+                    restoredPacket,
+                    transportFrameBytes,
+                    restoredPacketBytes,
+                    unwrappedFrame.frameKind(),
+                    unwrappedFrame.restoredPacketCount()
+            );
 
             ChannelCaptureHooks.finishInboundDecode(context, pendingInboundFrame, out, outputSizeBeforeDecode);
         }
@@ -1107,6 +1126,14 @@ public final class ChannelTransportHooks {
                 packetFlow,
                 packetBytes
         );
+        PacketClassTraceDiagnostic.recordOutboundDirect(
+                context,
+                protocolName,
+                packet,
+                packetFlow,
+                packetBytes,
+                reason
+        );
         if (!ChannelTransportHookDiagnosticProbe.BO_Diag_transportTraceJournal()) {
             return;
         }
@@ -1137,6 +1164,15 @@ public final class ChannelTransportHooks {
     ) {
         if (wrappedFrame == null)
             return;
+
+        PacketClassTraceDiagnostic.recordOutboundTransport(
+                context,
+                protocolName,
+                packet,
+                packetFlow,
+                originalPacketBytes,
+                wrappedFrame
+        );
 
         if (!ChannelTransportHookDiagnosticProbe.BO_Diag_transportTraceJournal())
             return;
