@@ -183,7 +183,11 @@ public final class ChannelTransportSession implements AutoCloseable {
         this.streamingRecoveryState.prepareInboundReplay(epoch, expectedSequence);
     }
 
-    public synchronized void retainOutboundStreamingFrame(
+    public synchronized boolean willCloseOutboundStreamingEpoch(int epoch, int additionalRetainedBytes) {
+        return this.streamingRecoveryState.willCloseOutboundEpoch(epoch, additionalRetainedBytes);
+    }
+
+    public synchronized boolean retainOutboundStreamingFrame(
             int epoch,
             int sequence,
             byte[] transportFrameBytes,
@@ -191,7 +195,7 @@ public final class ChannelTransportSession implements AutoCloseable {
             int originalPacketBytes,
             int originalPacketCount
     ) {
-        this.streamingRecoveryState.retainOutboundFrame(
+        return this.streamingRecoveryState.retainOutboundFrame(
                 epoch,
                 sequence,
                 transportFrameBytes,

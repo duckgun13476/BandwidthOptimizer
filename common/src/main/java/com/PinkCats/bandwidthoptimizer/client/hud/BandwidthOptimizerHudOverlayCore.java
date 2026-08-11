@@ -5,6 +5,7 @@ import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateClientController;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateMode;
+import com.PinkCats.bandwidthoptimizer.gate.IdleGateServerState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.resources.language.I18n;
@@ -218,6 +219,12 @@ final class BandwidthOptimizerHudOverlayCore {
                 + formatSavedShare(serverBaselineBytes, snapshot.serverIdleGateSavedBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.pkt") + " "
                 + formatCount(snapshot.serverIdleGateSavedPackets()));
+        for (IdleGateServerState.IdlePlayerSnapshot idlePlayer : snapshot.idlePlayers()) {
+            String modeKey = idlePlayer.mode() == IdleGateMode.BACKGROUND_IDLE
+                    ? "hud.bandwidthoptimizer.idle_player.deep"
+                    : "hud.bandwidthoptimizer.idle_player.light";
+            lines.add("    " + idlePlayer.playerName() + ": " + text(modeKey));
+        }
         lines.add("  " + text("hud.bandwidthoptimizer.metric.optimized_flow") + " "
                 + formatByteShare(serverBaselineBytes, snapshot.serverOutboundTransportFrameBytes())
                 + " | " + text("hud.bandwidthoptimizer.bypass") + " "

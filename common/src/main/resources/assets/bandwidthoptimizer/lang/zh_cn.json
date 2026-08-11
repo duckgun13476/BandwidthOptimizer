@@ -72,5 +72,7 @@
   "hud.bandwidthoptimizer.metric.win": "窗口",
   "hud.bandwidthoptimizer.metric.packet_raw": "包流",
   "hud.bandwidthoptimizer.metric.sent": "发送",
-  "command.bandwidthoptimizer.help": "带宽优化命令：\n/bandwidthoptimizer hud - 切换本地统计 HUD\n/bandwidthoptimizer stats - 上传带宽统计并生成网页报告\n/bandwidthoptimizer debug - OP 调试与诊断工具"
+  "command.bandwidthoptimizer.help": "带宽优化命令：\n/bandwidthoptimizer hud - 切换本地统计 HUD\n/bandwidthoptimizer stats - 上传带宽统计并生成网页报告\n/bandwidthoptimizer debug - OP 调试与诊断工具",
+  "hud.bandwidthoptimizer.idle_player.light": "轻度挂机",
+  "hud.bandwidthoptimizer.idle_player.deep": "深度挂机"
 }

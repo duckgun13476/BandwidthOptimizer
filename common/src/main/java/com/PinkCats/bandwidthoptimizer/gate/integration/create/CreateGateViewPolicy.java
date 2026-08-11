@@ -12,13 +12,32 @@ final class CreateGateViewPolicy {
         if (player == null || points == null || points.length == 0) {
             return true;
         }
-        return isAnyPointInImmediateView(
+        return shouldSendImmediately(capture(player), points, allowLookDirection);
+    }
+
+    static ViewState capture(ServerPlayer player) {
+        if (player == null) {
+            return null;
+        }
+        Vec3 lookAngle = player.getLookAngle();
+        return new ViewState(
                 player.getEyePosition(),
-                player.getLookAngle(),
-                points,
+                lookAngle == null ? Vec3.ZERO : lookAngle.normalize(),
                 alwaysSendDistanceBlocks(),
-                allowLookDirection,
                 lookDotThreshold());
+    }
+
+    static boolean shouldSendImmediately(ViewState viewState, Vec3[] points, boolean allowLookDirection) {
+        if (viewState == null || points == null || points.length == 0) {
+            return true;
+        }
+        return isAnyPointInImmediateView(
+                viewState.eyePosition(),
+                viewState.normalizedLook(),
+                points,
+                viewState.nearDistance(),
+                allowLookDirection,
+                viewState.dotThreshold());
     }
 
     private static boolean isAnyPointInImmediateView(
@@ -32,7 +51,7 @@ final class CreateGateViewPolicy {
         if (eyePosition == null || points == null || points.length == 0) {
             return true;
         }
-        Vec3 normalizedLook = lookAngle == null ? Vec3.ZERO : lookAngle.normalize();
+        Vec3 normalizedLook = lookAngle == null ? Vec3.ZERO : lookAngle;
         double nearDistanceSqr = nearDistance * nearDistance;
         boolean hadPoint = false;
         for (Vec3 point : points) {
@@ -88,4 +107,6 @@ final class CreateGateViewPolicy {
             return defaultValue;
         }
     }
+
+    record ViewState(Vec3 eyePosition, Vec3 normalizedLook, double nearDistance, double dotThreshold) {}
 }

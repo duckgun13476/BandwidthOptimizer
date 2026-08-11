@@ -50,10 +50,11 @@ public final class CreateBlockEntityUpdateGate {
     private static final ConcurrentHashMap<String, UUID> CHANNEL_PLAYERS = new ConcurrentHashMap<>();
     private static final java.util.Set<Packet<?>> FORCED_PACKETS =
             Collections.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
-    private static final Map<Packet<?>, PreparedDynamicTarget> PREPARED_DYNAMIC_TARGETS =
-            Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<Packet<?>, PreparedDynamicTarget> PREPARED_DYNAMIC_TARGETS = new IdentityHashMap<>();
     private static final int MAX_PREPARED_DYNAMIC_TARGETS = 1024;
     private static final long PREPARED_DYNAMIC_TARGET_TTL_NANOS = TimeUnit.SECONDS.toNanos(2L);
+    private static final long PREPARED_DYNAMIC_TARGET_PRUNE_INTERVAL_NANOS = TimeUnit.MILLISECONDS.toNanos(250L);
+    private static long nextPreparedDynamicTargetPruneNanos;
     private static final AtomicLong DELAYED_COUNT = new AtomicLong();
     private static final AtomicLong SUPERSEDED_COUNT = new AtomicLong();
     private static final AtomicLong RELEASED_COUNT = new AtomicLong();
@@ -184,7 +185,7 @@ public final class CreateBlockEntityUpdateGate {
         }
 
         int originalRawBytes = lengthOf(originalPacketBytes);
-        boolean accepted = state.rememberLatest(key, packet, originalRawBytes);
+        boolean accepted = state.rememberLatest(key, packet, originalRawBytes, dynamicTarget);
         if (!accepted) {
             removePreparedDynamicTarget(packet);
             return false;
@@ -234,15 +235,18 @@ public final class CreateBlockEntityUpdateGate {
         if (!shouldGateCreateBlockEntity(blockEntityTypeKey, chunkBootstrapActive)) {
             return false;
         }
-        DynamicTarget dynamicTarget = prepareDynamicTargetForConnectionSend(
+        if (listener != null && !isMovingContraptionController(blockEntityTypeKey)) {
+            return false;
+        }
+        DynamicTarget dynamicTarget = resolveDynamicTargetForConnectionSend(
                 player,
-                packet,
                 blockEntityDataPacket.getPos(),
                 blockEntityTypeKey);
         if (listener != null) {
+            rememberPreparedDynamicTarget(packet, dynamicTarget);
             return false;
         }
-        return tryRememberDelayedBlockEntity(
+        boolean delayed = tryRememberDelayedBlockEntity(
                 player,
                 state,
                 blockEntityDataPacket,
@@ -250,6 +254,10 @@ public final class CreateBlockEntityUpdateGate {
                 packet,
                 estimateBlockEntityDataPacketBytes(blockEntityDataPacket),
                 dynamicTarget);
+        if (!delayed && isMovingContraptionController(blockEntityTypeKey)) {
+            rememberPreparedDynamicTarget(packet, dynamicTarget);
+        }
+        return delayed;
     }
 
     // Start bootstrap gating before packets enter Netty.
@@ -395,7 +403,7 @@ public final class CreateBlockEntityUpdateGate {
             return false;
         }
 
-        boolean accepted = state.rememberLatest(key, packet, originalRawBytes);
+        boolean accepted = state.rememberLatest(key, packet, originalRawBytes, dynamicTarget);
         if (!accepted) {
             return false;
         }
@@ -567,19 +575,16 @@ public final class CreateBlockEntityUpdateGate {
         return resolveDynamicTargetOnServerThread(player, pos, typeKey);
     }
 
-    private static DynamicTarget prepareDynamicTargetForConnectionSend(
+    private static DynamicTarget resolveDynamicTargetForConnectionSend(
             ServerPlayer player,
-            Packet<?> packet,
             BlockPos pos,
             String typeKey
     ) {
-        DynamicTarget dynamicTarget = isMovingContraptionController(typeKey)
+        return isMovingContraptionController(typeKey)
                 ? (isServerThread(player)
                 ? resolveDynamicTargetOnServerThread(player, pos, typeKey)
                 : forceImmediateTarget(pos))
                 : resolveDynamicTargetOnServerThread(player, pos, typeKey);
-        rememberPreparedDynamicTarget(packet, dynamicTarget);
-        return dynamicTarget;
     }
 
     private static DynamicTarget resolveDynamicTargetOnServerThread(ServerPlayer player, BlockPos pos, String typeKey) {
@@ -591,30 +596,31 @@ public final class CreateBlockEntityUpdateGate {
                 return createTarget;
             }
             warnCreateContraptionFallback(player, typeKey, pos);
-            return new DynamicTarget(vanillaTarget, vanillaPoints, true);
+            return new DynamicTarget(vanillaTarget, vanillaPoints, true, false);
         }
         SableDynamicStructureCompat.DynamicTarget sableTarget =
                 SableDynamicStructureCompat.resolveTarget(player, pos, vanillaTarget);
         if (sableTarget.forceImmediate()) {
-            return new DynamicTarget(sableTarget.target(), vanillaPoints, true);
+            return new DynamicTarget(sableTarget.target(), vanillaPoints, true, false);
         }
         if (sableTarget.transformed()) {
             ResolvedPoints resolvedPoints = resolveSablePoints(player, pos, vanillaPoints);
-            return new DynamicTarget(sableTarget.target(), resolvedPoints.points(), resolvedPoints.forceImmediate());
+            return new DynamicTarget(sableTarget.target(), resolvedPoints.points(), resolvedPoints.forceImmediate(), true);
         }
         ValkyrienSkiesDynamicStructureCompat.DynamicTarget valkyrienSkiesTarget =
                 ValkyrienSkiesDynamicStructureCompat.resolveTarget(player, pos, vanillaTarget);
         if (valkyrienSkiesTarget.forceImmediate()) {
-            return new DynamicTarget(valkyrienSkiesTarget.target(), vanillaPoints, true);
+            return new DynamicTarget(valkyrienSkiesTarget.target(), vanillaPoints, true, false);
         }
         if (valkyrienSkiesTarget.transformed()) {
             ResolvedPoints resolvedPoints = resolveValkyrienSkiesPoints(player, pos, vanillaPoints);
             return new DynamicTarget(
                     valkyrienSkiesTarget.target(),
                     resolvedPoints.points(),
-                    resolvedPoints.forceImmediate());
+                    resolvedPoints.forceImmediate(),
+                    true);
         }
-        return new DynamicTarget(vanillaTarget, vanillaPoints, false);
+        return new DynamicTarget(vanillaTarget, vanillaPoints, false, false);
     }
 
     private static boolean isServerThread(ServerPlayer player) {
@@ -624,7 +630,7 @@ public final class CreateBlockEntityUpdateGate {
 
     private static DynamicTarget forceImmediateTarget(BlockPos pos) {
         Vec3 target = centerOf(pos);
-        return new DynamicTarget(target, cornersOf(pos), true);
+        return new DynamicTarget(target, cornersOf(pos), true, false);
     }
 
     private static void rememberPreparedDynamicTarget(Packet<?> packet, DynamicTarget dynamicTarget) {
@@ -633,7 +639,11 @@ public final class CreateBlockEntityUpdateGate {
         }
         long nowNanos = System.nanoTime();
         synchronized (PREPARED_DYNAMIC_TARGETS) {
-            prunePreparedDynamicTargets(nowNanos);
+            if (nowNanos >= nextPreparedDynamicTargetPruneNanos
+                    || PREPARED_DYNAMIC_TARGETS.size() >= MAX_PREPARED_DYNAMIC_TARGETS) {
+                prunePreparedDynamicTargets(nowNanos);
+                nextPreparedDynamicTargetPruneNanos = nowNanos + PREPARED_DYNAMIC_TARGET_PRUNE_INTERVAL_NANOS;
+            }
             PREPARED_DYNAMIC_TARGETS.put(packet, new PreparedDynamicTarget(dynamicTarget, nowNanos));
         }
     }
@@ -655,17 +665,23 @@ public final class CreateBlockEntityUpdateGate {
 
     private static void removePreparedDynamicTarget(Packet<?> packet) {
         if (packet != null) {
-            PREPARED_DYNAMIC_TARGETS.remove(packet);
+            synchronized (PREPARED_DYNAMIC_TARGETS) {
+                PREPARED_DYNAMIC_TARGETS.remove(packet);
+            }
         }
     }
 
     private static void prunePreparedDynamicTargets(long nowNanos) {
+        int removalsNeeded = Math.max(PREPARED_DYNAMIC_TARGETS.size() - MAX_PREPARED_DYNAMIC_TARGETS + 1, 0);
         Iterator<Map.Entry<Packet<?>, PreparedDynamicTarget>> iterator = PREPARED_DYNAMIC_TARGETS.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<Packet<?>, PreparedDynamicTarget> entry = iterator.next();
             if (nowNanos - entry.getValue().preparedAtNanos() > PREPARED_DYNAMIC_TARGET_TTL_NANOS
-                    || PREPARED_DYNAMIC_TARGETS.size() > MAX_PREPARED_DYNAMIC_TARGETS) {
+                    || removalsNeeded > 0) {
                 iterator.remove();
+                if (removalsNeeded > 0) {
+                    removalsNeeded--;
+                }
             }
         }
     }
@@ -703,7 +719,7 @@ public final class CreateBlockEntityUpdateGate {
         if (bounds == null) {
             return null;
         }
-        return new DynamicTarget(centerOf(bounds), cornersOf(bounds), false);
+        return new DynamicTarget(centerOf(bounds), cornersOf(bounds), false, true);
     }
 
     private static List<Entity> scanNearbyCreateContraptions(Level level, BlockPos pos) {
@@ -973,7 +989,7 @@ public final class CreateBlockEntityUpdateGate {
         }
     }
 
-    private record DynamicTarget(Vec3 target, Vec3[] points, boolean forceImmediate) {}
+    private record DynamicTarget(Vec3 target, Vec3[] points, boolean forceImmediate, boolean refreshRequired) {}
 
     private record PreparedDynamicTarget(DynamicTarget dynamicTarget, long preparedAtNanos) {}
 
@@ -1024,9 +1040,15 @@ public final class CreateBlockEntityUpdateGate {
             long firstQueuedNanos,
             long lastUpdatedNanos,
             int supersededCount,
-            String releaseReason
+            String releaseReason,
+            DynamicTarget dynamicTarget
     ) {
-        private PendingUpdate withLatest(Packet<?> nextPacket, int nextRawBytes, long nowNanos) {
+        private PendingUpdate withLatest(
+                Packet<?> nextPacket,
+                int nextRawBytes,
+                long nowNanos,
+                DynamicTarget nextDynamicTarget
+        ) {
             return new PendingUpdate(
                     this.key,
                     nextPacket,
@@ -1034,7 +1056,8 @@ public final class CreateBlockEntityUpdateGate {
                     this.firstQueuedNanos,
                     nowNanos,
                     this.supersededCount + 1,
-                    this.releaseReason);
+                    this.releaseReason,
+                    nextDynamicTarget);
         }
 
         private PendingUpdate withReleaseReason(String reason) {
@@ -1045,7 +1068,20 @@ public final class CreateBlockEntityUpdateGate {
                     this.firstQueuedNanos,
                     this.lastUpdatedNanos,
                     this.supersededCount,
-                    reason);
+                    reason,
+                    this.dynamicTarget);
+        }
+
+        private PendingUpdate withDynamicTarget(DynamicTarget nextDynamicTarget) {
+            return new PendingUpdate(
+                    this.key,
+                    this.packet,
+                    this.rawBytes,
+                    this.firstQueuedNanos,
+                    this.lastUpdatedNanos,
+                    this.supersededCount,
+                    this.releaseReason,
+                    nextDynamicTarget);
         }
     }
 
@@ -1055,6 +1091,11 @@ public final class CreateBlockEntityUpdateGate {
         private volatile ServerPlayer player;
         private volatile String channelId = "";
         private long chunkBootstrapDeadlineNanos;
+        private CreateGateViewPolicy.ViewState lastDrainViewState;
+        private boolean lastDrainChunkBootstrapActive;
+        private boolean hasDrainSnapshot;
+        private boolean hasRefreshRequired;
+        private long earliestFirstQueuedNanos = Long.MAX_VALUE;
 
         private void bind(ServerPlayer player, String channelId) {
             this.player = player;
@@ -1097,7 +1138,12 @@ public final class CreateBlockEntityUpdateGate {
             return CreateGateSoundPolicy.shouldFlush(key.typeKey(), previous, current);
         }
 
-        private synchronized boolean rememberLatest(PendingKey key, Packet<?> packet, int rawBytes) {
+        private synchronized boolean rememberLatest(
+                PendingKey key,
+                Packet<?> packet,
+                int rawBytes,
+                DynamicTarget dynamicTarget
+        ) {
             if (key == null || packet == null) {
                 return false;
             }
@@ -1110,11 +1156,13 @@ public final class CreateBlockEntityUpdateGate {
             if (existing == null) {
                 this.pendingUpdates.put(
                         key,
-                        new PendingUpdate(key, packet, rawBytes, nowNanos, nowNanos, 0, ""));
+                        new PendingUpdate(key, packet, rawBytes, nowNanos, nowNanos, 0, "", dynamicTarget));
+                this.earliestFirstQueuedNanos = Math.min(this.earliestFirstQueuedNanos, nowNanos);
             } else {
-                this.pendingUpdates.put(key, existing.withLatest(packet, rawBytes, nowNanos));
+                this.pendingUpdates.put(key, existing.withLatest(packet, rawBytes, nowNanos, dynamicTarget));
                 recordSuperseded(existing);
             }
+            this.hasRefreshRequired |= dynamicTarget != null && dynamicTarget.refreshRequired();
             return true;
         }
 
@@ -1131,18 +1179,34 @@ public final class CreateBlockEntityUpdateGate {
             }
             long maxDelayNanos = CreateGateQueueConfig.maxDelayNanos();
             boolean chunkBootstrapActive = isChunkBootstrapActive(nowNanos);
+            CreateGateViewPolicy.ViewState viewState = CreateGateViewPolicy.capture(player);
+            boolean viewChanged = !this.hasDrainSnapshot || !viewState.equals(this.lastDrainViewState);
+            boolean bootstrapChanged = !this.hasDrainSnapshot
+                    || chunkBootstrapActive != this.lastDrainChunkBootstrapActive;
+            boolean expiryDue = !chunkBootstrapActive
+                    && nowNanos - this.earliestFirstQueuedNanos >= maxDelayNanos;
+            if (!viewChanged && !bootstrapChanged && !expiryDue && !this.hasRefreshRequired) {
+                return List.of();
+            }
             List<PendingUpdate> readyUpdates = new ArrayList<>();
+            long nextEarliestFirstQueuedNanos = Long.MAX_VALUE;
+            boolean nextHasRefreshRequired = false;
             Iterator<Map.Entry<PendingKey, PendingUpdate>> iterator = this.pendingUpdates.entrySet().iterator();
             while (iterator.hasNext()) {
                 Map.Entry<PendingKey, PendingUpdate> entry = iterator.next();
                 PendingUpdate pendingUpdate = entry.getValue();
-                DynamicTarget dynamicTarget = resolveDynamicTargetOnServerThread(
-                        player,
-                        pendingUpdate.key().pos(),
-                        pendingUpdate.key().typeKey());
+                DynamicTarget dynamicTarget = pendingUpdate.dynamicTarget();
+                if (dynamicTarget == null || dynamicTarget.refreshRequired()) {
+                    dynamicTarget = resolveDynamicTargetOnServerThread(
+                            player,
+                            pendingUpdate.key().pos(),
+                            pendingUpdate.key().typeKey());
+                    pendingUpdate = pendingUpdate.withDynamicTarget(dynamicTarget);
+                    entry.setValue(pendingUpdate);
+                }
                 boolean visible = dynamicTarget.forceImmediate()
                         || CreateGateViewPolicy.shouldSendImmediately(
-                                player,
+                                viewState,
                                 dynamicTarget.points(),
                                 allowLookDirectionForGatedUpdate(
                                         pendingUpdate.key().typeKey(),
@@ -1150,11 +1214,20 @@ public final class CreateBlockEntityUpdateGate {
                 boolean expired = !chunkBootstrapActive
                         && nowNanos - pendingUpdate.firstQueuedNanos() >= maxDelayNanos;
                 if (!visible && !expired) {
+                    nextEarliestFirstQueuedNanos = Math.min(
+                            nextEarliestFirstQueuedNanos,
+                            pendingUpdate.firstQueuedNanos());
+                    nextHasRefreshRequired |= dynamicTarget.refreshRequired();
                     continue;
                 }
                 iterator.remove();
                 readyUpdates.add(pendingUpdate.withReleaseReason(visible ? "visible" : "max_delay"));
             }
+            this.lastDrainViewState = viewState;
+            this.lastDrainChunkBootstrapActive = chunkBootstrapActive;
+            this.hasDrainSnapshot = true;
+            this.earliestFirstQueuedNanos = nextEarliestFirstQueuedNanos;
+            this.hasRefreshRequired = nextHasRefreshRequired;
             return readyUpdates;
         }
 

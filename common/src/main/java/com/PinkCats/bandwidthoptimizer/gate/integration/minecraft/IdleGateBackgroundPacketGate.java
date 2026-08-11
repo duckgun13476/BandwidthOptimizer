@@ -1,6 +1,5 @@
 package com.PinkCats.bandwidthoptimizer.gate.integration.minecraft;
 
-import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.integration.create.CreateMainPayloadCompat;
@@ -163,18 +162,23 @@ public final class IdleGateBackgroundPacketGate {
     }
 
     private static void recordDrop(String key, int encodedByteLength) {
-        DROPPED_PACKETS_BY_CLASS.computeIfAbsent(key, ignored -> new AtomicLong()).incrementAndGet();
-        DROPPED_BYTES_BY_CLASS.computeIfAbsent(key, ignored -> new AtomicLong()).addAndGet(Math.max(encodedByteLength, 0));
         long total = TOTAL_DROPPED.incrementAndGet();
         long totalBytes = TOTAL_DROPPED_BYTES.addAndGet(Math.max(encodedByteLength, 0));
-        long nowMillis = System.currentTimeMillis();
-        long nextMillis = NEXT_LOG_MILLIS.get();
-        if (nowMillis >= nextMillis && NEXT_LOG_MILLIS.compareAndSet(nextMillis, nowMillis + 10_000L)) {
-            Bandwidthoptimizer.LOGGER.info("[IdleGate] background drop total={} bytes={} current={} top={}",
-                    total,
-                    totalBytes,
-                    key,
-                    topDroppedSummary());
+        if (DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.IDLE_GATE_TRAFFIC)) {
+            DROPPED_PACKETS_BY_CLASS.computeIfAbsent(key, ignored -> new AtomicLong()).incrementAndGet();
+            DROPPED_BYTES_BY_CLASS.computeIfAbsent(key, ignored -> new AtomicLong()).addAndGet(Math.max(encodedByteLength, 0));
+            long nowMillis = System.currentTimeMillis();
+            long nextMillis = NEXT_LOG_MILLIS.get();
+            if (nowMillis >= nextMillis && NEXT_LOG_MILLIS.compareAndSet(nextMillis, nowMillis + 10_000L)) {
+                DiagnosticLog.info(
+                        DiagnosticToolRegistry.Tool.IDLE_GATE_TRAFFIC,
+                        "event=idle_gate_background_drop total={} bytes={} current={} top={}",
+                        total,
+                        totalBytes,
+                        key,
+                        topDroppedSummary()
+                );
+            }
         }
     }
 

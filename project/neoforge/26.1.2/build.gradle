@@ -222,6 +222,10 @@ tasks.named('compileJava', JavaCompile).configure {
     ))
 }
 
+tasks.named('compileTestJava', JavaCompile).configure {
+    classpath += sourceSets.main.runtimeClasspath
+}
+
 repositories {
     maven {
         name = 'PinkCatsMaven'

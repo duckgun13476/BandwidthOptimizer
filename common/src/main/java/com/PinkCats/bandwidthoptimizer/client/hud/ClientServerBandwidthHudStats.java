@@ -1,7 +1,10 @@
 package com.PinkCats.bandwidthoptimizer.client.hud;
 
+import com.PinkCats.bandwidthoptimizer.gate.IdleGateServerState;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsPayload;
 import com.PinkCats.bandwidthoptimizer.server.stat.VanillaCompressionEstimator;
+
+import java.util.List;
 
 public final class ClientServerBandwidthHudStats {
 
@@ -59,7 +62,8 @@ public final class ClientServerBandwidthHudStats {
                 payload.serverCreateTransportSavedBytes(),
                 payload.serverCreateTransportPackets(),
                 payload.serverIdleGateSavedBytes(),
-                payload.serverIdleGateSavedPackets()
+                payload.serverIdleGateSavedPackets(),
+                payload.idlePlayers()
         );
     }
 
@@ -114,11 +118,16 @@ public final class ClientServerBandwidthHudStats {
             long serverCreateTransportSavedBytes,
             long serverCreateTransportPackets,
             long serverIdleGateSavedBytes,
-            long serverIdleGateSavedPackets
+            long serverIdleGateSavedPackets,
+            List<IdleGateServerState.IdlePlayerSnapshot> idlePlayers
     ) {
 
+        public Snapshot {
+            idlePlayers = idlePlayers == null ? List.of() : List.copyOf(idlePlayers);
+        }
+
         private static Snapshot empty() {
-            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false, 0L, 0L, 0L, 0L, 0L, 0L);
+            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false, 0L, 0L, 0L, 0L, 0L, 0L, List.of());
         }
 
         public boolean fresh() {

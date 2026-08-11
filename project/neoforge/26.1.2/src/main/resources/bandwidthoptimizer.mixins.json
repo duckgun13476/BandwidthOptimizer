@@ -10,6 +10,7 @@
     "minecraft.ConnectionAccessor",
     "minecraft.ConnectionBandwidthStatsMixin",
     "minecraft.ConnectionSendBoundaryMixin",
+    "minecraft.ChunkTransportControlFrameSenderMixin",
     "minecraft.PacketOutPipeMixin",
     "minecraft.PacketInPipeMixin",
     "minecraft.ServerGamePacketListenerImplAccessor"

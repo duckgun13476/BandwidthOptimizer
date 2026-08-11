@@ -129,7 +129,16 @@ final class ChannelTransportStreamingRecoveryState {
         return new ChannelTransportStreamingControlCodec.RecoveryRequest(this.inboundEpoch, this.nextInboundSequence);
     }
 
-    void retainOutboundFrame(
+    boolean willCloseOutboundEpoch(int epoch, int additionalRetainedBytes) {
+        int retainedFrames = this.retainedOutboundEpoch == 0 || this.retainedOutboundEpoch == epoch
+                ? this.retainedOutboundFrames.size()
+                : 0;
+        int retainedBytes = retainedFrames == 0 ? 0 : this.retainedOutboundBytes;
+        return retainedFrames + 1 >= retainedFrameLimit()
+                || retainedBytes + Math.max(additionalRetainedBytes, 0) >= MAX_RETAINED_BYTES;
+    }
+
+    boolean retainOutboundFrame(
             int epoch,
             int sequence,
             byte[] transportFrameBytes,
@@ -141,7 +150,7 @@ final class ChannelTransportStreamingRecoveryState {
                 || sequence <= 0
                 || transportFrameBytes == null
                 || fallbackBatchPayloadBytes == null) {
-            return;
+            return false;
         }
         if (this.retainedOutboundEpoch != epoch) {
             resetOutbound();
@@ -159,17 +168,21 @@ final class ChannelTransportStreamingRecoveryState {
         }
         this.retainedOutboundBytes += copiedFrame.retainedBytes();
         this.retainedOutboundLastSequence = Math.max(this.retainedOutboundLastSequence, sequence);
-        int retainedFrameLimit = Boolean.getBoolean("bandwidthoptimizer.test.dropFirstClientboundStreamingFrame")
-                ? 1
-                : MAX_RETAINED_FRAMES;
-        if (this.retainedOutboundFrames.size() >= retainedFrameLimit
+        if (this.retainedOutboundFrames.size() >= retainedFrameLimit()
                 || this.retainedOutboundBytes >= MAX_RETAINED_BYTES) {
             this.outboundEpochClosed = true;
         }
+        return this.outboundEpochClosed;
     }
 
     boolean outboundEpochClosed() {
         return this.outboundEpochClosed;
+    }
+
+    private static int retainedFrameLimit() {
+        return Boolean.getBoolean("bandwidthoptimizer.test.dropFirstClientboundStreamingFrame")
+                ? 1
+                : MAX_RETAINED_FRAMES;
     }
 
     EpochBoundary outboundEpochBoundary() {

@@ -2,10 +2,15 @@ package com.PinkCats.bandwidthoptimizer.server.stat;
 
 import com.PinkCats.bandwidthoptimizer.client.hud.ClientServerBandwidthHudStats;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
+import com.PinkCats.bandwidthoptimizer.gate.IdleGateMode;
+import com.PinkCats.bandwidthoptimizer.gate.IdleGateServerState;
 import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateBlockEntityUpdateGate;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportSourceRankCore;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public record ServerBandwidthStatsPayload(
         long capturedAtMillis,
@@ -46,8 +51,16 @@ public record ServerBandwidthStatsPayload(
         long serverCreateTransportSavedBytes,
         long serverCreateTransportPackets,
         long serverIdleGateSavedBytes,
-        long serverIdleGateSavedPackets
+        long serverIdleGateSavedPackets,
+        List<IdleGateServerState.IdlePlayerSnapshot> idlePlayers
 ) {
+
+    private static final int MAX_IDLE_PLAYERS = 128;
+    private static final int MAX_PLAYER_NAME_LENGTH = 64;
+
+    public ServerBandwidthStatsPayload {
+        idlePlayers = idlePlayers == null ? List.of() : List.copyOf(idlePlayers);
+    }
 
     public static ServerBandwidthStatsPayload fromTotals(ServerBandwidthStatsRegistry.TotalsSnapshot totals) {
         return fromTotals(totals, ServerBandwidthRecentWindow.update(totals));
@@ -120,13 +133,14 @@ public record ServerBandwidthStatsPayload(
                 createTransportSnapshot.savedBytes(),
                 createTransportSnapshot.packets(),
                 totals.serverIdleGateSavedBytes(),
-                totals.serverIdleGateSavedPackets()
+                totals.serverIdleGateSavedPackets(),
+                IdleGateServerState.snapshotIdlePlayers(MAX_IDLE_PLAYERS)
         );
     }
 
 
     public static ServerBandwidthStatsPayload empty() {
-        return new ServerBandwidthStatsPayload(System.currentTimeMillis(), 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false, 0L, 0L, 0L, 0L, 0L, 0L);
+        return new ServerBandwidthStatsPayload(System.currentTimeMillis(), 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false, 0L, 0L, 0L, 0L, 0L, 0L, List.of());
     }
 
     public static void encode(ServerBandwidthStatsPayload payload, FriendlyByteBuf buffer) {
@@ -170,6 +184,18 @@ public record ServerBandwidthStatsPayload(
         buffer.writeVarLong(Math.max(safePayload.serverCreateTransportPackets(), 0L));
         buffer.writeVarLong(Math.max(safePayload.serverIdleGateSavedBytes(), 0L));
         buffer.writeVarLong(Math.max(safePayload.serverIdleGateSavedPackets(), 0L));
+        List<IdleGateServerState.IdlePlayerSnapshot> idlePlayers = safePayload.idlePlayers();
+        int idlePlayerCount = Math.min(idlePlayers.size(), MAX_IDLE_PLAYERS);
+        buffer.writeVarInt(idlePlayerCount);
+        for (int index = 0; index < idlePlayerCount; index++) {
+            IdleGateServerState.IdlePlayerSnapshot idlePlayer = idlePlayers.get(index);
+            String playerName = idlePlayer.playerName();
+            if (playerName.length() > MAX_PLAYER_NAME_LENGTH) {
+                playerName = playerName.substring(0, MAX_PLAYER_NAME_LENGTH);
+            }
+            buffer.writeUtf(playerName);
+            buffer.writeByte(idlePlayer.mode().id());
+        }
     }
 
     public static ServerBandwidthStatsPayload decode(FriendlyByteBuf buffer) {
@@ -212,6 +238,7 @@ public record ServerBandwidthStatsPayload(
         long serverCreateTransportPackets = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         long serverIdleGateSavedBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         long serverIdleGateSavedPackets = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        List<IdleGateServerState.IdlePlayerSnapshot> idlePlayers = decodeIdlePlayers(buffer);
         return new ServerBandwidthStatsPayload(
                 capturedAtMillis,
                 activeChannels,
@@ -251,8 +278,28 @@ public record ServerBandwidthStatsPayload(
                 serverCreateTransportSavedBytes,
                 serverCreateTransportPackets,
                 serverIdleGateSavedBytes,
-                serverIdleGateSavedPackets
+                serverIdleGateSavedPackets,
+                idlePlayers
         );
+    }
+
+    private static List<IdleGateServerState.IdlePlayerSnapshot> decodeIdlePlayers(FriendlyByteBuf buffer) {
+        if (buffer.readableBytes() <= 0) {
+            return List.of();
+        }
+        int count = buffer.readVarInt();
+        if (count < 0 || count > MAX_IDLE_PLAYERS) {
+            return List.of();
+        }
+        List<IdleGateServerState.IdlePlayerSnapshot> idlePlayers = new ArrayList<>(count);
+        for (int index = 0; index < count; index++) {
+            String playerName = buffer.readUtf(MAX_PLAYER_NAME_LENGTH);
+            IdleGateMode mode = IdleGateMode.byId(buffer.readUnsignedByte());
+            if (mode.isIdle()) {
+                idlePlayers.add(new IdleGateServerState.IdlePlayerSnapshot(playerName, mode));
+            }
+        }
+        return List.copyOf(idlePlayers);
     }
 
     public byte[] toBytes() {

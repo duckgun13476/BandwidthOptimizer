@@ -6,6 +6,9 @@ import com.PinkCats.bandwidthoptimizer.gate.recovery.IdleGateRecoveryRegistry;
 import io.netty.channel.Channel;
 import net.minecraft.server.level.ServerPlayer;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -64,6 +67,28 @@ public final class IdleGateServerState {
             return PlayerIdleState.defaultActive();
         }
         return state;
+    }
+
+    public static List<IdlePlayerSnapshot> snapshotIdlePlayers(int limit) {
+        int safeLimit = Math.max(limit, 0);
+        if (safeLimit == 0) {
+            return List.of();
+        }
+        long nowMillis = System.currentTimeMillis();
+        List<IdlePlayerSnapshot> snapshots = new ArrayList<>();
+        for (var entry : CONNECTED_PLAYERS.entrySet()) {
+            PlayerIdleState state = PLAYER_STATES.get(entry.getKey());
+            ServerPlayer player = entry.getValue();
+            if (player == null || state == null || state.isStale(nowMillis) || !state.mode().isIdle()) {
+                continue;
+            }
+            snapshots.add(new IdlePlayerSnapshot(player.getName().getString(), state.mode()));
+        }
+        snapshots.sort(Comparator.comparing(IdlePlayerSnapshot::playerName, String.CASE_INSENSITIVE_ORDER));
+        if (snapshots.size() > safeLimit) {
+            snapshots = new ArrayList<>(snapshots.subList(0, safeLimit));
+        }
+        return List.copyOf(snapshots);
     }
 
     public static void onPlayerLoggedOut(ServerPlayer player) {
@@ -129,6 +154,13 @@ public final class IdleGateServerState {
 
         public boolean isStale(long nowMillis) {
             return nowMillis - receivedAtMillis > STATE_STALE_MILLIS;
+        }
+    }
+
+    public record IdlePlayerSnapshot(String playerName, IdleGateMode mode) {
+        public IdlePlayerSnapshot {
+            playerName = playerName == null ? "" : playerName;
+            mode = mode == null ? IdleGateMode.ACTIVE : mode;
         }
     }
 }

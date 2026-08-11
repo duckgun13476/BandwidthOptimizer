@@ -12,6 +12,7 @@
     "minecraft.ConnectionAccessor",
     "minecraft.ConnectionBandwidthStatsMixin",
     "minecraft.ConnectionSendBoundaryMixin",
+    "minecraft.ChunkTransportControlFrameSenderMixin",
     "minecraft.DistanceManagerTicketThrottleMixin",
     "minecraft.PacketOutPipeMixin",
     "minecraft.PacketInPipeMixin",

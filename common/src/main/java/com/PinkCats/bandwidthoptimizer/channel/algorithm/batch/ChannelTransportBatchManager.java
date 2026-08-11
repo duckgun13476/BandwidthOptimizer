@@ -6,7 +6,6 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStateManager;
-import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStreamingControlCodec;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStreamingEpochGate;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
@@ -245,17 +244,6 @@ public final class ChannelTransportBatchManager {
             writePendingPacketsDirectly(drainedBatch, "batch_carrier_pipeline_direct");
             return;
         }
-        if (epochBoundary != null) {
-            ChannelTransportHooks.writeTransportCarrierPacketToPipeline(
-                    channel,
-                    packetFlow,
-                    ChannelTransportStreamingControlCodec.encodeEpochComplete(
-                            epochBoundary.epoch(),
-                            epochBoundary.lastSequence()
-                    )
-            );
-        }
-
         recordOutboundBatchPacketStream(drainedBatch.context(), drainedBatch.pendingPackets());
         writeFuture.addListener(future -> {
             if (!future.isSuccess()) {

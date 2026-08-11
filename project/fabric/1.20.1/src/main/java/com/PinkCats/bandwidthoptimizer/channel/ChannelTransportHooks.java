@@ -404,7 +404,12 @@ public final class ChannelTransportHooks {
             ChannelTransportSession transportSession = ChannelTransportStateManager.getOrCreateSession(context.channel());
             statefulTransportAttempted = true;
             ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame =
-                    KineticChannel.processOutboundPacket(transportSession, transportInputPacketBytes);
+                    transportSession.isOutboundStreamingEpochClosed()
+                            ? ChannelTransportPacketCodec.wrapIndependentBatchPackets(
+                                    transportSession,
+                                    List.of(transportInputPacketBytes)
+                            )
+                            : KineticChannel.processOutboundPacket(transportSession, transportInputPacketBytes);
             if (wrappedFrame == null) {
                 throw new IllegalStateException("Stateful transport wrap returned no carrier");
             }
@@ -420,7 +425,9 @@ public final class ChannelTransportHooks {
             );
 
             ChannelTransportSession.StreamingEpochBoundary epochBoundary =
-                    transportSession.outboundStreamingEpochBoundary();
+                    wrappedFrame.frameKind() == ChannelTransportPacketCodec.FrameKind.STREAM_BATCH
+                            ? transportSession.outboundStreamingEpochBoundary()
+                            : null;
             if (epochBoundary != null) {
                 ChannelTransportStreamingEpochGate.closeForEpoch(
                         context.channel(),
@@ -435,16 +442,22 @@ public final class ChannelTransportHooks {
                 throw new IllegalStateException("Stateful transport carrier was not committed");
             }
             if (epochBoundary != null) {
-                context.channel().eventLoop().execute(
-                        () -> writeTransportCarrierPacketToPipeline(
-                                context.channel(),
-                                outboundPacketFlow,
-                                ChannelTransportStreamingControlCodec.encodeEpochComplete(
-                                        epochBoundary.epoch(),
-                                        epochBoundary.lastSequence()
-                                )
-                        )
-                );
+                // Commit the encoded boundary before releasing deferred raw writes.
+                int carrierLength = out.writerIndex() - startIndexInclusive;
+                byte[] encodedCarrier = ByteBufUtil.getBytes(out, startIndexInclusive, carrierLength, false);
+                out.writerIndex(startIndexInclusive);
+                ChannelFuture boundaryWrite = context.write(Unpooled.wrappedBuffer(encodedCarrier));
+                boundaryWrite.addListener(future -> {
+                    if (!future.isSuccess()) {
+                        Bandwidthoptimizer.LOGGER.warn(
+                                "[Transport][StreamingEpoch] boundary carrier write failed",
+                                future.cause()
+                        );
+                        context.close();
+                    }
+                });
+                context.flush();
+                ChannelTransportStreamingEpochCoordinator.boundaryQueued(context.channel());
             }
             if (forceImmediateTransport && ChannelTransportHookDiagnosticProbe.BO_Diag_chunkTransportFrames()) {
                 DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES, "event=immediate_policy_result path=single_transport, reason={}, protocol={}, packetClass={}, rawBytes={}, inputBytes={}, frameKind={}, frameBytes={}, channel={}",
@@ -608,6 +621,7 @@ public final class ChannelTransportHooks {
             return false;
         }
 
+        acknowledgeEmbeddedStreamingBoundary(context, packetDecoderFlowAccess, transportSession, unwrappedFrame);
         decodeInboundPacketsIntoOutput(context, unwrappedFrame, inboundPacketBytes, out, packetDecoderFlowAccess);
         in.readerIndex(in.writerIndex());
         recordInboundTransportStats(context, readProtocolName(context), unwrappedFrame);
@@ -674,6 +688,7 @@ public final class ChannelTransportHooks {
                 continue;
             }
             logInboundCarrierTrace(context, packetDecoderFlowAccess, transportFrameBytes, unwrappedFrame);
+            acknowledgeEmbeddedStreamingBoundary(context, packetDecoderFlowAccess, transportSession, unwrappedFrame);
 
             List<Object> restoredPackets = new ArrayList<>();
             decodeInboundPacketsIntoOutput(context, unwrappedFrame, transportFrameBytes, restoredPackets, packetDecoderFlowAccess);
@@ -682,6 +697,60 @@ public final class ChannelTransportHooks {
             index = replaceDecodedCarrierWithRestoredPackets(out, index, restoredPackets);
         }
         return expandedAny;
+    }
+
+    private static void acknowledgeEmbeddedStreamingBoundary(
+            ChannelHandlerContext context,
+            PacketDecoderFlowAccess packetDecoderFlowAccess,
+            ChannelTransportSession transportSession,
+            ChannelTransportPacketCodec.UnwrappedTransportFrame unwrappedFrame
+    ) {
+        if (unwrappedFrame == null || !unwrappedFrame.streamingEpochComplete()) {
+            return;
+        }
+        ChannelTransportStreamingEpochCoordinator.boundaryReceived(
+                context.channel(),
+                unwrappedFrame.streamingEpoch(),
+                unwrappedFrame.streamingSequence()
+        );
+        PacketFlow inboundFlow = packetDecoderFlowAccess.bandwidthoptimizer$getPacketFlow();
+        PacketFlow responseFlow = inboundFlow == PacketFlow.CLIENTBOUND
+                ? PacketFlow.SERVERBOUND
+                : PacketFlow.CLIENTBOUND;
+        ChannelFuture acknowledgement = writeTransportCarrierPacketToPipeline(
+                context.channel(),
+                responseFlow,
+                ChannelTransportStreamingControlCodec.encodeEpochOk(
+                        unwrappedFrame.streamingEpoch(),
+                        unwrappedFrame.streamingSequence()
+                )
+        );
+        observeStreamingEpochAcknowledgement(context.channel(), unwrappedFrame, acknowledgement);
+        transportSession.resetInboundStreamingEpoch();
+    }
+
+    private static void observeStreamingEpochAcknowledgement(
+            Channel channel,
+            ChannelTransportPacketCodec.UnwrappedTransportFrame frame,
+            ChannelFuture acknowledgement
+    ) {
+        if (acknowledgement == null) {
+            Bandwidthoptimizer.LOGGER.warn("[Transport] Failed to submit streaming epoch acknowledgement epoch={} sequence={}", frame.streamingEpoch(), frame.streamingSequence());
+            channel.close();
+            return;
+        }
+        acknowledgement.addListener(future -> {
+            if (!future.isSuccess()) {
+                Bandwidthoptimizer.LOGGER.warn("[Transport] Streaming epoch acknowledgement write failed epoch={} sequence={}", frame.streamingEpoch(), frame.streamingSequence(), future.cause());
+                channel.close();
+            } else {
+                ChannelTransportStreamingEpochCoordinator.acknowledgementSent(
+                        channel,
+                        frame.streamingEpoch(),
+                        frame.streamingSequence()
+                );
+            }
+        });
     }
 
     private static boolean handleInboundStreamingControlFrame(
@@ -715,12 +784,21 @@ public final class ChannelTransportHooks {
             return true;
         }
         if (message instanceof ChannelTransportStreamingControlCodec.EpochOk ok) {
-            if (!ChannelTransportStreamingEpochGate.matchesClosedEpoch(context.channel(), ok.epoch(), ok.lastSequence())) {
-                throw new IllegalStateException("Received an unexpected streaming epoch acknowledgement");
+            ChannelTransportStreamingEpochCoordinator.acknowledgementReceived(context.channel(), ok.epoch(), ok.lastSequence());
+            if (ChannelTransportStreamingEpochCoordinator.consumeLateAcknowledgement(
+                    context.channel(),
+                    ok.epoch(),
+                    ok.lastSequence()
+            )) {
+                return true;
             }
             transportSession.acceptOutboundStreamingEpochOk(ok.epoch(), ok.lastSequence());
             transportSession.restartOutboundStreamingEpoch();
-            ChannelTransportStreamingEpochGate.release(context.channel());
+            ChannelTransportStreamingEpochCoordinator.releasedByAcknowledgement(
+                    context.channel(),
+                    ok.epoch(),
+                    ok.lastSequence()
+            );
             return true;
         }
         if (message instanceof ChannelTransportStreamingControlCodec.EpochReset) {
@@ -944,6 +1022,9 @@ public final class ChannelTransportHooks {
             }
         }
         channel.flush();
+        if (ChannelTransportPacketCodec.isCompletedStreamingFrame(transportFrameBytes)) {
+            ChannelTransportStreamingEpochCoordinator.boundaryQueued(channel);
+        }
         return aggregatePromise;
     }
 

@@ -14,7 +14,8 @@ import java.util.List;
 public final class ChannelTransportPacketCodec {
 
     private static final int MAGIC_PACKET_ID = 0x1F_FFFF;
-    private static final int STREAMING_FRAME_VERSION = 4;
+    private static final int LEGACY_STREAMING_FRAME_VERSION = 4;
+    private static final int STREAMING_FRAME_VERSION = 6;
     private static final int BATCH_FRAME_VERSION = 2;
     private static final KineticBatchLayer BATCH_LAYER = new KineticBatchLayer();
 
@@ -134,14 +135,20 @@ public final class ChannelTransportPacketCodec {
             }
 
             int frameVersion = buffer.readVarInt();
-            if (frameVersion != 1 && frameVersion != BATCH_FRAME_VERSION && frameVersion != STREAMING_FRAME_VERSION) {
+            if (frameVersion != 1
+                    && frameVersion != BATCH_FRAME_VERSION
+                    && frameVersion != LEGACY_STREAMING_FRAME_VERSION
+                    && frameVersion != STREAMING_FRAME_VERSION) {
                 throw new IllegalStateException("Unsupported transport frame version: " + frameVersion);
             }
 
             FrameKind frameKind = frameVersion == 1 ? FrameKind.SINGLE : FrameKind.fromId(buffer.readVarInt());
             int streamingEpoch = 0;
             int streamingSequence = 0;
-            if (frameVersion == STREAMING_FRAME_VERSION) {
+            boolean streamingFrame = frameVersion == LEGACY_STREAMING_FRAME_VERSION
+                    || frameVersion == STREAMING_FRAME_VERSION;
+            boolean streamingEpochComplete = false;
+            if (streamingFrame) {
                 if (frameKind != FrameKind.STREAM_BATCH) {
                     throw new IllegalStateException("Transport streaming frame must be a batch");
                 }
@@ -150,12 +157,15 @@ public final class ChannelTransportPacketCodec {
                 if (streamingEpoch <= 0 || streamingSequence <= 0) {
                     throw new IllegalStateException("Invalid transport streaming epoch or sequence");
                 }
+                if (frameVersion == STREAMING_FRAME_VERSION) {
+                    streamingEpochComplete = buffer.readBoolean();
+                }
             }
 
             byte[] transportBodyBytes = new byte[buffer.readableBytes()];
             buffer.readBytes(transportBodyBytes);
             ChannelTransportSession.PacketResult packetResult;
-            if (frameVersion == STREAMING_FRAME_VERSION) {
+            if (streamingFrame) {
                 try {
                     transportSession.acceptInboundStreamingFrame(streamingEpoch, streamingSequence);
                 } catch (ChannelTransportStreamingRecoveryState.StreamingGapException exception) {
@@ -177,6 +187,13 @@ public final class ChannelTransportPacketCodec {
                     );
                 }
                 transportSession.completeInboundStreamingFrame(streamingEpoch, streamingSequence);
+                if (streamingEpochComplete
+                        && !transportSession.acceptInboundStreamingEpochComplete(streamingEpoch, streamingSequence)) {
+                    throw new StreamingRecoveryException(
+                            transportSession.inboundStreamingRecoveryPoint(),
+                            new IllegalStateException("Embedded streaming epoch boundary did not match restored frames")
+                    );
+                }
             } else if (frameKind == FrameKind.RECOVERY_BATCH) {
                 packetResult = transportSession.decodeStreamingFallbackBatch(transportBodyBytes);
             } else {
@@ -199,7 +216,8 @@ public final class ChannelTransportPacketCodec {
                     transportBodyBytes.length,
                     packetResult.telemetry(),
                     streamingEpoch,
-                    streamingSequence
+                    streamingSequence,
+                    streamingEpochComplete
             );
         } finally {
             buffer.release();
@@ -253,7 +271,16 @@ public final class ChannelTransportPacketCodec {
             buffer.writeVarInt(FrameKind.STREAM_BATCH.id());
             buffer.writeVarInt(epoch);
             buffer.writeVarInt(sequence);
+            int epochCompleteIndex = buffer.writerIndex();
+            buffer.writeBoolean(false);
             buffer.writeBytes(safeTransportBodyBytes);
+            boolean epochComplete = transportSession.willCloseOutboundStreamingEpoch(
+                    epoch,
+                    buffer.readableBytes() + (fallbackBatchPayloadBytes == null ? 0 : fallbackBatchPayloadBytes.length)
+            );
+            if (epochComplete) {
+                buffer.setBoolean(epochCompleteIndex, true);
+            }
             byte[] wrappedBytes = new byte[buffer.readableBytes()];
             buffer.getBytes(0, wrappedBytes);
             WrappedTransportFrame wrappedFrame = new WrappedTransportFrame(
@@ -264,7 +291,7 @@ public final class ChannelTransportPacketCodec {
                     safeTransportBodyBytes.length,
                     telemetry
             );
-            transportSession.retainOutboundStreamingFrame(
+            boolean epochClosed = transportSession.retainOutboundStreamingFrame(
                     epoch,
                     sequence,
                     wrappedFrame.transportFrameBytes(),
@@ -272,6 +299,9 @@ public final class ChannelTransportPacketCodec {
                     originalPacketBytes,
                     originalPacketCount
             );
+            if (epochClosed != epochComplete) {
+                throw new IllegalStateException("Streaming epoch boundary prediction changed during frame retention");
+            }
             return wrappedFrame;
         } finally {
             buffer.release();
@@ -302,9 +332,31 @@ public final class ChannelTransportPacketCodec {
         }
         FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(frameBytes));
         try {
+            if (buffer.readVarInt() != MAGIC_PACKET_ID) {
+                return false;
+            }
+            int frameVersion = buffer.readVarInt();
+            return (frameVersion == LEGACY_STREAMING_FRAME_VERSION || frameVersion == STREAMING_FRAME_VERSION)
+                    && FrameKind.fromId(buffer.readVarInt()) == FrameKind.STREAM_BATCH;
+        } catch (RuntimeException ignored) {
+            return false;
+        } finally {
+            buffer.release();
+        }
+    }
+
+    public static boolean isCompletedStreamingFrame(byte[] frameBytes) {
+        if (frameBytes == null || frameBytes.length == 0) {
+            return false;
+        }
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(frameBytes));
+        try {
             return buffer.readVarInt() == MAGIC_PACKET_ID
                     && buffer.readVarInt() == STREAMING_FRAME_VERSION
-                    && FrameKind.fromId(buffer.readVarInt()) == FrameKind.STREAM_BATCH;
+                    && FrameKind.fromId(buffer.readVarInt()) == FrameKind.STREAM_BATCH
+                    && buffer.readVarInt() > 0
+                    && buffer.readVarInt() > 0
+                    && buffer.readBoolean();
         } catch (RuntimeException ignored) {
             return false;
         } finally {
@@ -370,7 +422,8 @@ public final class ChannelTransportPacketCodec {
             int zstdBodyBytes,
             ChannelTransportOperationTelemetry telemetry,
             int streamingEpoch,
-            int streamingSequence
+            int streamingSequence,
+            boolean streamingEpochComplete
     ) {
         public UnwrappedTransportFrame(
                 FrameKind frameKind,
@@ -390,7 +443,8 @@ public final class ChannelTransportPacketCodec {
                     zstdBodyBytes,
                     telemetry,
                     0,
-                    0
+                    0,
+                    false
             );
         }
     }

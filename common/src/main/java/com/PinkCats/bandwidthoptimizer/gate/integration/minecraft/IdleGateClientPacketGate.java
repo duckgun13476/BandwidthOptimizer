@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.gate.integration.minecraft;
 
-import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.CustomPayloadPacketCompat;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateClientController;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateMode;
@@ -39,15 +40,23 @@ public final class IdleGateClientPacketGate {
     }
 
     public static void recordDroppedPacket(Packet<?> packet, int encodedByteLength) {
-        String payloadChannel = normalizePayloadChannel(CustomPayloadPacketCompat.payloadChannel(packet));
-        String key = payloadChannel.isEmpty() ? "<unknown>" : payloadChannel;
-        DROPPED_BY_CHANNEL.computeIfAbsent(key, ignored -> new AtomicLong()).incrementAndGet();
         long total = TOTAL_DROPPED.incrementAndGet();
         long totalBytes = TOTAL_DROPPED_BYTES.addAndGet(Math.max(encodedByteLength, 0));
-        long nowMillis = System.currentTimeMillis();
-        long nextMillis = NEXT_LOG_MILLIS.get();
-        if (nowMillis >= nextMillis && NEXT_LOG_MILLIS.compareAndSet(nextMillis, nowMillis + 30_000L)) {
-            Bandwidthoptimizer.LOGGER.info("[IdleGate] client background drop total={} bytes={} current={}", total, totalBytes, key);
+        if (DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.IDLE_GATE_TRAFFIC)) {
+            String payloadChannel = normalizePayloadChannel(CustomPayloadPacketCompat.payloadChannel(packet));
+            String key = payloadChannel.isEmpty() ? "<unknown>" : payloadChannel;
+            DROPPED_BY_CHANNEL.computeIfAbsent(key, ignored -> new AtomicLong()).incrementAndGet();
+            long nowMillis = System.currentTimeMillis();
+            long nextMillis = NEXT_LOG_MILLIS.get();
+            if (nowMillis >= nextMillis && NEXT_LOG_MILLIS.compareAndSet(nextMillis, nowMillis + 30_000L)) {
+                DiagnosticLog.info(
+                        DiagnosticToolRegistry.Tool.IDLE_GATE_TRAFFIC,
+                        "event=idle_gate_client_background_drop total={} bytes={} current={}",
+                        total,
+                        totalBytes,
+                        key
+                );
+            }
         }
     }
 

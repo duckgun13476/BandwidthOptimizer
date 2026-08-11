@@ -11,11 +11,13 @@ public final class CrossFrameZstdRegressionMain {
 
     private static final int EPOCHS = 12;
     private static final int FRAMES_PER_EPOCH = 64;
+    private static final int LOGIN_BURST_EPOCHS = 96;
 
     private CrossFrameZstdRegressionMain() {}
 
     public static void main(String[] args) {
         verifySustainedCrossFrameReuse();
+        verifyLargeLoginBurst();
         verifyGapRecoveryAndResume();
         verifyClosedEpochIndependentSpillover();
         System.out.println("Cross-frame Zstd regression passed.");
@@ -57,6 +59,10 @@ public final class CrossFrameZstdRegressionMain {
                     if (restoredStreaming.streamingEpoch() != epoch
                             || restoredStreaming.streamingSequence() != frameIndex + 1) {
                         throw new IllegalStateException("Streaming frame metadata changed at epoch " + epoch);
+                    }
+                    boolean expectedEpochComplete = frameIndex == FRAMES_PER_EPOCH - 1;
+                    if (restoredStreaming.streamingEpochComplete() != expectedEpochComplete) {
+                        throw new IllegalStateException("Streaming epoch boundary was not carried by its final frame");
                     }
                     independentBytes += independent.zstdBodyBytes();
                     streamingBytes += streaming.zstdBodyBytes();
@@ -234,4 +240,43 @@ public final class CrossFrameZstdRegressionMain {
     private static byte[] bytes(String value) {
         return value.getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
+
+    private static void verifyLargeLoginBurst() {
+        long restoredBytes = 0L;
+        try (ChannelTransportSession sender = new ChannelTransportSession();
+             ChannelTransportSession receiver = new ChannelTransportSession()) {
+            sender.setCrossFrameZstdEnabled(true);
+            receiver.setCrossFrameZstdEnabled(true);
+            for (int epochIndex = 0; epochIndex < LOGIN_BURST_EPOCHS; epochIndex++) {
+                int epoch = sender.outboundStreamingEpoch();
+                for (int frameIndex = 0; frameIndex < FRAMES_PER_EPOCH; frameIndex++) {
+                    List<byte[]> packets = payload(epochIndex, frameIndex);
+                    var restored = ChannelTransportPacketCodec.tryUnwrapPacket(
+                            receiver,
+                            ChannelTransportPacketCodec.wrapBatchPackets(sender, packets).transportFrameBytes()
+                    );
+                    assertRestored(packets, restored);
+                    restoredBytes += restored.restoredPacketBytes();
+                    if (frameIndex == FRAMES_PER_EPOCH - 1 && !restored.streamingEpochComplete()) {
+                        throw new IllegalStateException("Large login burst omitted an embedded epoch boundary");
+                    }
+                }
+                ChannelTransportSession.StreamingEpochBoundary boundary = sender.outboundStreamingEpochBoundary();
+                if (boundary == null
+                        || boundary.epoch() != epoch
+                        || !receiver.acceptInboundStreamingEpochComplete(boundary.epoch(), boundary.lastSequence())) {
+                    throw new IllegalStateException("Large login burst epoch did not complete cleanly");
+                }
+                sender.acceptOutboundStreamingEpochOk(boundary.epoch(), boundary.lastSequence());
+                sender.restartOutboundStreamingEpoch();
+                receiver.resetInboundStreamingEpoch();
+            }
+        }
+        if (restoredBytes <= 32L * 1024L * 1024L) {
+            throw new IllegalStateException("Large login burst did not exceed 32 MiB");
+        }
+        System.out.printf(Locale.ROOT, "large-login-burst: restored=%.2f MiB, epochs=%d%n",
+                restoredBytes / (1024.0D * 1024.0D), LOGIN_BURST_EPOCHS);
+    }
+
 }

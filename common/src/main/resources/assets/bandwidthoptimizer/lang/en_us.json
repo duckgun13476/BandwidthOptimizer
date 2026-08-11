@@ -72,5 +72,7 @@
   "hud.bandwidthoptimizer.metric.win": "Win",
   "hud.bandwidthoptimizer.metric.packet_raw": "packet raw",
   "hud.bandwidthoptimizer.metric.sent": "sent",
-  "command.bandwidthoptimizer.help": "BandwidthOptimizer commands:\n/bandwidthoptimizer hud - Toggle the local statistics HUD\n/bandwidthoptimizer stats - Upload bandwidth statistics and create a web report\n/bandwidthoptimizer debug - OP debugging and diagnostic tools"
+  "command.bandwidthoptimizer.help": "BandwidthOptimizer commands:\n/bandwidthoptimizer hud - Toggle the local statistics HUD\n/bandwidthoptimizer stats - Upload bandwidth statistics and create a web report\n/bandwidthoptimizer debug - OP debugging and diagnostic tools",
+  "hud.bandwidthoptimizer.idle_player.light": "Light idle",
+  "hud.bandwidthoptimizer.idle_player.deep": "Deep idle"
 }

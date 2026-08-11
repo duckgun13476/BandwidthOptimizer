@@ -72,5 +72,7 @@
   "hud.bandwidthoptimizer.metric.win": "Jan",
   "hud.bandwidthoptimizer.metric.packet_raw": "pacote bruto",
   "hud.bandwidthoptimizer.metric.sent": "enviado",
-  "command.bandwidthoptimizer.help": "Comandos do BandwidthOptimizer:\n/bandwidthoptimizer hud - Alterna o HUD de estatísticas local\n/bandwidthoptimizer stats - Envia as estatísticas e cria um relatório na web\n/bandwidthoptimizer debug - Ferramentas de diagnóstico e depuração para OPs"
+  "command.bandwidthoptimizer.help": "Comandos do BandwidthOptimizer:\n/bandwidthoptimizer hud - Alterna o HUD de estatísticas local\n/bandwidthoptimizer stats - Envia as estatísticas e cria um relatório na web\n/bandwidthoptimizer debug - Ferramentas de diagnóstico e depuração para OPs",
+  "hud.bandwidthoptimizer.idle_player.light": "Ausência leve",
+  "hud.bandwidthoptimizer.idle_player.deep": "Ausência profunda"
 }

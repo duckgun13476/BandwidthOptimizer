@@ -9,9 +9,11 @@ import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameO
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotReport;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
+import com.PinkCats.bandwidthoptimizer.gate.IdleGateServerState;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
 
 import java.util.ArrayDeque;
+import java.util.List;
 import java.util.Map;
 
 public final class BandwidthOptimizerHudStats {
@@ -154,6 +156,7 @@ public final class BandwidthOptimizerHudStats {
                 serverSnapshot.serverCreateTransportPackets(),
                 serverSnapshot.serverIdleGateSavedBytes(),
                 serverSnapshot.serverIdleGateSavedPackets(),
+                serverSnapshot.idlePlayers(),
                 serverSnapshot.recentOutboundRawEncodedBytes(),
                 serverSnapshot.recentOutboundWireBytes(),
                 serverSnapshot.serverShadowRetainedOriginalBytes(),
@@ -615,6 +618,7 @@ public final class BandwidthOptimizerHudStats {
             long serverCreateTransportPackets,
             long serverIdleGateSavedBytes,
             long serverIdleGateSavedPackets,
+            List<IdleGateServerState.IdlePlayerSnapshot> idlePlayers,
             long serverRecentOutboundRawEncodedBytes,
             long serverRecentOutboundWireBytes,
             long serverShadowRetainedOriginalBytes,
