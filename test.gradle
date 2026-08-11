@@ -224,6 +224,15 @@ tasks.register('runPacketClassTraceDiagnosticRegression', JavaExec) {
     )
 }
 
+tasks.register('runTrafficPeriodReportStoreRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies daily-backed month aggregation and independent hourly detail.',
+            'com.PinkCats.bandwidthoptimizer.report.traffic.TrafficPeriodReportStoreRegressionMain'
+    )
+}
+
 tasks.register('runZstdReplayComparison', JavaExec) {
     configureTestJavaExecTask(
             delegate,

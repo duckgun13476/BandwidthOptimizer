@@ -10,6 +10,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkServerOfflineReuseStats
 import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateBlockEntityUpdateGate;
 import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.IdleGateBackgroundPacketGate;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportSourceRankCore;
+import com.PinkCats.bandwidthoptimizer.report.traffic.PlayerTrafficPeriodArchive;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
@@ -75,6 +76,7 @@ public final class ServerBandwidthStatsRegistry {
         String playerName = player.getGameProfile() == null ? "<unknown-player>" : player.getName().getString();
         stats.bindPlayer(playerId, playerName);
         PLAYER_CHANNELS.put(playerId, ChannelIdentity.longText(channel));
+        PlayerTrafficPeriodArchive.onPlayerBound(stats.snapshot());
     }
 
     public static Channel channelForPlayer(ServerPlayer player) {
@@ -95,6 +97,7 @@ public final class ServerBandwidthStatsRegistry {
             stats = ACTIVE_CHANNELS.get(channelId);
         }
         if (stats != null) {
+            PlayerTrafficPeriodArchive.onPlayerUnbinding(stats.snapshot());
             ServerBandwidthStatsPersistence.flushBeforeUnbind(player, stats);
             stats.unbindPlayer(playerId);
         }
@@ -102,6 +105,7 @@ public final class ServerBandwidthStatsRegistry {
 
 
     public static void resetAll() {
+        PlayerTrafficPeriodArchive.beforeCountersReset(snapshotChannels());
         for (ChannelBandwidthStats stats : ACTIVE_CHANNELS.values()) {
             if (stats != null) {
                 stats.resetCounters();
@@ -113,6 +117,7 @@ public final class ServerBandwidthStatsRegistry {
         IdleGateBackgroundPacketGate.reset();
         ChannelTransportSourceRankCore.resetCreateBlockEntityTransportStats();
         ServerBandwidthRecentWindow.reset();
+        PlayerTrafficPeriodArchive.afterCountersReset(snapshotChannels());
     }
 
     public static List<ChannelBandwidthStats.Snapshot> snapshotChannels() {
@@ -235,8 +240,10 @@ public final class ServerBandwidthStatsRegistry {
 
     private static void removeChannel(Channel channel, String channelId) {
         ChannelBandwidthStats stats = channel == null ? null : channel.attr(CHANNEL_STATS_KEY).get();
-        if (stats != null)
+        if (stats != null) {
+            PlayerTrafficPeriodArchive.onChannelClosed(stats.snapshot());
             ServerBandwidthStatsPersistence.flushOnChannelClose(stats.snapshot());
+        }
 
         if (channelId != null) {
             ACTIVE_CHANNELS.remove(channelId);

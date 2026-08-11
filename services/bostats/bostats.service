@@ -1,0 +1,26 @@
+[Unit]
+Description=BandwidthOptimizer report service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bostats
+Group=bostats
+WorkingDirectory=/srv/bostats/app
+Environment=BOSTATS_DATA_DIR=/srv/bostats/data
+Environment=BOSTATS_HOST=127.0.0.1
+Environment=BOSTATS_PORT=8824
+ExecStart=/usr/bin/python3 /srv/bostats/app/app.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/bostats/data
+MemoryMax=192M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,42 @@
+:root { color-scheme: light dark; font-family: Inter, "Segoe UI", sans-serif; background: #f5f7f8; color: #182126; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+header { min-height: 56px; padding: 8px 24px; display: flex; align-items: center; justify-content: space-between; gap: 20px; background: #172126; color: #f7fbfc; border-bottom: 3px solid #25a18e; }
+header strong { font-size: 18px; }
+header span { margin-left: 12px; color: #a9bcc3; font-family: ui-monospace, monospace; font-size: 12px; }
+header time { color: #c9d6da; font-size: 13px; }
+.header-tools { display: flex; align-items: center; gap: 10px; }
+.header-tools label { color: #c9d6da; font-size: 12px; }
+select { min-height: 32px; padding: 4px 28px 4px 8px; border: 1px solid #71838a; background: #f7fbfc; color: #182126; }
+main { width: min(1180px, calc(100% - 32px)); margin: 28px auto 56px; }
+h1 { font-size: 28px; margin: 0 0 18px; }
+h2 { font-size: 18px; margin: 30px 0 12px; }
+.section-heading { margin-top: 30px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.section-heading h2 { margin: 0 0 12px; }
+.section-heading > span { margin-bottom: 12px; color: #60747c; font-size: 13px; }
+.section-heading select { margin-bottom: 12px; min-width: 220px; }
+#status { padding: 12px 0; color: #53666e; }
+.summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid #cad5d9; background: #fff; }
+.metric { min-width: 0; padding: 16px; border-right: 1px solid #dbe3e6; }
+.metric:nth-child(3n) { border-right: 0; }
+.metric:nth-child(-n+3) { border-bottom: 1px solid #dbe3e6; }
+.metric small { display: block; color: #60747c; margin-bottom: 6px; }
+.metric strong { font-size: 22px; overflow-wrap: anywhere; }
+.table-wrap { overflow-x: auto; border: 1px solid #cad5d9; background: #fff; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 10px 12px; text-align: right; border-bottom: 1px solid #e1e7e9; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { background: #eef3f4; color: #40535b; font-weight: 600; }
+tbody tr:last-child td { border-bottom: 0; }
+.uuid { display: block; margin-top: 2px; color: #809097; font: 11px ui-monospace, monospace; }
+.empty { text-align: center !important; color: #72848b; }
+.traffic-bar { display: inline-block; width: max(2px, calc(var(--share) * .72px)); height: 6px; margin-right: 8px; background: #258f80; vertical-align: middle; }
+.state { display: inline-block; padding-left: 10px; position: relative; }
+.state::before { content: ''; position: absolute; left: 0; top: 50%; width: 6px; height: 6px; transform: translateY(-50%); background: #6f8188; border-radius: 50%; }
+.state.complete::before { background: #258f80; }
+.state.partial::before { background: #c58b25; }
+.section { margin-bottom: 18px; }
+.section h3 { margin: 0; padding: 10px 12px; font-size: 15px; background: #26353b; color: #fff; }
+.section p { margin: 0; padding: 10px 12px; color: #5c6f77; background: #eef3f4; font-size: 13px; }
+@media (max-width: 760px) { header { padding: 8px 12px; align-items: flex-start; } header time, .header-tools label { display: none; } .header-tools { margin-left: auto; } .brand span { display: block; margin: 2px 0 0; max-width: 150px; overflow: hidden; text-overflow: ellipsis; } main { width: calc(100% - 20px); margin-top: 20px; } .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .metric:nth-child(3n) { border-right: 1px solid #dbe3e6; } .metric:nth-child(2n) { border-right: 0; } .metric:nth-child(-n+4) { border-bottom: 1px solid #dbe3e6; } .section-heading { align-items: flex-start; flex-direction: column; gap: 0; } .section-heading select { width: 100%; } }
+@media (prefers-color-scheme: dark) { :root { background: #101619; color: #e6edef; } .summary, .table-wrap { background: #172126; border-color: #35464d; } .metric, th, td { border-color: #2e3e44; } th, .section p { background: #202d32; color: #c0cdd1; } #status { color: #a6b8be; } select { background: #202d32; color: #e6edef; border-color: #50656d; } }

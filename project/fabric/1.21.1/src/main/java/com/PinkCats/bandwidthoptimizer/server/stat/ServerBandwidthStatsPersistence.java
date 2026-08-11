@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.server.stat;
 
 import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateBlockEntityUpdateGate;
+import com.PinkCats.bandwidthoptimizer.report.traffic.PlayerTrafficPeriodArchive;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.datafix.DataFixTypes;
 import net.minecraft.world.level.saveddata.SavedData;
@@ -32,6 +33,7 @@ public final class ServerBandwidthStatsPersistence {
         if (server == null)
             return;
         rememberServer(server);
+        PlayerTrafficPeriodArchive.onServerTick(System.currentTimeMillis());
         if (server.getTickCount() % FLUSH_INTERVAL_TICKS == 0)
             flushAll(server);
     }
@@ -66,6 +68,7 @@ public final class ServerBandwidthStatsPersistence {
             return;
 
         rememberServer(server);
+        PlayerTrafficPeriodArchive.flushOnServerStopping();
         flushAll(server);
     }
 

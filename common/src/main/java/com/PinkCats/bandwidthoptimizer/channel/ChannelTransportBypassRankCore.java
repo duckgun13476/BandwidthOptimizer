@@ -101,6 +101,38 @@ public final class ChannelTransportBypassRankCore {
         }
     }
 
+    public static BypassSnapshot snapshot(int limit) {
+        synchronized (LOCK) {
+            int safeLimit = Math.max(limit, 1);
+            List<BypassEntry> entries = COUNTERS.entrySet().stream()
+                    .map(entry -> new BypassEntry(
+                            entry.getKey().reason(),
+                            entry.getKey().protocolName(),
+                            entry.getKey().packetFlow(),
+                            entry.getKey().packetClassName(),
+                            entry.getKey().payloadChannel(),
+                            entry.getKey().rawPacketId(),
+                            entry.getValue().windowCount(),
+                            entry.getValue().windowBytes(),
+                            entry.getValue().totalCount(),
+                            entry.getValue().totalBytes()
+                    ))
+                    .sorted(Comparator.comparingLong(BypassEntry::totalBytes).reversed()
+                            .thenComparing(BypassEntry::packetClass)
+                            .thenComparing(BypassEntry::reason))
+                    .limit(safeLimit)
+                    .toList();
+            return new BypassSnapshot(
+                    windowBypassCount,
+                    windowBypassBytes,
+                    totalBypassCount,
+                    totalBypassBytes,
+                    COUNTERS.size(),
+                    entries
+            );
+        }
+    }
+
     public static int tryReadLeadingVarInt(byte[] packetBytes) {
         if (packetBytes == null || packetBytes.length == 0) {
             return -1;
@@ -798,6 +830,30 @@ public final class ChannelTransportBypassRankCore {
     }
 
     private record PendingReport(String reason, List<Map.Entry<BypassKey, BypassCounter>> entries, int topN) {
+    }
+
+    public record BypassSnapshot(
+            long windowPackets,
+            long windowBytes,
+            long totalPackets,
+            long totalBytes,
+            int distinctKeys,
+            List<BypassEntry> entries
+    ) {
+    }
+
+    public record BypassEntry(
+            String reason,
+            String protocol,
+            String flow,
+            String packetClass,
+            String payloadChannel,
+            int rawPacketId,
+            long windowPackets,
+            long windowBytes,
+            long totalPackets,
+            long totalBytes
+    ) {
     }
 
     private static final class BypassCounter {

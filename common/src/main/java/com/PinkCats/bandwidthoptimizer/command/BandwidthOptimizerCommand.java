@@ -1,7 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.command;
 
-import com.PinkCats.bandwidthoptimizer.report.ChannelTransportCompressionCommand;
-import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankCommand;
+import com.PinkCats.bandwidthoptimizer.report.unified.BandwidthReportCommand;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsCommand;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.CommandSourceCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolCommand;
@@ -19,8 +18,7 @@ public final class BandwidthOptimizerCommand {
                 .executes(context -> root(context.getSource()))
                 .then(Commands.literal("report")
                         .requires(source -> CommandSourceCompat.hasPermission(source, 2))
-                        .then(ChannelTransportCompressionCommand.buildCommand())
-                        .then(ChannelTransportPacketRankCommand.buildCommand()))
+                        .executes(context -> BandwidthReportCommand.upload(context.getSource())))
                 .then(DiagnosticToolCommand.buildCommand())
                 .then(ServerBandwidthStatsCommand.buildCommand())
         );
@@ -32,8 +30,7 @@ public final class BandwidthOptimizerCommand {
                 "BandwidthOptimizer commands: "
                         + "/bandwidthoptimizer debug status|list|off|<tool> [minutes] | "
                         + "/bandwidthoptimizer debug download-log [minutes] | "
-                        + "/bandwidthoptimizer report transport run [ticks] | "
-                        + "/bandwidthoptimizer report packetrank run [ticks] | "
+                        + "/bandwidthoptimizer report | "
                         + "/bandwidthoptimizer stats total|players [limit]|reset|vanilla on|off"
         ), false);
         return Command.SINGLE_SUCCESS;

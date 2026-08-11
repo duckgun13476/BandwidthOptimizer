@@ -322,7 +322,7 @@ public class Config {
             public static final int DEFAULT_DEBUG_TRACE_CLOSE_DUMP_SIZE = 96;
             public static final String BYPASS_RANK_LOG_ENABLED =
                     "bandwidthoptimizer.transport.bypassRankLogEnabled";
-            public static final boolean DEFAULT_BYPASS_RANK_LOG_ENABLED = true;
+            public static final boolean DEFAULT_BYPASS_RANK_LOG_ENABLED = false;
             public static final String BYPASS_RANK_LOG_INTERVAL_MILLIS =
                     "bandwidthoptimizer.transport.bypassRankLogIntervalMillis";
             public static final long DEFAULT_BYPASS_RANK_LOG_INTERVAL_MILLIS = 10_000L;
@@ -331,7 +331,7 @@ public class Config {
             public static final int DEFAULT_BYPASS_RANK_LOG_TOP_N = 20;
             public static final String BYPASS_RANK_REPORT_ENABLED =
                     "bandwidthoptimizer.transport.bypassRankReportEnabled";
-            public static final boolean DEFAULT_BYPASS_RANK_REPORT_ENABLED = true;
+            public static final boolean DEFAULT_BYPASS_RANK_REPORT_ENABLED = false;
             public static final String BYPASS_RANK_REPORT_DIRECTORY =
                     "bandwidthoptimizer.transport.bypassRankReportDirectory";
             public static final String DEFAULT_BYPASS_RANK_REPORT_DIRECTORY = "transport-bypass-report";

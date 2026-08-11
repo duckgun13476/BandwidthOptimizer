@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BO Stats</title>
+  <link rel="stylesheet" href="/static/app.css?v=2">
+</head>
+<body>
+  <header>
+    <div class="brand"><strong>BO Stats</strong><span id="report-id"></span></div>
+    <div class="header-tools">
+      <time id="generated"></time>
+      <label for="language" id="language-label">语言</label>
+      <select id="language" aria-label="语言">
+        <option value="zh-CN">简体中文</option>
+        <option value="en-US">English</option>
+        <option value="pt-BR">Português (Brasil)</option>
+      </select>
+    </div>
+  </header>
+  <main>
+    <div id="status">正在读取报告...</div>
+    <section id="overview" hidden>
+      <h1 id="page-title">带宽报告</h1>
+      <div class="summary" id="summary"></div>
+    </section>
+    <section id="month-section" hidden>
+      <div class="section-heading"><h2 id="month-title">月度流量</h2><span id="month-period"></span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th data-i18n="player">玩家</th><th data-i18n="totalWire">实际总流量</th><th data-i18n="outboundWire">出站实际</th><th data-i18n="inboundWire">入站实际</th><th data-i18n="rawOutbound">原始出站</th></tr></thead>
+          <tbody id="month-players"></tbody>
+        </table>
+      </div>
+    </section>
+    <section id="hourly-section" hidden>
+      <div class="section-heading">
+        <h2 id="hourly-title">玩家小时流量</h2>
+        <select id="hourly-player" aria-label="玩家"></select>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th data-i18n="hour">小时</th><th data-i18n="totalWire">实际总流量</th><th data-i18n="outboundWire">出站实际</th><th data-i18n="inboundWire">入站实际</th><th data-i18n="status">状态</th></tr></thead>
+          <tbody id="hourly-rows"></tbody>
+        </table>
+      </div>
+    </section>
+    <section id="current-section" hidden>
+      <h2 id="current-title">当前小时</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th data-i18n="player">玩家</th><th data-i18n="outboundWire">出站实际</th><th data-i18n="inboundWire">入站实际</th><th data-i18n="rawOutbound">原始出站</th><th data-i18n="boFrame">BO 帧</th><th data-i18n="bypass">直通</th></tr></thead>
+          <tbody id="current-players"></tbody>
+        </table>
+      </div>
+    </section>
+    <section id="details" hidden>
+      <h2 id="details-title">统计阶段</h2>
+      <div id="sections"></div>
+    </section>
+  </main>
+  <script src="/static/app.js?v=2" defer></script>
+</body>
+</html>
