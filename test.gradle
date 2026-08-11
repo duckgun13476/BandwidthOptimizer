@@ -233,6 +233,15 @@ tasks.register('runTrafficPeriodReportStoreRegression', JavaExec) {
     )
 }
 
+tasks.register('runBandwidthOptimizerCommandTreeRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies the compact public command tree and debug-only internal statistics.',
+            'com.PinkCats.bandwidthoptimizer.command.BandwidthOptimizerCommandTreeRegressionMain'
+    )
+}
+
 tasks.register('runZstdReplayComparison', JavaExec) {
     configureTestJavaExecTask(
             delegate,

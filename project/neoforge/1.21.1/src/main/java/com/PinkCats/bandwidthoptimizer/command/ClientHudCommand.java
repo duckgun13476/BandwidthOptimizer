@@ -68,6 +68,9 @@ public final class ClientHudCommand {
                 .then(Commands.literal("off")
                         .executes(context -> disableAllDiagnostics(context.getSource())));
         for (DiagnosticToolRegistry.Tool tool : DiagnosticToolRegistry.Tool.values()) {
+            if (tool == DiagnosticToolRegistry.Tool.PACKET_CLASS_TRACE) {
+                continue;
+            }
             root.then(clientDiagnosticTool(tool));
         }
         return root;

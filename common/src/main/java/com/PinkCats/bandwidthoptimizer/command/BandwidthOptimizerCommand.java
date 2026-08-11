@@ -1,7 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.command;
 
 import com.PinkCats.bandwidthoptimizer.report.unified.BandwidthReportCommand;
-import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsCommand;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.CommandSourceCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolCommand;
 import com.mojang.brigadier.Command;
@@ -16,22 +15,17 @@ public final class BandwidthOptimizerCommand {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("bandwidthoptimizer")
                 .executes(context -> root(context.getSource()))
-                .then(Commands.literal("report")
+                .then(Commands.literal("stats")
                         .requires(source -> CommandSourceCompat.hasPermission(source, 2))
                         .executes(context -> BandwidthReportCommand.upload(context.getSource())))
                 .then(DiagnosticToolCommand.buildCommand())
-                .then(ServerBandwidthStatsCommand.buildCommand())
         );
     }
 
 
     private static int root(CommandSourceStack source) {
-        CommandSourceCompat.sendSuccess(source, Component.literal(
-                "BandwidthOptimizer commands: "
-                        + "/bandwidthoptimizer debug status|list|off|<tool> [minutes] | "
-                        + "/bandwidthoptimizer debug download-log [minutes] | "
-                        + "/bandwidthoptimizer report | "
-                        + "/bandwidthoptimizer stats total|players [limit]|reset|vanilla on|off"
+        CommandSourceCompat.sendSuccess(source, Component.translatable(
+                "command.bandwidthoptimizer.help"
         ), false);
         return Command.SINGLE_SUCCESS;
     }

@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.debug;
 
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.CommandSourceCompat;
 import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.IdleGateBackgroundPacketGate;
+import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsCommand;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -38,6 +39,7 @@ public final class DiagnosticToolCommand {
                                         context.getSource(),
                                         IntegerArgumentType.getInteger(context, "minutes")
                                 ))))
+                .then(ServerBandwidthStatsCommand.buildDebugCommand())
                 .then(packetClassTraceCommand());
 
         for (DiagnosticToolRegistry.Tool tool : DiagnosticToolRegistry.Tool.values()) {

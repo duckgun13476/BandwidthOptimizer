@@ -18,9 +18,8 @@ public final class ServerBandwidthStatsCommand {
     private ServerBandwidthStatsCommand() {
     }
 
-    public static ArgumentBuilder<CommandSourceStack, ?> buildCommand() {
+    public static ArgumentBuilder<CommandSourceStack, ?> buildDebugCommand() {
         return Commands.literal("stats")
-                .requires(source -> CommandSourceCompat.hasPermission(source, 2))
                 .executes(context -> total(context.getSource()))
                 .then(Commands.literal("total")
                         .executes(context -> total(context.getSource())))
