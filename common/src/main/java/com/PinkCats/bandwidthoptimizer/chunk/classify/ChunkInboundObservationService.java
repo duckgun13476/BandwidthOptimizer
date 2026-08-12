@@ -95,6 +95,7 @@ public final class ChunkInboundObservationService {
             ChunkRuntimeReferenceStore.clearChannel(channelId);
             ChunkShadowSnapshotManager.clearChannel(channelId);
             ChunkClientTrimmedFullBaseStore.clearChannel(channelId);
+            ChunkPersistentClientCache.onChannelClosed(context.channel(), "channel_close");
             if (BO_Diag_chunkInboundObservation()) {
                 DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_INBOUND_OBSERVATION, "event=channel_close_cleanup channel={}, reason=runtime_cache_cleanup",
                         channelId

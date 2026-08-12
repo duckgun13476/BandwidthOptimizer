@@ -69,6 +69,10 @@ public final class ChunkPersistentClientCache {
     private static final String MAX_PENDING_STORE_TASKS_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheMaxPendingStores";
     private static final String MAX_PENDING_STORE_BYTES_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheMaxPendingStoreBytes";
     private static final String READY_CACHE_BYTES_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheReadyBytes";
+    private static final String MAX_DISK_BYTES_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheMaxDiskBytes";
+    private static final String MAX_DISK_ENTRIES_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheMaxEntries";
+    private static final String MIN_SCOPE_ENTRIES_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheMinScopeEntries";
+    private static final String COMPACTION_BYTES_PER_SECOND_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheCompactionBytesPerSecond";
     private static final boolean DEFAULT_ENABLED = true;
     private static final int DEFAULT_MANIFEST_LIMIT = 512;
     private static final int DEFAULT_MANIFEST_BATCH_ENTRIES = 512;
@@ -82,6 +86,12 @@ public final class ChunkPersistentClientCache {
     private static final int DEFAULT_MAX_PENDING_STORE_TASKS = 2048;
     private static final long DEFAULT_MAX_PENDING_STORE_BYTES = 64L * 1024L * 1024L;
     private static final long DEFAULT_READY_CACHE_BYTES = 96L * 1024L * 1024L;
+    private static final long DEFAULT_MAX_DISK_BYTES = 512L * 1024L * 1024L;
+    private static final int DEFAULT_MAX_DISK_ENTRIES = 100_000;
+    private static final int DEFAULT_MIN_SCOPE_ENTRIES = 1_024;
+    private static final long DEFAULT_COMPACTION_BYTES_PER_SECOND = 8L * 1024L * 1024L;
+    private static final long MAINTENANCE_IDLE_DELAY_MILLIS = 2_000L;
+    private static final double COMPACTION_MINIMUM_INVALID_RATIO = 0.60D;
     private static final int STORE_DRAIN_BATCH_LIMIT = 256;
     private static final long SLOW_IO_WARNING_MILLIS = 1_500L;
     private static final long SLOW_IO_WARNING_INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(5L);
@@ -90,6 +100,8 @@ public final class ChunkPersistentClientCache {
     private static final Object DISK_INIT_LOCK = new Object();
     private static final Set<String> MANIFEST_SENT_CHANNELS = ConcurrentHashMap.newKeySet();
     private static final ConcurrentHashMap<String, Long> LAST_USED_UPDATES = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Long> HIT_COUNT_UPDATES = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Long> SAVED_BYTES_UPDATES = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, PendingStoreRequest> PENDING_STORE_REQUESTS = new ConcurrentHashMap<>();
     private static final AtomicInteger PENDING_STORE_REQUEST_COUNT = new AtomicInteger();
     private static final AtomicLong PENDING_STORE_REQUEST_BYTES = new AtomicLong();
@@ -107,6 +119,12 @@ public final class ChunkPersistentClientCache {
     private static final String V2_DIRECTORY_NAME = "client-persistent-chunk-cache-v2";
     private static final String MIGRATION_PENDING_FILE_NAME = "legacy-zip-migration.pending";
     private static final ScheduledExecutorService IO_EXECUTOR = Executors.newSingleThreadScheduledExecutor(new CacheThreadFactory());
+    private static final PersistentCacheMaintenanceCoordinator MAINTENANCE_COORDINATOR =
+            new PersistentCacheMaintenanceCoordinator(
+                    task -> IO_EXECUTOR.schedule(task, MAINTENANCE_IDLE_DELAY_MILLIS, TimeUnit.MILLISECONDS),
+                    ChunkPersistentClientCache::isMaintenanceWindowOpen,
+                    ChunkPersistentClientCache::runPersistentMaintenance
+            );
     private static final ScheduledThreadPoolExecutor IO_WATCHDOG_EXECUTOR = createIoWatchdogExecutor();
     private static long lastSlowIoWarningNanos;
     private static long suppressedSlowIoWarnings;
@@ -116,6 +134,7 @@ public final class ChunkPersistentClientCache {
     private static long readyBlobBytes;
     private static volatile LoadedHotPathSnapshot loadedHotPathSnapshot = LoadedHotPathSnapshot.empty("");
     private static String activeServerScopeHash = "";
+    private static String activeConnectionChannelId = "";
     private static long activeScopeGeneration;
     private static boolean preloadStarted;
     private static boolean checkpointLoopStarted;
@@ -201,10 +220,10 @@ public final class ChunkPersistentClientCache {
                 schedulePendingStoreDrain();
                 return;
             }
-            if (cachedSnapshot == null || (!dirty && LAST_USED_UPDATES.isEmpty())) {
+            if (cachedSnapshot == null || (!dirty && !hasPendingActivityUpdates())) {
                 return;
             }
-            mergePendingLastUsedUpdatesLocked(cachedSnapshot);
+            mergePendingActivityUpdatesLocked(cachedSnapshot);
             indexToWrite = copyProperties(cachedSnapshot.index());
             dirty = false;
             dirtyBlobWrites = 0;
@@ -464,6 +483,17 @@ public final class ChunkPersistentClientCache {
             PersistentChunkCacheDiskStore store = persistentDiskStore();
             store.writeBlob(fingerprint.hashHex(), restoredPacketBytes);
 
+            long previousHitCount = 0L;
+            long previousSavedBytes = 0L;
+            int previousTemperature = 9;
+            synchronized (LOCK) {
+                if (cachedSnapshot != null) {
+                    previousHitCount = readLong(cachedSnapshot.index(), keyPrefix + "hitCount", 0L);
+                    previousSavedBytes = readLong(cachedSnapshot.index(), keyPrefix + "savedBytes", 0L);
+                    previousTemperature = readInt(cachedSnapshot.index(), keyPrefix + "temperature", 9);
+                }
+            }
+
             Properties mutation = new Properties();
             mutation.setProperty(keyPrefix + "hash", fingerprint.hashHex());
             mutation.setProperty(keyPrefix + "protocolName", safeText(frame.protocolName(), "PLAY"));
@@ -472,6 +502,9 @@ public final class ChunkPersistentClientCache {
             mutation.setProperty(keyPrefix + "encodedBytes", Integer.toString(restoredPacketBytes.length));
             mutation.setProperty(keyPrefix + "lastUsedAtMillis", Long.toString(System.currentTimeMillis()));
             mutation.setProperty(keyPrefix + "serverScopeHash", serverScopeHash);
+            mutation.setProperty(keyPrefix + "hitCount", Long.toString(previousHitCount));
+            mutation.setProperty(keyPrefix + "savedBytes", Long.toString(previousSavedBytes));
+            mutation.setProperty(keyPrefix + "temperature", Integer.toString(previousTemperature));
             store.appendIndexEntry(keyPrefix, mutation);
 
             synchronized (LOCK) {
@@ -536,7 +569,7 @@ public final class ChunkPersistentClientCache {
             return null;
         }
 
-        recordLastUsed(serverScopeHash, frame.coordinate());
+        recordCacheUse(serverScopeHash, frame.coordinate(), packetBytes.length);
         logLoad(frame, packetBytes.length);
         ChunkLoadDelayProbe.logStage(
                 (Channel) null,
@@ -567,9 +600,13 @@ public final class ChunkPersistentClientCache {
             return null;
         }
         PreparedReadyState state = channel.attr(PREPARED_READY_STATE_KEY).get();
-        return state == null
+        byte[] packetBytes = state == null
                 ? null
                 : state.take(currentServerScopeHash(), frame.coordinate(), expectedHash);
+        if (packetBytes != null) {
+            recordCacheUse(currentServerScopeHash(), frame.coordinate(), packetBytes.length);
+        }
+        return packetBytes;
     }
 
     public static byte[] findLoadedBasePacketBytes(ChunkHotspotFrame frame) {
@@ -605,7 +642,7 @@ public final class ChunkPersistentClientCache {
             return null;
         }
 
-        recordLastUsed(serverScopeHash, frame.coordinate());
+        recordCacheUse(serverScopeHash, frame.coordinate(), packetBytes.length);
         logLoad(frame, packetBytes.length);
         ChunkLoadDelayProbe.logStage(
                 (Channel) null,
@@ -723,7 +760,7 @@ public final class ChunkPersistentClientCache {
         String previousScopeHash = currentServerScopeHash();
         boolean hadManifestForChannel = hasManifestForChannel(channel);
         channel.attr(PREPARED_READY_STATE_KEY).set(null);
-        clearActiveServerScope(channel);
+        clearActiveServerScope(channel, true);
         boolean cleared = (previousScopeHash != null && !previousScopeHash.isBlank()) || hadManifestForChannel;
         if (shouldLogCacheDiagnose()) {
             Bandwidthoptimizer.LOGGER.info(
@@ -1651,6 +1688,142 @@ public final class ChunkPersistentClientCache {
         }
     }
 
+    public static void onChannelClosed(Channel channel, String reason) {
+        if (channel == null) {
+            return;
+        }
+        channel.attr(PREPARED_READY_STATE_KEY).set(null);
+        if (clearActiveServerScope(channel, false)) {
+            MAINTENANCE_COORDINATOR.request(safeText(reason, "channel_close"));
+        }
+    }
+
+    private static void runPersistentMaintenance(String reason) {
+        if (!isMaintenanceWindowOpen()) {
+            return;
+        }
+        try {
+            PersistentChunkCacheDiskStore store = persistentDiskStore();
+            Properties workingIndex;
+            synchronized (LOCK) {
+                if (cachedSnapshot == null || !isMaintenanceWindowOpen()) {
+                    return;
+                }
+                mergePendingActivityUpdatesLocked(cachedSnapshot);
+                workingIndex = copyProperties(cachedSnapshot.index());
+            }
+
+            PersistentChunkCacheRetentionPolicy.RetentionPlan retention =
+                    PersistentChunkCacheRetentionPolicy.plan(
+                            workingIndex,
+                            store::storedBytes,
+                            new PersistentChunkCacheRetentionPolicy.RetentionLimits(
+                                    persistentCacheMaxDiskBytes(),
+                                    persistentCacheMaxEntries(),
+                                    persistentCacheMinimumScopeEntries()
+                            )
+                    );
+            for (Map.Entry<String, Integer> entry : retention.temperatures().entrySet()) {
+                if (workingIndex.containsKey(entry.getKey() + "hash")) {
+                    workingIndex.setProperty(entry.getKey() + "temperature", Integer.toString(entry.getValue()));
+                }
+            }
+            synchronized (LOCK) {
+                if (cachedSnapshot == null || !isMaintenanceWindowOpen()) {
+                    return;
+                }
+                for (String keyPrefix : retention.evictedKeyPrefixes()) {
+                    removeSnapshotIndexEntry(workingIndex, removeTrailingDot(keyPrefix));
+                }
+                cachedSnapshot.index().clear();
+                cachedSnapshot.index().putAll(workingIndex);
+                cachedSnapshot.verifiedBlobEntries().removeIf(
+                        blobEntry -> !retention.referencedHashes().contains(hashFromBlobEntry(blobEntry))
+                );
+                READY_BLOBS.keySet().removeIf(hash -> !retention.referencedHashes().contains(hash));
+                readyBlobBytes = READY_BLOBS.values().stream().mapToLong(bytes -> bytes.length).sum();
+                dirty = false;
+                dirtyBlobWrites = 0;
+                dirtyBytes = 0L;
+                LAST_SUCCESSFUL_FLUSH_MILLIS.set(System.currentTimeMillis());
+                publishLoadedHotPathSnapshotLocked();
+            }
+
+            if (!isMaintenanceWindowOpen()) {
+                synchronized (LOCK) {
+                    dirty = true;
+                }
+                return;
+            }
+
+            if (!retention.evictedKeyPrefixes().isEmpty()) {
+                store.appendIndexRemovals(retention.evictedKeyPrefixes());
+            }
+            store.checkpoint(workingIndex);
+
+            store.pruneUnreferencedBlobs(retention.referencedHashes(), 0);
+            long segmentBytesBeforeCompaction = store.totalSegmentBytes();
+            double minimumInvalidRatio = segmentBytesBeforeCompaction > persistentCacheMaxDiskBytes()
+                    ? 0.0D
+                    : COMPACTION_MINIMUM_INVALID_RATIO;
+            PersistentChunkCacheDiskStore.CompactionResult compaction = store.compactOneSealedSegment(
+                    retention.referencedHashes(),
+                    minimumInvalidRatio,
+                    persistentCacheCompactionBytesPerSecond(),
+                    ChunkPersistentClientCache::isMaintenanceWindowOpen
+            );
+            if (shouldLogCacheDiagnose()) {
+                DiagnosticLog.info(
+                        DiagnosticToolRegistry.Tool.CACHE_PERSISTENT_IO,
+                        "action=maintenance, reason={}, evictedEntries={}, retainedHashes={}, retainedBytes={}, compacted={}, cancelled={}, segment={}, segmentBeforeBytes={}, segmentAfterBytes={}, totalSegmentBytes={}",
+                        safeText(reason, "persistent_cache_maintenance"),
+                        retention.evictedKeyPrefixes().size(),
+                        retention.referencedHashes().size(),
+                        retention.retainedBytes(),
+                        compaction.compacted(),
+                        compaction.cancelled(),
+                        fileName(compaction.segment()),
+                        compaction.beforeBytes(),
+                        compaction.afterBytes(),
+                        compaction.totalSegmentBytes()
+                );
+            }
+        } catch (IOException | RuntimeException exception) {
+            synchronized (LOCK) {
+                dirty = true;
+            }
+            Bandwidthoptimizer.LOGGER.warn(
+                    "[ChunkPersistentCache][Maintenance][Fail] reason={}, error={}",
+                    safeText(reason, "persistent_cache_maintenance"),
+                    exception.toString()
+            );
+        }
+    }
+
+    private static boolean isMaintenanceWindowOpen() {
+        synchronized (LOCK) {
+            return isEnabled()
+                    && (activeConnectionChannelId == null || activeConnectionChannelId.isBlank())
+                    && (activeServerScopeHash == null || activeServerScopeHash.isBlank())
+                    && PENDING_STORE_REQUEST_COUNT.get() == 0;
+        }
+    }
+
+    private static String removeTrailingDot(String keyPrefix) {
+        return keyPrefix != null && keyPrefix.endsWith(".")
+                ? keyPrefix.substring(0, keyPrefix.length() - 1)
+                : keyPrefix;
+    }
+
+    private static String hashFromBlobEntry(String blobEntry) {
+        if (blobEntry == null
+                || !blobEntry.startsWith(BLOBS_ENTRY_DIRECTORY)
+                || !blobEntry.endsWith(".bin")) {
+            return "";
+        }
+        return blobEntry.substring(BLOBS_ENTRY_DIRECTORY.length(), blobEntry.length() - ".bin".length());
+    }
+
     private static boolean shouldSkipBlockingFlush(String reason) {
         String safeReason = safeText(reason, "");
         return "jvm_shutdown".equals(safeReason)
@@ -1869,7 +2042,8 @@ public final class ChunkPersistentClientCache {
     private static void applyIndexEntry(Properties target, String keyPrefix, Properties source) {
         for (String suffix : List.of(
                 "hash", "protocolName", "packetClassName", "fullSnapshotVersion",
-                "encodedBytes", "lastUsedAtMillis", "serverScopeHash"
+                "encodedBytes", "lastUsedAtMillis", "serverScopeHash",
+                "hitCount", "savedBytes", "temperature"
         )) {
             target.setProperty(keyPrefix + suffix, source.getProperty(keyPrefix + suffix, ""));
         }
@@ -1944,15 +2118,50 @@ public final class ChunkPersistentClientCache {
         return Math.max(readLongProperty(READY_CACHE_BYTES_PROPERTY, DEFAULT_READY_CACHE_BYTES), 8L * 1024L * 1024L);
     }
 
-    private static void recordLastUsed(String serverScopeHash, ChunkPacketCoordinate coordinate) {
+    private static long persistentCacheMaxDiskBytes() {
+        return Math.max(readLongProperty(MAX_DISK_BYTES_PROPERTY, DEFAULT_MAX_DISK_BYTES), 128L * 1024L * 1024L);
+    }
+
+    private static int persistentCacheMaxEntries() {
+        return Math.max(readIntProperty(MAX_DISK_ENTRIES_PROPERTY, DEFAULT_MAX_DISK_ENTRIES), 4_096);
+    }
+
+    private static int persistentCacheMinimumScopeEntries() {
+        return Math.max(
+                Math.min(readIntProperty(MIN_SCOPE_ENTRIES_PROPERTY, DEFAULT_MIN_SCOPE_ENTRIES), persistentCacheMaxEntries()),
+                0
+        );
+    }
+
+    private static long persistentCacheCompactionBytesPerSecond() {
+        return Math.max(
+                readLongProperty(COMPACTION_BYTES_PER_SECOND_PROPERTY, DEFAULT_COMPACTION_BYTES_PER_SECOND),
+                1024L * 1024L
+        );
+    }
+
+    private static void recordCacheUse(
+            String serverScopeHash,
+            ChunkPacketCoordinate coordinate,
+            int savedBytes
+    ) {
         if (!isSafeScopeHash(serverScopeHash) || coordinate == null || !coordinate.present()) {
             return;
         }
-        LAST_USED_UPDATES.put(entryPrefix(serverScopeHash, coordinate), System.currentTimeMillis());
+        String keyPrefix = entryPrefix(serverScopeHash, coordinate);
+        LAST_USED_UPDATES.put(keyPrefix, System.currentTimeMillis());
+        HIT_COUNT_UPDATES.merge(keyPrefix, 1L, ChunkPersistentClientCache::saturatingAdd);
+        if (savedBytes > 0) {
+            SAVED_BYTES_UPDATES.merge(keyPrefix, (long) savedBytes, ChunkPersistentClientCache::saturatingAdd);
+        }
     }
 
-    private static void mergePendingLastUsedUpdatesLocked(ZipCacheSnapshot cacheSnapshot) {
-        if (cacheSnapshot == null || cacheSnapshot.index() == null || LAST_USED_UPDATES.isEmpty()) {
+    private static boolean hasPendingActivityUpdates() {
+        return !LAST_USED_UPDATES.isEmpty() || !HIT_COUNT_UPDATES.isEmpty() || !SAVED_BYTES_UPDATES.isEmpty();
+    }
+
+    private static void mergePendingActivityUpdatesLocked(ZipCacheSnapshot cacheSnapshot) {
+        if (cacheSnapshot == null || cacheSnapshot.index() == null || !hasPendingActivityUpdates()) {
             return;
         }
         for (Map.Entry<String, Long> entry : LAST_USED_UPDATES.entrySet()) {
@@ -1966,6 +2175,36 @@ public final class ChunkPersistentClientCache {
                 cacheSnapshot.index().setProperty(keyPrefix + "lastUsedAtMillis", Long.toString(lastUsedAtMillis));
             }
         }
+        mergeCounterUpdates(cacheSnapshot.index(), HIT_COUNT_UPDATES, "hitCount");
+        mergeCounterUpdates(cacheSnapshot.index(), SAVED_BYTES_UPDATES, "savedBytes");
+    }
+
+    private static void mergeCounterUpdates(
+            Properties index,
+            ConcurrentHashMap<String, Long> updates,
+            String suffix
+    ) {
+        for (Map.Entry<String, Long> entry : updates.entrySet()) {
+            String keyPrefix = entry.getKey();
+            Long delta = entry.getValue();
+            if (keyPrefix == null || delta == null) {
+                continue;
+            }
+            if (updates.remove(keyPrefix, delta) && index.containsKey(keyPrefix + "hash")) {
+                long previous = readLong(index, keyPrefix + suffix, 0L);
+                index.setProperty(keyPrefix + suffix, Long.toString(saturatingAdd(previous, delta)));
+            }
+        }
+    }
+
+    private static long saturatingAdd(long left, long right) {
+        if (right > 0L && left > Long.MAX_VALUE - right) {
+            return Long.MAX_VALUE;
+        }
+        if (right < 0L && left < Long.MIN_VALUE - right) {
+            return Long.MIN_VALUE;
+        }
+        return left + right;
     }
 
     private static String currentServerScopeHash() {
@@ -1974,20 +2213,33 @@ public final class ChunkPersistentClientCache {
         }
     }
 
-    private static void clearActiveServerScope(Channel channel) {
+    private static boolean clearActiveServerScope(Channel channel, boolean claimConnection) {
+        String channelId = channel == null
+                ? ""
+                : com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel);
+        boolean owned;
         synchronized (LOCK) {
-            activeScopeGeneration++;
-            activeServerScopeHash = "";
-            activeManifestRefreshChannel = null;
-            activeManifestRefreshChannelId = "";
-            manifestRefreshDirtyGeneration = 0L;
-            manifestRefreshInFlightGeneration = 0L;
-            manifestRefreshSentGeneration = 0L;
-            manifestRefreshLastDirtyMillis = 0L;
-            publishLoadedHotPathSnapshotLocked();
+            owned = claimConnection || channelId.equals(activeConnectionChannelId);
+            if (owned) {
+                activeScopeGeneration++;
+                activeServerScopeHash = "";
+                activeConnectionChannelId = claimConnection ? channelId : "";
+                activeManifestRefreshChannel = null;
+                activeManifestRefreshChannelId = "";
+                manifestRefreshDirtyGeneration = 0L;
+                manifestRefreshInFlightGeneration = 0L;
+                manifestRefreshSentGeneration = 0L;
+                manifestRefreshLastDirtyMillis = 0L;
+                publishLoadedHotPathSnapshotLocked();
+            }
         }
-        if (channel != null) {
-            MANIFEST_SENT_CHANNELS.removeIf(key -> key.startsWith(com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel) + "|"));
+        removeManifestState(channel, channelId);
+        return owned;
+    }
+
+    private static void removeManifestState(Channel channel, String channelId) {
+        if (channel != null && channelId != null && !channelId.isBlank()) {
+            MANIFEST_SENT_CHANNELS.removeIf(key -> key.startsWith(channelId + "|"));
         }
     }
 
@@ -2011,6 +2263,9 @@ public final class ChunkPersistentClientCache {
         synchronized (LOCK) {
             activeScopeGeneration++;
             activeServerScopeHash = serverScopeHash.toLowerCase(Locale.ROOT);
+            activeConnectionChannelId = channel == null
+                    ? ""
+                    : com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel);
             activeManifestRefreshChannel = channel;
             activeManifestRefreshChannelId = channel == null
                     ? ""
@@ -2178,6 +2433,9 @@ public final class ChunkPersistentClientCache {
         index.remove(coordinateKey + ".encodedBytes");
         index.remove(coordinateKey + ".lastUsedAtMillis");
         index.remove(coordinateKey + ".serverScopeHash");
+        index.remove(coordinateKey + ".hitCount");
+        index.remove(coordinateKey + ".savedBytes");
+        index.remove(coordinateKey + ".temperature");
     }
 
     private static Set<String> referencedBlobEntries(Properties index) {
