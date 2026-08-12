@@ -25,6 +25,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkLocalCacheReuseStat
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCacheManifestBatchCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentManifestGate;
+import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentPrepareGate;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentServerScope;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameCodec;
@@ -88,6 +89,10 @@ public final class ChunkTransportDispatcher {
     private static final AtomicLong INBOUND_BARRIER_FRAME_COUNT = new AtomicLong();
     private static final AtomicLong INBOUND_BARRIER_ACK_FRAME_COUNT = new AtomicLong();
     private static final AtomicLong INBOUND_ACK_FRAME_COUNT = new AtomicLong();
+    private static final AtomicLong INBOUND_CLIENT_CACHE_BLOOM_FRAME_COUNT = new AtomicLong();
+    private static final AtomicLong INBOUND_CACHE_PREPARE_FRAME_COUNT = new AtomicLong();
+    private static final AtomicLong INBOUND_CACHE_READY_FRAME_COUNT = new AtomicLong();
+    private static final AtomicLong INBOUND_CACHE_MISS_FRAME_COUNT = new AtomicLong();
     private static final AtomicLong INBOUND_NACK_FRAME_COUNT = new AtomicLong();
     private static final AtomicLong INBOUND_INVALIDATE_FRAME_COUNT = new AtomicLong();
     private static final AtomicLong INBOUND_SERVER_CACHE_SCOPE_FRAME_COUNT = new AtomicLong();
@@ -296,6 +301,19 @@ public final class ChunkTransportDispatcher {
                 originalPacketBytes == null ? 0 : originalPacketBytes.length,
                 knownChunkSnapshot == null ? "known=false" : "known=true"
         );
+        String prepareWaitReason = forceSableInitialSyncFull
+                ? ""
+                : ChunkPersistentPrepareGate.reserveIfUseful(
+                        context,
+                        descriptor,
+                        fingerprint,
+                        peerSnapshot,
+                        knownChunkSnapshot,
+                        originalPacketBytes == null ? 0 : originalPacketBytes.length
+                );
+        if (!prepareWaitReason.isBlank()) {
+            return OutboundChunkEncodeResult.bypass(true, prepareWaitReason);
+        }
         hotpathStartNanos = HotpathCostProbe.start();
         long patchStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         ChunkPatchBuilder.ChunkPatchBuildResult patchBuildResult = forceSableInitialSyncFull
@@ -703,6 +721,33 @@ public final class ChunkTransportDispatcher {
                     "persistent_client_cache_after_server_scope"
             );
             logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_SERVER_CACHE_SCOPE_FRAME_COUNT);
+            return ChunkInboundDecodeResult.consumeControlFrame();
+        }
+
+        if (envelope.frame().operation() == ChunkHotspotFrameOp.CLIENT_CACHE_BLOOM) {
+            ChunkPersistentPrepareGate.installBloom(context, envelope.frame(), envelope.copyOriginalPacketBytes());
+            logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_CLIENT_CACHE_BLOOM_FRAME_COUNT);
+            return ChunkInboundDecodeResult.consumeControlFrame();
+        }
+
+        if (envelope.frame().operation() == ChunkHotspotFrameOp.CACHE_PREPARE) {
+            ChunkPersistentClientCache.prepareColdEntryAsync(
+                    context == null ? null : context.channel(),
+                    envelope.frame()
+            );
+            logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_CACHE_PREPARE_FRAME_COUNT);
+            return ChunkInboundDecodeResult.consumeControlFrame();
+        }
+
+        if (envelope.frame().operation() == ChunkHotspotFrameOp.CACHE_READY) {
+            ChunkPersistentPrepareGate.handleReady(context, envelope.frame());
+            logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_CACHE_READY_FRAME_COUNT);
+            return ChunkInboundDecodeResult.consumeControlFrame();
+        }
+
+        if (envelope.frame().operation() == ChunkHotspotFrameOp.CACHE_MISS) {
+            ChunkPersistentPrepareGate.handleMiss(context, envelope.frame());
+            logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_CACHE_MISS_FRAME_COUNT);
             return ChunkInboundDecodeResult.consumeControlFrame();
         }
 

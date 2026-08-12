@@ -10,6 +10,10 @@ public enum ChunkHotspotFrameOp {
     INVALIDATE("invalidate"),
     SERVER_CACHE_SCOPE("server_cache_scope"),
     CLIENT_CACHE_MANIFEST("client_cache_manifest"),
+    CLIENT_CACHE_BLOOM("client_cache_bloom"),
+    CACHE_PREPARE("cache_prepare"),
+    CACHE_READY("cache_ready"),
+    CACHE_MISS("cache_miss"),
     BARRIER("barrier"),
     BARRIER_ACK("barrier_ack");
 

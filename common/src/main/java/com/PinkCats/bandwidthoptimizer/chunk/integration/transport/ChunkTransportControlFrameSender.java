@@ -15,6 +15,7 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkLaneKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.debug.ChunkLoadDelayProbe;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelope;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelopeCodec;
@@ -223,6 +224,132 @@ public final class ChunkTransportControlFrameSender {
         ));
     }
 
+    public static boolean sendPersistentClientCacheBloom(
+            Channel channel,
+            byte[] bloomPayloadBytes,
+            int entryCount,
+            String serverScopeHash
+    ) {
+        if (bloomPayloadBytes == null
+                || bloomPayloadBytes.length == 0
+                || !ChunkPersistentServerScope.isSafeScopeHash(serverScopeHash)) {
+            return false;
+        }
+        ChunkHotspotFrame frame = new ChunkHotspotFrame(
+                ChunkHotspotFrameCodec.PROTOCOL_VERSION,
+                ChunkHotspotFrameOp.CLIENT_CACHE_BLOOM,
+                0L,
+                Math.max(entryCount, 0),
+                "PLAY",
+                "bandwidthoptimizer.chunk.transport.ClientCacheBloom",
+                ChunkHotspotKind.FULL_CHUNK,
+                ChunkLaneKind.FULL,
+                ChunkPacketCoordinate.unknown(),
+                bloomPayloadBytes.length,
+                0L,
+                0L,
+                serverScopeHash,
+                serverScopeHash,
+                0L,
+                "persistent_client_cache_bloom"
+        );
+        return sendEnvelopeFrame(channel, frame, bloomPayloadBytes, bloomPayloadBytes.length, false);
+    }
+
+    public static boolean sendPersistentCachePrepare(
+            Channel channel,
+            long epoch,
+            long token,
+            ChunkPacketDescriptor descriptor,
+            String expectedHash,
+            int encodedBytes,
+            String serverScopeHash
+    ) {
+        if (descriptor == null
+                || descriptor.coordinate() == null
+                || !descriptor.coordinate().present()
+                || token <= 0L
+                || !ChunkPersistentServerScope.isSafeScopeHash(serverScopeHash)) {
+            return false;
+        }
+        ChunkHotspotFrame frame = new ChunkHotspotFrame(
+                ChunkHotspotFrameCodec.PROTOCOL_VERSION,
+                ChunkHotspotFrameOp.CACHE_PREPARE,
+                Math.max(epoch, 0L),
+                token,
+                descriptor.protocolName(),
+                descriptor.packetClassName(),
+                descriptor.hotspotKind(),
+                descriptor.laneKind(),
+                descriptor.coordinate(),
+                Math.max(encodedBytes, 0),
+                1L,
+                0L,
+                serverScopeHash,
+                expectedHash == null ? "" : expectedHash,
+                0L,
+                "persistent_cache_prepare"
+        );
+        return sendControlFrame(channel, frame, false);
+    }
+
+    public static boolean sendPersistentCacheReady(
+            Channel channel,
+            ChunkHotspotFrame prepareFrame,
+            String cachedHash,
+            String protocolName,
+            String packetClassName,
+            long fullSnapshotVersion,
+            int encodedBytes
+    ) {
+        if (prepareFrame == null || cachedHash == null || cachedHash.isBlank()) {
+            return false;
+        }
+        return sendControlFrame(channel, new ChunkHotspotFrame(
+                ChunkHotspotFrameCodec.PROTOCOL_VERSION,
+                ChunkHotspotFrameOp.CACHE_READY,
+                prepareFrame.epoch(),
+                prepareFrame.observedPacketCount(),
+                protocolName == null || protocolName.isBlank() ? "PLAY" : protocolName,
+                packetClassName == null ? "" : packetClassName,
+                ChunkHotspotKind.FULL_CHUNK,
+                ChunkLaneKind.FULL,
+                prepareFrame.coordinate(),
+                Math.max(encodedBytes, 0),
+                Math.max(fullSnapshotVersion, 1L),
+                0L,
+                prepareFrame.baseSnapshotHash(),
+                cachedHash,
+                0L,
+                "persistent_cache_ready"
+        ), false);
+    }
+
+    public static boolean sendPersistentCacheMiss(Channel channel, ChunkHotspotFrame prepareFrame, String reason) {
+        if (prepareFrame == null) {
+            return false;
+        }
+        ChunkHotspotFrame missFrame = new ChunkHotspotFrame(
+                ChunkHotspotFrameCodec.PROTOCOL_VERSION,
+                ChunkHotspotFrameOp.CACHE_MISS,
+                prepareFrame.epoch(),
+                prepareFrame.observedPacketCount(),
+                prepareFrame.protocolName(),
+                prepareFrame.packetClassName(),
+                prepareFrame.hotspotKind(),
+                prepareFrame.laneKind(),
+                prepareFrame.coordinate(),
+                0,
+                prepareFrame.fullSnapshotVersion(),
+                0L,
+                prepareFrame.baseSnapshotHash(),
+                prepareFrame.payloadHash(),
+                0L,
+                reason == null || reason.isBlank() ? "persistent_cache_miss" : reason
+        );
+        return sendControlFrame(channel, missFrame, false);
+    }
+
     // server send scope
     public static boolean sendServerCacheScope(Channel channel, String reason) {
         String scopeHash = ChunkPersistentServerScope.currentScopeHash();
@@ -315,7 +442,11 @@ public final class ChunkTransportControlFrameSender {
 
 
     private static boolean sendControlFrame(Channel channel, ChunkHotspotFrame frame) {
-        return sendEnvelopeFrame(channel, frame, new byte[0], 0);
+        return sendControlFrame(channel, frame, true);
+    }
+
+    private static boolean sendControlFrame(Channel channel, ChunkHotspotFrame frame, boolean fatalOnFailure) {
+        return sendEnvelopeFrame(channel, frame, new byte[0], 0, fatalOnFailure);
     }
 
     private static boolean sendEnvelopeFrame(
@@ -323,6 +454,16 @@ public final class ChunkTransportControlFrameSender {
             ChunkHotspotFrame frame,
             byte[] payloadBytes,
             int logicalPacketBytes
+    ) {
+        return sendEnvelopeFrame(channel, frame, payloadBytes, logicalPacketBytes, true);
+    }
+
+    private static boolean sendEnvelopeFrame(
+            Channel channel,
+            ChunkHotspotFrame frame,
+            byte[] payloadBytes,
+            int logicalPacketBytes,
+            boolean fatalOnFailure
     ) {
         if (channel == null
                 || frame == null
@@ -337,7 +478,7 @@ public final class ChunkTransportControlFrameSender {
         if (ChannelTransportStreamingEpochGate.deferTaskIfClosed(
                 channel,
                 safePayloadBytes.length + 256,
-                () -> sendEnvelopeFrame(channel, frame, safePayloadBytes, logicalPacketBytes)
+                () -> sendEnvelopeFrame(channel, frame, safePayloadBytes, logicalPacketBytes, fatalOnFailure)
         )) {
             return true;
         }
@@ -420,7 +561,9 @@ public final class ChunkTransportControlFrameSender {
                     if (shouldIgnoreControlFrameSendFailure(channel, failure)) {
                         return;
                     }
-                    failConnection(channel, "chunk-control-frame-send", failure);
+                    if (fatalOnFailure) {
+                        failConnection(channel, "chunk-control-frame-send", failure);
+                    }
                 }
             });
             ChannelTransportTelemetry.recordOutboundWrap(readProtocolName(channel), wrappedFrame);
@@ -453,7 +596,9 @@ public final class ChunkTransportControlFrameSender {
             if (shouldIgnoreControlFrameSendFailure(channel, throwable)) {
                 return false;
             }
-            failConnection(channel, "chunk-control-frame-send", throwable);
+            if (fatalOnFailure) {
+                failConnection(channel, "chunk-control-frame-send", throwable);
+            }
             return false;
         }
     }

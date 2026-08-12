@@ -7,6 +7,7 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceStore;
+import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentPrepareGate;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
@@ -124,6 +125,7 @@ public final class ChunkPeerStateManager {
         PlayerScopeState playerScopeState = retainedPlayerScope
                 ? PLAYER_SCOPE_STATES.get(player.getUUID())
                 : PLAYER_SCOPE_STATES.remove(player.getUUID());
+        Channel playerChannel = readPlayerChannel(player);
         String channelId = readPlayerChannelId(player);
         if (channelId != null && !channelId.isBlank()) {
             CHANNEL_STATES.remove(channelId);
@@ -131,6 +133,7 @@ public final class ChunkPeerStateManager {
             ChunkShadowSnapshotManager.clearChannel(channelId);
             ChunkServerOfflineReuseStats.clearChannel(channelId);
         }
+        ChunkPersistentPrepareGate.clear(playerChannel);
         if (shouldLogDiagnose()) {
             DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_PEER_STATE, "event=lifecycle player={}, uuid={}, reason={}, retainedScope={}, scopeState={}, clearedChannelState={}",
                     player.getName().getString(),

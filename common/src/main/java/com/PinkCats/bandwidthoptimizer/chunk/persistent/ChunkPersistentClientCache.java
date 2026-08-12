@@ -102,6 +102,7 @@ public final class ChunkPersistentClientCache {
     private static long readyBlobBytes;
     private static volatile LoadedHotPathSnapshot loadedHotPathSnapshot = LoadedHotPathSnapshot.empty("");
     private static String activeServerScopeHash = "";
+    private static long activeScopeGeneration;
     private static boolean preloadStarted;
     private static boolean checkpointLoopStarted;
     private static boolean backupLoopStarted;
@@ -600,6 +601,73 @@ public final class ChunkPersistentClientCache {
         setActiveServerScopeHash(channel, frame.payloadHash().toLowerCase(Locale.ROOT), frame.reason());
     }
 
+    public static void prepareColdEntryAsync(Channel channel, ChunkHotspotFrame prepareFrame) {
+        if (channel == null
+                || prepareFrame == null
+                || prepareFrame.operation() != ChunkHotspotFrameOp.CACHE_PREPARE
+                || prepareFrame.coordinate() == null
+                || !prepareFrame.coordinate().present()
+                || !isSafeScopeHash(prepareFrame.baseSnapshotHash())) {
+            return;
+        }
+
+        String requestedScope = prepareFrame.baseSnapshotHash().toLowerCase(Locale.ROOT);
+        long requestedGeneration;
+        synchronized (LOCK) {
+            if (!requestedScope.equals(activeServerScopeHash)) {
+                sendColdPrepareMiss(channel, prepareFrame, "persistent_cache_prepare_stale_scope");
+                return;
+            }
+            requestedGeneration = activeScopeGeneration;
+        }
+
+        IO_EXECUTOR.execute(() -> {
+            ColdCacheEntry coldEntry = findColdCacheEntry(requestedScope, prepareFrame.coordinate());
+            if (coldEntry == null || coldEntry.encodedBytes() > readyCacheByteBudget()) {
+                sendColdPrepareMiss(channel, prepareFrame, "persistent_cache_prepare_index_miss");
+                return;
+            }
+
+            byte[] packetBytes;
+            try {
+                packetBytes = persistentDiskStore().readBlob(coldEntry.payloadHash());
+            } catch (IOException exception) {
+                sendColdPrepareMiss(channel, prepareFrame, "persistent_cache_prepare_read_miss");
+                return;
+            }
+            if (packetBytes == null
+                    || packetBytes.length == 0
+                    || packetBytes.length > readyCacheByteBudget()
+                    || !matchesHash(packetBytes, coldEntry.payloadHash())) {
+                sendColdPrepareMiss(channel, prepareFrame, "persistent_cache_prepare_hash_miss");
+                return;
+            }
+
+            synchronized (LOCK) {
+                if (requestedGeneration != activeScopeGeneration
+                        || !requestedScope.equals(activeServerScopeHash)) {
+                    return;
+                }
+                putReadyBlobLocked(coldEntry.payloadHash(), packetBytes);
+                publishLoadedHotPathSnapshotLocked();
+            }
+            channel.eventLoop().execute(() -> {
+                if (!channel.isOpen() || !requestedScope.equals(currentServerScopeHash())) {
+                    return;
+                }
+                ChunkTransportControlFrameSender.sendPersistentCacheReady(
+                        channel,
+                        prepareFrame,
+                        coldEntry.payloadHash(),
+                        coldEntry.protocolName(),
+                        coldEntry.packetClassName(),
+                        coldEntry.fullSnapshotVersion(),
+                        packetBytes.length
+                );
+            });
+        });
+    }
+
     public static void prepareForServerSwitch(Channel channel, String reason) {
         if (channel == null) {
             return;
@@ -826,6 +894,7 @@ public final class ChunkPersistentClientCache {
 
         long manifestLoadStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         List<ManifestEntry> entries = loadManifestEntries(serverScopeHash);
+        BloomCatalogPayload bloomCatalogPayload = buildBloomCatalogPayload(serverScopeHash);
         ChunkLoadDelayProbe.logStage(
                 channel,
                 null,
@@ -872,6 +941,14 @@ public final class ChunkPersistentClientCache {
                 return;
             }
             int sentCount = 0;
+            if (bloomCatalogPayload != null) {
+                ChunkTransportControlFrameSender.sendPersistentClientCacheBloom(
+                        channel,
+                        bloomCatalogPayload.payloadBytes(),
+                        bloomCatalogPayload.entryCount(),
+                        serverScopeHash
+                );
+            }
             for (ManifestBatchPayload batchPayload : batchPayloads) {
                 if (ChunkTransportControlFrameSender.sendPersistentClientCacheManifestBatch(
                         channel,
@@ -925,6 +1002,72 @@ public final class ChunkPersistentClientCache {
         entries.sort(Comparator.comparingLong(ManifestEntry::lastUsedAtMillis).reversed());
         int limit = Math.max(readIntProperty(MANIFEST_LIMIT_PROPERTY, DEFAULT_MANIFEST_LIMIT), 0);
         return entries.size() > limit ? List.copyOf(entries.subList(0, limit)) : List.copyOf(entries);
+    }
+
+    private static BloomCatalogPayload buildBloomCatalogPayload(String serverScopeHash) {
+        if (!isSafeScopeHash(serverScopeHash)) {
+            return null;
+        }
+        ArrayList<ChunkPacketCoordinate> coordinates = new ArrayList<>();
+        synchronized (LOCK) {
+            if (cachedSnapshot == null) {
+                return null;
+            }
+            Properties index = cachedSnapshot.index();
+            for (String key : index.stringPropertyNames()) {
+                if (!key.endsWith(".hash")) {
+                    continue;
+                }
+                String coordinateKey = key.substring(0, key.length() - ".hash".length());
+                ScopedCoordinateKey scoped = parseScopedCoordinateKey(coordinateKey);
+                String hash = index.getProperty(key, "");
+                if (scoped != null
+                        && serverScopeHash.equals(scoped.serverScopeHash())
+                        && scoped.coordinate() != null
+                        && scoped.coordinate().present()
+                        && isSafeHash(hash)
+                        && cachedSnapshot.verifiedBlobEntries().contains(blobEntryName(hash))) {
+                    coordinates.add(scoped.coordinate());
+                }
+            }
+        }
+        ChunkPersistentBloomCatalog catalog = ChunkPersistentBloomCatalog.build(coordinates);
+        return new BloomCatalogPayload(catalog.encode(), catalog.entryCount());
+    }
+
+    private static ColdCacheEntry findColdCacheEntry(
+            String serverScopeHash,
+            ChunkPacketCoordinate coordinate
+    ) {
+        synchronized (LOCK) {
+            if (cachedSnapshot == null || !serverScopeHash.equals(activeServerScopeHash)) {
+                return null;
+            }
+            String keyPrefix = entryPrefix(serverScopeHash, coordinate);
+            String hash = cachedSnapshot.index().getProperty(keyPrefix + "hash", "");
+            if (!isSafeHash(hash)
+                    || !cachedSnapshot.verifiedBlobEntries().contains(blobEntryName(hash))) {
+                return null;
+            }
+            return new ColdCacheEntry(
+                    hash,
+                    cachedSnapshot.index().getProperty(keyPrefix + "protocolName", "PLAY"),
+                    cachedSnapshot.index().getProperty(keyPrefix + "packetClassName", ""),
+                    readLong(cachedSnapshot.index(), keyPrefix + "fullSnapshotVersion", 1L),
+                    readInt(cachedSnapshot.index(), keyPrefix + "encodedBytes", 0)
+            );
+        }
+    }
+
+    private static void sendColdPrepareMiss(Channel channel, ChunkHotspotFrame prepareFrame, String reason) {
+        if (channel == null) {
+            return;
+        }
+        channel.eventLoop().execute(() -> {
+            if (channel.isOpen()) {
+                ChunkTransportControlFrameSender.sendPersistentCacheMiss(channel, prepareFrame, reason);
+            }
+        });
     }
 
 
@@ -1727,6 +1870,7 @@ public final class ChunkPersistentClientCache {
 
     private static void clearActiveServerScope(Channel channel) {
         synchronized (LOCK) {
+            activeScopeGeneration++;
             activeServerScopeHash = "";
             activeManifestRefreshChannel = null;
             activeManifestRefreshChannelId = "";
@@ -1759,6 +1903,7 @@ public final class ChunkPersistentClientCache {
             return;
         }
         synchronized (LOCK) {
+            activeScopeGeneration++;
             activeServerScopeHash = serverScopeHash.toLowerCase(Locale.ROOT);
             activeManifestRefreshChannel = channel;
             activeManifestRefreshChannelId = channel == null
@@ -2148,6 +2293,22 @@ public final class ChunkPersistentClientCache {
             ZipCacheSnapshot snapshot,
             Map<String, byte[]> readyBlobs,
             long readyBytes
+    ) {
+    }
+
+    private record BloomCatalogPayload(byte[] payloadBytes, int entryCount) {
+        private BloomCatalogPayload {
+            payloadBytes = payloadBytes == null ? new byte[0] : payloadBytes;
+            entryCount = Math.max(entryCount, 0);
+        }
+    }
+
+    private record ColdCacheEntry(
+            String payloadHash,
+            String protocolName,
+            String packetClassName,
+            long fullSnapshotVersion,
+            int encodedBytes
     ) {
     }
 

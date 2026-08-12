@@ -21,7 +21,7 @@ public abstract class ChunkTransportControlFrameSenderMixin {
             ThreadLocal.withInitial(() -> false);
 
     @Redirect(
-            method = "sendEnvelopeFrame(Lio/netty/channel/Channel;Lcom/PinkCats/bandwidthoptimizer/chunk/protocol/hotspot/ChunkHotspotFrame;[BI)Z",
+            method = "sendEnvelopeFrame(Lio/netty/channel/Channel;Lcom/PinkCats/bandwidthoptimizer/chunk/protocol/hotspot/ChunkHotspotFrame;[BIZ)Z",
             at = @At(
                     value = "INVOKE",
                     target = "Lcom/PinkCats/bandwidthoptimizer/channel/algorithm/KineticChannel;processOutboundPacket(Lcom/PinkCats/bandwidthoptimizer/channel/ChannelTransportSession;[B)Lcom/PinkCats/bandwidthoptimizer/channel/ChannelTransportPacketCodec$WrappedTransportFrame;"
@@ -39,7 +39,7 @@ public abstract class ChunkTransportControlFrameSenderMixin {
     }
 
     @Redirect(
-            method = "sendEnvelopeFrame(Lio/netty/channel/Channel;Lcom/PinkCats/bandwidthoptimizer/chunk/protocol/hotspot/ChunkHotspotFrame;[BI)Z",
+            method = "sendEnvelopeFrame(Lio/netty/channel/Channel;Lcom/PinkCats/bandwidthoptimizer/chunk/protocol/hotspot/ChunkHotspotFrame;[BIZ)Z",
             at = @At(
                     value = "INVOKE",
                     target = "Lcom/PinkCats/bandwidthoptimizer/channel/ChannelTransportSession;outboundStreamingEpochBoundary()Lcom/PinkCats/bandwidthoptimizer/channel/ChannelTransportSession$StreamingEpochBoundary;"
@@ -54,7 +54,7 @@ public abstract class ChunkTransportControlFrameSenderMixin {
     }
 
     @Inject(
-            method = "sendEnvelopeFrame(Lio/netty/channel/Channel;Lcom/PinkCats/bandwidthoptimizer/chunk/protocol/hotspot/ChunkHotspotFrame;[BI)Z",
+            method = "sendEnvelopeFrame(Lio/netty/channel/Channel;Lcom/PinkCats/bandwidthoptimizer/chunk/protocol/hotspot/ChunkHotspotFrame;[BIZ)Z",
             at = @At("RETURN")
     )
     private static void bandwidthoptimizer$clearClosedEpochMarker(CallbackInfoReturnable<Boolean> callback) {
