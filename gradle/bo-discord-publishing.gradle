@@ -1,0 +1,193 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+
+import java.nio.charset.StandardCharsets
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
+
+ext.boDiscordLatestChangelog = { String text ->
+    String normalized = text ?: ''
+    if (!normalized.isEmpty() && normalized.charAt(0) == '\uFEFF' as char) {
+        normalized = normalized.substring(1)
+    }
+    def matcher = normalized =~ /(?ms)\A(####\s+v[^\n]+.*?)(?=\n####\s+v|\z)/
+    return matcher.find() ? matcher.group(1).trim() : ''
+}
+
+ext.boDiscordReleaseId = { String changelog ->
+    def matcher = (changelog ?: '') =~ /\A####[ \t]+(v[^\r\n]+)[ \t]*(?:\r?\n|\z)/
+    return matcher.find() ? matcher.group(1).trim() : ''
+}
+
+ext.boDiscordSha256 = { String text ->
+    byte[] digest = MessageDigest.getInstance('SHA-256').digest((text ?: '').getBytes(StandardCharsets.UTF_8))
+    return digest.collect { String.format('%02x', it & 0xff) }.join('')
+}
+
+ext.boDiscordLedgerFile = {
+    return rootProject.file('update/discord-publish-ledger.json')
+}
+
+ext.boDiscordReadLedger = { File ledgerFile = boDiscordLedgerFile() ->
+    if (!ledgerFile.isFile()) {
+        return [schemaVersion: 1, entries: []]
+    }
+    String text = ledgerFile.getText('UTF-8')
+    if (!text.isEmpty() && text.charAt(0) == '\uFEFF' as char) {
+        text = text.substring(1)
+    }
+    def parsed = new JsonSlurper().parseText(text)
+    if (!(parsed instanceof Map)) {
+        return [schemaVersion: 1, entries: []]
+    }
+    Map ledger = parsed as Map
+    if (!(ledger.entries instanceof Collection)) {
+        ledger.entries = []
+    }
+    return ledger
+}
+
+ext.boDiscordWriteLedger = { Map ledger, File ledgerFile = boDiscordLedgerFile() ->
+    ledgerFile.parentFile.mkdirs()
+    File temporaryFile = new File(ledgerFile.parentFile, ledgerFile.name + '.tmp')
+    temporaryFile.setText(JsonOutput.prettyPrint(JsonOutput.toJson(ledger)) + System.lineSeparator(), 'UTF-8')
+    try {
+        Files.move(
+                temporaryFile.toPath(),
+                ledgerFile.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+        )
+    } catch (AtomicMoveNotSupportedException ignored) {
+        Files.move(temporaryFile.toPath(), ledgerFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+    }
+}
+
+ext.boDiscordFindLedgerEntry = { Map ledger, String target, String releaseId, String messageSha256 ->
+    return (ledger.entries as Collection)
+            .findAll { it instanceof Map }
+            .collect { it as Map }
+            .find { Map entry ->
+                entry.target?.toString() == target
+                        && entry.releaseId?.toString() == releaseId
+                        && entry.messageSha256?.toString() == messageSha256
+            }
+}
+
+ext.boDiscordSuccessfulChunkKeys = { Map entry ->
+    if (!(entry?.successfulChunks instanceof Collection)) {
+        return []
+    }
+    return (entry.successfulChunks as Collection)
+            .findAll { it instanceof Map }
+            .collect { it as Map }
+            .findAll { Map chunk ->
+                chunk.index?.toString()?.isInteger()
+                        && chunk.sha256?.toString() ==~ /[0-9a-fA-F]{64}/
+            }
+            .collect { Map chunk -> "${chunk.index.toString().toInteger()}:${chunk.sha256.toString().toLowerCase(Locale.ROOT)}" }
+            .unique()
+            .sort()
+}
+
+ext.boDiscordRecordAttempt = { Map ledger, Map release, int exitCode, Collection<Map> events, String warning = '' ->
+    String target = release.target.toString()
+    String releaseId = release.releaseId.toString()
+    String messageSha256 = release.messageSha256.toString()
+    List<Map> entries = (ledger.entries as Collection)
+            .findAll { it instanceof Map }
+            .collect { it as Map }
+    Map entry = boDiscordFindLedgerEntry(ledger, target, releaseId, messageSha256) as Map
+    if (entry == null) {
+        entry = [
+                target          : target,
+                releaseId       : releaseId,
+                messageSha256   : messageSha256,
+                successfulChunks: [],
+                attemptCount    : 0,
+                status          : 'pending'
+        ]
+        entries.add(entry)
+        ledger.entries = entries
+    }
+
+    Map<String, Map> successfulByKey = [:]
+    if (entry.successfulChunks instanceof Collection) {
+        (entry.successfulChunks as Collection).findAll { it instanceof Map }.each { Object rawChunk ->
+            Map chunk = rawChunk as Map
+            if (chunk.index != null && chunk.sha256 != null) {
+                successfulByKey["${chunk.index}:${chunk.sha256.toString().toLowerCase(Locale.ROOT)}"] = chunk
+            }
+        }
+    }
+    events.findAll { it?.type?.toString() == 'chunk_result' && it.status?.toString() in ['sent', 'skipped'] }.each { Map event ->
+        int index = event.index.toString().toInteger()
+        String sha256 = event.sha256.toString().toLowerCase(Locale.ROOT)
+        String key = "${index}:${sha256}"
+        successfulByKey[key] = [
+                index      : index,
+                sha256     : sha256,
+                length     : event.length == null ? null : event.length.toString().toInteger(),
+                confirmedAt: new Date().format("yyyy-MM-dd'T'HH:mm:ssXXX")
+        ].findAll { it.value != null }
+    }
+
+    Map releaseResult = events.findAll { it?.type?.toString() == 'release_result' }.last() as Map
+    boolean success = exitCode == 0 && releaseResult?.status?.toString() == 'success'
+    entry.successfulChunks = successfulByKey.values().sort { Map left, Map right -> (left.index as int) <=> (right.index as int) }
+    entry.attemptCount = (entry.attemptCount ?: 0).toString().toInteger() + 1
+    entry.lastExitCode = exitCode
+    entry.status = success ? 'success' : 'failed'
+    entry.chunkCount = releaseResult?.chunkCount == null ? entry.chunkCount : releaseResult.chunkCount
+    entry.updatedAt = new Date().format("yyyy-MM-dd'T'HH:mm:ssXXX")
+    if (warning?.trim()) {
+        entry.lastWarning = warning.trim().take(1000)
+    } else {
+        entry.remove('lastWarning')
+    }
+    return entry
+}
+
+tasks.register('testDiscordPublishSupport') {
+    group = 'Verification'
+    description = 'Tests Discord changelog extraction and publish ledger recovery without network access.'
+
+    doLast {
+        String sample = '#### v9.8.7-beta\n\n1. Latest.\n\n#### v1.0.0-release\n\n1. Old.'
+        String latest = boDiscordLatestChangelog(sample)
+        assert latest == '#### v9.8.7-beta\n\n1. Latest.'
+        assert boDiscordReleaseId(latest) == 'v9.8.7-beta'
+        String messageSha256 = boDiscordSha256(latest)
+        assert messageSha256 ==~ /[0-9a-f]{64}/
+
+        Map ledger = [schemaVersion: 1, entries: []]
+        Map release = [target: 'bandwidth', releaseId: 'v9.8.7-beta', messageSha256: messageSha256]
+        Map first = boDiscordRecordAttempt(ledger, release, 1, [[
+                type: 'chunk_result', status: 'sent', index: 1, length: 2000, sha256: 'a' * 64
+        ], [
+                type: 'release_result', status: 'failed', chunkCount: 2, exitCode: 1
+        ]], 'simulated failure')
+        assert first.status == 'failed'
+        assert boDiscordSuccessfulChunkKeys(first) == ["1:${'a' * 64}"]
+
+        Map second = boDiscordRecordAttempt(ledger, release, 0, [[
+                type: 'chunk_result', status: 'skipped', index: 1, length: 2000, sha256: 'a' * 64
+        ], [
+                type: 'chunk_result', status: 'sent', index: 2, length: 12, sha256: 'b' * 64
+        ], [
+                type: 'release_result', status: 'success', chunkCount: 2, exitCode: 0
+        ]])
+        assert second.status == 'success'
+        assert second.attemptCount == 2
+        assert boDiscordSuccessfulChunkKeys(second) == ["1:${'a' * 64}", "2:${'b' * 64}"]
+
+        File ledgerFile = new File(temporaryDir, 'discord-publish-ledger.json')
+        boDiscordWriteLedger(ledger, ledgerFile)
+        Map reloaded = boDiscordReadLedger(ledgerFile) as Map
+        Map reloadedEntry = boDiscordFindLedgerEntry(reloaded, 'bandwidth', 'v9.8.7-beta', messageSha256) as Map
+        assert reloadedEntry.status == 'success'
+        assert boDiscordSuccessfulChunkKeys(reloadedEntry) == ["1:${'a' * 64}", "2:${'b' * 64}"]
+    }
+}
