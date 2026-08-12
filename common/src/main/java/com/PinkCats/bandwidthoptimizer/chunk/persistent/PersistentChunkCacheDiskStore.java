@@ -1,7 +1,5 @@
 package com.PinkCats.bandwidthoptimizer.chunk.persistent;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -9,13 +7,23 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
@@ -29,54 +37,79 @@ import java.util.zip.InflaterInputStream;
 
 final class PersistentChunkCacheDiskStore {
 
-    private static final int BLOB_MAGIC = 0x424F4332;
-    private static final int BLOB_VERSION = 1;
+    private static final int SEGMENT_MAGIC = 0x424F5332;
+    private static final int SEGMENT_VERSION = 1;
+    private static final int SEGMENT_HEADER_BYTES = 56;
+    private static final int WAL_MAGIC = 0x424F5732;
+    private static final int WAL_VERSION = 1;
+    private static final int WAL_HEADER_BYTES = 16;
     private static final int MAX_BLOB_BYTES = 64 * 1024 * 1024;
+    private static final int MAX_WAL_RECORD_BYTES = 1024 * 1024;
+    private static final long MAX_SEGMENT_BYTES = 64L * 1024L * 1024L;
+    private static final long FORCE_INTERVAL_NANOS = 30_000_000_000L;
     private static final String INDEX_FILE_NAME = "index.properties.gz";
     private static final String BACKUP_INDEX_FILE_NAME = "index.backup.properties.gz";
-    private static final String BLOBS_DIRECTORY_NAME = "blobs";
+    private static final String WAL_FILE_NAME = "index.wal";
+    private static final String SEGMENTS_DIRECTORY_NAME = "segments";
     private static final String TEMP_DIRECTORY_NAME = "tmp";
+    private static final List<String> ENTRY_SUFFIXES = List.of(
+            "hash",
+            "protocolName",
+            "packetClassName",
+            "fullSnapshotVersion",
+            "encodedBytes",
+            "lastUsedAtMillis",
+            "serverScopeHash"
+    );
 
     private final Path root;
-    private final Path blobsRoot;
+    private final Path segmentsRoot;
     private final Path tempRoot;
     private final int compressionLevel;
+    private final Map<String, BlobLocation> blobs = new HashMap<>();
+    private int activeSegmentId;
+    private long lastForceNanos;
 
     private PersistentChunkCacheDiskStore(Path root, int compressionLevel) {
         this.root = root;
-        this.blobsRoot = root.resolve(BLOBS_DIRECTORY_NAME);
+        this.segmentsRoot = root.resolve(SEGMENTS_DIRECTORY_NAME);
         this.tempRoot = root.resolve(TEMP_DIRECTORY_NAME);
         this.compressionLevel = Math.max(Deflater.NO_COMPRESSION, Math.min(Deflater.BEST_COMPRESSION, compressionLevel));
     }
 
     static PersistentChunkCacheDiskStore open(Path root, int compressionLevel) throws IOException {
         PersistentChunkCacheDiskStore store = new PersistentChunkCacheDiskStore(root, compressionLevel);
-        Files.createDirectories(store.blobsRoot);
+        Files.createDirectories(store.segmentsRoot);
         Files.createDirectories(store.tempRoot);
         store.cleanupTemporaryFiles();
+        store.scanSegments();
         return store;
     }
 
     Properties loadIndex() throws IOException {
-        Path indexPath = indexPath();
-        if (Files.isRegularFile(indexPath)) {
-            try {
-                return readIndex(indexPath);
-            } catch (IOException primaryFailure) {
-                Path backupPath = backupIndexPath();
-                if (Files.isRegularFile(backupPath)) {
-                    return readIndex(backupPath);
-                }
-                throw primaryFailure;
+        Properties index = loadCheckpoint();
+        replayWal(index);
+        return index;
+    }
+
+    void appendIndexEntry(String keyPrefix, Properties index) throws IOException {
+        if (keyPrefix == null || keyPrefix.isBlank() || index == null) {
+            throw new IOException("Invalid persistent cache index mutation");
+        }
+        ByteArrayOutputStream payloadBytes = new ByteArrayOutputStream(512);
+        try (DataOutputStream payload = new DataOutputStream(payloadBytes)) {
+            payload.writeUTF(keyPrefix);
+            payload.writeInt(ENTRY_SUFFIXES.size());
+            for (String suffix : ENTRY_SUFFIXES) {
+                payload.writeUTF(suffix);
+                payload.writeUTF(index.getProperty(keyPrefix + suffix, ""));
             }
         }
-        Path backupPath = backupIndexPath();
-        return Files.isRegularFile(backupPath) ? readIndex(backupPath) : new Properties();
+        appendWalRecord(payloadBytes.toByteArray());
     }
 
     void checkpoint(Properties index) throws IOException {
         Files.createDirectories(root);
-        Files.createDirectories(tempRoot);
         Path temporaryIndex = temporaryPath("index", ".properties.gz.tmp");
         boolean completed = false;
         try {
@@ -87,6 +120,14 @@ final class PersistentChunkCacheDiskStore {
             }
             moveReplacing(temporaryIndex, currentIndex);
             completed = true;
+            try (FileChannel wal = FileChannel.open(
+                    walPath(),
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.WRITE,
+                    StandardOpenOption.TRUNCATE_EXISTING
+            )) {
+                wal.force(true);
+            }
         } finally {
             if (!completed) {
                 Files.deleteIfExists(temporaryIndex);
@@ -95,123 +136,279 @@ final class PersistentChunkCacheDiskStore {
     }
 
     void writeBlob(String hash, byte[] packetBytes) throws IOException {
-        if (!isSafeHash(hash) || packetBytes == null || packetBytes.length == 0 || packetBytes.length > MAX_BLOB_BYTES) {
+        String normalizedHash = normalizeHash(hash);
+        if (normalizedHash.isBlank()
+                || packetBytes == null
+                || packetBytes.length == 0
+                || packetBytes.length > MAX_BLOB_BYTES
+                || !normalizedHash.equals(sha256(packetBytes))) {
             throw new IOException("Invalid persistent chunk blob");
         }
-        Path target = blobPath(hash);
-        if (Files.isRegularFile(target)) {
+        if (blobs.containsKey(normalizedHash)) {
             return;
         }
 
-        Files.createDirectories(target.getParent());
-        Files.createDirectories(tempRoot);
-        Path temporaryBlob = temporaryPath(hash.substring(0, 12), ".blob.tmp");
-        boolean completed = false;
-        try {
-            byte[] compressedBytes = compress(packetBytes);
-            CRC32 crc32 = new CRC32();
-            crc32.update(packetBytes);
-            try (OutputStream fileOutput = new BufferedOutputStream(Files.newOutputStream(
-                    temporaryBlob,
-                    StandardOpenOption.CREATE_NEW,
-                    StandardOpenOption.WRITE
-            )); DataOutputStream output = new DataOutputStream(fileOutput)) {
-                output.writeInt(BLOB_MAGIC);
-                output.writeInt(BLOB_VERSION);
-                output.writeInt(packetBytes.length);
-                output.writeInt(compressedBytes.length);
-                output.writeLong(crc32.getValue());
-                output.write(compressedBytes);
-            }
-            if (Files.isRegularFile(target)) {
-                Files.deleteIfExists(temporaryBlob);
-            } else {
-                moveReplacing(temporaryBlob, target);
-            }
-            completed = true;
-        } finally {
-            if (!completed) {
-                Files.deleteIfExists(temporaryBlob);
-            }
+        byte[] compressedBytes = compress(packetBytes);
+        CRC32 crc32 = new CRC32();
+        crc32.update(packetBytes);
+        int recordBytes = SEGMENT_HEADER_BYTES + compressedBytes.length;
+        Path segment = selectActiveSegment(recordBytes);
+        try (FileChannel channel = FileChannel.open(
+                segment,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.WRITE,
+                StandardOpenOption.READ
+        )) {
+            long offset = channel.size();
+            channel.position(offset);
+            ByteBuffer header = ByteBuffer.allocate(SEGMENT_HEADER_BYTES);
+            header.putInt(SEGMENT_MAGIC);
+            header.putInt(SEGMENT_VERSION);
+            header.put(HexFormat.of().parseHex(normalizedHash));
+            header.putInt(packetBytes.length);
+            header.putInt(compressedBytes.length);
+            header.putLong(crc32.getValue());
+            header.flip();
+            writeFully(channel, header);
+            writeFully(channel, ByteBuffer.wrap(compressedBytes));
+            maybeForce(channel);
+            blobs.put(normalizedHash, new BlobLocation(segment, offset, packetBytes.length, compressedBytes.length, crc32.getValue()));
         }
     }
 
     byte[] readBlob(String hash) throws IOException {
-        if (!isSafeHash(hash)) {
+        BlobLocation location = blobs.get(normalizeHash(hash));
+        if (location == null || !Files.isRegularFile(location.path())) {
             return null;
         }
-        Path path = blobPath(hash);
-        if (!Files.isRegularFile(path)) {
-            return null;
-        }
-        try (InputStream fileInput = new BufferedInputStream(Files.newInputStream(path));
-             DataInputStream input = new DataInputStream(fileInput)) {
-            int magic = input.readInt();
-            int version = input.readInt();
-            int rawLength = input.readInt();
-            int compressedLength = input.readInt();
-            long expectedCrc = input.readLong();
-            if (magic != BLOB_MAGIC
-                    || version != BLOB_VERSION
-                    || rawLength <= 0
-                    || rawLength > MAX_BLOB_BYTES
-                    || compressedLength <= 0
-                    || compressedLength > MAX_BLOB_BYTES) {
-                throw new IOException("Invalid persistent chunk blob header");
+        try (FileChannel channel = FileChannel.open(location.path(), StandardOpenOption.READ)) {
+            ByteBuffer header = ByteBuffer.allocate(SEGMENT_HEADER_BYTES);
+            channel.position(location.offset());
+            if (!readFully(channel, header)) {
+                throw new IOException("Truncated persistent chunk segment header");
             }
-            byte[] compressedBytes = input.readNBytes(compressedLength);
-            if (compressedBytes.length != compressedLength || input.read() != -1) {
-                throw new IOException("Truncated persistent chunk blob");
+            header.flip();
+            int magic = header.getInt();
+            int version = header.getInt();
+            byte[] hashBytes = new byte[32];
+            header.get(hashBytes);
+            int rawLength = header.getInt();
+            int compressedLength = header.getInt();
+            long expectedCrc = header.getLong();
+            if (magic != SEGMENT_MAGIC
+                    || version != SEGMENT_VERSION
+                    || rawLength != location.rawLength()
+                    || compressedLength != location.compressedLength()
+                    || expectedCrc != location.crc()) {
+                throw new IOException("Persistent chunk segment index mismatch");
             }
-            byte[] packetBytes = decompress(compressedBytes, rawLength);
+            ByteBuffer compressed = ByteBuffer.allocate(compressedLength);
+            if (!readFully(channel, compressed)) {
+                throw new IOException("Truncated persistent chunk segment payload");
+            }
+            byte[] packetBytes = decompress(compressed.array(), rawLength);
             CRC32 crc32 = new CRC32();
             crc32.update(packetBytes);
-            if (crc32.getValue() != expectedCrc) {
-                throw new IOException("Persistent chunk blob checksum mismatch");
+            String actualHash = sha256(packetBytes);
+            if (crc32.getValue() != expectedCrc || !actualHash.equals(HexFormat.of().formatHex(hashBytes))) {
+                throw new IOException("Persistent chunk segment checksum mismatch");
             }
             return packetBytes;
         }
     }
 
     boolean containsBlob(String hash) {
-        return isSafeHash(hash) && Files.isRegularFile(blobPath(hash));
+        return blobs.containsKey(normalizeHash(hash));
     }
 
-    int pruneUnreferencedBlobs(Set<String> referencedHashes, int deleteLimit) throws IOException {
-        if (deleteLimit <= 0 || !Files.isDirectory(blobsRoot)) {
-            return 0;
-        }
-        Set<String> safeReferencedHashes = referencedHashes == null ? Set.of() : new HashSet<>(referencedHashes);
-        int deleted = 0;
-        try (DirectoryStream<Path> shards = Files.newDirectoryStream(blobsRoot)) {
-            for (Path shard : shards) {
-                if (!Files.isDirectory(shard)) {
-                    continue;
-                }
-                try (DirectoryStream<Path> blobs = Files.newDirectoryStream(shard, "*.blob")) {
-                    for (Path blob : blobs) {
-                        String fileName = blob.getFileName().toString();
-                        String hash = fileName.substring(0, fileName.length() - ".blob".length());
-                        if (!safeReferencedHashes.contains(hash) && Files.deleteIfExists(blob)) {
-                            deleted++;
-                            if (deleted >= deleteLimit) {
-                                return deleted;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        return deleted;
+    Set<String> availableHashes() {
+        return Set.copyOf(blobs.keySet());
+    }
+
+    int pruneUnreferencedBlobs(Set<String> referencedHashes, int deleteLimit) {
+        return 0;
     }
 
     Path root() {
         return root;
     }
 
+    private Properties loadCheckpoint() throws IOException {
+        Path indexPath = indexPath();
+        if (Files.isRegularFile(indexPath)) {
+            try {
+                return readIndex(indexPath);
+            } catch (IOException primaryFailure) {
+                if (Files.isRegularFile(backupIndexPath())) {
+                    return readIndex(backupIndexPath());
+                }
+                throw primaryFailure;
+            }
+        }
+        return Files.isRegularFile(backupIndexPath()) ? readIndex(backupIndexPath()) : new Properties();
+    }
+
+    private void appendWalRecord(byte[] payload) throws IOException {
+        if (payload.length == 0 || payload.length > MAX_WAL_RECORD_BYTES) {
+            throw new IOException("Invalid persistent cache WAL record");
+        }
+        CRC32 crc32 = new CRC32();
+        crc32.update(payload);
+        ByteBuffer record = ByteBuffer.allocate(WAL_HEADER_BYTES + payload.length);
+        record.putInt(WAL_MAGIC);
+        record.putInt(WAL_VERSION);
+        record.putInt(payload.length);
+        record.putInt((int) crc32.getValue());
+        record.put(payload);
+        record.flip();
+        try (FileChannel channel = FileChannel.open(
+                walPath(),
+                StandardOpenOption.CREATE,
+                StandardOpenOption.WRITE,
+                StandardOpenOption.READ
+        )) {
+            channel.position(channel.size());
+            writeFully(channel, record);
+            maybeForce(channel);
+        }
+    }
+
+    private void replayWal(Properties index) throws IOException {
+        Path walPath = walPath();
+        if (!Files.isRegularFile(walPath)) {
+            return;
+        }
+        long validBytes = 0L;
+        try (FileChannel channel = FileChannel.open(walPath, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
+            while (channel.position() < channel.size()) {
+                long recordStart = channel.position();
+                ByteBuffer header = ByteBuffer.allocate(WAL_HEADER_BYTES);
+                if (!readFully(channel, header)) {
+                    break;
+                }
+                header.flip();
+                int magic = header.getInt();
+                int version = header.getInt();
+                int payloadLength = header.getInt();
+                long expectedCrc = Integer.toUnsignedLong(header.getInt());
+                if (magic != WAL_MAGIC || version != WAL_VERSION || payloadLength <= 0 || payloadLength > MAX_WAL_RECORD_BYTES) {
+                    break;
+                }
+                ByteBuffer payloadBuffer = ByteBuffer.allocate(payloadLength);
+                if (!readFully(channel, payloadBuffer)) {
+                    break;
+                }
+                byte[] payloadBytes = payloadBuffer.array();
+                CRC32 crc32 = new CRC32();
+                crc32.update(payloadBytes);
+                if (crc32.getValue() != expectedCrc) {
+                    break;
+                }
+                try {
+                    applyWalRecord(index, payloadBytes);
+                } catch (IOException invalidRecord) {
+                    break;
+                }
+                validBytes = recordStart + WAL_HEADER_BYTES + payloadLength;
+            }
+            if (validBytes < channel.size()) {
+                channel.truncate(validBytes);
+                channel.force(true);
+            }
+        }
+    }
+
+    private void applyWalRecord(Properties index, byte[] payloadBytes) throws IOException {
+        try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(payloadBytes))) {
+            String keyPrefix = input.readUTF();
+            int count = input.readInt();
+            if (keyPrefix.isBlank() || count < 0 || count > 64) {
+                throw new IOException("Invalid persistent cache WAL mutation");
+            }
+            for (int position = 0; position < count; position++) {
+                String suffix = input.readUTF();
+                String value = input.readUTF();
+                if (ENTRY_SUFFIXES.contains(suffix)) {
+                    index.setProperty(keyPrefix + suffix, value);
+                }
+            }
+            if (input.read() != -1) {
+                throw new IOException("Persistent cache WAL mutation has trailing bytes");
+            }
+        }
+    }
+
+    private void scanSegments() throws IOException {
+        blobs.clear();
+        List<Path> segments = new ArrayList<>();
+        try (DirectoryStream<Path> paths = Files.newDirectoryStream(segmentsRoot, "segment-*.dat")) {
+            for (Path path : paths) {
+                if (Files.isRegularFile(path)) {
+                    segments.add(path);
+                }
+            }
+        }
+        segments.sort(Comparator.comparing(Path::getFileName));
+        for (int index = 0; index < segments.size(); index++) {
+            Path segment = segments.get(index);
+            activeSegmentId = Math.max(activeSegmentId, parseSegmentId(segment));
+            scanSegment(segment, index == segments.size() - 1);
+        }
+        if (activeSegmentId == 0) {
+            activeSegmentId = 1;
+        }
+    }
+
+    private void scanSegment(Path segment, boolean repairTail) throws IOException {
+        long validBytes = 0L;
+        try (FileChannel channel = FileChannel.open(segment, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
+            while (channel.position() < channel.size()) {
+                long recordStart = channel.position();
+                ByteBuffer header = ByteBuffer.allocate(SEGMENT_HEADER_BYTES);
+                if (!readFully(channel, header)) {
+                    break;
+                }
+                header.flip();
+                int magic = header.getInt();
+                int version = header.getInt();
+                byte[] hashBytes = new byte[32];
+                header.get(hashBytes);
+                int rawLength = header.getInt();
+                int compressedLength = header.getInt();
+                long crc = header.getLong();
+                if (magic != SEGMENT_MAGIC
+                        || version != SEGMENT_VERSION
+                        || rawLength <= 0
+                        || rawLength > MAX_BLOB_BYTES
+                        || compressedLength <= 0
+                        || compressedLength > MAX_BLOB_BYTES
+                        || channel.size() - channel.position() < compressedLength) {
+                    break;
+                }
+                String hash = HexFormat.of().formatHex(hashBytes);
+                blobs.put(hash, new BlobLocation(segment, recordStart, rawLength, compressedLength, crc));
+                channel.position(channel.position() + compressedLength);
+                validBytes = channel.position();
+            }
+            if (repairTail && validBytes < channel.size()) {
+                channel.truncate(validBytes);
+                channel.force(true);
+            }
+        }
+    }
+
+    private Path selectActiveSegment(int recordBytes) throws IOException {
+        Path active = segmentPath(activeSegmentId);
+        if (Files.isRegularFile(active) && Files.size(active) + recordBytes > MAX_SEGMENT_BYTES) {
+            activeSegmentId++;
+            active = segmentPath(activeSegmentId);
+        }
+        return active;
+    }
+
     private Properties readIndex(Path path) throws IOException {
         Properties properties = new Properties();
-        try (InputStream input = new GZIPInputStream(new BufferedInputStream(Files.newInputStream(path)))) {
+        try (InputStream input = new GZIPInputStream(Files.newInputStream(path))) {
             properties.load(input);
         }
         return properties;
@@ -222,13 +419,13 @@ final class PersistentChunkCacheDiskStore {
         if (index != null) {
             safeIndex.putAll(index);
         }
-        try (OutputStream fileOutput = new BufferedOutputStream(Files.newOutputStream(
-                path,
-                StandardOpenOption.CREATE_NEW,
-                StandardOpenOption.WRITE
-        )); GZIPOutputStream gzipOutput = new GZIPOutputStream(fileOutput)) {
+        try (OutputStream fileOutput = Files.newOutputStream(path, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+             GZIPOutputStream gzipOutput = new GZIPOutputStream(fileOutput)) {
             safeIndex.store(gzipOutput, "BandwidthOptimizer persistent client chunk cache v2");
             gzipOutput.finish();
+        }
+        try (FileChannel channel = FileChannel.open(path, StandardOpenOption.WRITE)) {
+            channel.force(true);
         }
     }
 
@@ -246,15 +443,12 @@ final class PersistentChunkCacheDiskStore {
 
     private byte[] decompress(byte[] compressedBytes, int expectedLength) throws IOException {
         Inflater inflater = new Inflater(true);
-        try (InflaterInputStream inflaterInput = new InflaterInputStream(
-                new ByteArrayInputStream(compressedBytes),
-                inflater,
-                8192
-        ); ByteArrayOutputStream output = new ByteArrayOutputStream(expectedLength)) {
+        try (InflaterInputStream inflaterInput = new InflaterInputStream(new ByteArrayInputStream(compressedBytes), inflater, 8192);
+             ByteArrayOutputStream output = new ByteArrayOutputStream(expectedLength)) {
             inflaterInput.transferTo(output);
             byte[] packetBytes = output.toByteArray();
             if (packetBytes.length != expectedLength) {
-                throw new IOException("Persistent chunk blob length mismatch");
+                throw new IOException("Persistent chunk segment length mismatch");
             }
             return packetBytes;
         } finally {
@@ -263,9 +457,6 @@ final class PersistentChunkCacheDiskStore {
     }
 
     private void cleanupTemporaryFiles() throws IOException {
-        if (!Files.isDirectory(tempRoot)) {
-            return;
-        }
         try (DirectoryStream<Path> files = Files.newDirectoryStream(tempRoot)) {
             for (Path file : files) {
                 if (Files.isRegularFile(file)) {
@@ -275,9 +466,25 @@ final class PersistentChunkCacheDiskStore {
         }
     }
 
-    private Path blobPath(String hash) {
-        String normalizedHash = hash.toLowerCase(Locale.ROOT);
-        return blobsRoot.resolve(normalizedHash.substring(0, 2)).resolve(normalizedHash + ".blob");
+    private void maybeForce(FileChannel channel) throws IOException {
+        long now = System.nanoTime();
+        if (lastForceNanos == 0L || now - lastForceNanos >= FORCE_INTERVAL_NANOS) {
+            channel.force(false);
+            lastForceNanos = now;
+        }
+    }
+
+    private Path segmentPath(int id) {
+        return segmentsRoot.resolve(String.format(Locale.ROOT, "segment-%08d.dat", Math.max(id, 1)));
+    }
+
+    private int parseSegmentId(Path path) {
+        String fileName = path.getFileName().toString();
+        try {
+            return Integer.parseInt(fileName.substring("segment-".length(), fileName.length() - ".dat".length()));
+        } catch (RuntimeException ignored) {
+            return 0;
+        }
     }
 
     private Path temporaryPath(String prefix, String suffix) {
@@ -292,8 +499,35 @@ final class PersistentChunkCacheDiskStore {
         return root.resolve(BACKUP_INDEX_FILE_NAME);
     }
 
-    private static boolean isSafeHash(String hash) {
-        return hash != null && hash.matches("[0-9a-fA-F]{64}");
+    private Path walPath() {
+        return root.resolve(WAL_FILE_NAME);
+    }
+
+    private static String normalizeHash(String hash) {
+        return hash != null && hash.matches("[0-9a-fA-F]{64}") ? hash.toLowerCase(Locale.ROOT) : "";
+    }
+
+    private static String sha256(byte[] bytes) throws IOException {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IOException("SHA-256 is unavailable", exception);
+        }
+    }
+
+    private static boolean readFully(FileChannel channel, ByteBuffer buffer) throws IOException {
+        while (buffer.hasRemaining()) {
+            if (channel.read(buffer) < 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static void writeFully(FileChannel channel, ByteBuffer buffer) throws IOException {
+        while (buffer.hasRemaining()) {
+            channel.write(buffer);
+        }
     }
 
     private static void moveReplacing(Path source, Path target) throws IOException {
@@ -302,5 +536,8 @@ final class PersistentChunkCacheDiskStore {
         } catch (IOException atomicMoveFailure) {
             Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
         }
+    }
+
+    private record BlobLocation(Path path, long offset, int rawLength, int compressedLength, long crc) {
     }
 }
