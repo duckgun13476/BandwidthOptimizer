@@ -134,7 +134,10 @@ ext.boDiscordRecordAttempt = { Map ledger, Map release, int exitCode, Collection
         ].findAll { it.value != null }
     }
 
-    Map releaseResult = events.findAll { it?.type?.toString() == 'release_result' }.last() as Map
+    List<Map> releaseResults = events
+            .findAll { it?.type?.toString() == 'release_result' }
+            .collect { it as Map }
+    Map releaseResult = releaseResults.isEmpty() ? null : releaseResults.last()
     boolean success = exitCode == 0 && releaseResult?.status?.toString() == 'success'
     entry.successfulChunks = successfulByKey.values().sort { Map left, Map right -> (left.index as int) <=> (right.index as int) }
     entry.attemptCount = (entry.attemptCount ?: 0).toString().toInteger() + 1
@@ -148,6 +151,195 @@ ext.boDiscordRecordAttempt = { Map ledger, Map release, int exitCode, Collection
         entry.remove('lastWarning')
     }
     return entry
+}
+
+ext.boDiscordReadStringProperty = { String propertyName, String environmentName, String defaultValue = '' ->
+    String propertyValue = project.findProperty(propertyName)?.toString()?.trim()
+    if (propertyValue) {
+        return propertyValue
+    }
+    String environmentValue = System.getenv(environmentName)?.trim()
+    return environmentValue ?: defaultValue
+}
+
+ext.boDiscordPublishingDisabled = {
+    String value = boDiscordReadStringProperty('bo_discord_publish_disabled', 'BO_DISCORD_PUBLISH_DISABLED', 'false')
+    return value.toLowerCase(Locale.ROOT) in ['1', 'true', 'yes', 'on']
+}
+
+ext.boDiscordDefaultProjectDirectory = {
+    return System.getProperty('os.name', '').toLowerCase(Locale.ROOT).contains('windows') ? 'C:\\F\\Discord' : ''
+}
+
+ext.boDiscordResolveInvocation = { Map overrides = [:] ->
+    String projectDirectoryText = overrides.projectDirectory?.toString()
+            ?: boDiscordReadStringProperty('bo_discord_project_dir', 'BO_DISCORD_PROJECT_DIR', boDiscordDefaultProjectDirectory())
+    File projectDirectory = projectDirectoryText ? new File(projectDirectoryText) : null
+    String senderText = overrides.sender?.toString()
+            ?: boDiscordReadStringProperty('bo_discord_sender_path', 'BO_DISCORD_SENDER_PATH', '')
+    File sender = senderText ? new File(senderText) : (projectDirectory == null ? null : new File(projectDirectory, 'scripts/send_release_log.py'))
+
+    String pythonText = overrides.python?.toString()
+            ?: boDiscordReadStringProperty('bo_discord_python_path', 'BO_DISCORD_PYTHON_PATH', '')
+    if (!pythonText && projectDirectory != null) {
+        File virtualEnvironmentPython = System.getProperty('os.name', '').toLowerCase(Locale.ROOT).contains('windows')
+                ? new File(projectDirectory, '.venv/Scripts/python.exe')
+                : new File(projectDirectory, '.venv/bin/python')
+        if (virtualEnvironmentPython.isFile()) {
+            pythonText = virtualEnvironmentPython.absolutePath
+        }
+    }
+    if (!pythonText) {
+        pythonText = System.getProperty('os.name', '').toLowerCase(Locale.ROOT).contains('windows') ? 'python' : 'python3'
+    }
+
+    return [
+            projectDirectory: projectDirectory,
+            sender          : sender,
+            python          : pythonText,
+            target          : overrides.target?.toString()
+                    ?: boDiscordReadStringProperty('bo_discord_target', 'BO_DISCORD_TARGET', 'bandwidth')
+    ]
+}
+
+ext.boDiscordRecordUnavailable = { Map release, File ledgerFile, int exitCode, String warning ->
+    Map ledger = boDiscordReadLedger(ledgerFile) as Map
+    Map event = [
+            type         : 'release_result',
+            status       : 'unavailable',
+            target       : release.target,
+            messageSha256: release.messageSha256,
+            chunkCount   : 0,
+            exitCode     : exitCode
+    ]
+    Map entry = boDiscordRecordAttempt(ledger, release, exitCode, [event], warning) as Map
+    boDiscordWriteLedger(ledger, ledgerFile)
+    return entry
+}
+
+ext.boDiscordInvokeRelease = { Map release, File ledgerFile = boDiscordLedgerFile(), Map overrides = [:] ->
+    Map ledger = boDiscordReadLedger(ledgerFile) as Map
+    Map entry = boDiscordFindLedgerEntry(
+            ledger,
+            release.target.toString(),
+            release.releaseId.toString(),
+            release.messageSha256.toString()
+    ) as Map
+    if (entry?.status?.toString() == 'success') {
+        return [status: 'already_published', exitCode: 0, entry: entry, warning: '']
+    }
+
+    Map invocation = boDiscordResolveInvocation(overrides) as Map
+    File projectDirectory = invocation.projectDirectory as File
+    File sender = invocation.sender as File
+    if (projectDirectory == null || !projectDirectory.isDirectory()) {
+        String warning = "Discord project directory is unavailable: ${projectDirectory?.absolutePath ?: 'not configured'}"
+        return [status: 'unavailable', exitCode: 127, entry: boDiscordRecordUnavailable(release, ledgerFile, 127, warning), warning: warning]
+    }
+    if (sender == null || !sender.isFile()) {
+        String warning = "Discord sender is unavailable: ${sender?.absolutePath ?: 'not configured'}"
+        return [status: 'unavailable', exitCode: 127, entry: boDiscordRecordUnavailable(release, ledgerFile, 127, warning), warning: warning]
+    }
+
+    File messageFile = new File(rootProject.buildDir, "tmp/discord-publish/${release.messageSha256}.md")
+    messageFile.parentFile.mkdirs()
+    messageFile.setText(release.message.toString() + System.lineSeparator(), 'UTF-8')
+
+    List<String> command = [
+            invocation.python.toString(),
+            sender.absolutePath,
+            '--target', invocation.target.toString(),
+            '--file', messageFile.absolutePath,
+            '--result-json'
+    ]
+    boDiscordSuccessfulChunkKeys(entry).each { String key ->
+        command.add('--skip-chunk')
+        command.add(key)
+    }
+
+    List<String> outputLines = []
+    List<Map> events = []
+    int exitCode
+    try {
+        ProcessBuilder processBuilder = new ProcessBuilder(command as String[])
+        processBuilder.directory(projectDirectory)
+        processBuilder.redirectErrorStream(true)
+        Process process = processBuilder.start()
+        process.inputStream.withReader('UTF-8') { reader ->
+            reader.eachLine { String line ->
+                outputLines.add(line)
+                if (line.trim().startsWith('{')) {
+                    try {
+                        def parsed = new JsonSlurper().parseText(line)
+                        if (parsed instanceof Map) {
+                            events.add(parsed as Map)
+                        }
+                    } catch (Exception ignored) {
+                        // Non-protocol output remains available in the warning summary.
+                    }
+                }
+            }
+        }
+        exitCode = process.waitFor()
+    } catch (Exception exception) {
+        String warning = "Discord sender could not be executed: ${exception.class.simpleName}: ${exception.message}"
+        return [status: 'unavailable', exitCode: 126, entry: boDiscordRecordUnavailable(release, ledgerFile, 126, warning), warning: warning]
+    }
+
+    String outputSummary = outputLines.findAll { !it.trim().isEmpty() }.takeRight(8).join(' | ').take(1000)
+    String warning = exitCode == 0 ? '' : "Discord sender exited with code ${exitCode}${outputSummary ? ": ${outputSummary}" : ''}"
+    ledger = boDiscordReadLedger(ledgerFile) as Map
+    entry = boDiscordRecordAttempt(ledger, release, exitCode, events, warning) as Map
+    boDiscordWriteLedger(ledger, ledgerFile)
+    return [status: entry.status, exitCode: exitCode, entry: entry, warning: warning, events: events]
+}
+
+tasks.register('publishDiscordRelease') {
+    group = 'Publishing'
+    description = 'Publishes the latest changelog section to Discord after all version uploads.'
+    dependsOn 'allworkPublishAllVersions'
+
+    doLast {
+        if (boDiscordPublishingDisabled()) {
+            logger.lifecycle('Discord release notification is disabled by configuration.')
+            return
+        }
+
+        try {
+            File changelogFile = rootProject.file('update/changelog.md')
+            if (!changelogFile.isFile()) {
+                logger.warn('[BO Publish] Discord notification skipped: update/changelog.md is missing. Platform publishing remains successful.')
+                return
+            }
+            String latestChangelog = boDiscordLatestChangelog(changelogFile.getText('UTF-8'))
+            String releaseId = boDiscordReleaseId(latestChangelog)
+            if (!latestChangelog || !releaseId) {
+                logger.warn('[BO Publish] Discord notification skipped: the latest changelog section could not be parsed. Platform publishing remains successful.')
+                return
+            }
+
+            Map release = [
+                    target       : boDiscordReadStringProperty('bo_discord_target', 'BO_DISCORD_TARGET', 'bandwidth'),
+                    releaseId    : releaseId,
+                    messageSha256: boDiscordSha256(latestChangelog),
+                    message      : latestChangelog
+            ]
+            Map result = boDiscordInvokeRelease(release) as Map
+            if (result.status == 'success') {
+                logger.lifecycle("Discord release notification completed: release=${releaseId}, chunks=${result.entry.chunkCount ?: result.entry.successfulChunks?.size() ?: 0}")
+            } else if (result.status == 'already_published') {
+                logger.lifecycle("Discord release notification already recorded: release=${releaseId}")
+            } else {
+                logger.warn("[BO Publish] Discord notification was not completed: ${result.warning ?: "status=${result.status}, exitCode=${result.exitCode}"}. Platform publishing remains successful.")
+            }
+        } catch (Exception exception) {
+            logger.warn("[BO Publish] Discord notification failed unexpectedly: ${exception.class.simpleName}: ${exception.message}. Platform publishing remains successful.")
+        }
+    }
+}
+
+tasks.named('publishAllVersions').configure {
+    dependsOn 'publishDiscordRelease'
 }
 
 tasks.register('testDiscordPublishSupport') {
@@ -189,5 +381,45 @@ tasks.register('testDiscordPublishSupport') {
         Map reloadedEntry = boDiscordFindLedgerEntry(reloaded, 'bandwidth', 'v9.8.7-beta', messageSha256) as Map
         assert reloadedEntry.status == 'success'
         assert boDiscordSuccessfulChunkKeys(reloadedEntry) == ["1:${'a' * 64}", "2:${'b' * 64}"]
+    }
+}
+
+tasks.register('testDiscordPublishSoftFailure') {
+    group = 'Verification'
+    description = 'Verifies that a missing Discord API target is journaled without failing Gradle.'
+    dependsOn 'testDiscordPublishSupport'
+
+    doLast {
+        String message = '#### v0.0.0-test\n\n1. No network request should be made.'
+        String target = '__bo_missing_test_target__'
+        Map release = [
+                target       : target,
+                releaseId    : 'v0.0.0-test',
+                messageSha256: boDiscordSha256(message),
+                message      : message
+        ]
+        File ledgerFile = new File(temporaryDir, 'discord-soft-failure-ledger.json')
+        Map result = boDiscordInvokeRelease(release, ledgerFile, [target: target]) as Map
+        assert result.exitCode in [2, 126, 127]
+        assert result.status in ['failed', 'unavailable']
+        Map ledger = boDiscordReadLedger(ledgerFile) as Map
+        Map entry = boDiscordFindLedgerEntry(ledger, target, 'v0.0.0-test', release.messageSha256.toString()) as Map
+        assert entry != null
+        assert entry.lastExitCode == result.exitCode
+        assert entry.status != 'success'
+
+        File missingLedgerFile = new File(temporaryDir, 'discord-missing-sender-ledger.json')
+        File missingProjectDirectory = new File(temporaryDir, 'missing-discord-project')
+        Map missingResult = boDiscordInvokeRelease(
+                release,
+                missingLedgerFile,
+                [target: target, projectDirectory: missingProjectDirectory.absolutePath]
+        ) as Map
+        assert missingResult.exitCode == 127
+        assert missingResult.status == 'unavailable'
+        Map missingLedger = boDiscordReadLedger(missingLedgerFile) as Map
+        Map missingEntry = boDiscordFindLedgerEntry(missingLedger, target, 'v0.0.0-test', release.messageSha256.toString()) as Map
+        assert missingEntry.lastExitCode == 127
+        assert missingEntry.lastWarning.toString().contains('project directory is unavailable')
     }
 }
