@@ -3,6 +3,8 @@ package com.PinkCats.bandwidthoptimizer.chunk.persistent;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.HexFormat;
@@ -26,7 +28,9 @@ public final class PersistentChunkCacheDiskStoreRegressionMain {
             verifyBackupFallback(root);
             verifyTemporaryCleanup(root);
             verifyWalReplayAndTailRepair(root);
+            verifyWalChecksumCrashRecovery(root.resolve("wal-checksum-crash"));
             verifySegmentTailRepair(root);
+            verifyCheckpointCrashWindows(root.resolve("checkpoint-crash"));
             verifyWalRemovalReplay(root.resolve("wal-removal"));
             verifyRetentionPolicy();
             verifySealedSegmentCompaction(root.resolve("compaction"));
@@ -129,6 +133,119 @@ public final class PersistentChunkCacheDiskStoreRegressionMain {
         coordinator.request("reconnected");
         scheduled.removeFirst().run();
         require(maintenanceRuns.get() == 2, "maintenance coordinator ran while connected");
+
+        windowOpen.set(true);
+        for (int cycle = 0; cycle < 20; cycle++) {
+            coordinator.request("disconnect-" + cycle);
+            require(scheduled.size() == 1, "maintenance coordinator did not schedule disconnect cycle " + cycle);
+            scheduled.removeFirst().run();
+        }
+        require(maintenanceRuns.get() == 22, "maintenance coordinator lost a rapid disconnect cycle");
+    }
+
+    private static void verifyWalChecksumCrashRecovery(Path root) throws Exception {
+        PersistentChunkCacheDiskStore store = PersistentChunkCacheDiskStore.open(root, 2);
+        store.checkpoint(new Properties());
+        String firstPrefix = "scope.test.chunk.10.11.";
+        String secondPrefix = "scope.test.chunk.12.13.";
+        store.appendIndexEntry(firstPrefix, indexMutation(firstPrefix, repeatedPayload(1024, 61)));
+        Path wal = root.resolve("index.wal");
+        long firstRecordBytes = Files.size(wal);
+        store.appendIndexEntry(secondPrefix, indexMutation(secondPrefix, repeatedPayload(1024, 62)));
+        try (var channel = java.nio.channels.FileChannel.open(wal, StandardOpenOption.WRITE)) {
+            channel.position(channel.size() - 1L);
+            channel.write(java.nio.ByteBuffer.wrap(new byte[]{(byte) 0xff}));
+            channel.force(true);
+        }
+
+        PersistentChunkCacheDiskStore reopened = PersistentChunkCacheDiskStore.open(root, 2);
+        Properties recovered = reopened.loadIndex();
+        require(recovered.containsKey(firstPrefix + "hash"), "WAL crash recovery lost a committed record");
+        require(!recovered.containsKey(secondPrefix + "hash"), "WAL crash recovery accepted a corrupt record");
+        require(Files.size(wal) == firstRecordBytes, "WAL crash recovery did not truncate at the last valid record");
+    }
+
+    private static void verifyCheckpointCrashWindows(Path root) throws Exception {
+        verifyCheckpointCrashBeforeInstall(root.resolve("before-install"));
+        verifyCheckpointCrashBetweenMoves(root.resolve("between-moves"));
+        verifyCheckpointCrashBeforeWalTruncate(root.resolve("before-wal-truncate"));
+        verifyCheckpointCorruptCurrentFallback(root.resolve("corrupt-current"));
+    }
+
+    private static void verifyCheckpointCrashBeforeInstall(Path root) throws Exception {
+        PersistentChunkCacheDiskStore store = checkpointBaseline(root);
+        String prefix = "scope.test.chunk.20.21.";
+        store.appendIndexEntry(prefix, indexMutation(prefix, repeatedPayload(2048, 71)));
+        Path staleTemporary = root.resolve("tmp").resolve("index-crash.properties.gz.tmp");
+        Files.write(staleTemporary, new byte[]{1, 2, 3});
+
+        PersistentChunkCacheDiskStore reopened = PersistentChunkCacheDiskStore.open(root, 2);
+        require(reopened.loadIndex().containsKey(prefix + "hash"), "checkpoint pre-install crash lost WAL state");
+        require(!Files.exists(staleTemporary), "checkpoint pre-install crash left a temporary index");
+    }
+
+    private static void verifyCheckpointCrashBetweenMoves(Path root) throws Exception {
+        PersistentChunkCacheDiskStore store = checkpointBaseline(root);
+        String prefix = "scope.test.chunk.22.23.";
+        store.appendIndexEntry(prefix, indexMutation(prefix, repeatedPayload(2048, 72)));
+        Files.move(
+                root.resolve("index.properties.gz"),
+                root.resolve("index.backup.properties.gz"),
+                StandardCopyOption.REPLACE_EXISTING
+        );
+        Files.write(root.resolve("tmp").resolve("index-crash.properties.gz.tmp"), new byte[]{4, 5, 6});
+
+        PersistentChunkCacheDiskStore reopened = PersistentChunkCacheDiskStore.open(root, 2);
+        Properties recovered = reopened.loadIndex();
+        require("old".equals(recovered.getProperty("generation")), "checkpoint move crash lost the backup index");
+        require(recovered.containsKey(prefix + "hash"), "checkpoint move crash did not replay WAL over backup");
+    }
+
+    private static void verifyCheckpointCrashBeforeWalTruncate(Path root) throws Exception {
+        PersistentChunkCacheDiskStore store = checkpointBaseline(root);
+        String prefix = "scope.test.chunk.24.25.";
+        store.appendIndexEntry(prefix, indexMutation(prefix, repeatedPayload(2048, 73)));
+        byte[] retainedWal = Files.readAllBytes(root.resolve("index.wal"));
+        Properties newIndex = store.loadIndex();
+        store.checkpoint(newIndex);
+        Files.write(root.resolve("index.wal"), retainedWal, StandardOpenOption.TRUNCATE_EXISTING);
+
+        PersistentChunkCacheDiskStore reopened = PersistentChunkCacheDiskStore.open(root, 2);
+        Properties recovered = reopened.loadIndex();
+        require(recovered.containsKey(prefix + "hash"), "checkpoint installed-index crash lost committed state");
+        reopened.checkpoint(recovered);
+        require(Files.size(root.resolve("index.wal")) == 0L, "checkpoint recovery did not converge the retained WAL");
+    }
+
+    private static void verifyCheckpointCorruptCurrentFallback(Path root) throws Exception {
+        PersistentChunkCacheDiskStore store = checkpointBaseline(root);
+        Properties current = store.loadIndex();
+        current.setProperty("generation", "new");
+        store.checkpoint(current);
+        String prefix = "scope.test.chunk.26.27.";
+        store.appendIndexEntry(prefix, indexMutation(prefix, repeatedPayload(2048, 74)));
+        Files.write(root.resolve("index.properties.gz"), new byte[]{9, 8, 7}, StandardOpenOption.TRUNCATE_EXISTING);
+
+        PersistentChunkCacheDiskStore reopened = PersistentChunkCacheDiskStore.open(root, 2);
+        Properties recovered = reopened.loadIndex();
+        require("old".equals(recovered.getProperty("generation")), "corrupt current index did not fall back to backup");
+        require(recovered.containsKey(prefix + "hash"), "corrupt current index did not replay later WAL state");
+    }
+
+    private static PersistentChunkCacheDiskStore checkpointBaseline(Path root) throws Exception {
+        PersistentChunkCacheDiskStore store = PersistentChunkCacheDiskStore.open(root, 2);
+        Properties baseline = new Properties();
+        baseline.setProperty("generation", "old");
+        store.checkpoint(baseline);
+        return store;
+    }
+
+    private static Properties indexMutation(String prefix, byte[] packetBytes) throws Exception {
+        Properties mutation = new Properties();
+        mutation.setProperty(prefix + "hash", sha256(packetBytes));
+        mutation.setProperty(prefix + "encodedBytes", Integer.toString(packetBytes.length));
+        mutation.setProperty(prefix + "serverScopeHash", "test");
+        return mutation;
     }
 
     private static void verifyWalRemovalReplay(Path root) throws Exception {
@@ -214,6 +331,9 @@ public final class PersistentChunkCacheDiskStoreRegressionMain {
         require(store.totalSegmentBytes() < before, "sealed segment compaction did not reclaim bytes");
         require(Arrays.equals(payloads[0], store.readBlob(hashes[0])), "compaction changed a live blob");
         require(!store.availableHashes().contains(hashes[1]), "compaction retained an unreferenced blob");
+        PersistentChunkCacheDiskStore reopened = PersistentChunkCacheDiskStore.openForTesting(root, 1, 220L * 1024L);
+        require(Arrays.equals(payloads[0], reopened.readBlob(hashes[0])), "reopen after compaction changed a live blob");
+        require(!reopened.availableHashes().contains(hashes[1]), "reopen after compaction revived an unreferenced blob");
         try (var temporaryFiles = Files.list(root.resolve("tmp"))) {
             require(temporaryFiles.findAny().isEmpty(), "compaction left a temporary file");
         }

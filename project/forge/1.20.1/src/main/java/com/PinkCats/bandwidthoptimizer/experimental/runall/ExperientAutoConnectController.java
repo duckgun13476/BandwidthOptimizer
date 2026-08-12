@@ -167,6 +167,7 @@ public final class ExperientAutoConnectController {
                 targetRejoinCycles,
                 rejoinDelayTicksRemaining
         );
+        minecraft.level.disconnect();
         minecraft.clearLevel(new JoinMultiplayerScreen(new TitleScreen()));
         return true;
     }

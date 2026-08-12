@@ -12,6 +12,7 @@ import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.client.gui.screens.multiplayer.JoinMultiplayerScreen;
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.multiplayer.resolver.ServerAddress;
+import net.minecraft.network.chat.Component;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
@@ -169,6 +170,7 @@ public final class ExperientAutoConnectController {
                 targetRejoinCycles,
                 rejoinDelayTicksRemaining
         );
+        minecraft.level.disconnect(Component.literal("BandwidthOptimizer rejoin regression"));
         minecraft.disconnect(new JoinMultiplayerScreen(new TitleScreen()), false);
         return true;
     }
