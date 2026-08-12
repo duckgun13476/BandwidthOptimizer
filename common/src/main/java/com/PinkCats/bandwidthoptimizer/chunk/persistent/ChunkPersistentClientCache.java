@@ -17,6 +17,7 @@ import com.PinkCats.bandwidthoptimizer.debug.DiagnosticRuntimeSwitch;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 import io.netty.channel.Channel;
+import io.netty.util.AttributeKey;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -38,7 +39,9 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -80,6 +83,8 @@ public final class ChunkPersistentClientCache {
     private static final long DEFAULT_MAX_PENDING_STORE_BYTES = 64L * 1024L * 1024L;
     private static final long DEFAULT_READY_CACHE_BYTES = 96L * 1024L * 1024L;
     private static final int STORE_DRAIN_BATCH_LIMIT = 256;
+    private static final long SLOW_IO_WARNING_MILLIS = 1_500L;
+    private static final long SLOW_IO_WARNING_INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(5L);
     private static final Object LOCK = new Object();
     private static final Object FLUSH_LOCK = new Object();
     private static final Object DISK_INIT_LOCK = new Object();
@@ -89,6 +94,12 @@ public final class ChunkPersistentClientCache {
     private static final AtomicInteger PENDING_STORE_REQUEST_COUNT = new AtomicInteger();
     private static final AtomicLong PENDING_STORE_REQUEST_BYTES = new AtomicLong();
     private static final AtomicBoolean STORE_DRAIN_QUEUED = new AtomicBoolean();
+    private static final AttributeKey<PreparedReadyState> PREPARED_READY_STATE_KEY =
+            AttributeKey.valueOf("bandwidthoptimizer:persistent_prepared_ready");
+    private static final int MAX_PREPARED_READY_ENTRIES = 576;
+    private static final long MAX_PREPARED_READY_EXTRA_BYTES = 32L * 1024L * 1024L;
+    private static final long PREPARED_READY_TTL_NANOS = TimeUnit.SECONDS.toNanos(5L);
+    private static final long ADVERTISED_READY_TTL_NANOS = TimeUnit.SECONDS.toNanos(30L);
     private static final String ZIP_FILE_NAME = "client-persistent-chunk-cache.zip";
     private static final String INDEX_ENTRY_NAME = "index.properties";
     private static final String BLOBS_ENTRY_DIRECTORY = "blobs/";
@@ -96,6 +107,9 @@ public final class ChunkPersistentClientCache {
     private static final String V2_DIRECTORY_NAME = "client-persistent-chunk-cache-v2";
     private static final String MIGRATION_PENDING_FILE_NAME = "legacy-zip-migration.pending";
     private static final ScheduledExecutorService IO_EXECUTOR = Executors.newSingleThreadScheduledExecutor(new CacheThreadFactory());
+    private static final ScheduledThreadPoolExecutor IO_WATCHDOG_EXECUTOR = createIoWatchdogExecutor();
+    private static long lastSlowIoWarningNanos;
+    private static long suppressedSlowIoWarnings;
     private static ZipCacheSnapshot cachedSnapshot;
     private static volatile PersistentChunkCacheDiskStore diskStore;
     private static final LinkedHashMap<String, byte[]> READY_BLOBS = new LinkedHashMap<>(256, 0.75f, true);
@@ -138,7 +152,7 @@ public final class ChunkPersistentClientCache {
             preloadStarted = true;
         }
 
-        IO_EXECUTOR.execute(() -> {
+        executeIo("preload", () -> {
             long startedAtMillis = System.currentTimeMillis();
             try {
                 CachePreloadResult preload = loadV2CacheFromDisk();
@@ -327,7 +341,7 @@ public final class ChunkPersistentClientCache {
             return;
         }
         try {
-            IO_EXECUTOR.execute(ChunkPersistentClientCache::drainPendingStoreRequests);
+            executeIo("store-drain", ChunkPersistentClientCache::drainPendingStoreRequests);
         } catch (RuntimeException exception) {
             STORE_DRAIN_QUEUED.set(false);
             if (shouldLogCacheDiagnose()) {
@@ -536,6 +550,28 @@ public final class ChunkPersistentClientCache {
         return packetBytes.clone();
     }
 
+    public static byte[] takePreparedPacketBytes(Channel channel, ChunkHotspotFrame frame) {
+        return takePreparedPacketBytes(channel, frame, frame == null ? "" : frame.payloadHash());
+    }
+
+    public static byte[] takePreparedBasePacketBytes(Channel channel, ChunkHotspotFrame frame) {
+        return takePreparedPacketBytes(channel, frame, frame == null ? "" : frame.baseSnapshotHash());
+    }
+
+    private static byte[] takePreparedPacketBytes(Channel channel, ChunkHotspotFrame frame, String expectedHash) {
+        if (channel == null
+                || frame == null
+                || frame.coordinate() == null
+                || !frame.coordinate().present()
+                || !isSafeHash(expectedHash)) {
+            return null;
+        }
+        PreparedReadyState state = channel.attr(PREPARED_READY_STATE_KEY).get();
+        return state == null
+                ? null
+                : state.take(currentServerScopeHash(), frame.coordinate(), expectedHash);
+    }
+
     public static byte[] findLoadedBasePacketBytes(ChunkHotspotFrame frame) {
         LoadedHotPathSnapshot hotPathSnapshot = loadedHotPathSnapshot;
         String serverScopeHash = hotPathSnapshot.serverScopeHash();
@@ -621,7 +657,7 @@ public final class ChunkPersistentClientCache {
             requestedGeneration = activeScopeGeneration;
         }
 
-        IO_EXECUTOR.execute(() -> {
+        executeIo("cold-prepare-read", () -> {
             ColdCacheEntry coldEntry = findColdCacheEntry(requestedScope, prepareFrame.coordinate());
             if (coldEntry == null || coldEntry.encodedBytes() > readyCacheByteBudget()) {
                 sendColdPrepareMiss(channel, prepareFrame, "persistent_cache_prepare_index_miss");
@@ -648,11 +684,23 @@ public final class ChunkPersistentClientCache {
                         || !requestedScope.equals(activeServerScopeHash)) {
                     return;
                 }
-                putReadyBlobLocked(coldEntry.payloadHash(), packetBytes);
-                publishLoadedHotPathSnapshotLocked();
             }
             channel.eventLoop().execute(() -> {
                 if (!channel.isOpen() || !requestedScope.equals(currentServerScopeHash())) {
+                    return;
+                }
+                if (!getOrCreatePreparedReadyState(channel).put(
+                        requestedScope,
+                        prepareFrame.coordinate(),
+                        coldEntry.payloadHash(),
+                        packetBytes,
+                        PREPARED_READY_TTL_NANOS
+                )) {
+                    ChunkTransportControlFrameSender.sendPersistentCacheMiss(
+                            channel,
+                            prepareFrame,
+                            "persistent_cache_prepare_ready_budget"
+                    );
                     return;
                 }
                 ChunkTransportControlFrameSender.sendPersistentCacheReady(
@@ -674,6 +722,7 @@ public final class ChunkPersistentClientCache {
         }
         String previousScopeHash = currentServerScopeHash();
         boolean hadManifestForChannel = hasManifestForChannel(channel);
+        channel.attr(PREPARED_READY_STATE_KEY).set(null);
         clearActiveServerScope(channel);
         boolean cleared = (previousScopeHash != null && !previousScopeHash.isBlank()) || hadManifestForChannel;
         if (shouldLogCacheDiagnose()) {
@@ -715,6 +764,7 @@ public final class ChunkPersistentClientCache {
 
         long manifestLoadStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         List<ManifestEntry> entries = loadManifestEntries(serverScopeHash);
+        List<PreparedReadySeed> advertisedEntries = capturePreparedReadySeeds(serverScopeHash, entries);
         ChunkLoadDelayProbe.logStage(
                 channel,
                 null,
@@ -725,6 +775,7 @@ public final class ChunkPersistentClientCache {
                 "reason=" + safeText(reason, "persistent_client_cache_manifest")
         );
         int sentCount = 0;
+        retainAdvertisedEntries(channel, serverScopeHash, advertisedEntries);
         long manifestSendStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         int batchEntries = manifestBatchEntries();
         for (int startIndex = 0; startIndex < entries.size(); startIndex += batchEntries) {
@@ -794,7 +845,7 @@ public final class ChunkPersistentClientCache {
             return;
         }
 
-        IO_EXECUTOR.execute(() -> sendManifestOnceFromWorker(channel, reason, manifestKey, serverScopeHash));
+        executeIo("initial-manifest", () -> sendManifestOnceFromWorker(channel, reason, manifestKey, serverScopeHash));
     }
 
     // Sends cache changes after the first chunk wave has already continued.
@@ -811,6 +862,7 @@ public final class ChunkPersistentClientCache {
         }
 
         List<ManifestEntry> entries = loadManifestEntries(serverScopeHash);
+        List<PreparedReadySeed> advertisedEntries = capturePreparedReadySeeds(serverScopeHash, entries);
         ArrayList<ManifestBatchPayload> batchPayloads = new ArrayList<>();
         int batchEntries = manifestBatchEntries();
         for (int startIndex = 0; startIndex < entries.size(); startIndex += batchEntries) {
@@ -837,6 +889,7 @@ public final class ChunkPersistentClientCache {
                 return;
             }
             int sentCount = 0;
+            retainAdvertisedEntries(channel, serverScopeHash, advertisedEntries);
             for (ManifestBatchPayload batchPayload : batchPayloads) {
                 if (ChunkTransportControlFrameSender.sendPersistentClientCacheManifestBatch(
                         channel,
@@ -894,6 +947,7 @@ public final class ChunkPersistentClientCache {
 
         long manifestLoadStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         List<ManifestEntry> entries = loadManifestEntries(serverScopeHash);
+        List<PreparedReadySeed> advertisedEntries = capturePreparedReadySeeds(serverScopeHash, entries);
         BloomCatalogPayload bloomCatalogPayload = buildBloomCatalogPayload(serverScopeHash);
         ChunkLoadDelayProbe.logStage(
                 channel,
@@ -941,6 +995,7 @@ public final class ChunkPersistentClientCache {
                 return;
             }
             int sentCount = 0;
+            retainAdvertisedEntries(channel, serverScopeHash, advertisedEntries);
             if (bloomCatalogPayload != null) {
                 ChunkTransportControlFrameSender.sendPersistentClientCacheBloom(
                         channel,
@@ -1002,6 +1057,44 @@ public final class ChunkPersistentClientCache {
         entries.sort(Comparator.comparingLong(ManifestEntry::lastUsedAtMillis).reversed());
         int limit = Math.max(readIntProperty(MANIFEST_LIMIT_PROPERTY, DEFAULT_MANIFEST_LIMIT), 0);
         return entries.size() > limit ? List.copyOf(entries.subList(0, limit)) : List.copyOf(entries);
+    }
+
+    private static List<PreparedReadySeed> capturePreparedReadySeeds(
+            String serverScopeHash,
+            List<ManifestEntry> entries
+    ) {
+        LoadedHotPathSnapshot snapshot = loadedHotPathSnapshot;
+        if (!serverScopeHash.equals(snapshot.serverScopeHash()) || entries == null || entries.isEmpty()) {
+            return List.of();
+        }
+        ArrayList<PreparedReadySeed> seeds = new ArrayList<>(entries.size());
+        for (ManifestEntry entry : entries) {
+            LoadedCacheEntry loaded = snapshot.entriesByKeyPrefix().get(entryPrefix(serverScopeHash, entry.coordinate()));
+            if (loaded != null && entry.payloadHash().equals(loaded.payloadHash())) {
+                seeds.add(new PreparedReadySeed(entry.coordinate(), entry.payloadHash(), loaded.packetBytes().clone()));
+            }
+        }
+        return List.copyOf(seeds);
+    }
+
+    private static void retainAdvertisedEntries(
+            Channel channel,
+            String serverScopeHash,
+            List<PreparedReadySeed> entries
+    ) {
+        if (channel == null || entries == null || entries.isEmpty()) {
+            return;
+        }
+        PreparedReadyState state = getOrCreatePreparedReadyState(channel);
+        for (PreparedReadySeed entry : entries) {
+            state.put(
+                    serverScopeHash,
+                    entry.coordinate(),
+                    entry.payloadHash(),
+                    entry.packetBytes(),
+                    ADVERTISED_READY_TTL_NANOS
+            );
+        }
     }
 
     private static BloomCatalogPayload buildBloomCatalogPayload(String serverScopeHash) {
@@ -1136,7 +1229,7 @@ public final class ChunkPersistentClientCache {
         }
         shutdownHookInstalled = true;
         Runtime.getRuntime().addShutdownHook(new Thread(
-                () -> flushNow("jvm_shutdown"),
+                () -> runMonitoredIoOperation("shutdown-flush", () -> flushNow("jvm_shutdown")),
                 "BandwidthOptimizer-ChunkPersistentCache-Shutdown"
         ));
     }
@@ -1147,7 +1240,8 @@ public final class ChunkPersistentClientCache {
         }
         checkpointLoopStarted = true;
         long intervalMillis = checkpointIntervalMillis();
-        IO_EXECUTOR.scheduleWithFixedDelay(
+        scheduleIoWithFixedDelay(
+                "periodic-checkpoint",
                 () -> flushNow("periodic_checkpoint"),
                 intervalMillis,
                 intervalMillis,
@@ -1172,7 +1266,8 @@ public final class ChunkPersistentClientCache {
     }
 
     private static void scheduleNextManifestRefresh(long delayMillis) {
-        IO_EXECUTOR.schedule(
+        scheduleIo(
+                "manifest-refresh",
                 () -> {
                     try {
                         runManifestRefreshTick();
@@ -1239,7 +1334,8 @@ public final class ChunkPersistentClientCache {
     }
 
     private static void scheduleNextBackup(long delayMillis) {
-        IO_EXECUTOR.schedule(
+        scheduleIo(
+                "periodic-backup",
                 () -> {
                     try {
                         backupNow("periodic_backup");
@@ -1407,7 +1503,7 @@ public final class ChunkPersistentClientCache {
     }
 
     private static void prepareReadyScopeAsync(Channel channel, String serverScopeHash) {
-        IO_EXECUTOR.execute(() -> {
+        executeIo("scope-preload", () -> {
             try {
                 Properties index;
                 synchronized (LOCK) {
@@ -1520,7 +1616,7 @@ public final class ChunkPersistentClientCache {
         }
         flushQueued = true;
         try {
-            IO_EXECUTOR.execute(() -> {
+            executeIo("async-flush", () -> {
                 try {
                     flushNow(reason);
                 } finally {
@@ -1748,6 +1844,16 @@ public final class ChunkPersistentClientCache {
             readyBlobBytes -= eldest.getValue().length;
             iterator.remove();
         }
+    }
+
+    private static PreparedReadyState getOrCreatePreparedReadyState(Channel channel) {
+        PreparedReadyState existing = channel.attr(PREPARED_READY_STATE_KEY).get();
+        if (existing != null) {
+            return existing;
+        }
+        PreparedReadyState created = new PreparedReadyState(channel);
+        PreparedReadyState raced = channel.attr(PREPARED_READY_STATE_KEY).setIfAbsent(created);
+        return raced == null ? created : raced;
     }
 
     private static void replaceReadyBlobsLocked(Map<String, byte[]> readyBlobs) {
@@ -2241,6 +2347,87 @@ public final class ChunkPersistentClientCache {
         return fileName == null ? "" : fileName.toString();
     }
 
+    private static ScheduledThreadPoolExecutor createIoWatchdogExecutor() {
+        ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1, new CacheWatchdogThreadFactory());
+        executor.setRemoveOnCancelPolicy(true);
+        executor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+        executor.setContinueExistingPeriodicTasksAfterShutdownPolicy(false);
+        return executor;
+    }
+
+    private static void executeIo(String operation, Runnable action) {
+        IO_EXECUTOR.execute(() -> runMonitoredIoOperation(operation, action));
+    }
+
+    private static void scheduleIo(String operation, Runnable action, long delay, TimeUnit unit) {
+        IO_EXECUTOR.schedule(() -> runMonitoredIoOperation(operation, action), delay, unit);
+    }
+
+    private static void scheduleIoWithFixedDelay(
+            String operation,
+            Runnable action,
+            long initialDelay,
+            long delay,
+            TimeUnit unit
+    ) {
+        IO_EXECUTOR.scheduleWithFixedDelay(
+                () -> runMonitoredIoOperation(operation, action),
+                initialDelay,
+                delay,
+                unit
+        );
+    }
+
+    private static void runMonitoredIoOperation(String operation, Runnable action) {
+        SlowIoOperation state = new SlowIoOperation(
+                safeText(operation, "persistent-cache-io"),
+                System.nanoTime(),
+                new AtomicBoolean()
+        );
+        ScheduledFuture<?> warningFuture = null;
+        try {
+            warningFuture = IO_WATCHDOG_EXECUTOR.schedule(
+                    () -> warnIfIoStillRunning(state),
+                    SLOW_IO_WARNING_MILLIS,
+                    TimeUnit.MILLISECONDS
+            );
+        } catch (RuntimeException ignored) {
+            // Diagnostics must never affect cache IO.
+        }
+        try {
+            action.run();
+        } finally {
+            state.completed().set(true);
+            if (warningFuture != null) {
+                warningFuture.cancel(false);
+            }
+        }
+    }
+
+    private static void warnIfIoStillRunning(SlowIoOperation state) {
+        if (state.completed().get()) {
+            return;
+        }
+        long nowNanos = System.nanoTime();
+        if (lastSlowIoWarningNanos != 0L
+                && nowNanos - lastSlowIoWarningNanos < SLOW_IO_WARNING_INTERVAL_NANOS) {
+            suppressedSlowIoWarnings++;
+            return;
+        }
+        long suppressed = suppressedSlowIoWarnings;
+        suppressedSlowIoWarnings = 0L;
+        lastSlowIoWarningNanos = nowNanos;
+        long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(nowNanos - state.startedAtNanos());
+        Bandwidthoptimizer.LOGGER.warn(
+                "[ChunkPersistentCache][SlowIO] operation={}, elapsedMillis={}, pendingStores={}, pendingBytes={}, suppressed={}; operation is still running",
+                state.operation(),
+                elapsedMillis,
+                PENDING_STORE_REQUEST_COUNT.get(),
+                PENDING_STORE_REQUEST_BYTES.get(),
+                suppressed
+        );
+    }
+
     private static final class CacheThreadFactory implements ThreadFactory {
 
         @Override
@@ -2249,6 +2436,130 @@ public final class ChunkPersistentClientCache {
             thread.setDaemon(true);
             return thread;
         }
+    }
+
+    private static final class CacheWatchdogThreadFactory implements ThreadFactory {
+
+        @Override
+        public Thread newThread(Runnable runnable) {
+            Thread thread = new Thread(runnable, "BandwidthOptimizer-ChunkPersistentCache-Watchdog");
+            thread.setDaemon(true);
+            return thread;
+        }
+    }
+
+    private record SlowIoOperation(String operation, long startedAtNanos, AtomicBoolean completed) {}
+
+    private static final class PreparedReadyState {
+
+        private final Channel channel;
+        private final LinkedHashMap<PreparedReadyKey, PreparedReadyEntry> entries = new LinkedHashMap<>();
+        private long bytes;
+        private long cleanupGeneration;
+        private long cleanupDeadlineNanos = Long.MAX_VALUE;
+
+        private PreparedReadyState(Channel channel) {
+            this.channel = channel;
+        }
+
+        private synchronized boolean put(
+                String serverScopeHash,
+                ChunkPacketCoordinate coordinate,
+                String payloadHash,
+                byte[] packetBytes,
+                long ttlNanos
+        ) {
+            long nowNanos = System.nanoTime();
+            removeExpired(nowNanos);
+            if (!isSafeScopeHash(serverScopeHash)
+                    || coordinate == null
+                    || !coordinate.present()
+                    || !isSafeHash(payloadHash)
+                    || packetBytes == null
+                    || packetBytes.length == 0
+                    || packetBytes.length > readyCacheByteBudget() + MAX_PREPARED_READY_EXTRA_BYTES) {
+                return false;
+            }
+
+            PreparedReadyKey key = new PreparedReadyKey(serverScopeHash, coordinate, payloadHash);
+            PreparedReadyEntry previous = entries.remove(key);
+            if (previous != null) {
+                bytes -= previous.packetBytes().length;
+            }
+            if (entries.size() >= MAX_PREPARED_READY_ENTRIES
+                    || bytes + packetBytes.length > readyCacheByteBudget() + MAX_PREPARED_READY_EXTRA_BYTES) {
+                if (previous != null) {
+                    entries.put(key, previous);
+                    bytes += previous.packetBytes().length;
+                }
+                return false;
+            }
+            byte[] retainedBytes = packetBytes.clone();
+            entries.put(key, new PreparedReadyEntry(retainedBytes, nowNanos + Math.max(ttlNanos, 1L)));
+            bytes += retainedBytes.length;
+            scheduleCleanup(nowNanos);
+            return true;
+        }
+
+        private synchronized byte[] take(
+                String serverScopeHash,
+                ChunkPacketCoordinate coordinate,
+                String payloadHash
+        ) {
+            long nowNanos = System.nanoTime();
+            removeExpired(nowNanos);
+            PreparedReadyEntry entry = entries.remove(new PreparedReadyKey(serverScopeHash, coordinate, payloadHash));
+            if (entry == null) {
+                return null;
+            }
+            bytes -= entry.packetBytes().length;
+            return entry.packetBytes().clone();
+        }
+
+        private void removeExpired(long nowNanos) {
+            var iterator = entries.entrySet().iterator();
+            while (iterator.hasNext()) {
+                PreparedReadyEntry entry = iterator.next().getValue();
+                if (nowNanos >= entry.expiresAtNanos()) {
+                    bytes -= entry.packetBytes().length;
+                    iterator.remove();
+                }
+            }
+        }
+
+        private void scheduleCleanup(long nowNanos) {
+            long earliestDeadlineNanos = Long.MAX_VALUE;
+            for (PreparedReadyEntry entry : entries.values()) {
+                earliestDeadlineNanos = Math.min(earliestDeadlineNanos, entry.expiresAtNanos());
+            }
+            if (earliestDeadlineNanos == Long.MAX_VALUE || earliestDeadlineNanos >= cleanupDeadlineNanos) {
+                return;
+            }
+            long generation = ++cleanupGeneration;
+            cleanupDeadlineNanos = earliestDeadlineNanos;
+            long delayNanos = Math.max(earliestDeadlineNanos - nowNanos, 1L);
+            channel.eventLoop().schedule(() -> cleanupExpired(generation), delayNanos, TimeUnit.NANOSECONDS);
+        }
+
+        private synchronized void cleanupExpired(long generation) {
+            if (generation != cleanupGeneration) {
+                return;
+            }
+            long nowNanos = System.nanoTime();
+            removeExpired(nowNanos);
+            cleanupDeadlineNanos = Long.MAX_VALUE;
+            scheduleCleanup(nowNanos);
+        }
+    }
+
+    private record PreparedReadyKey(
+            String serverScopeHash,
+            ChunkPacketCoordinate coordinate,
+            String payloadHash
+    ) {
+    }
+
+    private record PreparedReadyEntry(byte[] packetBytes, long expiresAtNanos) {
     }
 
     private record ScopedCoordinateKey(
@@ -2309,6 +2620,13 @@ public final class ChunkPersistentClientCache {
             String packetClassName,
             long fullSnapshotVersion,
             int encodedBytes
+    ) {
+    }
+
+    private record PreparedReadySeed(
+            ChunkPacketCoordinate coordinate,
+            String payloadHash,
+            byte[] packetBytes
     ) {
     }
 

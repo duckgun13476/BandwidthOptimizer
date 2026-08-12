@@ -28,7 +28,7 @@ public final class ChunkPersistentPrepareGate {
     private static final AttributeKey<PrepareGateState> STATE_KEY =
             AttributeKey.valueOf("bandwidthoptimizer:persistent_prepare_gate");
     private static final AtomicLong NEXT_TOKEN = new AtomicLong(1L);
-    private static final int MAX_PENDING_COORDINATES = 64;
+    private static final int MAX_PENDING_COORDINATES = 4;
     private static final int MAX_QUEUED_PACKETS = 128;
     private static final long MAX_PENDING_BYTES = 32L * 1024L * 1024L;
     private static final long TIMEOUT_MILLIS = 400L;

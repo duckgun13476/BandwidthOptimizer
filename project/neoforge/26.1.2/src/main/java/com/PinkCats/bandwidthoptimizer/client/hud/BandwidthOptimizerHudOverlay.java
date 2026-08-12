@@ -13,6 +13,8 @@ import net.neoforged.neoforge.client.event.RenderGuiEvent;
 @EventBusSubscriber(modid = Bandwidthoptimizer.MODID, value = Dist.CLIENT)
 public final class BandwidthOptimizerHudOverlay {
 
+    private static final int IDLE_INDICATOR_COLOR = 0xFFD166;
+
     private BandwidthOptimizerHudOverlay() {}
 
     @SubscribeEvent
@@ -31,7 +33,7 @@ public final class BandwidthOptimizerHudOverlay {
         if (!BandwidthOptimizerHudOverlayCore.shouldRender(minecraft)) {
             String idleIndicator = BandwidthOptimizerHudOverlayCore.idleIndicator(minecraft);
             if (idleIndicator != null) {
-                event.getGuiGraphics().textRenderer().accept(6, 6, Component.literal(idleIndicator));
+                event.getGuiGraphics().textRenderer().accept(6, 6, coloredText(idleIndicator, IDLE_INDICATOR_COLOR));
             }
             return;
         }
@@ -49,8 +51,16 @@ public final class BandwidthOptimizerHudOverlay {
         guiGraphics.fill(x, y, x + hud.boxWidth(), y + 1, 0xFF66D9EF);
         for (int index = 0; index < hud.lines().size(); index++) {
             String line = hud.lines().get(index);
-            guiGraphics.textRenderer().accept(x + 5, y + 4 + index * hud.lineHeight(), Component.literal(line));
+            guiGraphics.textRenderer().accept(
+                    x + 5,
+                    y + 4 + index * hud.lineHeight(),
+                    coloredText(line, BandwidthOptimizerHudOverlayCore.hudLineColor(line))
+            );
         }
+    }
+
+    private static Component coloredText(String text, int color) {
+        return Component.literal(text).withStyle(style -> style.withColor(color));
     }
 
     public static boolean isEnabled() {

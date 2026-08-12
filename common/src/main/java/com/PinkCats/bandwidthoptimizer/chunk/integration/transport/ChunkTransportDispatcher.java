@@ -550,7 +550,13 @@ public final class ChunkTransportDispatcher {
                 );
                 if (restoredPacketBytes == null) {
                     long persistentFindStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
-                    restoredPacketBytes = ChunkPersistentClientCache.findLoadedPacketBytes(envelope.frame());
+                    restoredPacketBytes = ChunkPersistentClientCache.takePreparedPacketBytes(
+                            context.channel(),
+                            envelope.frame()
+                    );
+                    if (restoredPacketBytes == null) {
+                        restoredPacketBytes = ChunkPersistentClientCache.findLoadedPacketBytes(envelope.frame());
+                    }
                     ChunkLoadDelayProbe.logStage(
                             context,
                             envelope.frame(),
@@ -1444,7 +1450,13 @@ public final class ChunkTransportDispatcher {
                     envelope.frame().baseSnapshotHash()
             );
             if (runtimeFullBasePacketBytes == null && isPersistentManifestPatchFrame(envelope.frame())) {
-                runtimeFullBasePacketBytes = ChunkPersistentClientCache.findLoadedBasePacketBytes(envelope.frame());
+                runtimeFullBasePacketBytes = ChunkPersistentClientCache.takePreparedBasePacketBytes(
+                        context.channel(),
+                        envelope.frame()
+                );
+                if (runtimeFullBasePacketBytes == null) {
+                    runtimeFullBasePacketBytes = ChunkPersistentClientCache.findLoadedBasePacketBytes(envelope.frame());
+                }
                 if (runtimeFullBasePacketBytes != null) {
                     patchBaseSource = ChunkLocalCacheReuseStats.ReuseSource.OFFLINE_PERSISTENT_CACHE;
                     ChunkRuntimeReferenceStore.storePacketBytes(

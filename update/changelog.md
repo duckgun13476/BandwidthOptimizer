@@ -1,3 +1,22 @@
+#### v5.10.30.88-beta
+
+1. Added recoverable cross-frame streaming Zstd compression with sequence-gap detection, independent recovery batches, and silent epoch resynchronization.
+2. Fixed streaming epoch boundaries during login, configuration, reconnects, and large synchronization bursts to prevent bounded-queue disconnects.
+3. Rebuilt the persistent chunk cache for on-demand offline reuse, incremental disk writes, bounded recovery, and lifecycle-safe reference cleanup.
+4. Added rate-limited warnings when client cache I/O remains blocked for more than 1.5 seconds.
+5. Improved oversized transport fragmentation and reassembly compatibility.
+6. Fixed ProtocolLib proxy channel identity handling and added concise reporting for repeated compatibility failures.
+7. Moved Create contraption proximity scans off Netty threads to prevent concurrent entity-list access and player disconnects.
+8. Extended light-idle traffic reduction to off-screen block and entity updates while preserving recovery when play resumes.
+9. Preserved fishing and AutoFish updates during deep idle and streaming epoch transitions.
+10. Batched foreground state synchronization packets and reduced server HUD snapshot overhead.
+11. Added uploadable bandwidth reports with per-player and time-period traffic history.
+12. Added runtime packet-class tracing and simplified commands into HUD, stats, and debug groups.
+13. Added complete NeoForge 26.1.2 runtime, statistics, HUD, command, transport, and publishing support.
+14. Restored HUD status colors and the idle indicator color on NeoForge 26.1.2.
+15. Improved cross-version compatibility for chunk coordinates, player display names, loader APIs, and transport regressions.
+16. Silenced known public protocol probes without hiding actionable decoder failures.
+
 #### v3.9.26.72-release
 1. Added adaptive AFK traffic controls for background clients.
 2. Reduced verified presentation-only Minecraft and mod traffic.
