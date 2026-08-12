@@ -1465,10 +1465,12 @@ public final class ChunkPersistentClientCache {
     private static CachePreloadResult loadV2CacheFromDisk() throws IOException {
         PersistentChunkCacheDiskStore store = persistentDiskStore();
         Properties index = store.loadIndex();
-        if (index.isEmpty()) {
+        boolean migrationPendingAtStartup = Files.isRegularFile(cacheRoot().resolve(MIGRATION_PENDING_FILE_NAME));
+        if (index.isEmpty() || (!migrationPendingAtStartup && hasLegacyCacheSource())) {
             migrateLegacyCaches(store, index);
             index = store.loadIndex();
-        } else {
+        }
+        if (migrationPendingAtStartup && verifyOrRepairLegacyMigration(store, index)) {
             cleanupLegacyCachesAfterVerifiedRestart();
         }
 
@@ -2131,6 +2133,58 @@ public final class ChunkPersistentClientCache {
                 Math.min(readIntProperty(MIN_SCOPE_ENTRIES_PROPERTY, DEFAULT_MIN_SCOPE_ENTRIES), persistentCacheMaxEntries()),
                 0
         );
+    }
+
+    private static boolean hasLegacyCacheSource() {
+        return Files.isRegularFile(cacheFile())
+                || Files.isRegularFile(backupFile())
+                || Files.isRegularFile(legacyRootDirectory().resolve(INDEX_ENTRY_NAME));
+    }
+
+    private static boolean verifyOrRepairLegacyMigration(
+            PersistentChunkCacheDiskStore store,
+            Properties targetIndex
+    ) {
+        if (!hasLegacyCacheSource()) {
+            return true;
+        }
+        try {
+            ZipCacheSnapshot legacy = readZipCacheSnapshot();
+            for (String key : legacy.index().stringPropertyNames()) {
+                if (!key.endsWith(".hash")) {
+                    continue;
+                }
+                String coordinateKey = key.substring(0, key.length() - ".hash".length());
+                String legacyHash = legacy.index().getProperty(key, "");
+                String targetHash = targetIndex.getProperty(coordinateKey + ".hash", "");
+                if (!isSafeHash(targetHash)) {
+                    return false;
+                }
+                try {
+                    byte[] targetBytes = store.readBlob(targetHash);
+                    if (targetBytes != null && matchesHash(targetBytes, targetHash)) {
+                        continue;
+                    }
+                } catch (IOException ignored) {
+                    // Repair the migrated copy from the retained legacy source below.
+                }
+                if (!targetHash.equals(legacyHash)) {
+                    return false;
+                }
+                byte[] legacyBytes = readZipBlobEntryBytes(legacy.sourcePath(), blobEntryName(legacyHash));
+                if (legacyBytes == null || !matchesHash(legacyBytes, legacyHash)) {
+                    return false;
+                }
+                store.rewriteBlob(legacyHash, legacyBytes);
+                byte[] repairedBytes = store.readBlob(legacyHash);
+                if (repairedBytes == null || !matchesHash(repairedBytes, legacyHash)) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (IOException | RuntimeException ignored) {
+            return false;
+        }
     }
 
     private static long persistentCacheCompactionBytesPerSecond() {

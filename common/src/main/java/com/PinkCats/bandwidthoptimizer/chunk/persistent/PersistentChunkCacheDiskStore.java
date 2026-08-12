@@ -711,6 +711,26 @@ final class PersistentChunkCacheDiskStore {
         }
     }
 
+    void rewriteBlob(String hash, byte[] packetBytes) throws IOException {
+        String normalizedHash = normalizeHash(hash);
+        BlobLocation previous = blobs.remove(normalizedHash);
+        try {
+            writeBlob(normalizedHash, packetBytes);
+            BlobLocation replacement = blobs.get(normalizedHash);
+            if (replacement == null) {
+                throw new IOException("Persistent chunk blob rewrite produced no location");
+            }
+            try (FileChannel channel = FileChannel.open(replacement.path(), StandardOpenOption.WRITE)) {
+                channel.force(true);
+            }
+        } catch (IOException | RuntimeException exception) {
+            if (previous != null) {
+                blobs.put(normalizedHash, previous);
+            }
+            throw exception;
+        }
+    }
+
     private static void throttle(long completedBytes, long startedNanos, long bytesPerSecond, BooleanSupplier continueCompaction) {
         if (bytesPerSecond <= 0L) {
             return;

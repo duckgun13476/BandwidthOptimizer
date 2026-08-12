@@ -226,6 +226,15 @@ tasks.register('runPersistentChunkCacheDiskStoreRegression', JavaExec) {
     )
 }
 
+tasks.register('runPersistentChunkCacheBoundaryRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies persistent cache scope, disconnect, migration, and corruption boundaries.',
+            'com.PinkCats.bandwidthoptimizer.chunk.persistent.PersistentChunkCacheBoundaryRegressionMain'
+    )
+}
+
 tasks.register('runPacketClassTraceDiagnosticRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,
