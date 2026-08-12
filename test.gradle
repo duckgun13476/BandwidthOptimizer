@@ -235,6 +235,18 @@ tasks.register('runPersistentChunkCacheBoundaryRegression', JavaExec) {
     )
 }
 
+tasks.register('runPersistentChunkCacheLoadRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies persistent cache capacity convergence, mixed load, and concurrent maintenance.',
+            'com.PinkCats.bandwidthoptimizer.chunk.persistent.PersistentChunkCacheLoadRegressionMain'
+    )
+    if (project.hasProperty('boPersistentCacheJfrFile')) {
+        jvmArgs "-XX:StartFlightRecording=filename=${project.property('boPersistentCacheJfrFile')},settings=profile,dumponexit=true"
+    }
+}
+
 tasks.register('runPacketClassTraceDiagnosticRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,
