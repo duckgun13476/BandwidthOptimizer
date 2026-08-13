@@ -3,7 +3,7 @@ const translations = {
     language: '语言', loading: '正在读取报告...', invalidLink: '请打开一条完整的报告链接。', retry: '重试',
     missing: '报告不存在或已过期。', failed: '读取报告失败。', timedOut: '读取报告超时。', title: '带宽报告',
     subtitle: '服务器带宽使用与优化结果', trend: '小时流量趋势', dataRange: '数据范围', serverTotal: '全服总量',
-    tabOverview: '总览', tabPlayers: '玩家', tabDetails: '传输详情', pageNavigation: '报告页面', detailsSubtitle: '各压缩阶段与运行状态',
+    tabOverview: '总览', tabPlayers: '玩家', tabDetails: '传输详情', tabPackets: '包分析', pageNavigation: '报告页面', detailsSubtitle: '各压缩阶段与运行状态', packetsSubtitle: '旁路来源与包级流量明细',
     month: '月度玩家排行', current: '当前小时排行', details: '传输详情', player: '玩家', hour: '小时',
     totalWire: '实际总流量', outboundWire: '出站实际', inboundWire: '入站实际', rawOutbound: '原始出站', boFrame: 'BO 帧',
     bypass: '旁路', status: '状态', complete: '已完成', partial: '进行中', noData: '暂无流量数据', sessionOutbound: '本次出站实际',
@@ -27,7 +27,7 @@ const translations = {
     language: 'Language', loading: 'Loading report...', invalidLink: 'Open a complete report link.', retry: 'Retry',
     missing: 'The report does not exist or has expired.', failed: 'Failed to load the report.', timedOut: 'Report request timed out.', title: 'Bandwidth report',
     subtitle: 'Server bandwidth use and optimization results', trend: 'Hourly traffic trend', dataRange: 'Data range', serverTotal: 'All players',
-    tabOverview: 'Overview', tabPlayers: 'Players', tabDetails: 'Transport details', pageNavigation: 'Report pages', detailsSubtitle: 'Compression stages and runtime state',
+    tabOverview: 'Overview', tabPlayers: 'Players', tabDetails: 'Transport details', tabPackets: 'Packet analysis', pageNavigation: 'Report pages', detailsSubtitle: 'Compression stages and runtime state', packetsSubtitle: 'Bypass sources and packet-level traffic details',
     month: 'Monthly player ranking', current: 'Current-hour ranking', details: 'Transport details', player: 'Player', hour: 'Hour',
     totalWire: 'Measured total', outboundWire: 'Outbound measured', inboundWire: 'Inbound measured', rawOutbound: 'Outbound raw', boFrame: 'BO frames',
     bypass: 'Bypass', status: 'Status', complete: 'Complete', partial: 'In progress', noData: 'No traffic data', sessionOutbound: 'Session outbound',
@@ -51,7 +51,7 @@ const translations = {
     language: 'Idioma', loading: 'Carregando relatório...', invalidLink: 'Abra um link completo de relatório.', retry: 'Tentar novamente',
     missing: 'O relatório não existe ou expirou.', failed: 'Falha ao carregar o relatório.', timedOut: 'A leitura do relatório expirou.', title: 'Relatório de largura de banda',
     subtitle: 'Uso de largura de banda e resultados da otimização', trend: 'Tendência de tráfego por hora', dataRange: 'Intervalo de dados', serverTotal: 'Todos os jogadores',
-    tabOverview: 'Visão geral', tabPlayers: 'Jogadores', tabDetails: 'Detalhes do transporte', pageNavigation: 'Páginas do relatório', detailsSubtitle: 'Etapas de compressão e estado de execução',
+    tabOverview: 'Visão geral', tabPlayers: 'Jogadores', tabDetails: 'Detalhes do transporte', tabPackets: 'Análise de pacotes', pageNavigation: 'Páginas do relatório', detailsSubtitle: 'Etapas de compressão e estado de execução', packetsSubtitle: 'Origens de desvio e detalhes de tráfego por pacote',
     month: 'Ranking mensal de jogadores', current: 'Ranking da hora atual', details: 'Detalhes do transporte', player: 'Jogador', hour: 'Hora',
     totalWire: 'Total medido', outboundWire: 'Saída medida', inboundWire: 'Entrada medida', rawOutbound: 'Saída original', boFrame: 'Quadros BO',
     bypass: 'Desvio', status: 'Estado', complete: 'Concluído', partial: 'Em andamento', noData: 'Sem dados de tráfego', sessionOutbound: 'Saída da sessão',
@@ -85,7 +85,7 @@ if (!translations[language]) language = 'en-US';
 let reportBundle = null;
 const visibleSeries = new Set(['total', 'outbound', 'inbound']);
 const pages = { bypassSources: { page: 1, size: 10 }, bypassEntries: { page: 1, size: 10 } };
-let activeView = ['overview', 'players', 'details'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
+let activeView = ['overview', 'players', 'details', 'packets'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
 let chartHoverIndex = -1;
 const t = key => translations[language][key] || translations['en-US'][key] || key;
 const template = (key, values) => Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, value), t(key));
@@ -214,12 +214,15 @@ function render() {
   document.querySelector('[data-view="overview"]').textContent = t('tabOverview');
   document.querySelector('[data-view="players"]').textContent = t('tabPlayers');
   document.querySelector('[data-view="details"]').textContent = t('tabDetails');
+  document.querySelector('[data-view="packets"]').textContent = t('tabPackets');
   document.querySelector('#trend-title').textContent = t('trend');
   document.querySelector('#trend-player-label').textContent = t('dataRange');
   document.querySelector('#month-title').textContent = t('month');
   document.querySelector('#current-title').textContent = t('current');
   document.querySelector('#details-title').textContent = t('details');
   document.querySelector('#details-subtitle').textContent = t('detailsSubtitle');
+  document.querySelector('#packets-title').textContent = t('tabPackets');
+  document.querySelector('#packets-subtitle').textContent = t('packetsSubtitle');
   document.querySelectorAll('[data-i18n]').forEach(node => { node.textContent = t(node.dataset.i18n); });
   document.querySelector('#report-id').textContent = bundle.reportId;
   document.querySelector('#generated').textContent = formatDateTime(bundle.generatedAtMillis);
@@ -238,7 +241,8 @@ function render() {
   renderTrend(history);
   renderMonth(monthPlayers, history);
   renderCurrent(traffic?.players || [], traffic);
-  renderDetails(summary.sections || [], summary.bypass);
+  renderDetails(summary.sections || []);
+  renderBypass(summary.bypass);
 
   statusNode.hidden = true;
   document.querySelector('#trend-section').hidden = !history;
@@ -350,7 +354,7 @@ function renderMonth(players, history) {
 }
 
 function setActiveView(view, updateHash = true) {
-  activeView = ['overview', 'players', 'details'].includes(view) ? view : 'overview';
+  activeView = ['overview', 'players', 'details', 'packets'].includes(view) ? view : 'overview';
   document.querySelectorAll('.view-page').forEach(node => { node.hidden = node.id !== `view-${activeView}`; });
   document.querySelectorAll('#view-tabs button').forEach(button => button.setAttribute('aria-pressed', `${button.dataset.view === activeView}`));
   if (updateHash) history.replaceState(null, '', `#${activeView}`);
@@ -371,19 +375,20 @@ function renderPlayerRanking(name, players) {
   target.innerHTML = players.map((player, index) => {
     const traffic = player.traffic || {};
     const total = totalWire(traffic);
-    return `<div class="player-ranking-row"><span class="rank-number">${index + 1}</span><div class="rank-measure"><div class="rank-total"><meter class="ranking-bar" min="0" max="100" value="${(total * 100 / maximum).toFixed(3)}" aria-label="${escapeAttribute(`${player.playerName} ${bytes(total)}`)}"></meter><strong>${bytes(total)}</strong></div><div class="rank-breakdown"><span class="rank-outbound">${escapeText(t('outbound'))} ${bytes(traffic.outboundWireBytes)}</span><span class="rank-inbound">${escapeText(t('inbound'))} ${bytes(traffic.inboundWireBytes)}</span></div></div><div class="ranking-player"><strong>${escapeText(player.playerName)}</strong><span class="uuid">${escapeText(player.playerUuid)}</span></div></div>`;
+    return `<div class="player-ranking-row"><span class="rank-number">${index + 1}</span><div class="rank-measure"><div class="rank-total"><meter class="ranking-bar" min="0" max="100" value="${(total * 100 / maximum).toFixed(3)}" aria-label="${escapeAttribute(`${player.playerName} ${bytes(total)}`)}"></meter><strong>${bytes(total)}</strong></div><div class="rank-breakdown"><span class="rank-outbound">${escapeText(t('outbound'))} ${bytes(traffic.outboundWireBytes)}</span><span class="rank-inbound">${escapeText(t('inbound'))} ${bytes(traffic.inboundWireBytes)}</span></div></div><div class="ranking-player"><strong>${escapeText(player.playerName)}</strong></div></div>`;
   }).join('') || `<div class="empty">${escapeText(t('noData'))}</div>`;
 }
 
-function renderDetails(sections, bypass) {
+function renderDetails(sections) {
   document.querySelector('#sections').innerHTML = sections.map(section => {
     const content = section.metrics.every(item => item.unit === 'boolean') ? renderBooleanMetrics(section.metrics) : renderMetricGroups(section.metrics);
     return `<div class="section"><h3>${escapeText(t('sections')[section.id] || section.title)}</h3><p>${escapeText(t('descriptions')[section.id] || section.description)}</p>${content}</div>`;
-  }).join('') + (bypass ? '<div id="bypass-section"></div>' : '');
-  if (bypass) renderBypass(bypass);
+  }).join('');
 }
 
 function renderBypass(bypass) {
+  const node = document.querySelector('#bypass-section');
+  if (!bypass) { node.className = 'section bypass-section'; node.innerHTML = `<div class="empty">${escapeText(t('noData'))}</div>`; return; }
   const entries = [...(bypass.entries || [])].sort((a, b) => Number(b.totalBytes || 0) - Number(a.totalBytes || 0));
   const sources = aggregateBypassSources(entries, bypass);
   const sourceMaximum = Math.max(1, ...sources.map(source => source.bytes));
@@ -394,7 +399,6 @@ function renderBypass(bypass) {
     const detail = entry.payloadChannel ? entry.packetClass : `${entry.protocol} · ${entry.flow}`;
     return `<div class="bypass-row bypass-entry"><div class="bypass-identity"><strong>${escapeText(name)}</strong><small>${escapeText(detail)}</small><small>${escapeText(entry.reason)}</small></div><div class="bypass-main"><meter class="visual-track" min="0" max="100" value="${(Number(entry.totalBytes || 0) * 100 / entryMaximum).toFixed(3)}" aria-label="${escapeAttribute(`${name} ${bytes(entry.totalBytes)}`)}"></meter><div class="bypass-values"><strong>${bytes(entry.totalBytes)}</strong><small>${new Intl.NumberFormat(language).format(Number(entry.totalPackets || 0))} ${escapeText(t('units').packets)}</small><small>${bytes(entry.windowBytes)} · ${new Intl.NumberFormat(language).format(Number(entry.windowPackets || 0))}</small></div></div></div>`;
   }).join('') || `<div class="empty">${escapeText(t('noData'))}</div>`;
-  const node = document.querySelector('#bypass-section');
   node.className = 'section bypass-section';
   node.innerHTML = `<h3>${escapeText(t('bypassAnalysis'))}</h3><p>${escapeText(t('bypassSubtitle'))}</p><div class="bypass-summary"><div><small>${escapeText(t('cumulativeTraffic'))}</small><strong>${bytes(bypass.totalBytes)}</strong><span>${new Intl.NumberFormat(language).format(Number(bypass.totalPackets || 0))} ${escapeText(t('units').packets)}</span></div><div><small>${escapeText(t('windowTraffic'))}</small><strong>${bytes(bypass.windowBytes)}</strong><span>${new Intl.NumberFormat(language).format(Number(bypass.windowPackets || 0))} ${escapeText(t('units').packets)}</span></div><div><small>${escapeText(t('capturedKeys'))}</small><strong>${entries.length} / ${new Intl.NumberFormat(language).format(Number(bypass.distinctKeys || 0))}</strong><span>${escapeText(t('distinctKeys'))}</span></div></div><div class="bypass-subheading"><h4>${escapeText(t('bypassSources'))}</h4></div><div class="bypass-list">${sourceRows}</div><div class="pagination" id="bypassSources-pagination"></div><div class="bypass-subheading"><h4>${escapeText(t('bypassEntries'))}</h4></div><div class="bypass-list">${entryRows}</div><div class="pagination" id="bypassEntries-pagination"></div>`;
   renderPagination('bypassSources', sources.length, () => renderBypass(bypass));

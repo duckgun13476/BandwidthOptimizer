@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>BO Stats</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="/static/app.css?v=8">
+  <link rel="stylesheet" href="/static/app.css?v=9">
 </head>
 <body>
   <header>
@@ -14,6 +14,7 @@
       <button type="button" data-view="overview" aria-pressed="true">总览</button>
       <button type="button" data-view="players" aria-pressed="false">玩家</button>
       <button type="button" data-view="details" aria-pressed="false">传输详情</button>
+      <button type="button" data-view="packets" aria-pressed="false">包分析</button>
     </nav>
     <div class="header-tools">
       <time id="generated"></time>
@@ -81,7 +82,10 @@
     <div id="view-details" class="view-page" hidden>
       <section id="details"><div class="page-heading"><div><h1 id="details-title">传输详情</h1><p id="details-subtitle">各压缩阶段与运行状态</p></div></div><div id="sections"></div></section>
     </div>
+    <div id="view-packets" class="view-page" hidden>
+      <section id="packet-analysis"><div class="page-heading"><div><h1 id="packets-title">包分析</h1><p id="packets-subtitle">旁路来源与包级流量明细</p></div></div><div id="bypass-section"></div></section>
+    </div>
   </main>
-  <script src="/static/app.js?v=8" defer></script>
+  <script src="/static/app.js?v=9" defer></script>
 </body>
 </html>
