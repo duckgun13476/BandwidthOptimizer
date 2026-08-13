@@ -4,7 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>BO Stats</title>
-  <link rel="stylesheet" href="/static/app.css?v=3">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/app.css?v=4">
 </head>
 <body>
   <header>
@@ -25,21 +26,35 @@
       <button id="retry" type="button" hidden>重试</button>
     </div>
     <section id="overview" hidden>
-      <h1 id="page-title">带宽报告</h1>
+      <div class="page-heading"><div><h1 id="page-title">带宽报告</h1><p id="page-subtitle">服务器带宽使用与优化结果</p></div></div>
       <div class="summary" id="summary"></div>
     </section>
+    <section id="trend-section" hidden>
+      <div class="section-heading trend-heading">
+        <div><h2 id="trend-title">小时流量趋势</h2><span id="trend-period"></span></div>
+        <div class="trend-controls">
+          <label for="trend-player" id="trend-player-label">数据范围</label>
+          <select id="trend-player"></select>
+        </div>
+      </div>
+      <div class="trend-panel">
+        <div class="legend" id="trend-legend"></div>
+        <div class="chart-wrap"><canvas id="traffic-chart" height="260"></canvas></div>
+      </div>
+    </section>
     <section id="month-section" hidden>
-      <div class="section-heading"><h2 id="month-title">月度流量</h2><span id="month-period"></span></div>
+      <div class="section-heading"><div><h2 id="month-title">月度玩家排行</h2><span id="month-period"></span></div><div id="month-count" class="record-count"></div></div>
       <div class="table-wrap">
         <table>
           <thead><tr><th data-i18n="player">玩家</th><th data-i18n="totalWire">实际总流量</th><th data-i18n="outboundWire">出站实际</th><th data-i18n="inboundWire">入站实际</th><th data-i18n="rawOutbound">原始出站</th></tr></thead>
           <tbody id="month-players"></tbody>
         </table>
       </div>
+      <div class="pagination" id="month-pagination"></div>
     </section>
     <section id="hourly-section" hidden>
       <div class="section-heading">
-        <h2 id="hourly-title">玩家小时流量</h2>
+        <div><h2 id="hourly-title">玩家小时明细</h2><span id="hourly-count" class="record-count"></span></div>
         <select id="hourly-player" aria-label="玩家"></select>
       </div>
       <div class="table-wrap">
@@ -48,21 +63,23 @@
           <tbody id="hourly-rows"></tbody>
         </table>
       </div>
+      <div class="pagination" id="hourly-pagination"></div>
     </section>
     <section id="current-section" hidden>
-      <h2 id="current-title">当前小时</h2>
+      <div class="section-heading"><div><h2 id="current-title">当前小时</h2><span id="current-count" class="record-count"></span></div></div>
       <div class="table-wrap">
         <table>
           <thead><tr><th data-i18n="player">玩家</th><th data-i18n="outboundWire">出站实际</th><th data-i18n="inboundWire">入站实际</th><th data-i18n="rawOutbound">原始出站</th><th data-i18n="boFrame">BO 帧</th><th data-i18n="bypass">直通</th></tr></thead>
           <tbody id="current-players"></tbody>
         </table>
       </div>
+      <div class="pagination" id="current-pagination"></div>
     </section>
     <section id="details" hidden>
       <h2 id="details-title">统计阶段</h2>
       <div id="sections"></div>
     </section>
   </main>
-  <script src="/static/app.js?v=3" defer></script>
+  <script src="/static/app.js?v=4" defer></script>
 </body>
 </html>

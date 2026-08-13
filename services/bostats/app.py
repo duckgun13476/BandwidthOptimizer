@@ -202,7 +202,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header(
             "Content-Security-Policy",
-            "default-src 'self'; script-src 'self'; style-src 'self'; "
+            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
             "object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
         )
         self.end_headers()
