@@ -374,8 +374,14 @@ function renderPlayerRanking(name, players) {
   const maximum = Math.max(1, ...players.map(player => totalWire(player.traffic)));
   target.innerHTML = players.map((player, index) => {
     const traffic = player.traffic || {};
-    const total = totalWire(traffic);
-    return `<div class="player-ranking-row"><span class="rank-number">${index + 1}</span><div class="rank-measure"><div class="rank-total"><meter class="ranking-bar" min="0" max="100" value="${(total * 100 / maximum).toFixed(3)}" aria-label="${escapeAttribute(`${player.playerName} ${bytes(total)}`)}"></meter><strong>${bytes(total)}</strong></div><div class="rank-breakdown"><span class="rank-outbound">${escapeText(t('outbound'))} ${bytes(traffic.outboundWireBytes)}</span><span class="rank-inbound">${escapeText(t('inbound'))} ${bytes(traffic.inboundWireBytes)}</span></div></div><div class="ranking-player"><strong>${escapeText(player.playerName)}</strong></div></div>`;
+    const outbound = Math.max(0, Number(traffic.outboundWireBytes || 0));
+    const inbound = Math.max(0, Number(traffic.inboundWireBytes || 0));
+    const total = outbound + inbound;
+    const outboundWidth = outbound * 100 / maximum;
+    const inboundWidth = inbound * 100 / maximum;
+    const outboundTip = `${t('outbound')} ${bytes(outbound)}`;
+    const inboundTip = `${t('inbound')} ${bytes(inbound)}`;
+    return `<div class="player-ranking-row"><span class="rank-number">${index + 1}</span><svg class="ranking-bar" viewBox="0 0 100 1" preserveAspectRatio="none" role="img" aria-label="${escapeAttribute(`${player.playerName} ${bytes(total)}`)}"><rect class="ranking-bar-track" width="100" height="1"></rect><rect class="ranking-bar-outbound" width="${outboundWidth}" height="1" tabindex="0" aria-label="${escapeAttribute(outboundTip)}"><title>${escapeText(outboundTip)}</title></rect><rect class="ranking-bar-inbound" x="${outboundWidth}" width="${inboundWidth}" height="1" tabindex="0" aria-label="${escapeAttribute(inboundTip)}"><title>${escapeText(inboundTip)}</title></rect></svg><div class="ranking-player"><strong>${escapeText(player.playerName)}</strong></div></div>`;
   }).join('') || `<div class="empty">${escapeText(t('noData'))}</div>`;
 }
 
