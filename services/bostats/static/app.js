@@ -3,7 +3,8 @@ const translations = {
     language: '语言', loading: '正在读取报告...', invalidLink: '请打开一条完整的报告链接。', retry: '重试',
     missing: '报告不存在或已过期。', failed: '读取报告失败。', timedOut: '读取报告超时。', title: '带宽报告',
     subtitle: '服务器带宽使用与优化结果', trend: '小时流量趋势', dataRange: '数据范围', serverTotal: '全服总量',
-    month: '月度玩家排行', hourly: '玩家小时明细', current: '当前小时', details: '统计阶段', player: '玩家', hour: '小时',
+    tabOverview: '总览', tabPlayers: '玩家', tabDetails: '传输详情', pageNavigation: '报告页面', detailsSubtitle: '各压缩阶段与运行状态',
+    month: '月度玩家排行', hourly: '玩家小时明细', current: '当前小时', details: '传输详情', player: '玩家', hour: '小时',
     totalWire: '实际总流量', outboundWire: '出站实际', inboundWire: '入站实际', rawOutbound: '原始出站', boFrame: 'BO 帧',
     bypass: '旁路', status: '状态', complete: '已完成', partial: '进行中', noData: '暂无流量数据', sessionOutbound: '本次出站实际',
     sessionInbound: '本次入站实际', monthTotal: '本月实际总流量', monthOutbound: '本月出站实际', monthInbound: '本月入站实际',
@@ -24,7 +25,8 @@ const translations = {
     language: 'Language', loading: 'Loading report...', invalidLink: 'Open a complete report link.', retry: 'Retry',
     missing: 'The report does not exist or has expired.', failed: 'Failed to load the report.', timedOut: 'Report request timed out.', title: 'Bandwidth report',
     subtitle: 'Server bandwidth use and optimization results', trend: 'Hourly traffic trend', dataRange: 'Data range', serverTotal: 'All players',
-    month: 'Monthly player ranking', hourly: 'Player hourly details', current: 'Current hour', details: 'Accounting stages', player: 'Player', hour: 'Hour',
+    tabOverview: 'Overview', tabPlayers: 'Players', tabDetails: 'Transport details', pageNavigation: 'Report pages', detailsSubtitle: 'Compression stages and runtime state',
+    month: 'Monthly player ranking', hourly: 'Player hourly details', current: 'Current hour', details: 'Transport details', player: 'Player', hour: 'Hour',
     totalWire: 'Measured total', outboundWire: 'Outbound measured', inboundWire: 'Inbound measured', rawOutbound: 'Outbound raw', boFrame: 'BO frames',
     bypass: 'Bypass', status: 'Status', complete: 'Complete', partial: 'In progress', noData: 'No traffic data', sessionOutbound: 'Session outbound',
     sessionInbound: 'Session inbound', monthTotal: 'Monthly measured total', monthOutbound: 'Monthly outbound', monthInbound: 'Monthly inbound',
@@ -45,7 +47,8 @@ const translations = {
     language: 'Idioma', loading: 'Carregando relatório...', invalidLink: 'Abra um link completo de relatório.', retry: 'Tentar novamente',
     missing: 'O relatório não existe ou expirou.', failed: 'Falha ao carregar o relatório.', timedOut: 'A leitura do relatório expirou.', title: 'Relatório de largura de banda',
     subtitle: 'Uso de largura de banda e resultados da otimização', trend: 'Tendência de tráfego por hora', dataRange: 'Intervalo de dados', serverTotal: 'Todos os jogadores',
-    month: 'Ranking mensal de jogadores', hourly: 'Detalhes por jogador e hora', current: 'Hora atual', details: 'Etapas de contabilização', player: 'Jogador', hour: 'Hora',
+    tabOverview: 'Visão geral', tabPlayers: 'Jogadores', tabDetails: 'Detalhes do transporte', pageNavigation: 'Páginas do relatório', detailsSubtitle: 'Etapas de compressão e estado de execução',
+    month: 'Ranking mensal de jogadores', hourly: 'Detalhes por jogador e hora', current: 'Hora atual', details: 'Detalhes do transporte', player: 'Jogador', hour: 'Hora',
     totalWire: 'Total medido', outboundWire: 'Saída medida', inboundWire: 'Entrada medida', rawOutbound: 'Saída original', boFrame: 'Quadros BO',
     bypass: 'Desvio', status: 'Estado', complete: 'Concluído', partial: 'Em andamento', noData: 'Sem dados de tráfego', sessionOutbound: 'Saída da sessão',
     sessionInbound: 'Entrada da sessão', monthTotal: 'Total mensal medido', monthOutbound: 'Saída mensal', monthInbound: 'Entrada mensal',
@@ -76,6 +79,7 @@ if (!translations[language]) language = 'en-US';
 let reportBundle = null;
 const visibleSeries = new Set(['total', 'outbound', 'inbound']);
 const pages = { month: { page: 1, size: 10 }, hourly: { page: 1, size: 10 }, current: { page: 1, size: 10 } };
+let activeView = ['overview', 'players', 'details'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
 let chartHoverIndex = -1;
 const t = key => translations[language][key] || translations['en-US'][key] || key;
 const template = (key, values) => Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, value), t(key));
@@ -132,12 +136,17 @@ function render() {
   languageNode.setAttribute('aria-label', t('language'));
   document.querySelector('#page-title').textContent = t('title');
   document.querySelector('#page-subtitle').textContent = t('subtitle');
+  document.querySelector('#view-tabs').setAttribute('aria-label', t('pageNavigation'));
+  document.querySelector('[data-view="overview"]').textContent = t('tabOverview');
+  document.querySelector('[data-view="players"]').textContent = t('tabPlayers');
+  document.querySelector('[data-view="details"]').textContent = t('tabDetails');
   document.querySelector('#trend-title').textContent = t('trend');
   document.querySelector('#trend-player-label').textContent = t('dataRange');
   document.querySelector('#month-title').textContent = t('month');
   document.querySelector('#hourly-title').textContent = t('hourly');
   document.querySelector('#current-title').textContent = t('current');
   document.querySelector('#details-title').textContent = t('details');
+  document.querySelector('#details-subtitle').textContent = t('detailsSubtitle');
   document.querySelectorAll('[data-i18n]').forEach(node => { node.textContent = t(node.dataset.i18n); });
   document.querySelector('#report-id').textContent = bundle.reportId;
   document.querySelector('#generated').textContent = formatDateTime(bundle.generatedAtMillis);
@@ -160,9 +169,9 @@ function render() {
   renderDetails(summary.sections || []);
 
   statusNode.hidden = true;
-  ['overview', 'trend-section', 'month-section', 'hourly-section', 'current-section', 'details'].forEach(id => {
-    document.querySelector(`#${id}`).hidden = id === 'trend-section' || id === 'hourly-section' ? !history : false;
-  });
+  document.querySelector('#trend-section').hidden = !history;
+  document.querySelector('#hourly-section').hidden = !history;
+  setActiveView(activeView, false);
 }
 
 function populatePlayerSelectors(players) {
@@ -272,8 +281,17 @@ function renderMonth(players, history) {
   document.querySelector('#month-period').textContent = history ? `${formatDate(history.periodStartMillis)} - ${formatDate(history.periodEndMillis - 1)}` : '';
   document.querySelector('#month-count').textContent = template('records', { count: rows.length });
   const slice = pageSlice(rows, pages.month);
-  document.querySelector('#month-players').innerHTML = slice.map(player => `<tr><td>${escapeText(player.playerName)}<span class="uuid">${escapeText(player.playerUuid)}</span></td><td>${bytes(totalWire(player.traffic))}</td><td>${bytes(player.traffic.outboundWireBytes)}</td><td>${bytes(player.traffic.inboundWireBytes)}</td><td>${bytes(player.traffic.outboundRawBytes)}</td></tr>`).join('') || emptyRow(5);
+  const maximum = Math.max(1, ...rows.map(player => totalWire(player.traffic)));
+  document.querySelector('#month-players').innerHTML = slice.map(player => `<div class="ranking-row"><div class="ranking-player"><strong>${escapeText(player.playerName)}</strong><span class="uuid">${escapeText(player.playerUuid)}</span></div><div class="ranking-main"><meter class="ranking-bar" min="0" max="100" value="${Math.round(totalWire(player.traffic) * 100 / maximum)}"></meter><div class="ranking-values"><span><strong>${bytes(totalWire(player.traffic))}</strong><small>${escapeText(t('total'))}</small></span><span><strong>${bytes(player.traffic.outboundWireBytes)}</strong><small>${escapeText(t('outbound'))}</small></span><span><strong>${bytes(player.traffic.inboundWireBytes)}</strong><small>${escapeText(t('inbound'))}</small></span></div></div></div>`).join('') || `<div class="empty">${escapeText(t('noData'))}</div>`;
   renderPagination('month', rows.length, () => renderMonth(players, history));
+}
+
+function setActiveView(view, updateHash = true) {
+  activeView = ['overview', 'players', 'details'].includes(view) ? view : 'overview';
+  document.querySelectorAll('.view-page').forEach(node => { node.hidden = node.id !== `view-${activeView}`; });
+  document.querySelectorAll('#view-tabs button').forEach(button => button.setAttribute('aria-pressed', `${button.dataset.view === activeView}`));
+  if (updateHash) history.replaceState(null, '', `#${activeView}`);
+  if (activeView === 'overview' && reportBundle?.trafficHistory) requestAnimationFrame(() => drawChart(reportBundle.trafficHistory));
 }
 
 function renderHourly(history) {
@@ -327,6 +345,8 @@ function escapeText(value) { const node = document.createElement('span'); node.t
 function escapeAttribute(value) { return String(value == null ? '' : value).replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll("'", '&#39;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
 
 languageNode.addEventListener('change', () => { language = languageNode.value; localStorage.setItem('bostats.language', language); reportBundle ? render() : setStatus(statusKey, !retryNode.hidden); });
+document.querySelectorAll('#view-tabs button').forEach(button => button.addEventListener('click', () => setActiveView(button.dataset.view)));
+window.addEventListener('hashchange', () => setActiveView(location.hash.slice(1), false));
 document.querySelector('#trend-player').addEventListener('change', () => { chartHoverIndex = -1; renderTrend(reportBundle?.trafficHistory); });
 document.querySelector('#hourly-player').addEventListener('change', () => { pages.hourly.page = 1; renderHourly(reportBundle?.trafficHistory); });
 chartNode.addEventListener('pointermove', event => {

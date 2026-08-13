@@ -5,11 +5,16 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>BO Stats</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="/static/app.css?v=4">
+  <link rel="stylesheet" href="/static/app.css?v=5">
 </head>
 <body>
   <header>
     <div class="brand"><strong>BO Stats</strong><span id="report-id"></span></div>
+    <nav id="view-tabs" aria-label="报告页面">
+      <button type="button" data-view="overview" aria-pressed="true">总览</button>
+      <button type="button" data-view="players" aria-pressed="false">玩家</button>
+      <button type="button" data-view="details" aria-pressed="false">传输详情</button>
+    </nav>
     <div class="header-tools">
       <time id="generated"></time>
       <label for="language" id="language-label">语言</label>
@@ -25,61 +30,47 @@
       <span id="status-text">正在读取报告...</span>
       <button id="retry" type="button" hidden>重试</button>
     </div>
-    <section id="overview" hidden>
-      <div class="page-heading"><div><h1 id="page-title">带宽报告</h1><p id="page-subtitle">服务器带宽使用与优化结果</p></div></div>
-      <div class="summary" id="summary"></div>
-    </section>
-    <section id="trend-section" hidden>
-      <div class="section-heading trend-heading">
-        <div><h2 id="trend-title">小时流量趋势</h2><span id="trend-period"></span></div>
-        <div class="trend-controls">
-          <label for="trend-player" id="trend-player-label">数据范围</label>
-          <select id="trend-player"></select>
+    <div id="view-overview" class="view-page" hidden>
+      <section id="overview">
+        <div class="page-heading"><div><h1 id="page-title">带宽报告</h1><p id="page-subtitle">服务器带宽使用与优化结果</p></div></div>
+        <div class="summary" id="summary"></div>
+      </section>
+      <section id="trend-section">
+        <div class="section-heading trend-heading">
+          <div><h2 id="trend-title">小时流量趋势</h2><span id="trend-period"></span></div>
+          <div class="trend-controls">
+            <label for="trend-player" id="trend-player-label">数据范围</label>
+            <select id="trend-player"></select>
+          </div>
         </div>
-      </div>
-      <div class="trend-panel">
-        <div class="legend" id="trend-legend"></div>
-        <div class="chart-wrap"><canvas id="traffic-chart" height="260"></canvas></div>
-      </div>
-    </section>
-    <section id="month-section" hidden>
-      <div class="section-heading"><div><h2 id="month-title">月度玩家排行</h2><span id="month-period"></span></div><div id="month-count" class="record-count"></div></div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th data-i18n="player">玩家</th><th data-i18n="totalWire">实际总流量</th><th data-i18n="outboundWire">出站实际</th><th data-i18n="inboundWire">入站实际</th><th data-i18n="rawOutbound">原始出站</th></tr></thead>
-          <tbody id="month-players"></tbody>
-        </table>
-      </div>
-      <div class="pagination" id="month-pagination"></div>
-    </section>
-    <section id="hourly-section" hidden>
-      <div class="section-heading">
-        <div><h2 id="hourly-title">玩家小时明细</h2><span id="hourly-count" class="record-count"></span></div>
-        <select id="hourly-player" aria-label="玩家"></select>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th data-i18n="hour">小时</th><th data-i18n="totalWire">实际总流量</th><th data-i18n="outboundWire">出站实际</th><th data-i18n="inboundWire">入站实际</th><th data-i18n="status">状态</th></tr></thead>
-          <tbody id="hourly-rows"></tbody>
-        </table>
-      </div>
-      <div class="pagination" id="hourly-pagination"></div>
-    </section>
-    <section id="current-section" hidden>
-      <div class="section-heading"><div><h2 id="current-title">当前小时</h2><span id="current-count" class="record-count"></span></div></div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th data-i18n="player">玩家</th><th data-i18n="outboundWire">出站实际</th><th data-i18n="inboundWire">入站实际</th><th data-i18n="rawOutbound">原始出站</th><th data-i18n="boFrame">BO 帧</th><th data-i18n="bypass">直通</th></tr></thead>
-          <tbody id="current-players"></tbody>
-        </table>
-      </div>
-      <div class="pagination" id="current-pagination"></div>
-    </section>
-    <section id="details" hidden>
-      <h2 id="details-title">统计阶段</h2>
-      <div id="sections"></div>
-    </section>
+        <div class="trend-panel">
+          <div class="legend" id="trend-legend"></div>
+          <div class="chart-wrap"><canvas id="traffic-chart" height="260"></canvas></div>
+        </div>
+      </section>
+    </div>
+    <div id="view-players" class="view-page" hidden>
+      <section id="month-section">
+        <div class="section-heading"><div><h1 id="month-title">月度玩家排行</h1><span id="month-period"></span></div><div id="month-count" class="record-count"></div></div>
+        <div class="ranking-head"><span data-i18n="player">玩家</span><span data-i18n="totalWire">实际总流量</span></div>
+        <div id="month-players" class="ranking-list"></div>
+        <div class="pagination" id="month-pagination"></div>
+      </section>
+      <section id="hourly-section">
+        <div class="section-heading"><div><h2 id="hourly-title">玩家小时明细</h2><span id="hourly-count" class="record-count"></span></div><select id="hourly-player" aria-label="玩家"></select></div>
+        <div class="table-wrap"><table><thead><tr><th data-i18n="hour">小时</th><th data-i18n="totalWire">实际总流量</th><th data-i18n="outboundWire">出站实际</th><th data-i18n="inboundWire">入站实际</th><th data-i18n="status">状态</th></tr></thead><tbody id="hourly-rows"></tbody></table></div>
+        <div class="pagination" id="hourly-pagination"></div>
+      </section>
+      <section id="current-section">
+        <div class="section-heading"><div><h2 id="current-title">当前小时</h2><span id="current-count" class="record-count"></span></div></div>
+        <div class="table-wrap"><table><thead><tr><th data-i18n="player">玩家</th><th data-i18n="outboundWire">出站实际</th><th data-i18n="inboundWire">入站实际</th><th data-i18n="rawOutbound">原始出站</th><th data-i18n="boFrame">BO 帧</th><th data-i18n="bypass">直通</th></tr></thead><tbody id="current-players"></tbody></table></div>
+        <div class="pagination" id="current-pagination"></div>
+      </section>
+    </div>
+    <div id="view-details" class="view-page" hidden>
+      <section id="details"><div class="page-heading"><div><h1 id="details-title">传输详情</h1><p id="details-subtitle">各压缩阶段与运行状态</p></div></div><div id="sections"></div></section>
+    </div>
   </main>
-  <script src="/static/app.js?v=4" defer></script>
+  <script src="/static/app.js?v=5" defer></script>
 </body>
 </html>
