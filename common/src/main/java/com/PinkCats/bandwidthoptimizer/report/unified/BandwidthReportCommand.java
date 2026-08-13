@@ -3,9 +3,12 @@ package com.PinkCats.bandwidthoptimizer.report.unified;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.CommandSourceCompat;
 import com.PinkCats.bandwidthoptimizer.report.traffic.PlayerTrafficPeriodArchive;
 import com.mojang.brigadier.Command;
+import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.UUID;
 
 public final class BandwidthReportCommand {
@@ -29,18 +32,30 @@ public final class BandwidthReportCommand {
                 source.sendFailure(Component.literal("BO report failed: " + throwable.getMessage()));
                 return;
             }
-            StringBuilder message = new StringBuilder(result.message());
             if (result.viewerUrl() != null && !result.viewerUrl().isBlank()) {
-                message.append(" View: ").append(result.viewerUrl());
-            } else if (result.localPath() != null) {
-                message.append(" File: ").append(result.localPath());
-            }
-            if (result.success()) {
-                CommandSourceCompat.sendSuccess(source, Component.literal(message.toString()), false);
+                CommandSourceCompat.sendSuccess(source, Component.literal(result.message()), false);
+                CommandSourceCompat.sendSuccess(source, viewerLink(result.viewerUrl()), false);
+            } else if (result.success()) {
+                String suffix = result.localPath() == null ? "" : " File: " + result.localPath();
+                CommandSourceCompat.sendSuccess(source, Component.literal(result.message() + suffix), false);
             } else {
-                source.sendFailure(Component.literal(message.toString()));
+                String suffix = result.localPath() == null ? "" : " File: " + result.localPath();
+                source.sendFailure(Component.literal(result.message() + suffix));
             }
         }));
         return Command.SINGLE_SUCCESS;
+    }
+
+    static Component viewerLink(String viewerUrl) {
+        Component link = Component.literal(viewerUrl).withStyle(ChatFormatting.GRAY);
+        try {
+            URI uri = new URI(viewerUrl);
+            String scheme = uri.getScheme();
+            if (uri.isAbsolute() && ("https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme))) {
+                return CommandSourceCompat.viewerLink(uri);
+            }
+        } catch (URISyntaxException ignored) {
+        }
+        return link;
     }
 }

@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.command;
 
+import com.PinkCats.bandwidthoptimizer.report.unified.BandwidthReportCommandLinkRegression;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.tree.CommandNode;
 import net.minecraft.commands.CommandSourceStack;
@@ -28,6 +29,8 @@ public final class BandwidthOptimizerCommandTreeRegressionMain {
         check(childNames(debugStats).equals(Set.of("total", "players", "reset", "vanilla")),
                 "internal traffic controls must remain under debug stats");
         check(root.getChild("report") == null, "legacy top-level report command remains registered");
+
+        BandwidthReportCommandLinkRegression.verify();
         System.out.println("BandwidthOptimizer command tree regression passed.");
     }
 
