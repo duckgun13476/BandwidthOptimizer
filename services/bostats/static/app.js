@@ -10,7 +10,7 @@ const translations = {
     sessionInbound: '本次入站实际', monthTotal: '本月实际总流量', monthOutbound: '本月出站实际', monthInbound: '本月入站实际',
     players: '本月玩家', metric: '指标', value: '值', stage: '阶段', scope: '范围', total: '总流量', outbound: '出站', inbound: '入站',
     records: '{count} 条记录', page: '第 {page} / {pages} 页', rowsPerPage: '每页', previous: '上一页', next: '下一页',
-    enabled: '已开启', disabled: '已关闭', chartLabel: '按小时统计的实际线路流量曲线',
+    enabled: '已开启', disabled: '已关闭', chartLabel: '按小时统计的实际线路流量曲线', hourlyChartLabel: '所选玩家按时间分布的出站与入站流量柱状图',
     sections: { transport: '传输管线', server: '服务器会话', chunk: '区块传输与缓存', diagnostics: '诊断状态' },
     descriptions: {
       transport: '逻辑包、映射、Zstd、BO 帧与旁路是相互独立的统计阶段。',
@@ -32,7 +32,7 @@ const translations = {
     sessionInbound: 'Session inbound', monthTotal: 'Monthly measured total', monthOutbound: 'Monthly outbound', monthInbound: 'Monthly inbound',
     players: 'Monthly players', metric: 'Metric', value: 'Value', stage: 'Stage', scope: 'Scope', total: 'Total', outbound: 'Outbound', inbound: 'Inbound',
     records: '{count} records', page: 'Page {page} of {pages}', rowsPerPage: 'Rows', previous: 'Previous page', next: 'Next page',
-    enabled: 'Enabled', disabled: 'Disabled', chartLabel: 'Measured wire traffic by hour',
+    enabled: 'Enabled', disabled: 'Disabled', chartLabel: 'Measured wire traffic by hour', hourlyChartLabel: 'Outbound and inbound traffic by hour for the selected player',
     sections: { transport: 'Transport pipeline', server: 'Server session', chunk: 'Chunk transport and cache', diagnostics: 'Diagnostic state' },
     descriptions: {
       transport: 'Logical packets, mapping, Zstd, BO frames, and bypass are separate accounting stages.',
@@ -54,7 +54,7 @@ const translations = {
     sessionInbound: 'Entrada da sessão', monthTotal: 'Total mensal medido', monthOutbound: 'Saída mensal', monthInbound: 'Entrada mensal',
     players: 'Jogadores no mês', metric: 'Métrica', value: 'Valor', stage: 'Etapa', scope: 'Escopo', total: 'Total', outbound: 'Saída', inbound: 'Entrada',
     records: '{count} registros', page: 'Página {page} de {pages}', rowsPerPage: 'Linhas', previous: 'Página anterior', next: 'Próxima página',
-    enabled: 'Ativado', disabled: 'Desativado', chartLabel: 'Tráfego medido por hora',
+    enabled: 'Ativado', disabled: 'Desativado', chartLabel: 'Tráfego medido por hora', hourlyChartLabel: 'Tráfego de saída e entrada por hora do jogador selecionado',
     sections: { transport: 'Pipeline de transporte', server: 'Sessão do servidor', chunk: 'Transporte e cache de chunks', diagnostics: 'Estado do diagnóstico' },
     descriptions: {
       transport: 'Pacotes lógicos, mapeamento, Zstd, quadros BO e desvio são etapas contábeis separadas.',
@@ -81,12 +81,14 @@ const visibleSeries = new Set(['total', 'outbound', 'inbound']);
 const pages = { month: { page: 1, size: 10 }, hourly: { page: 1, size: 10 }, current: { page: 1, size: 10 } };
 let activeView = ['overview', 'players', 'details'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
 let chartHoverIndex = -1;
+let hourlyHoverIndex = -1;
 const t = key => translations[language][key] || translations['en-US'][key] || key;
 const template = (key, values) => Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, value), t(key));
 const statusNode = document.querySelector('#status');
 const statusTextNode = document.querySelector('#status-text');
 const retryNode = document.querySelector('#retry');
 const chartNode = document.querySelector('#traffic-chart');
+const hourlyChartNode = document.querySelector('#hourly-chart');
 let statusKey = 'loading';
 languageNode.value = language;
 setStatus('loading', false);
@@ -183,7 +185,8 @@ function populatePlayerSelectors(players) {
   const hourly = document.querySelector('#hourly-player');
   const hourlyPrevious = hourly.value;
   hourly.innerHTML = playerOptions(sorted);
-  if (sorted.some(player => player.playerUuid === hourlyPrevious)) hourly.value = hourlyPrevious;
+  const defaultHourlyPlayer = [...players].sort((a, b) => totalWire(b.traffic) - totalWire(a.traffic))[0];
+  hourly.value = sorted.some(player => player.playerUuid === hourlyPrevious) ? hourlyPrevious : defaultHourlyPlayer?.playerUuid || '';
 }
 
 function playerOptions(players) {
@@ -292,21 +295,102 @@ function setActiveView(view, updateHash = true) {
   document.querySelectorAll('#view-tabs button').forEach(button => button.setAttribute('aria-pressed', `${button.dataset.view === activeView}`));
   if (updateHash) history.replaceState(null, '', `#${activeView}`);
   if (activeView === 'overview' && reportBundle?.trafficHistory) requestAnimationFrame(() => drawChart(reportBundle.trafficHistory));
+  if (activeView === 'players' && reportBundle?.trafficHistory) requestAnimationFrame(() => drawHourlyChart(reportBundle.trafficHistory));
 }
 
-function renderHourly(history) {
+function hourlyRows(history) {
   const uuid = document.querySelector('#hourly-player').value;
-  const rows = (history?.hours || []).map(hour => {
+  return (history?.hours || []).map(hour => {
     const player = (hour.players || []).find(entry => entry.playerUuid === uuid);
     const outbound = Number(player?.outboundWireBytes || 0);
     const inbound = Number(player?.inboundWireBytes || 0);
     return { hour, outbound, inbound, total: outbound + inbound };
   }).reverse();
+}
+
+function renderHourly(history) {
+  const rows = hourlyRows(history);
   document.querySelector('#hourly-count').textContent = template('records', { count: rows.length });
-  const maximum = Math.max(1, ...rows.map(row => row.total));
-  const slice = pageSlice(rows, pages.hourly);
-  document.querySelector('#hourly-rows').innerHTML = slice.map(row => `<tr><td>${formatHour(row.hour.periodStartMillis)}</td><td><meter class="traffic-bar" min="0" max="100" value="${Math.round(row.total * 100 / maximum)}"></meter>${bytes(row.total)}</td><td>${bytes(row.outbound)}</td><td>${bytes(row.inbound)}</td><td><span class="state ${row.hour.complete ? 'complete' : 'partial'}">${row.hour.complete ? t('complete') : t('partial')}</span></td></tr>`).join('') || emptyRow(5);
+  hourlyChartNode.setAttribute('aria-label', t('hourlyChartLabel'));
+  hourlyHoverIndex = -1;
+  drawHourlyChart(history);
   renderPagination('hourly', rows.length, () => renderHourly(history));
+}
+
+function hourlyPageRows(history) {
+  return pageSlice(hourlyRows(history), pages.hourly).reverse();
+}
+
+function drawHourlyChart(history) {
+  const points = hourlyPageRows(history);
+  const empty = document.querySelector('#hourly-empty');
+  empty.textContent = t('noData');
+  empty.hidden = points.length > 0;
+  hourlyChartNode.hidden = points.length === 0;
+  const rect = hourlyChartNode.getBoundingClientRect();
+  if (!points.length || !rect.width || !rect.height) return;
+  const ratio = Math.min(2, window.devicePixelRatio || 1);
+  hourlyChartNode.width = Math.round(rect.width * ratio);
+  hourlyChartNode.height = Math.round(rect.height * ratio);
+  const context = hourlyChartNode.getContext('2d');
+  context.scale(ratio, ratio);
+  const style = getComputedStyle(document.documentElement);
+  const colors = { outbound: style.getPropertyValue('--outbound').trim(), inbound: style.getPropertyValue('--inbound').trim() };
+  const text = style.getPropertyValue('--muted').trim();
+  const grid = style.getPropertyValue('--border').trim();
+  const surface = style.getPropertyValue('--surface-raised').trim();
+  const foreground = style.getPropertyValue('--text').trim();
+  const width = rect.width;
+  const height = rect.height;
+  const pad = { left: 62, right: 18, top: 14, bottom: 38 };
+  const innerWidth = Math.max(1, width - pad.left - pad.right);
+  const innerHeight = Math.max(1, height - pad.top - pad.bottom);
+  const maximum = Math.max(1, ...points.map(point => point.total));
+  const firstTime = points[0].hour.periodStartMillis;
+  const lastTime = points[points.length - 1].hour.periodStartMillis;
+  const spanHours = Math.max(1, Math.round((lastTime - firstTime) / 3600000) + 1);
+  const slotWidth = innerWidth / spanHours;
+  const barWidth = Math.max(2, Math.min(34, slotWidth * .68));
+  const x = point => pad.left + ((point.hour.periodStartMillis - firstTime) / 3600000 + .5) * slotWidth;
+  const y = value => pad.top + innerHeight - innerHeight * value / maximum;
+  context.clearRect(0, 0, width, height);
+  context.font = '11px Segoe UI, sans-serif';
+  context.textBaseline = 'middle';
+  for (let i = 0; i <= 4; i++) {
+    const lineY = pad.top + innerHeight * i / 4;
+    context.strokeStyle = grid; context.lineWidth = 1;
+    context.beginPath(); context.moveTo(pad.left, lineY); context.lineTo(width - pad.right, lineY); context.stroke();
+    context.fillStyle = text; context.textAlign = 'right'; context.fillText(bytes(maximum * (4 - i) / 4), pad.left - 8, lineY);
+  }
+  points.forEach(point => {
+    const center = x(point);
+    const outboundTop = y(point.outbound);
+    const totalTop = y(point.total);
+    context.fillStyle = colors.outbound; context.fillRect(center - barWidth / 2, outboundTop, barWidth, pad.top + innerHeight - outboundTop);
+    context.fillStyle = colors.inbound; context.fillRect(center - barWidth / 2, totalTop, barWidth, outboundTop - totalTop);
+    if (!point.hour.complete) {
+      context.strokeStyle = foreground; context.setLineDash([3, 2]); context.strokeRect(center - barWidth / 2, totalTop, barWidth, pad.top + innerHeight - totalTop); context.setLineDash([]);
+    }
+  });
+  const tickCount = Math.min(5, points.length);
+  for (let i = 0; i < tickCount; i++) {
+    const index = Math.round((points.length - 1) * i / Math.max(1, tickCount - 1));
+    context.fillStyle = text; context.textAlign = i === 0 ? 'left' : i === tickCount - 1 ? 'right' : 'center';
+    context.fillText(formatChartHour(points[index].hour.periodStartMillis), x(points[index]), height - 14);
+  }
+  if (hourlyHoverIndex >= 0 && hourlyHoverIndex < points.length) {
+    const point = points[hourlyHoverIndex];
+    const center = x(point);
+    context.strokeStyle = foreground; context.lineWidth = 1; context.strokeRect(center - barWidth / 2 - 2, y(point.total) - 2, barWidth + 4, pad.top + innerHeight - y(point.total) + 4);
+    const lines = [formatHour(point.hour.periodStartMillis), `${t('total')}  ${bytes(point.total)}`, `${t('outbound')}  ${bytes(point.outbound)}`, `${t('inbound')}  ${bytes(point.inbound)}`, point.hour.complete ? t('complete') : t('partial')];
+    const boxWidth = Math.max(...lines.map(line => context.measureText(line).width)) + 24;
+    const boxHeight = lines.length * 20 + 10;
+    const boxX = center + boxWidth + 16 > width ? center - boxWidth - 10 : center + 10;
+    const boxY = pad.top + 6;
+    context.fillStyle = surface; context.fillRect(boxX, boxY, boxWidth, boxHeight);
+    context.strokeStyle = grid; context.strokeRect(boxX, boxY, boxWidth, boxHeight);
+    lines.forEach((line, index) => { context.fillStyle = index === 0 ? foreground : text; context.textAlign = 'left'; context.fillText(line, boxX + 12, boxY + 15 + index * 20); });
+  }
 }
 
 function renderCurrent(players) {
@@ -348,7 +432,7 @@ languageNode.addEventListener('change', () => { language = languageNode.value; l
 document.querySelectorAll('#view-tabs button').forEach(button => button.addEventListener('click', () => setActiveView(button.dataset.view)));
 window.addEventListener('hashchange', () => setActiveView(location.hash.slice(1), false));
 document.querySelector('#trend-player').addEventListener('change', () => { chartHoverIndex = -1; renderTrend(reportBundle?.trafficHistory); });
-document.querySelector('#hourly-player').addEventListener('change', () => { pages.hourly.page = 1; renderHourly(reportBundle?.trafficHistory); });
+document.querySelector('#hourly-player').addEventListener('change', () => { pages.hourly.page = 1; hourlyHoverIndex = -1; renderHourly(reportBundle?.trafficHistory); });
 chartNode.addEventListener('pointermove', event => {
   const points = chartPoints(reportBundle?.trafficHistory);
   const rect = chartNode.getBoundingClientRect();
@@ -358,5 +442,19 @@ chartNode.addEventListener('pointermove', event => {
 });
 chartNode.addEventListener('pointerleave', () => { chartHoverIndex = -1; drawChart(reportBundle?.trafficHistory); });
 new ResizeObserver(() => { if (reportBundle?.trafficHistory) drawChart(reportBundle.trafficHistory); }).observe(chartNode);
+hourlyChartNode.addEventListener('pointermove', event => {
+  const points = hourlyPageRows(reportBundle?.trafficHistory);
+  if (!points.length) return;
+  const rect = hourlyChartNode.getBoundingClientRect();
+  const firstTime = points[0].hour.periodStartMillis;
+  const lastTime = points[points.length - 1].hour.periodStartMillis;
+  const spanHours = Math.max(1, Math.round((lastTime - firstTime) / 3600000) + 1);
+  const slotWidth = Math.max(1, (rect.width - 80) / spanHours);
+  const targetTime = firstTime + Math.max(0, Math.min(spanHours - 1, (event.clientX - rect.left - 62) / slotWidth)) * 3600000;
+  hourlyHoverIndex = points.reduce((best, point, index) => Math.abs(point.hour.periodStartMillis - targetTime) < Math.abs(points[best].hour.periodStartMillis - targetTime) ? index : best, 0);
+  drawHourlyChart(reportBundle?.trafficHistory);
+});
+hourlyChartNode.addEventListener('pointerleave', () => { hourlyHoverIndex = -1; drawHourlyChart(reportBundle?.trafficHistory); });
+new ResizeObserver(() => { if (reportBundle?.trafficHistory) drawHourlyChart(reportBundle.trafficHistory); }).observe(hourlyChartNode);
 retryNode.addEventListener('click', () => load().catch(showLoadError));
 load().catch(showLoadError);

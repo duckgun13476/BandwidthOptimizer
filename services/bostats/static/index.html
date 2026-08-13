@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>BO Stats</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="/static/app.css?v=5">
+  <link rel="stylesheet" href="/static/app.css?v=6">
 </head>
 <body>
   <header>
@@ -58,7 +58,10 @@
       </section>
       <section id="hourly-section">
         <div class="section-heading"><div><h2 id="hourly-title">玩家小时明细</h2><span id="hourly-count" class="record-count"></span></div><select id="hourly-player" aria-label="玩家"></select></div>
-        <div class="table-wrap"><table><thead><tr><th data-i18n="hour">小时</th><th data-i18n="totalWire">实际总流量</th><th data-i18n="outboundWire">出站实际</th><th data-i18n="inboundWire">入站实际</th><th data-i18n="status">状态</th></tr></thead><tbody id="hourly-rows"></tbody></table></div>
+        <div class="hourly-panel">
+          <div class="hourly-legend"><span class="hourly-outbound"><i></i><span data-i18n="outboundWire">出站实际</span></span><span class="hourly-inbound"><i></i><span data-i18n="inboundWire">入站实际</span></span></div>
+          <div class="hourly-chart-wrap"><canvas id="hourly-chart" height="260"></canvas><div id="hourly-empty" class="empty" hidden>暂无流量数据</div></div>
+        </div>
         <div class="pagination" id="hourly-pagination"></div>
       </section>
       <section id="current-section">
@@ -71,6 +74,6 @@
       <section id="details"><div class="page-heading"><div><h1 id="details-title">传输详情</h1><p id="details-subtitle">各压缩阶段与运行状态</p></div></div><div id="sections"></div></section>
     </div>
   </main>
-  <script src="/static/app.js?v=5" defer></script>
+  <script src="/static/app.js?v=6" defer></script>
 </body>
 </html>
