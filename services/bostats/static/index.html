@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>BO Stats</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="/static/app.css?v=7">
+  <link rel="stylesheet" href="/static/app.css?v=8">
 </head>
 <body>
   <header>
@@ -67,33 +67,21 @@
       </section>
     </div>
     <div id="view-players" class="view-page" hidden>
-      <section id="month-section">
-        <div class="section-heading"><div><h1 id="month-title">月度玩家排行</h1><span id="month-period"></span></div><div id="month-count" class="record-count"></div></div>
-        <div class="ranking-head"><span data-i18n="player">玩家</span><span data-i18n="totalWire">实际总流量</span></div>
-        <div id="month-players" class="ranking-list"></div>
-        <div class="pagination" id="month-pagination"></div>
-      </section>
-      <section id="hourly-section">
-        <div class="section-heading"><div><h2 id="hourly-title">玩家小时明细</h2><span id="hourly-count" class="record-count"></span></div><select id="hourly-player" aria-label="玩家"></select></div>
-        <div class="stacked-chart-panel">
-          <div class="stacked-chart-legend"><span class="series-outbound"><i></i><span data-i18n="outboundWire">出站实际</span></span><span class="series-inbound"><i></i><span data-i18n="inboundWire">入站实际</span></span></div>
-          <div class="stacked-chart-wrap"><canvas id="hourly-chart" height="260"></canvas><div id="hourly-empty" class="empty" hidden>暂无流量数据</div></div>
-        </div>
-        <div class="pagination" id="hourly-pagination"></div>
-      </section>
-      <section id="current-section">
-        <div class="section-heading"><div><h2 id="current-title">当前小时</h2><span id="current-count" class="record-count"></span></div></div>
-        <div class="stacked-chart-panel">
-          <div class="stacked-chart-legend"><span class="series-outbound"><i></i><span data-i18n="outboundWire">出站实际</span></span><span class="series-inbound"><i></i><span data-i18n="inboundWire">入站实际</span></span></div>
-          <div class="stacked-chart-wrap"><canvas id="current-chart" height="260"></canvas><div id="current-empty" class="empty" hidden>暂无流量数据</div></div>
-        </div>
-        <div class="pagination" id="current-pagination"></div>
-      </section>
+      <div class="player-rankings">
+        <section class="player-ranking-panel" id="month-section">
+          <div class="ranking-panel-heading"><div><h1 id="month-title">月度玩家排行</h1><span id="month-period"></span></div><strong id="month-count"></strong></div>
+          <div id="month-players" class="player-ranking-scroll"></div>
+        </section>
+        <section class="player-ranking-panel" id="current-section">
+          <div class="ranking-panel-heading"><div><h1 id="current-title">当前小时</h1><span id="current-period"></span></div><strong id="current-count"></strong></div>
+          <div id="current-players" class="player-ranking-scroll"></div>
+        </section>
+      </div>
     </div>
     <div id="view-details" class="view-page" hidden>
       <section id="details"><div class="page-heading"><div><h1 id="details-title">传输详情</h1><p id="details-subtitle">各压缩阶段与运行状态</p></div></div><div id="sections"></div></section>
     </div>
   </main>
-  <script src="/static/app.js?v=7" defer></script>
+  <script src="/static/app.js?v=8" defer></script>
 </body>
 </html>
