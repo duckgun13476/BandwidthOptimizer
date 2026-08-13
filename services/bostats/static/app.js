@@ -98,6 +98,7 @@ const uploadDropNode = document.querySelector('#upload-drop');
 const uploadFileNode = document.querySelector('#upload-file');
 const uploadSubmitNode = document.querySelector('#upload-submit');
 const uploadStatusNode = document.querySelector('#upload-status');
+const rankingTooltipNode = document.querySelector('#ranking-tooltip');
 let uploadFile = null;
 let statusKey = 'loading';
 languageNode.value = language;
@@ -200,6 +201,7 @@ function showLoadError(error) { setStatus(error?.name === 'AbortError' ? 'timedO
 
 function render() {
   if (!reportBundle) return;
+  hideRankingTooltip();
   const bundle = reportBundle;
   const summary = bundle.summary;
   const traffic = bundle.playerTraffic;
@@ -381,8 +383,27 @@ function renderPlayerRanking(name, players) {
     const inboundWidth = inbound * 100 / maximum;
     const outboundTip = `${t('outbound')} ${bytes(outbound)}`;
     const inboundTip = `${t('inbound')} ${bytes(inbound)}`;
-    return `<div class="player-ranking-row"><span class="rank-number">${index + 1}</span><svg class="ranking-bar" viewBox="0 0 100 1" preserveAspectRatio="none" role="img" aria-label="${escapeAttribute(`${player.playerName} ${bytes(total)}`)}"><rect class="ranking-bar-track" width="100" height="1"></rect><rect class="ranking-bar-outbound" width="${outboundWidth}" height="1" tabindex="0" aria-label="${escapeAttribute(outboundTip)}"><title>${escapeText(outboundTip)}</title></rect><rect class="ranking-bar-inbound" x="${outboundWidth}" width="${inboundWidth}" height="1" tabindex="0" aria-label="${escapeAttribute(inboundTip)}"><title>${escapeText(inboundTip)}</title></rect></svg><div class="ranking-player"><strong>${escapeText(player.playerName)}</strong></div></div>`;
+    return `<div class="player-ranking-row"><span class="rank-number">${index + 1}</span><svg class="ranking-bar" viewBox="0 0 100 1" preserveAspectRatio="none" role="img" aria-label="${escapeAttribute(`${player.playerName} ${bytes(total)}`)}"><rect class="ranking-bar-track" width="100" height="1"></rect><rect class="ranking-bar-outbound" width="${outboundWidth}" height="1" tabindex="0" data-direction="outbound" data-tooltip="${escapeAttribute(outboundTip)}" aria-label="${escapeAttribute(outboundTip)}"></rect><rect class="ranking-bar-inbound" x="${outboundWidth}" width="${inboundWidth}" height="1" tabindex="0" data-direction="inbound" data-tooltip="${escapeAttribute(inboundTip)}" aria-label="${escapeAttribute(inboundTip)}"></rect></svg><div class="ranking-player"><strong>${escapeText(player.playerName)}</strong></div></div>`;
   }).join('') || `<div class="empty">${escapeText(t('noData'))}</div>`;
+}
+
+function rankingSegment(target) {
+  return target?.closest?.('.ranking-bar-outbound, .ranking-bar-inbound');
+}
+
+function showRankingTooltip(segment, clientX, clientY) {
+  rankingTooltipNode.textContent = segment.dataset.tooltip || '';
+  rankingTooltipNode.dataset.direction = segment.dataset.direction || '';
+  rankingTooltipNode.hidden = false;
+  const bounds = rankingTooltipNode.getBoundingClientRect();
+  const left = Math.max(8, Math.min(clientX + 12, window.innerWidth - bounds.width - 8));
+  const top = Math.max(8, clientY - bounds.height - 12);
+  rankingTooltipNode.style.left = `${left}px`;
+  rankingTooltipNode.style.top = `${top}px`;
+}
+
+function hideRankingTooltip() {
+  rankingTooltipNode.hidden = true;
 }
 
 function renderDetails(sections) {
@@ -499,7 +520,24 @@ uploadDropNode.addEventListener('dragover', event => { event.preventDefault(); u
 uploadDropNode.addEventListener('dragleave', () => uploadDropNode.classList.remove('dragging'));
 uploadDropNode.addEventListener('drop', event => { event.preventDefault(); uploadDropNode.classList.remove('dragging'); selectUploadFile(event.dataTransfer?.files?.[0]); });
 uploadSubmitNode.addEventListener('click', uploadSelectedReport);
-document.querySelectorAll('#view-tabs button').forEach(button => button.addEventListener('click', () => setActiveView(button.dataset.view)));
+document.querySelectorAll('#view-tabs button').forEach(button => button.addEventListener('click', () => { hideRankingTooltip(); setActiveView(button.dataset.view); }));
+document.addEventListener('pointerover', event => {
+  const segment = rankingSegment(event.target);
+  if (segment) showRankingTooltip(segment, event.clientX, event.clientY);
+});
+document.addEventListener('pointermove', event => {
+  const segment = rankingSegment(event.target);
+  if (segment) showRankingTooltip(segment, event.clientX, event.clientY);
+});
+document.addEventListener('pointerout', event => { if (rankingSegment(event.target)) hideRankingTooltip(); });
+document.addEventListener('focusin', event => {
+  const segment = rankingSegment(event.target);
+  if (!segment) return;
+  const bounds = segment.getBoundingClientRect();
+  showRankingTooltip(segment, bounds.left + bounds.width / 2, bounds.top);
+});
+document.addEventListener('focusout', event => { if (rankingSegment(event.target)) hideRankingTooltip(); });
+window.addEventListener('scroll', hideRankingTooltip, true);
 window.addEventListener('hashchange', () => setActiveView(location.hash.slice(1), false));
 document.querySelector('#trend-player').addEventListener('change', () => { chartHoverIndex = -1; renderTrend(reportBundle?.trafficHistory); });
 chartNode.addEventListener('pointermove', event => {
