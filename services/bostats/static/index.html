@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>BO Stats</title>
-  <link rel="stylesheet" href="/static/app.css?v=2">
+  <link rel="stylesheet" href="/static/app.css?v=3">
 </head>
 <body>
   <header>
@@ -20,7 +20,10 @@
     </div>
   </header>
   <main>
-    <div id="status">正在读取报告...</div>
+    <div id="status" role="status">
+      <span id="status-text">正在读取报告...</span>
+      <button id="retry" type="button" hidden>重试</button>
+    </div>
     <section id="overview" hidden>
       <h1 id="page-title">带宽报告</h1>
       <div class="summary" id="summary"></div>
@@ -60,6 +63,6 @@
       <div id="sections"></div>
     </section>
   </main>
-  <script src="/static/app.js?v=2" defer></script>
+  <script src="/static/app.js?v=3" defer></script>
 </body>
 </html>

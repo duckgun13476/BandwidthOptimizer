@@ -126,7 +126,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"status": "ok", "service": "bostats", "schema": 1})
             return
         if path == "/" or path.startswith("/report/"):
-            self.send_static("index.html", "text/html; charset=utf-8")
+            self.send_static("index.html", "text/html; charset=utf-8", cache="no-store")
             return
         if path == "/static/app.css":
             self.send_static("app.css", "text/css; charset=utf-8")
@@ -172,12 +172,12 @@ class Handler(BaseHTTPRequestHandler):
         url = f"{proto}://{host}/report/{key}"
         self.send_json({"key": key, "url": url}, status=HTTPStatus.CREATED, location=url)
 
-    def send_static(self, name: str, content_type: str) -> None:
+    def send_static(self, name: str, content_type: str, cache: str = "public, max-age=300") -> None:
         target = STATIC_DIR / name
         if not target.is_file():
             self.send_error_json(HTTPStatus.NOT_FOUND, "asset not found")
             return
-        self.send_bytes(HTTPStatus.OK, target.read_bytes(), content_type, cache="public, max-age=300")
+        self.send_bytes(HTTPStatus.OK, target.read_bytes(), content_type, cache=cache)
 
     def send_json(self, value: object, status: HTTPStatus = HTTPStatus.OK, location: str | None = None) -> None:
         body = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
@@ -202,7 +202,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header(
             "Content-Security-Policy",
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "default-src 'self'; script-src 'self'; style-src 'self'; "
             "object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
         )
         self.end_headers()

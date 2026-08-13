@@ -1,7 +1,7 @@
 const translations = {
   'zh-CN': {
-    language: '语言', loading: '正在读取报告...', invalidLink: '请打开一条完整的报告链接。',
-    missing: '报告不存在或已过期。', failed: '读取报告失败。', title: '带宽报告', month: '月度流量',
+    language: '语言', loading: '正在读取报告...', invalidLink: '请打开一条完整的报告链接。', retry: '重试',
+    missing: '报告不存在或已过期。', failed: '读取报告失败。', timedOut: '读取报告超时。', title: '带宽报告', month: '月度流量',
     hourly: '玩家小时流量', current: '当前小时', details: '统计阶段', player: '玩家', hour: '小时',
     totalWire: '实际总流量', outboundWire: '出站实际', inboundWire: '入站实际', rawOutbound: '原始出站',
     boFrame: 'BO 帧', bypass: '直通', status: '状态', complete: '已完成', partial: '进行中', noData: '暂无流量数据',
@@ -11,8 +11,8 @@ const translations = {
     sections: { transport: '传输管线', server: '服务器会话', chunk: '区块传输与缓存', diagnostics: '诊断' }
   },
   'en-US': {
-    language: 'Language', loading: 'Loading report...', invalidLink: 'Open a complete report link.',
-    missing: 'The report does not exist or has expired.', failed: 'Failed to load the report.', title: 'Bandwidth report',
+    language: 'Language', loading: 'Loading report...', invalidLink: 'Open a complete report link.', retry: 'Retry',
+    missing: 'The report does not exist or has expired.', failed: 'Failed to load the report.', timedOut: 'Report request timed out.', title: 'Bandwidth report',
     month: 'Monthly traffic', hourly: 'Hourly player traffic', current: 'Current hour', details: 'Accounting stages',
     player: 'Player', hour: 'Hour', totalWire: 'Measured total', outboundWire: 'Outbound measured',
     inboundWire: 'Inbound measured', rawOutbound: 'Outbound raw', boFrame: 'BO frames', bypass: 'Bypass', status: 'Status',
@@ -22,8 +22,8 @@ const translations = {
     sections: { transport: 'Transport pipeline', server: 'Server session', chunk: 'Chunk transport and cache', diagnostics: 'Diagnostics' }
   },
   'pt-BR': {
-    language: 'Idioma', loading: 'Carregando relatório...', invalidLink: 'Abra um link completo de relatório.',
-    missing: 'O relatório não existe ou expirou.', failed: 'Falha ao carregar o relatório.', title: 'Relatório de largura de banda',
+    language: 'Idioma', loading: 'Carregando relatório...', invalidLink: 'Abra um link completo de relatório.', retry: 'Tentar novamente',
+    missing: 'O relatório não existe ou expirou.', failed: 'Falha ao carregar o relatório.', timedOut: 'A leitura do relatório expirou.', title: 'Relatório de largura de banda',
     month: 'Tráfego mensal', hourly: 'Tráfego por jogador e hora', current: 'Hora atual', details: 'Etapas de contabilização',
     player: 'Jogador', hour: 'Hora', totalWire: 'Total medido', outboundWire: 'Saída medida', inboundWire: 'Entrada medida',
     rawOutbound: 'Saída original', boFrame: 'Quadros BO', bypass: 'Direto', status: 'Estado', complete: 'Concluído',
@@ -41,8 +41,11 @@ if (!translations[language]) language = 'en-US';
 let reportBundle = null;
 const t = key => translations[language][key] || translations['en-US'][key] || key;
 const statusNode = document.querySelector('#status');
+const statusTextNode = document.querySelector('#status-text');
+const retryNode = document.querySelector('#retry');
+let statusKey = 'loading';
 languageNode.value = language;
-statusNode.textContent = t('loading');
+setStatus('loading', false);
 const bytes = value => {
   let number = Number(value || 0);
   const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
@@ -55,11 +58,33 @@ const metric = (label, value) => `<div class="metric"><small>${label}</small><st
 
 async function load() {
   const match = location.pathname.match(/^\/report\/([A-Za-z0-9_-]+)$/);
-  if (!match) { statusNode.textContent = t('invalidLink'); return; }
-  const response = await fetch(`/api/v1/reports/${match[1]}`);
-  if (!response.ok) throw new Error(response.status === 404 ? t('missing') : t('failed'));
-  reportBundle = await response.json();
+  if (!match) { setStatus('invalidLink', false); return; }
+  setStatus('loading', false);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(`/api/v1/reports/${match[1]}`, { cache: 'no-store', signal: controller.signal });
+    if (!response.ok) {
+      setStatus(response.status === 404 ? 'missing' : 'failed', true);
+      return;
+    }
+    reportBundle = await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
   render();
+}
+
+function setStatus(key, retry) {
+  statusKey = key;
+  statusTextNode.textContent = t(key);
+  retryNode.textContent = t('retry');
+  retryNode.hidden = !retry;
+  statusNode.hidden = false;
+}
+
+function showLoadError(error) {
+  setStatus(error?.name === 'AbortError' ? 'timedOut' : 'failed', true);
 }
 
 function render() {
@@ -137,7 +162,7 @@ function renderHourly(history, monthPlayers) {
     const player = (hour.players || []).find(entry => entry.playerUuid === uuid);
     const outbound = player?.outboundWireBytes || 0;
     const inbound = player?.inboundWireBytes || 0;
-    return `<tr><td>${formatHour(hour.periodStartMillis)}</td><td><span class="traffic-bar" style="--share:${hourShare(history, uuid, outbound + inbound)}%"></span>${bytes(outbound + inbound)}</td>
+    return `<tr><td>${formatHour(hour.periodStartMillis)}</td><td><meter class="traffic-bar" min="0" max="100" value="${hourShare(history, uuid, outbound + inbound)}"></meter>${bytes(outbound + inbound)}</td>
       <td>${bytes(outbound)}</td><td>${bytes(inbound)}</td><td><span class="state ${hour.complete ? 'complete' : 'partial'}">${hour.complete ? t('complete') : t('partial')}</span></td></tr>`;
   });
   document.querySelector('#hourly-rows').innerHTML = rows.join('') || emptyRow(5);
@@ -175,7 +200,9 @@ function escapeAttribute(value) {
 languageNode.addEventListener('change', () => {
   language = languageNode.value;
   localStorage.setItem('bostats.language', language);
-  render();
+  if (reportBundle) render();
+  else setStatus(statusKey, !retryNode.hidden);
 });
 document.querySelector('#hourly-player').addEventListener('change', () => renderHourly(reportBundle?.trafficHistory, reportBundle?.trafficHistory?.players || []));
-load().catch(error => { statusNode.textContent = error.message; });
+retryNode.addEventListener('click', () => load().catch(showLoadError));
+load().catch(showLoadError);
