@@ -1,16 +1,22 @@
 package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.util.AttributeKey;
 
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 public final class ChannelTransportStreamingEpochCoordinator {
 
     private static final long ACK_TIMEOUT_MILLIS = 5_000L;
+    private static final long FALLBACK_WARN_INTERVAL_MILLIS = 60_000L;
     private static final AttributeKey<State> STATE_KEY =
             AttributeKey.valueOf("bandwidthoptimizer:streaming_epoch_coordinator");
+    private static final AtomicLong NEXT_FALLBACK_WARN_AT_MILLIS = new AtomicLong();
+    private static final AtomicLong SUPPRESSED_FALLBACK_WARNINGS = new AtomicLong();
 
     private ChannelTransportStreamingEpochCoordinator() {
     }
@@ -70,8 +76,12 @@ public final class ChannelTransportStreamingEpochCoordinator {
     }
 
     private static void log(String event, Channel channel, int epoch, int sequence, String detail) {
-        Bandwidthoptimizer.LOGGER.info(
-                "[Transport][StreamingEpoch] event={} epoch={} sequence={} channel={}{}",
+        if (!DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.STREAMING_EPOCH)) {
+            return;
+        }
+        DiagnosticLog.info(
+                DiagnosticToolRegistry.Tool.STREAMING_EPOCH,
+                "event={} epoch={} sequence={} channel={}{}",
                 event,
                 epoch,
                 sequence,
@@ -144,13 +154,7 @@ public final class ChannelTransportStreamingEpochCoordinator {
                 this.gateReleased = true;
             }
             session.setCrossFrameZstdEnabled(false);
-            Bandwidthoptimizer.LOGGER.warn(
-                    "[Transport][StreamingEpoch] event=fallback epoch={} sequence={} channel={} reason={}",
-                    epoch,
-                    lastSequence,
-                    ChannelIdentity.shortText(channel),
-                    reason
-            );
+            warnFallback(channel, epoch, lastSequence, reason);
             if (releaseGate) {
                 ChannelTransportStreamingEpochGate.release(channel);
                 log("release", channel, epoch, lastSequence, "reason=" + reason);
@@ -191,5 +195,24 @@ public final class ChannelTransportStreamingEpochCoordinator {
                 log("release", channel, epoch, lastSequence, "reason=ack");
             }
         }
+    }
+
+    private static void warnFallback(Channel channel, int epoch, int lastSequence, String reason) {
+        long nowMillis = System.currentTimeMillis();
+        long nextWarnAt = NEXT_FALLBACK_WARN_AT_MILLIS.get();
+        if (nowMillis < nextWarnAt
+                || !NEXT_FALLBACK_WARN_AT_MILLIS.compareAndSet(nextWarnAt, nowMillis + FALLBACK_WARN_INTERVAL_MILLIS)) {
+            SUPPRESSED_FALLBACK_WARNINGS.incrementAndGet();
+            return;
+        }
+        long suppressed = SUPPRESSED_FALLBACK_WARNINGS.getAndSet(0L);
+        Bandwidthoptimizer.LOGGER.warn(
+                "[Transport][StreamingEpoch] event=fallback epoch={} sequence={} channel={} reason={} suppressed={}",
+                epoch,
+                lastSequence,
+                ChannelIdentity.shortText(channel),
+                reason,
+                suppressed
+        );
     }
 }

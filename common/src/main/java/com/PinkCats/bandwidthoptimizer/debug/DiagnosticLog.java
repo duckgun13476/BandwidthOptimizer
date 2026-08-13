@@ -11,14 +11,23 @@ public final class DiagnosticLog {
     }
 
     public static void info(DiagnosticToolRegistry.Tool tool, String message, Object... args) {
+        if (!DiagnosticToolRegistry.isEnabled(tool)) {
+            return;
+        }
         Bandwidthoptimizer.LOGGER.info(format(tool, message), args);
     }
 
     public static void warn(DiagnosticToolRegistry.Tool tool, String message, Object... args) {
+        if (!DiagnosticToolRegistry.isEnabled(tool)) {
+            return;
+        }
         Bandwidthoptimizer.LOGGER.warn(format(tool, message), args);
     }
 
     public static void error(DiagnosticToolRegistry.Tool tool, String message, Object... args) {
+        if (!DiagnosticToolRegistry.isEnabled(tool)) {
+            return;
+        }
         Bandwidthoptimizer.LOGGER.error(format(tool, message), args);
     }
 

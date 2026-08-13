@@ -213,6 +213,11 @@ public final class DiagnosticToolRegistry {
                 Cost.MEDIUM,
                 "Per-channel transport trace journal close dumps"
         ),
+        STREAMING_EPOCH(
+                "streamingEpoch",
+                Cost.SMALL,
+                "Cross-frame Zstd epoch lifecycle events"
+        ),
         CHUNK_TRANSPORT_FRAMES(
                 "chunkTransportFrames",
                 Cost.MEDIUM,
