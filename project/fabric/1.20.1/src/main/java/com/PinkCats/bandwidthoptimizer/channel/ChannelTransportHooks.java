@@ -787,6 +787,7 @@ public final class ChannelTransportHooks {
             ChannelTransportStreamingEpochCoordinator.acknowledgementReceived(context.channel(), ok.epoch(), ok.lastSequence());
             if (ChannelTransportStreamingEpochCoordinator.consumeLateAcknowledgement(
                     context.channel(),
+                    transportSession,
                     ok.epoch(),
                     ok.lastSequence()
             )) {

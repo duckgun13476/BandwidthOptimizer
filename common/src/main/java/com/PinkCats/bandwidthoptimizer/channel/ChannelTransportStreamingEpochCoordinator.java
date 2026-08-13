@@ -41,9 +41,15 @@ public final class ChannelTransportStreamingEpochCoordinator {
         log("ack-receive", channel, epoch, lastSequence, "");
     }
 
-    public static boolean consumeLateAcknowledgement(Channel channel, int epoch, int lastSequence) {
+    public static boolean consumeLateAcknowledgement(
+            Channel channel,
+            ChannelTransportSession session,
+            int epoch,
+            int lastSequence
+    ) {
         State state = channel == null ? null : channel.attr(STATE_KEY).get();
-        return state != null && state.consumeLateAcknowledgement(channel, epoch, lastSequence);
+        return state != null && session != null
+                && state.consumeLateAcknowledgement(channel, session, epoch, lastSequence);
     }
 
     public static void releasedByAcknowledgement(Channel channel, int epoch, int lastSequence) {
@@ -151,13 +157,22 @@ public final class ChannelTransportStreamingEpochCoordinator {
             }
         }
 
-        private synchronized boolean consumeLateAcknowledgement(Channel channel, int epoch, int lastSequence) {
-            if (this.fallbackEpoch != epoch || this.fallbackLastSequence != lastSequence) {
-                return false;
+        private boolean consumeLateAcknowledgement(
+                Channel channel,
+                ChannelTransportSession session,
+                int epoch,
+                int lastSequence
+        ) {
+            synchronized (this) {
+                if (this.fallbackEpoch != epoch || this.fallbackLastSequence != lastSequence) {
+                    return false;
+                }
+                this.fallbackEpoch = 0;
+                this.fallbackLastSequence = 0;
             }
-            this.fallbackEpoch = 0;
-            this.fallbackLastSequence = 0;
+            session.restartOutboundStreamingEpoch();
             log("ack-receive", channel, epoch, lastSequence, "late=true");
+            log("resume", channel, session.outboundStreamingEpoch(), 0, "reason=late-ack");
             return true;
         }
 
