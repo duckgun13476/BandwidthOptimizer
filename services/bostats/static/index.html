@@ -26,6 +26,23 @@
     </div>
   </header>
   <main>
+    <div id="view-upload" class="upload-page" hidden>
+      <section class="upload-shell">
+        <div class="page-heading"><div><h1 id="upload-title">上传带宽报告</h1><p id="upload-subtitle">选择 BandwidthOptimizer 生成的报告文件</p></div></div>
+        <label id="upload-drop" class="upload-drop" for="upload-file" tabindex="0">
+          <span class="upload-mark" aria-hidden="true">↑</span>
+          <strong id="upload-prompt">将报告拖到这里</strong>
+          <span id="upload-choice">或选择文件</span>
+          <small id="upload-hint">JSON 或 Gzip，最大 4 MiB</small>
+        </label>
+        <input id="upload-file" type="file" accept=".json,.json.gz,.gz,application/json,application/gzip" hidden>
+        <div class="upload-selection">
+          <div><strong id="upload-file-name">尚未选择文件</strong><span id="upload-file-size"></span></div>
+          <button id="upload-submit" type="button" disabled>上传报告</button>
+        </div>
+        <div id="upload-status" class="upload-status" role="status" hidden></div>
+      </section>
+    </div>
     <div id="status" role="status">
       <span id="status-text">正在读取报告...</span>
       <button id="retry" type="button" hidden>重试</button>
