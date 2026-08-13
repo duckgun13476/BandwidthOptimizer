@@ -10,7 +10,8 @@ const translations = {
     sessionInbound: '本次入站实际', monthTotal: '本月实际总流量', monthOutbound: '本月出站实际', monthInbound: '本月入站实际',
     players: '本月玩家', metric: '指标', value: '值', stage: '阶段', scope: '范围', total: '总流量', outbound: '出站', inbound: '入站',
     records: '{count} 条记录', page: '第 {page} / {pages} 页', rowsPerPage: '每页', previous: '上一页', next: '下一页',
-    enabled: '已开启', disabled: '已关闭', chartLabel: '按小时统计的实际线路流量曲线', hourlyChartLabel: '所选玩家按时间分布的出站与入站流量柱状图',
+    enabled: '已开启', disabled: '已关闭', chartLabel: '按小时统计的实际线路流量曲线', hourlyChartLabel: '所选玩家按时间分布的出站与入站流量柱状图', currentChartLabel: '当前小时各玩家的出站与入站流量柱状图',
+    bypassAnalysis: '旁路流量分析', bypassSubtitle: '按来源与包路径显示绕过 BO 传输层的流量', bypassSources: '来源排行', bypassEntries: '包级明细', capturedKeys: '已上传键', distinctKeys: '不同键', cumulativeTraffic: '累计流量', windowTraffic: '当前窗口', unlistedKeys: '未列出的键',
     sections: { transport: '传输管线', server: '服务器会话', chunk: '区块传输与缓存', diagnostics: '诊断状态' },
     descriptions: {
       transport: '逻辑包、映射、Zstd、BO 帧与旁路是相互独立的统计阶段。',
@@ -32,7 +33,8 @@ const translations = {
     sessionInbound: 'Session inbound', monthTotal: 'Monthly measured total', monthOutbound: 'Monthly outbound', monthInbound: 'Monthly inbound',
     players: 'Monthly players', metric: 'Metric', value: 'Value', stage: 'Stage', scope: 'Scope', total: 'Total', outbound: 'Outbound', inbound: 'Inbound',
     records: '{count} records', page: 'Page {page} of {pages}', rowsPerPage: 'Rows', previous: 'Previous page', next: 'Next page',
-    enabled: 'Enabled', disabled: 'Disabled', chartLabel: 'Measured wire traffic by hour', hourlyChartLabel: 'Outbound and inbound traffic by hour for the selected player',
+    enabled: 'Enabled', disabled: 'Disabled', chartLabel: 'Measured wire traffic by hour', hourlyChartLabel: 'Outbound and inbound traffic by hour for the selected player', currentChartLabel: 'Outbound and inbound traffic by player for the current hour',
+    bypassAnalysis: 'Bypass traffic analysis', bypassSubtitle: 'Traffic that bypassed the BO transport, grouped by source and packet path', bypassSources: 'Source ranking', bypassEntries: 'Packet details', capturedKeys: 'Uploaded keys', distinctKeys: 'Distinct keys', cumulativeTraffic: 'Cumulative traffic', windowTraffic: 'Current window', unlistedKeys: 'Unlisted keys',
     sections: { transport: 'Transport pipeline', server: 'Server session', chunk: 'Chunk transport and cache', diagnostics: 'Diagnostic state' },
     descriptions: {
       transport: 'Logical packets, mapping, Zstd, BO frames, and bypass are separate accounting stages.',
@@ -54,7 +56,8 @@ const translations = {
     sessionInbound: 'Entrada da sessão', monthTotal: 'Total mensal medido', monthOutbound: 'Saída mensal', monthInbound: 'Entrada mensal',
     players: 'Jogadores no mês', metric: 'Métrica', value: 'Valor', stage: 'Etapa', scope: 'Escopo', total: 'Total', outbound: 'Saída', inbound: 'Entrada',
     records: '{count} registros', page: 'Página {page} de {pages}', rowsPerPage: 'Linhas', previous: 'Página anterior', next: 'Próxima página',
-    enabled: 'Ativado', disabled: 'Desativado', chartLabel: 'Tráfego medido por hora', hourlyChartLabel: 'Tráfego de saída e entrada por hora do jogador selecionado',
+    enabled: 'Ativado', disabled: 'Desativado', chartLabel: 'Tráfego medido por hora', hourlyChartLabel: 'Tráfego de saída e entrada por hora do jogador selecionado', currentChartLabel: 'Tráfego de saída e entrada por jogador na hora atual',
+    bypassAnalysis: 'Análise do tráfego desviado', bypassSubtitle: 'Tráfego fora do transporte BO, agrupado por origem e caminho do pacote', bypassSources: 'Ranking por origem', bypassEntries: 'Detalhes dos pacotes', capturedKeys: 'Chaves enviadas', distinctKeys: 'Chaves distintas', cumulativeTraffic: 'Tráfego acumulado', windowTraffic: 'Janela atual', unlistedKeys: 'Chaves não listadas',
     sections: { transport: 'Pipeline de transporte', server: 'Sessão do servidor', chunk: 'Transporte e cache de chunks', diagnostics: 'Estado do diagnóstico' },
     descriptions: {
       transport: 'Pacotes lógicos, mapeamento, Zstd, quadros BO e desvio são etapas contábeis separadas.',
@@ -78,10 +81,11 @@ let language = localStorage.getItem('bostats.language') || supportedLanguage(nav
 if (!translations[language]) language = 'en-US';
 let reportBundle = null;
 const visibleSeries = new Set(['total', 'outbound', 'inbound']);
-const pages = { month: { page: 1, size: 10 }, hourly: { page: 1, size: 10 }, current: { page: 1, size: 10 } };
+const pages = { month: { page: 1, size: 10 }, hourly: { page: 1, size: 10 }, current: { page: 1, size: 10 }, bypassSources: { page: 1, size: 10 }, bypassEntries: { page: 1, size: 10 } };
 let activeView = ['overview', 'players', 'details'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
 let chartHoverIndex = -1;
 let hourlyHoverIndex = -1;
+let currentHoverIndex = -1;
 const t = key => translations[language][key] || translations['en-US'][key] || key;
 const template = (key, values) => Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, value), t(key));
 const statusNode = document.querySelector('#status');
@@ -89,6 +93,7 @@ const statusTextNode = document.querySelector('#status-text');
 const retryNode = document.querySelector('#retry');
 const chartNode = document.querySelector('#traffic-chart');
 const hourlyChartNode = document.querySelector('#hourly-chart');
+const currentChartNode = document.querySelector('#current-chart');
 let statusKey = 'loading';
 languageNode.value = language;
 setStatus('loading', false);
@@ -168,7 +173,7 @@ function render() {
   renderMonth(monthPlayers, history);
   renderHourly(history);
   renderCurrent(traffic?.players || []);
-  renderDetails(summary.sections || []);
+  renderDetails(summary.sections || [], summary.bypass);
 
   statusNode.hidden = true;
   document.querySelector('#trend-section').hidden = !history;
@@ -295,7 +300,10 @@ function setActiveView(view, updateHash = true) {
   document.querySelectorAll('#view-tabs button').forEach(button => button.setAttribute('aria-pressed', `${button.dataset.view === activeView}`));
   if (updateHash) history.replaceState(null, '', `#${activeView}`);
   if (activeView === 'overview' && reportBundle?.trafficHistory) requestAnimationFrame(() => drawChart(reportBundle.trafficHistory));
-  if (activeView === 'players' && reportBundle?.trafficHistory) requestAnimationFrame(() => drawHourlyChart(reportBundle.trafficHistory));
+  if (activeView === 'players') requestAnimationFrame(() => {
+    if (reportBundle?.trafficHistory) drawHourlyChart(reportBundle.trafficHistory);
+    drawCurrentChart(reportBundle?.playerTraffic?.players || []);
+  });
 }
 
 function hourlyRows(history) {
@@ -394,15 +402,184 @@ function drawHourlyChart(history) {
 }
 
 function renderCurrent(players) {
-  const rows = [...players].sort((a, b) => totalWire(b.traffic) - totalWire(a.traffic));
+  const rows = currentRows(players);
   document.querySelector('#current-count').textContent = template('records', { count: rows.length });
-  const slice = pageSlice(rows, pages.current);
-  document.querySelector('#current-players').innerHTML = slice.map(player => `<tr><td>${escapeText(player.playerName)}<span class="uuid">${escapeText(player.playerUuid)}</span></td><td>${bytes(player.traffic.outboundWireBytes)}</td><td>${bytes(player.traffic.inboundWireBytes)}</td><td>${bytes(player.traffic.outboundRawBytes)}</td><td>${bytes(player.traffic.outboundTransportBytes)}</td><td>${bytes(player.traffic.outboundBypassBytes)}</td></tr>`).join('') || emptyRow(6);
+  currentChartNode.setAttribute('aria-label', t('currentChartLabel'));
+  currentHoverIndex = -1;
+  drawCurrentChart(players);
   renderPagination('current', rows.length, () => renderCurrent(players));
 }
 
-function renderDetails(sections) {
-  document.querySelector('#sections').innerHTML = sections.map(section => `<div class="section"><h3>${escapeText(t('sections')[section.id] || section.title)}</h3><p>${escapeText(t('descriptions')[section.id] || section.description)}</p><div class="table-wrap"><table><thead><tr><th>${t('metric')}</th><th>${t('value')}</th><th>${t('stage')}</th><th>${t('scope')}</th></tr></thead><tbody>${section.metrics.map(item => `<tr><td>${escapeText(metricLabel(item))}</td><td>${escapeText(metricValue(item))}</td><td>${escapeText(t('stages')[item.stage] || item.stage)}</td><td>${escapeText(t('scopes')[item.scope] || item.scope)}</td></tr>`).join('')}</tbody></table></div></div>`).join('');
+function currentRows(players) {
+  return [...players].sort((a, b) => totalWire(b.traffic) - totalWire(a.traffic));
+}
+
+function currentPageRows(players) {
+  return pageSlice(currentRows(players), pages.current).map(player => ({
+    player,
+    outbound: Number(player.traffic?.outboundWireBytes || 0),
+    inbound: Number(player.traffic?.inboundWireBytes || 0),
+    total: totalWire(player.traffic)
+  }));
+}
+
+function drawCurrentChart(players) {
+  const points = currentPageRows(players);
+  const empty = document.querySelector('#current-empty');
+  empty.textContent = t('noData');
+  empty.hidden = points.length > 0;
+  currentChartNode.hidden = points.length === 0;
+  const rect = currentChartNode.getBoundingClientRect();
+  if (!points.length || !rect.width || !rect.height) return;
+  const ratio = Math.min(2, window.devicePixelRatio || 1);
+  currentChartNode.width = Math.round(rect.width * ratio);
+  currentChartNode.height = Math.round(rect.height * ratio);
+  const context = currentChartNode.getContext('2d');
+  context.scale(ratio, ratio);
+  const style = getComputedStyle(document.documentElement);
+  const colors = { outbound: style.getPropertyValue('--outbound').trim(), inbound: style.getPropertyValue('--inbound').trim() };
+  const text = style.getPropertyValue('--muted').trim();
+  const grid = style.getPropertyValue('--border').trim();
+  const surface = style.getPropertyValue('--surface-raised').trim();
+  const foreground = style.getPropertyValue('--text').trim();
+  const width = rect.width;
+  const height = rect.height;
+  const pad = { left: 62, right: 18, top: 14, bottom: 38 };
+  const innerWidth = Math.max(1, width - pad.left - pad.right);
+  const innerHeight = Math.max(1, height - pad.top - pad.bottom);
+  const maximum = Math.max(1, ...points.map(point => point.total));
+  const slotWidth = innerWidth / points.length;
+  const barWidth = Math.max(2, Math.min(52, slotWidth * .62));
+  const x = index => pad.left + (index + .5) * slotWidth;
+  const y = value => pad.top + innerHeight - innerHeight * value / maximum;
+  context.clearRect(0, 0, width, height);
+  context.font = '11px Segoe UI, sans-serif';
+  context.textBaseline = 'middle';
+  for (let i = 0; i <= 4; i++) {
+    const lineY = pad.top + innerHeight * i / 4;
+    context.strokeStyle = grid; context.lineWidth = 1;
+    context.beginPath(); context.moveTo(pad.left, lineY); context.lineTo(width - pad.right, lineY); context.stroke();
+    context.fillStyle = text; context.textAlign = 'right'; context.fillText(bytes(maximum * (4 - i) / 4), pad.left - 8, lineY);
+  }
+  points.forEach((point, index) => {
+    const center = x(index);
+    const outboundTop = y(point.outbound);
+    const totalTop = y(point.total);
+    context.fillStyle = colors.outbound; context.fillRect(center - barWidth / 2, outboundTop, barWidth, pad.top + innerHeight - outboundTop);
+    context.fillStyle = colors.inbound; context.fillRect(center - barWidth / 2, totalTop, barWidth, outboundTop - totalTop);
+  });
+  const tickCount = Math.min(6, points.length);
+  for (let i = 0; i < tickCount; i++) {
+    const index = Math.round((points.length - 1) * i / Math.max(1, tickCount - 1));
+    context.fillStyle = text; context.textAlign = i === 0 ? 'left' : i === tickCount - 1 ? 'right' : 'center';
+    context.fillText(shortPlayerName(context, points[index].player.playerName, Math.max(56, slotWidth * 1.7)), x(index), height - 14);
+  }
+  if (currentHoverIndex >= 0 && currentHoverIndex < points.length) {
+    const point = points[currentHoverIndex];
+    const center = x(currentHoverIndex);
+    context.strokeStyle = foreground; context.lineWidth = 1; context.strokeRect(center - barWidth / 2 - 2, y(point.total) - 2, barWidth + 4, pad.top + innerHeight - y(point.total) + 4);
+    const traffic = point.player.traffic || {};
+    const lines = [point.player.playerName, `${t('total')}  ${bytes(point.total)}`, `${t('outbound')}  ${bytes(point.outbound)}`, `${t('inbound')}  ${bytes(point.inbound)}`, `${t('rawOutbound')}  ${bytes(traffic.outboundRawBytes)}`, `${t('boFrame')}  ${bytes(traffic.outboundTransportBytes)}`, `${t('bypass')}  ${bytes(traffic.outboundBypassBytes)}`];
+    const boxWidth = Math.min(width - 20, Math.max(...lines.map(line => context.measureText(line).width)) + 24);
+    const boxHeight = lines.length * 20 + 10;
+    const boxX = center + boxWidth + 16 > width ? Math.max(10, center - boxWidth - 10) : center + 10;
+    const boxY = pad.top + 6;
+    context.fillStyle = surface; context.fillRect(boxX, boxY, boxWidth, boxHeight);
+    context.strokeStyle = grid; context.strokeRect(boxX, boxY, boxWidth, boxHeight);
+    lines.forEach((line, index) => { context.fillStyle = index === 0 ? foreground : text; context.textAlign = 'left'; context.fillText(line, boxX + 12, boxY + 15 + index * 20); });
+  }
+}
+
+function shortPlayerName(context, value, maximumWidth) {
+  const name = String(value || '');
+  if (context.measureText(name).width <= maximumWidth) return name;
+  let end = name.length;
+  while (end > 1 && context.measureText(`${name.slice(0, end)}…`).width > maximumWidth) end--;
+  return `${name.slice(0, end)}…`;
+}
+
+function renderDetails(sections, bypass) {
+  document.querySelector('#sections').innerHTML = sections.map(section => {
+    const content = section.metrics.every(item => item.unit === 'boolean') ? renderBooleanMetrics(section.metrics) : renderMetricGroups(section.metrics);
+    return `<div class="section"><h3>${escapeText(t('sections')[section.id] || section.title)}</h3><p>${escapeText(t('descriptions')[section.id] || section.description)}</p>${content}</div>`;
+  }).join('') + (bypass ? '<div id="bypass-section"></div>' : '');
+  if (bypass) renderBypass(bypass);
+}
+
+function renderBypass(bypass) {
+  const entries = [...(bypass.entries || [])].sort((a, b) => Number(b.totalBytes || 0) - Number(a.totalBytes || 0));
+  const sources = aggregateBypassSources(entries, bypass);
+  const sourceMaximum = Math.max(1, ...sources.map(source => source.bytes));
+  const entryMaximum = Math.max(1, ...entries.map(entry => Number(entry.totalBytes || 0)));
+  const sourceRows = pageSlice(sources, pages.bypassSources).map(source => `<div class="bypass-row"><div class="bypass-identity"><strong>${escapeText(source.name)}</strong><small>${new Intl.NumberFormat(language).format(source.keys)} ${escapeText(t('units').entries)}</small></div><div class="bypass-main"><meter class="visual-track" min="0" max="100" value="${(source.bytes * 100 / sourceMaximum).toFixed(3)}" aria-label="${escapeAttribute(`${source.name} ${bytes(source.bytes)}`)}"></meter><div class="bypass-values"><strong>${bytes(source.bytes)}</strong><small>${new Intl.NumberFormat(language).format(source.packets)} ${escapeText(t('units').packets)}</small></div></div></div>`).join('') || `<div class="empty">${escapeText(t('noData'))}</div>`;
+  const entryRows = pageSlice(entries, pages.bypassEntries).map(entry => {
+    const name = entry.payloadChannel || entry.packetClass?.split('.').pop() || `#${entry.rawPacketId}`;
+    const detail = entry.payloadChannel ? entry.packetClass : `${entry.protocol} · ${entry.flow}`;
+    return `<div class="bypass-row bypass-entry"><div class="bypass-identity"><strong>${escapeText(name)}</strong><small>${escapeText(detail)}</small><small>${escapeText(entry.reason)}</small></div><div class="bypass-main"><meter class="visual-track" min="0" max="100" value="${(Number(entry.totalBytes || 0) * 100 / entryMaximum).toFixed(3)}" aria-label="${escapeAttribute(`${name} ${bytes(entry.totalBytes)}`)}"></meter><div class="bypass-values"><strong>${bytes(entry.totalBytes)}</strong><small>${new Intl.NumberFormat(language).format(Number(entry.totalPackets || 0))} ${escapeText(t('units').packets)}</small><small>${bytes(entry.windowBytes)} · ${new Intl.NumberFormat(language).format(Number(entry.windowPackets || 0))}</small></div></div></div>`;
+  }).join('') || `<div class="empty">${escapeText(t('noData'))}</div>`;
+  const node = document.querySelector('#bypass-section');
+  node.className = 'section bypass-section';
+  node.innerHTML = `<h3>${escapeText(t('bypassAnalysis'))}</h3><p>${escapeText(t('bypassSubtitle'))}</p><div class="bypass-summary"><div><small>${escapeText(t('cumulativeTraffic'))}</small><strong>${bytes(bypass.totalBytes)}</strong><span>${new Intl.NumberFormat(language).format(Number(bypass.totalPackets || 0))} ${escapeText(t('units').packets)}</span></div><div><small>${escapeText(t('windowTraffic'))}</small><strong>${bytes(bypass.windowBytes)}</strong><span>${new Intl.NumberFormat(language).format(Number(bypass.windowPackets || 0))} ${escapeText(t('units').packets)}</span></div><div><small>${escapeText(t('capturedKeys'))}</small><strong>${entries.length} / ${new Intl.NumberFormat(language).format(Number(bypass.distinctKeys || 0))}</strong><span>${escapeText(t('distinctKeys'))}</span></div></div><div class="bypass-subheading"><h4>${escapeText(t('bypassSources'))}</h4></div><div class="bypass-list">${sourceRows}</div><div class="pagination" id="bypassSources-pagination"></div><div class="bypass-subheading"><h4>${escapeText(t('bypassEntries'))}</h4></div><div class="bypass-list">${entryRows}</div><div class="pagination" id="bypassEntries-pagination"></div>`;
+  renderPagination('bypassSources', sources.length, () => renderBypass(bypass));
+  renderPagination('bypassEntries', entries.length, () => renderBypass(bypass));
+}
+
+function aggregateBypassSources(entries, bypass) {
+  const sources = new Map();
+  entries.forEach(entry => {
+    const name = bypassSource(entry);
+    const source = sources.get(name) || { name, bytes: 0, packets: 0, keys: 0 };
+    source.bytes += Number(entry.totalBytes || 0);
+    source.packets += Number(entry.totalPackets || 0);
+    source.keys++;
+    sources.set(name, source);
+  });
+  const listedBytes = [...sources.values()].reduce((sum, source) => sum + source.bytes, 0);
+  const listedPackets = [...sources.values()].reduce((sum, source) => sum + source.packets, 0);
+  const missingKeys = Math.max(0, Number(bypass.distinctKeys || 0) - entries.length);
+  const missingBytes = Math.max(0, Number(bypass.totalBytes || 0) - listedBytes);
+  const missingPackets = Math.max(0, Number(bypass.totalPackets || 0) - listedPackets);
+  if (missingKeys || missingBytes || missingPackets) sources.set('__unlisted__', { name: t('unlistedKeys'), bytes: missingBytes, packets: missingPackets, keys: missingKeys });
+  return [...sources.values()].sort((a, b) => b.bytes - a.bytes);
+}
+
+function bypassSource(entry) {
+  const channel = String(entry.payloadChannel || '').trim().toLowerCase();
+  if (channel.includes(':')) return channel.slice(0, channel.indexOf(':'));
+  if (channel) return channel;
+  const packetClass = String(entry.packetClass || '');
+  if (packetClass.startsWith('net.minecraft.')) return 'minecraft';
+  return 'other';
+}
+
+function renderMetricGroups(metrics) {
+  const groups = [];
+  metrics.forEach(item => {
+    let group = groups.find(entry => entry.scope === item.scope);
+    if (!group) { group = { scope: item.scope, items: [] }; groups.push(group); }
+    group.items.push(item);
+  });
+  return `<div class="metric-groups">${groups.map(group => {
+    const maximumBytes = Math.max(1, ...group.items.filter(item => item.unit === 'bytes').map(item => Number(item.value || 0)));
+    const rows = group.items.map(item => renderVisualMetric(item, maximumBytes)).join('');
+    return `<div class="metric-group scope-${escapeAttribute(group.scope)}"><div class="metric-group-title">${escapeText(t('scopes')[group.scope] || group.scope)}</div>${rows}</div>`;
+  }).join('')}</div>`;
+}
+
+function renderVisualMetric(item, maximumBytes) {
+  const label = escapeText(metricLabel(item));
+  const stage = escapeText(t('stages')[item.stage] || item.stage);
+  const value = escapeText(metricValue(item));
+  if (item.unit !== 'bytes') return `<div class="visual-metric count-metric"><div class="visual-label"><strong>${label}</strong><small>${stage}</small></div><output>${value}</output></div>`;
+  const percentage = Math.max(0, Math.min(100, Number(item.value || 0) * 100 / maximumBytes));
+  return `<div class="visual-metric"><div class="visual-label"><strong>${label}</strong><small>${stage}</small></div><meter class="visual-track" min="0" max="100" value="${percentage.toFixed(3)}" aria-label="${escapeAttribute(`${metricLabel(item)} ${metricValue(item)}`)}"></meter><output>${value}</output></div>`;
+}
+
+function renderBooleanMetrics(metrics) {
+  return `<div class="diagnostic-grid">${metrics.map(item => {
+    const enabled = Number(item.value) !== 0;
+    return `<div class="diagnostic-item"><strong>${escapeText(metricLabel(item))}</strong><span class="boolean-state" role="switch" aria-readonly="true" aria-checked="${enabled}"><i></i><span>${escapeText(enabled ? t('enabled') : t('disabled'))}</span></span></div>`;
+  }).join('')}</div>`;
 }
 
 function renderPagination(name, count, rerender) {
@@ -418,7 +595,7 @@ function renderPagination(name, count, rerender) {
 
 function pageSlice(rows, state) { const start = (state.page - 1) * state.size; return rows.slice(start, start + state.size); }
 function metricLabel(item) { const short = item.id.split('.').pop(); return metricLabels[language]?.[item.id] || metricLabels[language]?.[short] || item.label; }
-function metricValue(item) { if (item.unit === 'bytes') return bytes(item.value); if (item.unit === 'boolean') return Number(item.value) ? t('enabled') : t('disabled'); return `${item.value} ${t('units')[item.unit] || item.unit}`; }
+function metricValue(item) { if (item.unit === 'bytes') return bytes(item.value); if (item.unit === 'boolean') return Number(item.value) ? t('enabled') : t('disabled'); return `${new Intl.NumberFormat(language).format(Number(item.value || 0))} ${t('units')[item.unit] || item.unit}`; }
 function totalWire(traffic) { return Number(traffic?.outboundWireBytes || 0) + Number(traffic?.inboundWireBytes || 0); }
 function emptyRow(columns) { return `<tr><td colspan="${columns}" class="empty">${escapeText(t('noData'))}</td></tr>`; }
 function formatDate(value) { return new Intl.DateTimeFormat(language, { dateStyle: 'medium' }).format(new Date(value)); }
@@ -456,5 +633,15 @@ hourlyChartNode.addEventListener('pointermove', event => {
 });
 hourlyChartNode.addEventListener('pointerleave', () => { hourlyHoverIndex = -1; drawHourlyChart(reportBundle?.trafficHistory); });
 new ResizeObserver(() => { if (reportBundle?.trafficHistory) drawHourlyChart(reportBundle.trafficHistory); }).observe(hourlyChartNode);
+currentChartNode.addEventListener('pointermove', event => {
+  const points = currentPageRows(reportBundle?.playerTraffic?.players || []);
+  if (!points.length) return;
+  const rect = currentChartNode.getBoundingClientRect();
+  const slotWidth = Math.max(1, (rect.width - 80) / points.length);
+  currentHoverIndex = Math.max(0, Math.min(points.length - 1, Math.floor((event.clientX - rect.left - 62) / slotWidth)));
+  drawCurrentChart(reportBundle?.playerTraffic?.players || []);
+});
+currentChartNode.addEventListener('pointerleave', () => { currentHoverIndex = -1; drawCurrentChart(reportBundle?.playerTraffic?.players || []); });
+new ResizeObserver(() => { if (reportBundle?.playerTraffic) drawCurrentChart(reportBundle.playerTraffic.players || []); }).observe(currentChartNode);
 retryNode.addEventListener('click', () => load().catch(showLoadError));
 load().catch(showLoadError);

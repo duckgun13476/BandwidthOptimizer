@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>BO Stats</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="/static/app.css?v=6">
+  <link rel="stylesheet" href="/static/app.css?v=7">
 </head>
 <body>
   <header>
@@ -58,15 +58,18 @@
       </section>
       <section id="hourly-section">
         <div class="section-heading"><div><h2 id="hourly-title">玩家小时明细</h2><span id="hourly-count" class="record-count"></span></div><select id="hourly-player" aria-label="玩家"></select></div>
-        <div class="hourly-panel">
-          <div class="hourly-legend"><span class="hourly-outbound"><i></i><span data-i18n="outboundWire">出站实际</span></span><span class="hourly-inbound"><i></i><span data-i18n="inboundWire">入站实际</span></span></div>
-          <div class="hourly-chart-wrap"><canvas id="hourly-chart" height="260"></canvas><div id="hourly-empty" class="empty" hidden>暂无流量数据</div></div>
+        <div class="stacked-chart-panel">
+          <div class="stacked-chart-legend"><span class="series-outbound"><i></i><span data-i18n="outboundWire">出站实际</span></span><span class="series-inbound"><i></i><span data-i18n="inboundWire">入站实际</span></span></div>
+          <div class="stacked-chart-wrap"><canvas id="hourly-chart" height="260"></canvas><div id="hourly-empty" class="empty" hidden>暂无流量数据</div></div>
         </div>
         <div class="pagination" id="hourly-pagination"></div>
       </section>
       <section id="current-section">
         <div class="section-heading"><div><h2 id="current-title">当前小时</h2><span id="current-count" class="record-count"></span></div></div>
-        <div class="table-wrap"><table><thead><tr><th data-i18n="player">玩家</th><th data-i18n="outboundWire">出站实际</th><th data-i18n="inboundWire">入站实际</th><th data-i18n="rawOutbound">原始出站</th><th data-i18n="boFrame">BO 帧</th><th data-i18n="bypass">直通</th></tr></thead><tbody id="current-players"></tbody></table></div>
+        <div class="stacked-chart-panel">
+          <div class="stacked-chart-legend"><span class="series-outbound"><i></i><span data-i18n="outboundWire">出站实际</span></span><span class="series-inbound"><i></i><span data-i18n="inboundWire">入站实际</span></span></div>
+          <div class="stacked-chart-wrap"><canvas id="current-chart" height="260"></canvas><div id="current-empty" class="empty" hidden>暂无流量数据</div></div>
+        </div>
         <div class="pagination" id="current-pagination"></div>
       </section>
     </div>
@@ -74,6 +77,6 @@
       <section id="details"><div class="page-heading"><div><h1 id="details-title">传输详情</h1><p id="details-subtitle">各压缩阶段与运行状态</p></div></div><div id="sections"></div></section>
     </div>
   </main>
-  <script src="/static/app.js?v=6" defer></script>
+  <script src="/static/app.js?v=7" defer></script>
 </body>
 </html>
