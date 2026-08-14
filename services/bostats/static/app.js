@@ -3,7 +3,7 @@ const translations = {
     language: '语言', loading: '正在读取报告...', invalidLink: '请打开一条完整的报告链接。', retry: '重试',
     missing: '报告不存在或已过期。', failed: '读取报告失败。', timedOut: '读取报告超时。', title: '带宽报告',
     subtitle: '服务器带宽使用与优化结果', trend: '小时流量趋势', dataRange: '数据范围', serverTotal: '全服总量',
-    tabOverview: '总览', tabPlayers: '玩家', tabDetails: '传输详情', tabPackets: '包分析', pageNavigation: '报告页面', detailsSubtitle: '各压缩阶段与运行状态', packetsSubtitle: '旁路来源与包级流量明细',
+    tabOverview: '总览', tabPlayers: '玩家', tabDetails: '传输详情', tabPackets: '包分析', pageNavigation: '报告页面', detailsSubtitle: '各压缩阶段与运行状态', packetsSubtitle: '旁路来源与包级流量明细', transportFlow: '传输管线', nativeReference: '原版估算参考', packetStructure: '包与映射构成', wireEfficiency: '线路效率', measuredWire: '实际线路构成', avoidedTraffic: '缓存与门控节省', hotspotEfficiency: '热点区块效率', memoryFootprint: '当前内存占用对比', cacheReuse: '区块缓存复用', diagnosticsEnabled: '项诊断已开启',
     month: '月度玩家排行', current: '当前小时排行', details: '传输详情', player: '玩家', hour: '小时',
     totalWire: '实际总流量', outboundWire: '出站实际', inboundWire: '入站实际', rawOutbound: '原始出站', boFrame: 'BO 帧',
     bypass: '旁路', status: '状态', complete: '已完成', partial: '进行中', noData: '暂无流量数据', sessionOutbound: '本次出站实际',
@@ -27,7 +27,7 @@ const translations = {
     language: 'Language', loading: 'Loading report...', invalidLink: 'Open a complete report link.', retry: 'Retry',
     missing: 'The report does not exist or has expired.', failed: 'Failed to load the report.', timedOut: 'Report request timed out.', title: 'Bandwidth report',
     subtitle: 'Server bandwidth use and optimization results', trend: 'Hourly traffic trend', dataRange: 'Data range', serverTotal: 'All players',
-    tabOverview: 'Overview', tabPlayers: 'Players', tabDetails: 'Transport details', tabPackets: 'Packet analysis', pageNavigation: 'Report pages', detailsSubtitle: 'Compression stages and runtime state', packetsSubtitle: 'Bypass sources and packet-level traffic details',
+    tabOverview: 'Overview', tabPlayers: 'Players', tabDetails: 'Transport details', tabPackets: 'Packet analysis', pageNavigation: 'Report pages', detailsSubtitle: 'Compression stages and runtime state', packetsSubtitle: 'Bypass sources and packet-level traffic details', transportFlow: 'Transport pipeline', nativeReference: 'Vanilla estimate reference', packetStructure: 'Packet and mapping composition', wireEfficiency: 'Wire efficiency', measuredWire: 'Measured wire composition', avoidedTraffic: 'Cache and gate savings', hotspotEfficiency: 'Hotspot chunk efficiency', memoryFootprint: 'Current memory footprint', cacheReuse: 'Chunk cache reuse', diagnosticsEnabled: 'diagnostics enabled',
     month: 'Monthly player ranking', current: 'Current-hour ranking', details: 'Transport details', player: 'Player', hour: 'Hour',
     totalWire: 'Measured total', outboundWire: 'Outbound measured', inboundWire: 'Inbound measured', rawOutbound: 'Outbound raw', boFrame: 'BO frames',
     bypass: 'Bypass', status: 'Status', complete: 'Complete', partial: 'In progress', noData: 'No traffic data', sessionOutbound: 'Session outbound',
@@ -51,7 +51,7 @@ const translations = {
     language: 'Idioma', loading: 'Carregando relatório...', invalidLink: 'Abra um link completo de relatório.', retry: 'Tentar novamente',
     missing: 'O relatório não existe ou expirou.', failed: 'Falha ao carregar o relatório.', timedOut: 'A leitura do relatório expirou.', title: 'Relatório de largura de banda',
     subtitle: 'Uso de largura de banda e resultados da otimização', trend: 'Tendência de tráfego por hora', dataRange: 'Intervalo de dados', serverTotal: 'Todos os jogadores',
-    tabOverview: 'Visão geral', tabPlayers: 'Jogadores', tabDetails: 'Detalhes do transporte', tabPackets: 'Análise de pacotes', pageNavigation: 'Páginas do relatório', detailsSubtitle: 'Etapas de compressão e estado de execução', packetsSubtitle: 'Origens de desvio e detalhes de tráfego por pacote',
+    tabOverview: 'Visão geral', tabPlayers: 'Jogadores', tabDetails: 'Detalhes do transporte', tabPackets: 'Análise de pacotes', pageNavigation: 'Páginas do relatório', detailsSubtitle: 'Etapas de compressão e estado de execução', packetsSubtitle: 'Origens de desvio e detalhes de tráfego por pacote', transportFlow: 'Pipeline de transporte', nativeReference: 'Referência da estimativa vanilla', packetStructure: 'Composição de pacotes e mapeamento', wireEfficiency: 'Eficiência da rede', measuredWire: 'Composição do tráfego medido', avoidedTraffic: 'Economia de cache e gates', hotspotEfficiency: 'Eficiência dos chunks hotspot', memoryFootprint: 'Uso atual de memória', cacheReuse: 'Reuso do cache de chunks', diagnosticsEnabled: 'diagnósticos ativos',
     month: 'Ranking mensal de jogadores', current: 'Ranking da hora atual', details: 'Detalhes do transporte', player: 'Jogador', hour: 'Hora',
     totalWire: 'Total medido', outboundWire: 'Saída medida', inboundWire: 'Entrada medida', rawOutbound: 'Saída original', boFrame: 'Quadros BO',
     bypass: 'Desvio', status: 'Estado', complete: 'Concluído', partial: 'Em andamento', noData: 'Sem dados de tráfego', sessionOutbound: 'Saída da sessão',
@@ -85,7 +85,8 @@ if (!translations[language]) language = 'en-US';
 let reportBundle = null;
 const visibleSeries = new Set(['total', 'outbound', 'inbound']);
 const pages = { bypassSources: { page: 1, size: 10 }, bypassEntries: { page: 1, size: 10 } };
-let activeView = ['overview', 'players', 'details', 'packets'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
+let activeView = ['details', 'packets'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
+if (location.hash === '#players') history.replaceState(null, '', '#overview');
 let chartHoverIndex = -1;
 const t = key => translations[language][key] || translations['en-US'][key] || key;
 const template = (key, values) => Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, value), t(key));
@@ -214,7 +215,6 @@ function render() {
   document.querySelector('#page-subtitle').textContent = t('subtitle');
   document.querySelector('#view-tabs').setAttribute('aria-label', t('pageNavigation'));
   document.querySelector('[data-view="overview"]').textContent = t('tabOverview');
-  document.querySelector('[data-view="players"]').textContent = t('tabPlayers');
   document.querySelector('[data-view="details"]').textContent = t('tabDetails');
   document.querySelector('[data-view="packets"]').textContent = t('tabPackets');
   document.querySelector('#trend-title').textContent = t('trend');
@@ -356,7 +356,7 @@ function renderMonth(players, history) {
 }
 
 function setActiveView(view, updateHash = true) {
-  activeView = ['overview', 'players', 'details', 'packets'].includes(view) ? view : 'overview';
+  activeView = ['overview', 'details', 'packets'].includes(view) ? view : 'overview';
   document.querySelectorAll('.view-page').forEach(node => { node.hidden = node.id !== `view-${activeView}`; });
   document.querySelectorAll('#view-tabs button').forEach(button => button.setAttribute('aria-pressed', `${button.dataset.view === activeView}`));
   if (updateHash) history.replaceState(null, '', `#${activeView}`);
@@ -407,10 +407,98 @@ function hideRankingTooltip() {
 }
 
 function renderDetails(sections) {
-  document.querySelector('#sections').innerHTML = sections.map(section => {
-    const content = section.metrics.every(item => item.unit === 'boolean') ? renderBooleanMetrics(section.metrics) : renderMetricGroups(section.metrics);
-    return `<div class="section"><h3>${escapeText(t('sections')[section.id] || section.title)}</h3><p>${escapeText(t('descriptions')[section.id] || section.description)}</p>${content}</div>`;
+  const renderers = { transport: renderTransportDetails, server: renderServerDetails, chunk: renderChunkDetails, diagnostics: renderDiagnosticDetails };
+  document.querySelector('#sections').innerHTML = sections.map(section => (renderers[section.id] || renderGenericDetails)(section)).join('');
+}
+
+function detailSection(section, content, extraClass = '') {
+  const title = t('sections')[section.id] || section.title;
+  const description = t('descriptions')[section.id] || section.description;
+  return `<section class="detail-band ${extraClass}"><div class="detail-heading"><div><h3>${escapeText(title)}</h3><p>${escapeText(description)}</p></div></div>${content}</section>`;
+}
+
+function sectionMetrics(section) {
+  return Object.fromEntries((section.metrics || []).map(item => [item.id, item]));
+}
+
+function renderTransportDetails(section) {
+  const metrics = sectionMetrics(section);
+  const lanes = ['outbound', 'inbound'].map(scope => renderTransportLane(scope, metrics)).join('');
+  return detailSection(section, `<div class="transport-lanes">${lanes}</div>`, 'transport-detail');
+}
+
+function renderTransportLane(scope, metrics) {
+  const ids = ['baseline_bytes', 'mapping_bytes', 'zstd_body_bytes', 'bo_frame_bytes'];
+  const stages = ids.map(id => metrics[`${scope}.${id}`]).filter(Boolean);
+  const baseline = Number(metrics[`${scope}.baseline_bytes`]?.value || 0);
+  const maximum = Math.max(1, ...stages.map(item => Number(item.value || 0)));
+  const stageRows = stages.map(item => {
+    const value = Number(item.value || 0);
+    const width = value * 100 / maximum;
+    const relative = baseline > 0 ? value * 100 / baseline : 0;
+    return `<div class="pipeline-stage"><div><small>${escapeText(t('stages')[item.stage] || metricLabel(item))}</small><strong>${escapeText(metricValue(item))}</strong></div><meter min="0" max="100" value="${width.toFixed(3)}"></meter><span>${relative.toFixed(1)}%</span></div>`;
   }).join('');
+  const vanilla = metrics[`${scope}.vanilla_estimate_bytes`];
+  const counters = ['packets', 'frames', 'bypass_bytes', 'bypass_packets'].map(id => metrics[`${scope}.${id}`]).filter(Boolean);
+  const mappings = ['literal_entries', 'exact_refs', 'template_refs'].map(id => metrics[`${scope}.${id}`]).filter(Boolean);
+  return `<article class="pipeline-lane scope-${scope}"><div class="pipeline-lane-heading"><h4>${escapeText(t(scope))}</h4><span>${escapeText(t('transportFlow'))}</span></div><div class="pipeline-stages">${stageRows}</div><div class="pipeline-reference"><span>${escapeText(t('nativeReference'))}</span><strong>${escapeText(vanilla ? metricValue(vanilla) : bytes(0))}</strong></div><div class="pipeline-facts"><div><h5>${escapeText(t('packetStructure'))}</h5>${counters.map(item => `<span><small>${escapeText(metricLabel(item))}</small><strong>${escapeText(metricValue(item))}</strong></span>`).join('')}</div><div><h5>${escapeText(t('stages').mapping)}</h5>${mappings.map(item => `<span><small>${escapeText(metricLabel(item))}</small><strong>${escapeText(metricValue(item))}</strong></span>`).join('')}</div></div></article>`;
+}
+
+function renderServerDetails(section) {
+  const metrics = sectionMetrics(section);
+  const raw = metrics.outbound_raw_bytes;
+  const vanilla = metrics.outbound_vanilla_estimate_bytes;
+  const outbound = metrics.outbound_wire_bytes;
+  const inbound = metrics.inbound_wire_bytes;
+  const comparison = [raw, vanilla, outbound].filter(Boolean);
+  const comparisonMaximum = Math.max(1, ...comparison.map(item => Number(item.value || 0)));
+  const savings = ['outbound_saved_bytes', 'offline_reuse_saved_bytes', 'temporary_reuse_saved_bytes', 'create_gate_saved_bytes', 'idle_gate_saved_bytes'].map(id => metrics[id]).filter(Boolean);
+  const savingsMaximum = Math.max(1, ...savings.map(item => Number(item.value || 0)));
+  const active = metrics.active_channels;
+  const players = metrics.bound_players;
+  const observed = metrics.create_gate_observed_bytes;
+  return detailSection(section, `<div class="server-detail-grid"><div class="detail-cluster wire-efficiency"><div class="cluster-heading"><h4>${escapeText(t('wireEfficiency'))}</h4><div class="connection-facts"><span><strong>${escapeText(active ? metricValue(active) : '0')}</strong><small>${escapeText(active ? metricLabel(active) : t('units').channels)}</small></span><span><strong>${escapeText(players ? metricValue(players) : '0')}</strong><small>${escapeText(players ? metricLabel(players) : t('units').players)}</small></span></div></div>${comparison.map(item => renderComparisonMetric(item, comparisonMaximum)).join('')}</div><div class="detail-cluster measured-wire"><div class="cluster-heading"><h4>${escapeText(t('measuredWire'))}</h4></div>${renderWireComposition(outbound, inbound)}</div><div class="detail-cluster avoided-traffic"><div class="cluster-heading"><h4>${escapeText(t('avoidedTraffic'))}</h4>${observed ? `<span>${escapeText(metricLabel(observed))}: ${escapeText(metricValue(observed))}</span>` : ''}</div>${savings.map(item => renderComparisonMetric(item, savingsMaximum)).join('')}</div></div>`, 'server-detail');
+}
+
+function renderWireComposition(outbound, inbound) {
+  const outboundValue = Number(outbound?.value || 0);
+  const inboundValue = Number(inbound?.value || 0);
+  const measuredTotal = outboundValue + inboundValue;
+  const scale = Math.max(1, measuredTotal);
+  const outboundWidth = outboundValue * 100 / scale;
+  const inboundWidth = inboundValue * 100 / scale;
+  return `<div class="wire-composition"><svg viewBox="0 0 100 1" preserveAspectRatio="none" aria-label="${escapeAttribute(`${t('measuredWire')} ${bytes(measuredTotal)}`)}"><rect class="wire-outbound" width="${outboundWidth}" height="1"></rect><rect class="wire-inbound" x="${outboundWidth}" width="${inboundWidth}" height="1"></rect></svg><div class="wire-legend"><span class="outbound"><small>${escapeText(t('outbound'))}</small><strong>${escapeText(outbound ? metricValue(outbound) : bytes(0))}</strong><em>${outboundWidth.toFixed(1)}%</em></span><span class="inbound"><small>${escapeText(t('inbound'))}</small><strong>${escapeText(inbound ? metricValue(inbound) : bytes(0))}</strong><em>${inboundWidth.toFixed(1)}%</em></span></div></div>`;
+}
+
+function renderChunkDetails(section) {
+  const metrics = sectionMetrics(section);
+  const hotspot = ['hotspot.outbound.logical_bytes', 'hotspot.outbound.frame_bytes', 'hotspot.inbound.logical_bytes'].map(id => metrics[id]).filter(Boolean);
+  const memory = ['shadow.total_bytes', 'shadow.retained_original_bytes', 'runtime.total_bytes'].map(id => metrics[id]).filter(Boolean);
+  const reuse = ['reuse.temporary_saved_bytes', 'reuse.offline_saved_bytes'].map(id => metrics[id]).filter(Boolean);
+  return detailSection(section, `<div class="chunk-detail-grid">${renderMetricCluster(t('hotspotEfficiency'), hotspot)}${renderMetricCluster(t('memoryFootprint'), memory)}${renderMetricCluster(t('cacheReuse'), reuse)}</div>`, 'chunk-detail');
+}
+
+function renderMetricCluster(title, metrics) {
+  const maximum = Math.max(1, ...metrics.map(item => Number(item.value || 0)));
+  return `<div class="detail-cluster"><div class="cluster-heading"><h4>${escapeText(title)}</h4></div>${metrics.map(item => renderComparisonMetric(item, maximum)).join('')}</div>`;
+}
+
+function renderComparisonMetric(item, maximum) {
+  const value = Number(item.value || 0);
+  const width = value * 100 / maximum;
+  return `<div class="comparison-metric"><div><span>${escapeText(metricLabel(item))}</span><strong>${escapeText(metricValue(item))}</strong></div><meter min="0" max="100" value="${width.toFixed(3)}"></meter></div>`;
+}
+
+function renderDiagnosticDetails(section) {
+  const enabled = section.metrics.filter(item => Number(item.value) !== 0).length;
+  const summary = `${enabled} / ${section.metrics.length} ${t('diagnosticsEnabled')}`;
+  const content = `<div class="diagnostic-summary"><strong>${escapeText(summary)}</strong></div>${renderBooleanMetrics(section.metrics)}`;
+  return detailSection(section, content, 'diagnostic-detail');
+}
+
+function renderGenericDetails(section) {
+  const content = section.metrics.every(item => item.unit === 'boolean') ? renderBooleanMetrics(section.metrics) : renderMetricGroups(section.metrics);
+  return detailSection(section, content);
 }
 
 function renderBypass(bypass) {
