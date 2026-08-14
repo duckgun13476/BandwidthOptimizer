@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.integration.minecraft;
 
+import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
@@ -12,5 +13,8 @@ public final class ChunkCoordinateCompat {
     public static int z(ChunkPos chunkPos) { return chunkPos.z; }
     public static long packedKey(ChunkPos chunkPos) { return chunkPos.toLong(); }
     public static long packedKey(int x, int z) { return ChunkPos.asLong(x, z); }
+    public static ChunkPos forgetPosition(ClientboundForgetLevelChunkPacket packet) {
+        return packet == null ? null : packet.pos();
+    }
     public static String dimensionId(ResourceKey<Level> dimension) { return dimension.location().toString(); }
 }

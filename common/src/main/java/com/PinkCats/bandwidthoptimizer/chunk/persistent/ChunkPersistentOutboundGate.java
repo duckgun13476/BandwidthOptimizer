@@ -7,6 +7,20 @@ public final class ChunkPersistentOutboundGate {
 
     private ChunkPersistentOutboundGate() {}
 
+    public static boolean tryQueuePendingCoordinatePacket(
+            ChannelHandlerContext context,
+            String protocolName,
+            Packet<?> packet,
+            int encodedBytes
+    ) {
+        return ChunkPersistentPrepareGate.tryQueuePendingCoordinatePacket(
+                context,
+                protocolName,
+                packet,
+                encodedBytes
+        );
+    }
+
     public static boolean tryQueueWaitingPacket(
             ChannelHandlerContext context,
             Packet<?> packet,

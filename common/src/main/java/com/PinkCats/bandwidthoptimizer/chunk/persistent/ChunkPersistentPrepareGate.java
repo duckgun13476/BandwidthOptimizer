@@ -5,15 +5,19 @@ import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketClassifier;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportControlFrameSender;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
 import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
+import net.minecraft.world.level.ChunkPos;
 
 import java.util.ArrayDeque;
 import java.util.HashMap;
@@ -34,6 +38,53 @@ public final class ChunkPersistentPrepareGate {
     private static final long TIMEOUT_MILLIS = 400L;
 
     private ChunkPersistentPrepareGate() {}
+
+    public static boolean tryQueuePendingCoordinatePacket(
+            ChannelHandlerContext context,
+            String protocolName,
+            Packet<?> packet,
+            int encodedBytes
+    ) {
+        if (context == null
+                || context.channel() == null
+                || packet == null
+                || protocolName == null
+                || !"PLAY".equalsIgnoreCase(protocolName)) {
+            return false;
+        }
+        PrepareGateState state = context.channel().attr(STATE_KEY).get();
+        if (state == null || !state.hasPending()) {
+            return false;
+        }
+        if (packet instanceof ClientboundForgetLevelChunkPacket forgetPacket) {
+            ChunkPos chunkPos = ChunkCoordinateCompat.forgetPosition(forgetPacket);
+            if (chunkPos != null) {
+                state.cancel(ChunkPacketCoordinate.ofChunk(
+                        ChunkCoordinateCompat.x(chunkPos),
+                        ChunkCoordinateCompat.z(chunkPos)
+                ));
+            }
+            return false;
+        }
+
+        ChunkPacketDescriptor descriptor = ChunkPacketClassifier.classifyOutboundPlayPacket(protocolName, packet);
+        if (descriptor == null || descriptor.coordinate() == null || !descriptor.coordinate().present()) {
+            return false;
+        }
+        QueueOutcome outcome = state.queueIfPending(
+                descriptor.coordinate(),
+                packet,
+                Math.max(encodedBytes, 0),
+                descriptor.hotspotKind() == ChunkHotspotKind.FULL_CHUNK
+        );
+        if (!outcome.queued()) {
+            return false;
+        }
+        if (outcome.releaseNow() != null) {
+            replay(context.channel(), outcome.releaseNow());
+        }
+        return true;
+    }
 
     public static String reserveIfUseful(
             ChannelHandlerContext context,
@@ -197,7 +248,11 @@ public final class ChunkPersistentPrepareGate {
         }
         PrepareGateState state = channel.attr(STATE_KEY).get();
         PrepareRequest request = state == null ? null : state.release(token);
-        if (request == null || request.queuedPackets.isEmpty()) {
+        replay(channel, request);
+    }
+
+    private static void replay(Channel channel, PrepareRequest request) {
+        if (channel == null || request == null || request.queuedPackets.isEmpty()) {
             return;
         }
         Runnable task = () -> {
@@ -241,6 +296,7 @@ public final class ChunkPersistentPrepareGate {
         private final Map<ChunkPacketCoordinate, Integer> resumePermits = new HashMap<>();
         private ChunkPersistentBloomCatalog bloomCatalog;
         private String scopeHash = "";
+        private volatile int pendingCoordinateCount;
         private int queuedPackets;
         private long pendingBytes;
 
@@ -260,6 +316,10 @@ public final class ChunkPersistentPrepareGate {
 
         private synchronized boolean mightContain(ChunkPacketCoordinate coordinate) {
             return this.bloomCatalog != null && this.bloomCatalog.mightContain(coordinate);
+        }
+
+        private boolean hasPending() {
+            return this.pendingCoordinateCount > 0;
         }
 
         private synchronized boolean consumeResumePermit(ChunkPacketCoordinate coordinate) {
@@ -301,6 +361,7 @@ public final class ChunkPersistentPrepareGate {
             PrepareRequest request = new PrepareRequest(token, epoch, descriptor, expectedHash, encodedBytes);
             this.pendingByToken.put(token, request);
             this.tokenByCoordinate.put(descriptor.coordinate(), token);
+            this.pendingCoordinateCount = this.pendingByToken.size();
             this.pendingBytes += encodedBytes;
             return token;
         }
@@ -311,8 +372,46 @@ public final class ChunkPersistentPrepareGate {
                 return null;
             }
             request.queuedPackets.add(packet);
+            request.queuedFullPackets++;
             this.queuedPackets++;
             return request;
+        }
+
+        private synchronized QueueOutcome queueIfPending(
+                ChunkPacketCoordinate coordinate,
+                Packet<?> packet,
+                int encodedBytes,
+                boolean fullChunk
+        ) {
+            Long token = this.tokenByCoordinate.get(coordinate);
+            PrepareRequest request = token == null ? null : this.pendingByToken.get(token);
+            if (request == null) {
+                return QueueOutcome.notPending();
+            }
+            int safeEncodedBytes = Math.max(encodedBytes, 0);
+            if (this.queuedPackets < MAX_QUEUED_PACKETS
+                    && this.pendingBytes + safeEncodedBytes <= MAX_PENDING_BYTES) {
+                request.addQueuedPacket(packet, safeEncodedBytes, fullChunk);
+                this.queuedPackets++;
+                this.pendingBytes += safeEncodedBytes;
+                return QueueOutcome.accepted();
+            }
+
+            detach(request);
+            request.addQueuedPacket(packet, safeEncodedBytes, fullChunk);
+            if (request.queuedFullPackets > 0) {
+                this.resumePermits.merge(coordinate, request.queuedFullPackets, Integer::sum);
+            }
+            return QueueOutcome.release(request);
+        }
+
+        private synchronized void cancel(ChunkPacketCoordinate coordinate) {
+            Long token = this.tokenByCoordinate.get(coordinate);
+            PrepareRequest request = token == null ? null : this.pendingByToken.get(token);
+            if (request != null) {
+                detach(request);
+            }
+            this.resumePermits.remove(coordinate);
         }
 
         private synchronized PrepareRequest find(long token) {
@@ -320,17 +419,23 @@ public final class ChunkPersistentPrepareGate {
         }
 
         private synchronized PrepareRequest release(long token) {
-            PrepareRequest request = this.pendingByToken.remove(token);
+            PrepareRequest request = this.pendingByToken.get(token);
             if (request == null) {
                 return null;
             }
-            this.tokenByCoordinate.remove(request.coordinate(), token);
-            this.pendingBytes = Math.max(0L, this.pendingBytes - request.pendingBytes());
-            this.queuedPackets = Math.max(0, this.queuedPackets - request.queuedPackets.size());
-            if (!request.queuedPackets.isEmpty()) {
-                this.resumePermits.merge(request.coordinate(), request.queuedPackets.size(), Integer::sum);
+            detach(request);
+            if (request.queuedFullPackets > 0) {
+                this.resumePermits.merge(request.coordinate(), request.queuedFullPackets, Integer::sum);
             }
             return request;
+        }
+
+        private void detach(PrepareRequest request) {
+            this.pendingByToken.remove(request.token);
+            this.tokenByCoordinate.remove(request.coordinate(), request.token);
+            this.pendingCoordinateCount = this.pendingByToken.size();
+            this.pendingBytes = Math.max(0L, this.pendingBytes - request.pendingBytes());
+            this.queuedPackets = Math.max(0, this.queuedPackets - request.queuedPackets.size());
         }
     }
 
@@ -343,6 +448,7 @@ public final class ChunkPersistentPrepareGate {
         private final int encodedBytes;
         private final ArrayDeque<Packet<?>> queuedPackets = new ArrayDeque<>();
         private long pendingBytes;
+        private int queuedFullPackets;
         private boolean prepareSent;
 
         private PrepareRequest(
@@ -376,8 +482,31 @@ public final class ChunkPersistentPrepareGate {
             this.pendingBytes += Math.max(encodedBytes, 0);
         }
 
+        private synchronized void addQueuedPacket(Packet<?> packet, int encodedBytes, boolean fullChunk) {
+            this.queuedPackets.add(packet);
+            this.pendingBytes += Math.max(encodedBytes, 0);
+            if (fullChunk) {
+                this.queuedFullPackets++;
+            }
+        }
+
         private synchronized long pendingBytes() {
             return this.pendingBytes;
+        }
+    }
+
+    private record QueueOutcome(boolean queued, PrepareRequest releaseNow) {
+
+        private static QueueOutcome notPending() {
+            return new QueueOutcome(false, null);
+        }
+
+        private static QueueOutcome accepted() {
+            return new QueueOutcome(true, null);
+        }
+
+        private static QueueOutcome release(PrepareRequest request) {
+            return new QueueOutcome(true, request);
         }
     }
 

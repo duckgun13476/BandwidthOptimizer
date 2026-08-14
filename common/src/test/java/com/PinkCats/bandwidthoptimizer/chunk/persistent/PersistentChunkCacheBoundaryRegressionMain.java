@@ -10,11 +10,13 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.util.AttributeKey;
+import net.minecraft.network.protocol.Packet;
 
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
@@ -22,6 +24,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.util.Arrays;
+import java.util.ArrayDeque;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Properties;
@@ -44,6 +47,7 @@ public final class PersistentChunkCacheBoundaryRegressionMain {
         try {
             verifyScopeIsolation(root.resolve("scope"));
             verifyPrepareDisconnectIsolation();
+            verifyPrepareCoordinateOrdering();
             verifyInterruptedLegacyMigration(root.resolve("migration"));
             verifyMiddleRecordCorruptionIsolation(root.resolve("middle-corruption"));
             System.out.println("Persistent chunk cache boundary regression passed");
@@ -139,6 +143,133 @@ public final class PersistentChunkCacheBoundaryRegressionMain {
         } finally {
             channel.finishAndReleaseAll();
         }
+    }
+
+    private static void verifyPrepareCoordinateOrdering() throws Exception {
+        Class<?> stateType = Class.forName(ChunkPersistentPrepareGate.class.getName() + "$PrepareGateState");
+        Constructor<?> constructor = stateType.getDeclaredConstructor();
+        Method installBloom = stateType.getDeclaredMethod("installBloom", String.class, ChunkPersistentBloomCatalog.class);
+        Method reserve = stateType.getDeclaredMethod(
+                "reserve",
+                long.class,
+                ChunkPacketDescriptor.class,
+                String.class,
+                int.class
+        );
+        Method attach = stateType.getDeclaredMethod("attach", long.class, Packet.class);
+        Method queueIfPending = stateType.getDeclaredMethod(
+                "queueIfPending",
+                ChunkPacketCoordinate.class,
+                Packet.class,
+                int.class,
+                boolean.class
+        );
+        Method release = stateType.getDeclaredMethod("release", long.class);
+        Method cancel = stateType.getDeclaredMethod("cancel", ChunkPacketCoordinate.class);
+        Method find = stateType.getDeclaredMethod("find", long.class);
+        Method consumeResumePermit = stateType.getDeclaredMethod("consumeResumePermit", ChunkPacketCoordinate.class);
+        for (var member : java.util.List.of(
+                constructor,
+                installBloom,
+                reserve,
+                attach,
+                queueIfPending,
+                release,
+                cancel,
+                find,
+                consumeResumePermit
+        )) {
+            member.setAccessible(true);
+        }
+
+        ChunkPacketCoordinate coordinate = ChunkPacketCoordinate.ofChunk(4, 8);
+        ChunkPacketCoordinate unrelated = ChunkPacketCoordinate.ofChunk(5, 8);
+        ChunkPacketDescriptor descriptor = new ChunkPacketDescriptor(
+                "PLAY",
+                "test.FullChunkPacket",
+                ChunkHotspotKind.FULL_CHUNK,
+                ChunkLaneKind.FULL,
+                coordinate
+        );
+        Object state = constructor.newInstance();
+        installBloom.invoke(state, SCOPE_A, ChunkPersistentBloomCatalog.build(java.util.List.of(coordinate)));
+
+        Packet<?> full = dummyPacket("full");
+        Packet<?> light = dummyPacket("light");
+        long token = (long) reserve.invoke(state, 21L, descriptor, "e".repeat(64), 4096);
+        require(token > 0L, "failed to reserve coordinate ordering PREPARE");
+        require(attach.invoke(state, token, full) != null, "failed to attach queued FULL packet");
+        require(queueOutcomeQueued(queueIfPending.invoke(state, coordinate, light, 128, false)),
+                "same-coordinate update bypassed PREPARE");
+        require(!queueOutcomeQueued(queueIfPending.invoke(state, unrelated, dummyPacket("unrelated"), 128, false)),
+                "unrelated coordinate was blocked by PREPARE");
+
+        Object released = release.invoke(state, token);
+        require(released != null, "READY/MISS release lost the PREPARE request");
+        ArrayDeque<?> queued = requestQueue(released);
+        require(queued.size() == 2, "release did not retain the full coordinate dependency chain");
+        require(queued.removeFirst() == full && queued.removeFirst() == light,
+                "release changed same-coordinate packet order");
+        require((boolean) consumeResumePermit.invoke(state, coordinate),
+                "released FULL packet did not receive its one-shot resume permit");
+        require(!(boolean) consumeResumePermit.invoke(state, coordinate),
+                "non-FULL dependency created a stale resume permit");
+
+        Packet<?> canceledFull = dummyPacket("canceled-full");
+        long canceledToken = (long) reserve.invoke(state, 22L, descriptor, "f".repeat(64), 4096);
+        require(attach.invoke(state, canceledToken, canceledFull) != null, "failed to attach canceled FULL packet");
+        require(queueOutcomeQueued(queueIfPending.invoke(state, coordinate, dummyPacket("canceled-update"), 128, false)),
+                "failed to queue the update that precedes Forget");
+        cancel.invoke(state, coordinate);
+        require(find.invoke(state, canceledToken) == null, "Forget retained the canceled PREPARE generation");
+        require(!(boolean) consumeResumePermit.invoke(state, coordinate), "Forget retained a stale resume permit");
+        require(!queueOutcomeQueued(queueIfPending.invoke(state, coordinate, dummyPacket("after-forget"), 128, false)),
+                "Forget left the coordinate gate active");
+
+        Packet<?> overflowFull = dummyPacket("overflow-full");
+        Packet<?> overflowUpdate = dummyPacket("overflow-update");
+        long overflowToken = (long) reserve.invoke(state, 23L, descriptor, "1".repeat(64), 4096);
+        require(attach.invoke(state, overflowToken, overflowFull) != null, "failed to attach overflow FULL packet");
+        Object overflowOutcome = queueIfPending.invoke(state, coordinate, overflowUpdate, 32 * 1024 * 1024, false);
+        require(queueOutcomeQueued(overflowOutcome), "overflow update bypassed the coordinate barrier");
+        Object overflowRelease = queueOutcomeRelease(overflowOutcome);
+        require(overflowRelease != null, "bounded overflow did not trigger ordered release");
+        ArrayDeque<?> overflowQueue = requestQueue(overflowRelease);
+        require(overflowQueue.removeFirst() == overflowFull && overflowQueue.removeFirst() == overflowUpdate,
+                "bounded overflow changed coordinate packet order");
+    }
+
+    private static boolean queueOutcomeQueued(Object outcome) throws Exception {
+        Method queued = outcome.getClass().getDeclaredMethod("queued");
+        queued.setAccessible(true);
+        return (boolean) queued.invoke(outcome);
+    }
+
+    private static Object queueOutcomeRelease(Object outcome) throws Exception {
+        Method releaseNow = outcome.getClass().getDeclaredMethod("releaseNow");
+        releaseNow.setAccessible(true);
+        return releaseNow.invoke(outcome);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ArrayDeque<?> requestQueue(Object request) throws Exception {
+        Field queuedPackets = request.getClass().getDeclaredField("queuedPackets");
+        queuedPackets.setAccessible(true);
+        return new ArrayDeque<>((ArrayDeque<Packet<?>>) queuedPackets.get(request));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Packet<?> dummyPacket(String name) {
+        return (Packet<?>) Proxy.newProxyInstance(
+                Packet.class.getClassLoader(),
+                new Class<?>[] {Packet.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "toString" -> name;
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> proxy == (args == null ? null : args[0]);
+                    default -> null;
+                }
+        );
     }
 
     private static void verifyInterruptedLegacyMigration(Path outputRoot) throws Exception {

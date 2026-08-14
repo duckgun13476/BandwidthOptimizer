@@ -98,6 +98,10 @@ public final class ChannelTransportHooks {
         String protocolName = readProtocolName(context);
         byte[] originalPacketBytes = ByteBufUtil.getBytes(out, startIndexInclusive, endIndexExclusive - startIndexInclusive, false);
         PacketFlow outboundPacketFlow = resolvePacketFlow(packetEncoderFlowAccess, readConnectionProtocolOrNull(context), packet);
+        if (ChunkPersistentOutboundGate.tryQueuePendingCoordinatePacket(context, protocolName, packet, originalPacketBytes.length)) {
+            out.writerIndex(startIndexInclusive);
+            return;
+        }
         CreateBlockEntityUpdateGate.observeOutboundPacket(context, protocolName, outboundPacketFlow, packet);
         ChunkLoadDelayProbe.logVanillaLevelChunkPacketOutbound(context, packet, originalPacketBytes.length);
         if (!CreateBlockEntityUpdateGate.shouldBypassCreateGateDelay(context, protocolName, outboundPacketFlow, packet)

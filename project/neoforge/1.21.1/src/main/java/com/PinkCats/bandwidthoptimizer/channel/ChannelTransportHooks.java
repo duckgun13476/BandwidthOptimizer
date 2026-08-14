@@ -98,6 +98,10 @@ public final class ChannelTransportHooks {
         byte[] originalPacketBytes = ByteBufUtil.getBytes(out, startIndexInclusive, endIndexExclusive - startIndexInclusive, false);
         PacketFlow outboundPacketFlow = resolvePacketFlow(packetEncoderFlowAccess, connectionProtocol, packet);
         HotpathCostProbe.end("hook.copyAndResolve", hotpathStartNanos);
+        if (ChunkPersistentOutboundGate.tryQueuePendingCoordinatePacket(context, protocolName, packet, originalPacketBytes.length)) {
+            out.writerIndex(startIndexInclusive);
+            return;
+        }
         hotpathStartNanos = HotpathCostProbe.start();
         CreateBlockEntityUpdateGate.observeOutboundPacket(context, protocolName, outboundPacketFlow, packet);
         if (!CreateBlockEntityUpdateGate.shouldBypassCreateGateDelay(context, protocolName, outboundPacketFlow, packet)
