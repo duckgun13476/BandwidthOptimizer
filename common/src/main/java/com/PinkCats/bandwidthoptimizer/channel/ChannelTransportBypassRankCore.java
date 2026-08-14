@@ -32,7 +32,7 @@ public final class ChannelTransportBypassRankCore {
     private static final DateTimeFormatter REPORT_ARCHIVE_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss", Locale.ROOT);
     private static final String LATEST_REPORT_FILE_NAME = "latest-bypass-report.md";
     private static final String REPORT_PROTOCOL = "PLAY";
-    private static final int REPORT_SCHEMA_VERSION = 2;
+    private static final int REPORT_SCHEMA_VERSION = 3;
     private static final int REPORT_HEADER_SCAN_LINES = 40;
     private static final AtomicBoolean REPORT_SCHEDULED = new AtomicBoolean();
     private static final AtomicReference<PendingReport> PENDING_REPORT = new AtomicReference<>();
@@ -58,6 +58,7 @@ public final class ChannelTransportBypassRankCore {
             String packetFlowName,
             String packetClassName,
             String payloadChannel,
+            String sourceKey,
             int rawPacketId,
             int packetBytes,
             String channelId
@@ -69,6 +70,7 @@ public final class ChannelTransportBypassRankCore {
                 textOrFallback(packetFlowName, "<unknown-flow>"),
                 textOrFallback(packetClassName, "<unknown-packet>"),
                 textOrFallback(payloadChannel, ""),
+                textOrFallback(sourceKey, "packet:<unknown>"),
                 rawPacketId
         );
         synchronized (LOCK) {
@@ -111,6 +113,7 @@ public final class ChannelTransportBypassRankCore {
                             entry.getKey().packetFlow(),
                             entry.getKey().packetClassName(),
                             entry.getKey().payloadChannel(),
+                            entry.getKey().sourceKey(),
                             entry.getKey().rawPacketId(),
                             entry.getValue().windowCount(),
                             entry.getValue().windowBytes(),
@@ -312,8 +315,8 @@ public final class ChannelTransportBypassRankCore {
         appendReasonCodeLegend(builder, reportEntries);
         builder.append("## Bypass Rank").append(System.lineSeparator());
         builder.append(System.lineSeparator());
-        builder.append("| Rank | Window Count | Window Bytes | Total Count | Total Bytes | Avg Bytes | Reason | Flow | Packet Class | Payload Channel | Raw Packet ID | Last Channel |").append(System.lineSeparator());
-        builder.append("|---:|---:|---:|---:|---:|---:|---|---|---|---|---:|---|").append(System.lineSeparator());
+        builder.append("| Rank | Window Count | Window Bytes | Total Count | Total Bytes | Avg Bytes | Reason | Flow | Packet Class | Payload Channel | Content Source | Raw Packet ID | Last Channel |").append(System.lineSeparator());
+        builder.append("|---:|---:|---:|---:|---:|---:|---|---|---|---|---|---:|---|").append(System.lineSeparator());
 
         int emitted = 0;
         for (Map.Entry<BypassKey, BypassCounter> entry : analysisEntries) {
@@ -411,8 +414,8 @@ public final class ChannelTransportBypassRankCore {
         builder.append(System.lineSeparator());
         builder.append("Every row below is a direct/bypass/fallback packet key that did not fully enter batch, zstd, and template dictionary transport.").append(System.lineSeparator());
         builder.append(System.lineSeparator());
-        builder.append("| Miss | Cat | Window Count | Window Bytes | Total Count | Total Bytes | Avg Bytes | Reason | Flow | Packet Class | Payload Channel | Raw Packet ID | Last Channel |").append(System.lineSeparator());
-        builder.append("|---|---|---:|---:|---:|---:|---:|---|---|---|---|---:|---|").append(System.lineSeparator());
+        builder.append("| Miss | Cat | Window Count | Window Bytes | Total Count | Total Bytes | Avg Bytes | Reason | Flow | Packet Class | Payload Channel | Content Source | Raw Packet ID | Last Channel |").append(System.lineSeparator());
+        builder.append("|---|---|---:|---:|---:|---:|---:|---|---|---|---|---|---:|---|").append(System.lineSeparator());
 
         for (Map.Entry<BypassKey, BypassCounter> entry : missedEntries) {
             appendIncompleteOptimizationEntry(builder, entry.getKey(), entry.getValue());
@@ -438,8 +441,8 @@ public final class ChannelTransportBypassRankCore {
         builder.append(System.lineSeparator());
         builder.append("Rows below were already marked by the current code path as direct/bypass-optimal, or are tiny chunk-related semi-bypass packets.").append(System.lineSeparator());
         builder.append(System.lineSeparator());
-        builder.append("| Kind | Window Count | Window Bytes | Total Count | Total Bytes | Avg Bytes | Reason | Flow | Packet Class | Payload Channel | Raw Packet ID | Last Channel |").append(System.lineSeparator());
-        builder.append("|---|---:|---:|---:|---:|---:|---|---|---|---|---:|---|").append(System.lineSeparator());
+        builder.append("| Kind | Window Count | Window Bytes | Total Count | Total Bytes | Avg Bytes | Reason | Flow | Packet Class | Payload Channel | Content Source | Raw Packet ID | Last Channel |").append(System.lineSeparator());
+        builder.append("|---|---:|---:|---:|---:|---:|---|---|---|---|---|---:|---|").append(System.lineSeparator());
 
         for (Map.Entry<BypassKey, BypassCounter> entry : sortedEntries) {
             appendBypassOptimalEntry(builder, entry.getKey(), entry.getValue());
@@ -471,6 +474,7 @@ public final class ChannelTransportBypassRankCore {
                 .append(" | `").append(markdownCell(reportFlowLabel(key.packetFlow()))).append('`')
                 .append(" | `").append(markdownCell(key.packetClassName())).append('`')
                 .append(" | `").append(key.payloadChannel().isEmpty() ? "<none>" : markdownCell(key.payloadChannel())).append('`')
+                .append(" | `").append(markdownCell(key.sourceKey())).append('`')
                 .append(" | ").append(key.rawPacketId());
     }
 
@@ -825,6 +829,7 @@ public final class ChannelTransportBypassRankCore {
             String packetFlow,
             String packetClassName,
             String payloadChannel,
+            String sourceKey,
             int rawPacketId
     ) {
     }
@@ -848,6 +853,7 @@ public final class ChannelTransportBypassRankCore {
             String flow,
             String packetClass,
             String payloadChannel,
+            String sourceKey,
             int rawPacketId,
             long windowPackets,
             long windowBytes,

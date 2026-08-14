@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.CustomPayloadPacketCompat;
+import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankSourceResolver;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
@@ -26,6 +27,7 @@ public final class ChannelTransportBypassRankLogger {
                     packetFlow,
                     "<unknown-packet>",
                     null,
+                    "packet:<unknown>",
                     ChannelTransportBypassRankCore.tryReadLeadingVarInt(packetBytes),
                     ChannelTransportBypassRankCore.lengthOf(packetBytes)
             );
@@ -39,6 +41,7 @@ public final class ChannelTransportBypassRankLogger {
                 packetFlow,
                 packet.getClass().getName(),
                 customPayloadChannel(packet),
+                ChannelTransportPacketRankSourceResolver.resolveBypassSourceKey(context, packet, packetBytes),
                 ChannelTransportBypassRankCore.tryReadLeadingVarInt(packetBytes),
                 ChannelTransportBypassRankCore.lengthOf(packetBytes)
         );
@@ -51,6 +54,7 @@ public final class ChannelTransportBypassRankLogger {
             PacketFlow packetFlow,
             String packetClassName,
             String payloadChannel,
+            String sourceKey,
             int rawPacketId,
             int packetBytes
     ) {
@@ -60,6 +64,7 @@ public final class ChannelTransportBypassRankLogger {
                 flowName(packetFlow),
                 packetClassName,
                 payloadChannel,
+                ChannelTransportPacketRankSourceResolver.compactSourceKey(sourceKey),
                 rawPacketId,
                 packetBytes,
                 channelIdText(context)

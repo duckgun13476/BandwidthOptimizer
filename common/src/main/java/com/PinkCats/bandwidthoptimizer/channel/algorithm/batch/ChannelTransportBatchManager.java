@@ -359,6 +359,7 @@ public final class ChannelTransportBatchManager {
                         pendingPacket.packetFlow(),
                         packetClassNameOf(pendingPacket),
                         null,
+                        sourceKeyOf(pendingPacket),
                         packetIdOf(pendingPacket),
                         directPacketBytes.length
                 );
@@ -447,6 +448,13 @@ public final class ChannelTransportBatchManager {
             return "<encoded-batch-packet>";
         }
         return pendingPacket.packetCapture().packetClassName();
+    }
+
+    private static String sourceKeyOf(PendingOutboundPacket pendingPacket) {
+        if (pendingPacket == null || pendingPacket.packetCapture() == null) {
+            return null;
+        }
+        return pendingPacket.packetCapture().sourceKey();
     }
 
 
