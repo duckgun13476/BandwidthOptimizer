@@ -93,6 +93,7 @@ public final class ChunkPersistentClientCache {
     private static final long MAINTENANCE_IDLE_DELAY_MILLIS = 2_000L;
     private static final double COMPACTION_MINIMUM_INVALID_RATIO = 0.60D;
     private static final int STORE_DRAIN_BATCH_LIMIT = 256;
+    private static final long HOT_PATH_PUBLISH_INTERVAL_NANOS = TimeUnit.MILLISECONDS.toNanos(50L);
     private static final long SLOW_IO_WARNING_MILLIS = 1_500L;
     private static final long SLOW_IO_WARNING_INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(5L);
     private static final Object LOCK = new Object();
@@ -133,6 +134,8 @@ public final class ChunkPersistentClientCache {
     private static final LinkedHashMap<String, byte[]> READY_BLOBS = new LinkedHashMap<>(256, 0.75f, true);
     private static long readyBlobBytes;
     private static volatile LoadedHotPathSnapshot loadedHotPathSnapshot = LoadedHotPathSnapshot.empty("");
+    private static final HashMap<String, String> HOT_PATH_HASH_BY_KEY = new HashMap<>();
+    private static final HashMap<String, HashSet<String>> HOT_PATH_KEYS_BY_HASH = new HashMap<>();
     private static String activeServerScopeHash = "";
     private static String activeConnectionChannelId = "";
     private static long activeScopeGeneration;
@@ -268,8 +271,14 @@ public final class ChunkPersistentClientCache {
 
 
     public static void storeFullSnapshot(ChunkHotspotFrame frame, byte[] restoredPacketBytes) {
-        String serverScopeHash = currentServerScopeHash();
-        storeFullSnapshot(frame, restoredPacketBytes, serverScopeHash, null);
+        LoadedHotPathSnapshot snapshot = loadedHotPathSnapshot;
+        publishHotPathMutations(storeFullSnapshot(
+                frame,
+                restoredPacketBytes,
+                snapshot.serverScopeHash(),
+                snapshot.scopeGeneration(),
+                null
+        ));
     }
 
     public static void storeInboundFullChunkAsync(
@@ -282,7 +291,9 @@ public final class ChunkPersistentClientCache {
             byte[] encodedPacketBytes,
             String reason
     ) {
-        String serverScopeHash = loadedHotPathSnapshot.serverScopeHash();
+        LoadedHotPathSnapshot hotPathSnapshot = loadedHotPathSnapshot;
+        String serverScopeHash = hotPathSnapshot.serverScopeHash();
+        long scopeGeneration = hotPathSnapshot.scopeGeneration();
         if (!isEnabled()
                 || !isSafeScopeHash(serverScopeHash)
                 || hotspotKind != ChunkHotspotKind.FULL_CHUNK
@@ -304,6 +315,7 @@ public final class ChunkPersistentClientCache {
                 laneKind,
                 coordinate,
                 snapshotBytes,
+                scopeGeneration,
                 reason
         );
         PendingStoreRequest previousRequest = PENDING_STORE_REQUESTS.put(storeKey, request);
@@ -375,16 +387,31 @@ public final class ChunkPersistentClientCache {
 
     private static void drainPendingStoreRequests() {
         int drained = 0;
+        HotPathMutationBatch hotPathBatch = new HotPathMutationBatch();
+        long lastPublishedNanos = System.nanoTime();
         try {
             while (drained < STORE_DRAIN_BATCH_LIMIT) {
                 PendingStoreRequest request = pollPendingStoreRequest();
                 if (request == null) {
                     break;
                 }
-                processPendingStoreRequest(request);
+                HotPathMutation mutation = processPendingStoreRequest(request);
+                if (mutation != null) {
+                    if (!hotPathBatch.accepts(mutation)) {
+                        publishHotPathMutations(hotPathBatch.drain());
+                    }
+                    hotPathBatch.add(mutation);
+                }
                 drained++;
+                long nowNanos = System.nanoTime();
+                if (!hotPathBatch.isEmpty()
+                        && nowNanos - lastPublishedNanos >= HOT_PATH_PUBLISH_INTERVAL_NANOS) {
+                    publishHotPathMutations(hotPathBatch.drain());
+                    lastPublishedNanos = nowNanos;
+                }
             }
         } finally {
+            publishHotPathMutations(hotPathBatch.drain());
             STORE_DRAIN_QUEUED.set(false);
             if (!PENDING_STORE_REQUESTS.isEmpty()) {
                 schedulePendingStoreDrain();
@@ -405,12 +432,12 @@ public final class ChunkPersistentClientCache {
         return null;
     }
 
-    private static void processPendingStoreRequest(PendingStoreRequest request) {
+    private static HotPathMutation processPendingStoreRequest(PendingStoreRequest request) {
         try {
             ChunkSnapshotFingerprint fingerprint =
                     ChunkSnapshotFingerprintService.fingerprintOutboundPacket(request.snapshotBytes());
             if (fingerprint == null || fingerprint.hashHex() == null || fingerprint.hashHex().isBlank()) {
-                return;
+                return null;
             }
             ChunkHotspotFrame frame = new ChunkHotspotFrame(
                     ChunkHotspotFrameCodec.PROTOCOL_VERSION,
@@ -430,7 +457,13 @@ public final class ChunkPersistentClientCache {
                     0L,
                     safeText(request.reason(), "persistent_cache_from_decoded_inbound_full")
             );
-            storeFullSnapshot(frame, request.snapshotBytes(), request.serverScopeHash(), fingerprint);
+            return storeFullSnapshot(
+                    frame,
+                    request.snapshotBytes(),
+                    request.serverScopeHash(),
+                    request.scopeGeneration(),
+                    fingerprint
+            );
         } catch (RuntimeException exception) {
             if (shouldLogCacheDiagnose()) {
                 Bandwidthoptimizer.LOGGER.warn(
@@ -442,12 +475,14 @@ public final class ChunkPersistentClientCache {
                 );
             }
         }
+        return null;
     }
 
-    private static void storeFullSnapshot(
+    private static HotPathMutation storeFullSnapshot(
             ChunkHotspotFrame frame,
             byte[] restoredPacketBytes,
             String serverScopeHash,
+            long scopeGeneration,
             ChunkSnapshotFingerprint knownFingerprint
     ) {
         if (!isEnabled()
@@ -455,7 +490,7 @@ public final class ChunkPersistentClientCache {
                 || !isStorableFullSnapshot(frame)
                 || restoredPacketBytes == null
                 || restoredPacketBytes.length == 0) {
-            return;
+            return null;
         }
 
         long fingerprintStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
@@ -474,10 +509,11 @@ public final class ChunkPersistentClientCache {
         if (fingerprint == null
                 || fingerprint.hashHex() == null
                 || !fingerprint.hashHex().equals(frame.payloadHash())) {
-            return;
+            return null;
         }
 
         long storeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
+        HotPathMutation hotPathMutation = null;
         try {
             String keyPrefix = entryPrefix(serverScopeHash, frame.coordinate());
             PersistentChunkCacheDiskStore store = persistentDiskStore();
@@ -511,10 +547,18 @@ public final class ChunkPersistentClientCache {
                 ZipCacheSnapshot cacheSnapshot = cachedZipCacheSnapshot();
                 applyIndexEntry(cacheSnapshot.index(), keyPrefix, mutation);
                 cacheSnapshot.verifiedBlobEntries().add(blobEntryName(fingerprint.hashHex()));
-                putReadyBlobLocked(fingerprint.hashHex(), restoredPacketBytes);
+                Set<String> evictedHashes = putReadyBlobLocked(fingerprint.hashHex(), restoredPacketBytes);
                 markDirty(restoredPacketBytes.length);
                 markManifestRefreshDirty();
-                publishLoadedHotPathSnapshotLocked();
+                hotPathMutation = updateHotPathTrackingLocked(
+                        serverScopeHash,
+                        scopeGeneration,
+                        keyPrefix,
+                        frame.coordinate(),
+                        fingerprint.hashHex(),
+                        mutation,
+                        evictedHashes
+                );
             }
             logStore(frame, restoredPacketBytes.length, cacheRoot());
         } catch (IOException exception) {
@@ -536,6 +580,7 @@ public final class ChunkPersistentClientCache {
                 restoredPacketBytes.length,
                 ""
         );
+        return hotPathMutation;
     }
 
     public static byte[] findLoadedPacketBytes(ChunkHotspotFrame frame) {
@@ -1088,9 +1133,7 @@ public final class ChunkPersistentClientCache {
             return List.of();
         }
         ArrayList<ManifestEntry> entries = new ArrayList<>();
-        for (LoadedCacheEntry entry : snapshot.entriesByKeyPrefix().values()) {
-            entries.add(entry.manifestEntry());
-        }
+        snapshot.entriesByKeyPrefix().forEachValue(entry -> entries.add(entry.manifestEntry()));
         entries.sort(Comparator.comparingLong(ManifestEntry::lastUsedAtMillis).reversed());
         int limit = Math.max(readIntProperty(MANIFEST_LIMIT_PROPERTY, DEFAULT_MANIFEST_LIMIT), 0);
         return entries.size() > limit ? List.copyOf(entries.subList(0, limit)) : List.copyOf(entries);
@@ -1963,10 +2006,41 @@ public final class ChunkPersistentClientCache {
         return new ZipCacheSnapshot(cacheSnapshot.index(), new HashMap<>(), writtenBlobEntries, cacheFile());
     }
 
+    private static void publishHotPathMutations(HotPathMutation mutation) {
+        if (mutation == null) {
+            return;
+        }
+        publishHotPathMutations(new HotPathMutationSet(
+                mutation.scopeGeneration(),
+                mutation.upsert() == null ? Map.of() : Map.of(mutation.keyPrefix(), mutation.upsert()),
+                mutation.removals()
+        ));
+    }
+
+    private static void publishHotPathMutations(HotPathMutationSet mutations) {
+        if (mutations == null || mutations.isEmpty()) {
+            return;
+        }
+        synchronized (LOCK) {
+            if (mutations.scopeGeneration() != activeScopeGeneration) {
+                return;
+            }
+            LoadedHotPathSnapshot current = loadedHotPathSnapshot;
+            if (current.scopeGeneration() != activeScopeGeneration
+                    || !current.serverScopeHash().equals(activeServerScopeHash)) {
+                publishLoadedHotPathSnapshotLocked();
+                current = loadedHotPathSnapshot;
+            }
+            loadedHotPathSnapshot = current.withChanges(mutations.upserts(), mutations.removals());
+        }
+    }
+
     private static void publishLoadedHotPathSnapshotLocked() {
         String serverScopeHash = activeServerScopeHash == null ? "" : activeServerScopeHash;
+        HOT_PATH_HASH_BY_KEY.clear();
+        HOT_PATH_KEYS_BY_HASH.clear();
         if (!isSafeScopeHash(serverScopeHash) || cachedSnapshot == null) {
-            loadedHotPathSnapshot = LoadedHotPathSnapshot.empty(serverScopeHash);
+            loadedHotPathSnapshot = LoadedHotPathSnapshot.empty(serverScopeHash, activeScopeGeneration);
             return;
         }
 
@@ -1998,18 +2072,25 @@ public final class ChunkPersistentClientCache {
                     readInt(index, coordinateKey + ".encodedBytes", packetBytes.length),
                     readLong(index, coordinateKey + ".lastUsedAtMillis", 0L)
             );
+            String keyPrefix = entryPrefix(serverScopeHash, scopedCoordinateKey.coordinate());
             entriesByKeyPrefix.put(
-                    entryPrefix(serverScopeHash, scopedCoordinateKey.coordinate()),
+                    keyPrefix,
                     new LoadedCacheEntry(hash, packetBytes, manifestEntry)
             );
+            trackHotPathKeyLocked(keyPrefix, hash);
         }
-        loadedHotPathSnapshot = new LoadedHotPathSnapshot(serverScopeHash, entriesByKeyPrefix);
+        loadedHotPathSnapshot = new LoadedHotPathSnapshot(
+                serverScopeHash,
+                activeScopeGeneration,
+                PersistentHotPathIndex.from(entriesByKeyPrefix)
+        );
     }
 
-    private static void putReadyBlobLocked(String hash, byte[] packetBytes) {
+    private static Set<String> putReadyBlobLocked(String hash, byte[] packetBytes) {
         if (!isSafeHash(hash) || packetBytes == null || packetBytes.length == 0) {
-            return;
+            return Set.of();
         }
+        HashSet<String> evictedHashes = new HashSet<>();
         byte[] previous = READY_BLOBS.put(hash, packetBytes.clone());
         readyBlobBytes += packetBytes.length - (previous == null ? 0L : previous.length);
         long budget = readyCacheByteBudget();
@@ -2017,7 +2098,82 @@ public final class ChunkPersistentClientCache {
         while (readyBlobBytes > budget && READY_BLOBS.size() > 1 && iterator.hasNext()) {
             Map.Entry<String, byte[]> eldest = iterator.next();
             readyBlobBytes -= eldest.getValue().length;
+            evictedHashes.add(eldest.getKey());
             iterator.remove();
+        }
+        return evictedHashes.isEmpty() ? Set.of() : Set.copyOf(evictedHashes);
+    }
+
+    private static HotPathMutation updateHotPathTrackingLocked(
+            String serverScopeHash,
+            long scopeGeneration,
+            String keyPrefix,
+            ChunkPacketCoordinate coordinate,
+            String payloadHash,
+            Properties mutation,
+            Set<String> evictedHashes
+    ) {
+        HashSet<String> removals = new HashSet<>();
+        if (evictedHashes != null) {
+            for (String evictedHash : evictedHashes) {
+                HashSet<String> keys = HOT_PATH_KEYS_BY_HASH.remove(evictedHash);
+                if (keys == null) {
+                    continue;
+                }
+                for (String key : keys) {
+                    HOT_PATH_HASH_BY_KEY.remove(key);
+                    removals.add(key);
+                }
+            }
+        }
+
+        LoadedCacheEntry upsert = null;
+        long publicationGeneration = activeScopeGeneration;
+        if (scopeGeneration == publicationGeneration
+                && serverScopeHash.equals(activeServerScopeHash)
+                && coordinate != null
+                && coordinate.present()) {
+            byte[] packetBytes = READY_BLOBS.get(payloadHash);
+            if (packetBytes != null && packetBytes.length > 0) {
+                removeTrackedHotPathKeyLocked(keyPrefix);
+                trackHotPathKeyLocked(keyPrefix, payloadHash);
+                removals.remove(keyPrefix);
+                ManifestEntry manifestEntry = new ManifestEntry(
+                        coordinate,
+                        payloadHash,
+                        mutation.getProperty(keyPrefix + "protocolName", "PLAY"),
+                        mutation.getProperty(keyPrefix + "packetClassName", ""),
+                        readLong(mutation, keyPrefix + "fullSnapshotVersion", 1L),
+                        readInt(mutation, keyPrefix + "encodedBytes", packetBytes.length),
+                        readLong(mutation, keyPrefix + "lastUsedAtMillis", 0L)
+                );
+                upsert = new LoadedCacheEntry(payloadHash, packetBytes, manifestEntry);
+            }
+        }
+        return upsert == null && removals.isEmpty()
+                ? null
+                : new HotPathMutation(publicationGeneration, keyPrefix, upsert, Set.copyOf(removals));
+    }
+
+    private static void trackHotPathKeyLocked(String keyPrefix, String hash) {
+        if (keyPrefix == null || keyPrefix.isBlank() || !isSafeHash(hash)) {
+            return;
+        }
+        HOT_PATH_HASH_BY_KEY.put(keyPrefix, hash);
+        HOT_PATH_KEYS_BY_HASH.computeIfAbsent(hash, ignored -> new HashSet<>()).add(keyPrefix);
+    }
+
+    private static void removeTrackedHotPathKeyLocked(String keyPrefix) {
+        String previousHash = HOT_PATH_HASH_BY_KEY.remove(keyPrefix);
+        if (previousHash == null) {
+            return;
+        }
+        HashSet<String> keys = HOT_PATH_KEYS_BY_HASH.get(previousHash);
+        if (keys != null) {
+            keys.remove(keyPrefix);
+            if (keys.isEmpty()) {
+                HOT_PATH_KEYS_BY_HASH.remove(previousHash);
+            }
         }
     }
 
@@ -2882,15 +3038,104 @@ public final class ChunkPersistentClientCache {
 
     private record LoadedHotPathSnapshot(
             String serverScopeHash,
-            Map<String, LoadedCacheEntry> entriesByKeyPrefix
+            long scopeGeneration,
+            PersistentHotPathIndex<LoadedCacheEntry> entriesByKeyPrefix
     ) {
         private LoadedHotPathSnapshot {
             serverScopeHash = serverScopeHash == null ? "" : serverScopeHash;
-            entriesByKeyPrefix = entriesByKeyPrefix == null ? Map.of() : Map.copyOf(entriesByKeyPrefix);
+            entriesByKeyPrefix = entriesByKeyPrefix == null ? PersistentHotPathIndex.empty() : entriesByKeyPrefix;
         }
 
         private static LoadedHotPathSnapshot empty(String serverScopeHash) {
-            return new LoadedHotPathSnapshot(serverScopeHash, Map.of());
+            return empty(serverScopeHash, 0L);
+        }
+
+        private static LoadedHotPathSnapshot empty(String serverScopeHash, long scopeGeneration) {
+            return new LoadedHotPathSnapshot(serverScopeHash, scopeGeneration, PersistentHotPathIndex.empty());
+        }
+
+        private LoadedHotPathSnapshot withChanges(
+                Map<String, LoadedCacheEntry> upserts,
+                Set<String> removals
+        ) {
+            return new LoadedHotPathSnapshot(
+                    serverScopeHash,
+                    scopeGeneration,
+                    entriesByKeyPrefix.withChanges(upserts, removals)
+            );
+        }
+    }
+
+    private record HotPathMutation(
+            long scopeGeneration,
+            String keyPrefix,
+            LoadedCacheEntry upsert,
+            Set<String> removals
+    ) {
+        private HotPathMutation {
+            keyPrefix = keyPrefix == null ? "" : keyPrefix;
+            removals = removals == null ? Set.of() : Set.copyOf(removals);
+        }
+    }
+
+    private record HotPathMutationSet(
+            long scopeGeneration,
+            Map<String, LoadedCacheEntry> upserts,
+            Set<String> removals
+    ) {
+        private HotPathMutationSet {
+            upserts = upserts == null ? Map.of() : Map.copyOf(upserts);
+            removals = removals == null ? Set.of() : Set.copyOf(removals);
+        }
+
+        private boolean isEmpty() {
+            return upserts.isEmpty() && removals.isEmpty();
+        }
+    }
+
+    private static final class HotPathMutationBatch {
+        private long scopeGeneration = Long.MIN_VALUE;
+        private final HashMap<String, LoadedCacheEntry> upserts = new HashMap<>();
+        private final HashSet<String> removals = new HashSet<>();
+
+        private boolean accepts(HotPathMutation mutation) {
+            return isEmpty() || mutation.scopeGeneration() == scopeGeneration;
+        }
+
+        private void add(HotPathMutation mutation) {
+            if (mutation == null) {
+                return;
+            }
+            if (isEmpty()) {
+                scopeGeneration = mutation.scopeGeneration();
+            }
+            for (String removal : mutation.removals()) {
+                upserts.remove(removal);
+                removals.add(removal);
+            }
+            if (mutation.upsert() != null && !mutation.keyPrefix().isBlank()) {
+                removals.remove(mutation.keyPrefix());
+                upserts.put(mutation.keyPrefix(), mutation.upsert());
+            }
+        }
+
+        private boolean isEmpty() {
+            return upserts.isEmpty() && removals.isEmpty();
+        }
+
+        private HotPathMutationSet drain() {
+            if (isEmpty()) {
+                return null;
+            }
+            HotPathMutationSet drained = new HotPathMutationSet(
+                    scopeGeneration,
+                    Map.copyOf(upserts),
+                    Set.copyOf(removals)
+            );
+            scopeGeneration = Long.MIN_VALUE;
+            upserts.clear();
+            removals.clear();
+            return drained;
         }
     }
 
@@ -2951,6 +3196,7 @@ public final class ChunkPersistentClientCache {
             ChunkLaneKind laneKind,
             ChunkPacketCoordinate coordinate,
             byte[] snapshotBytes,
+            long scopeGeneration,
             String reason
     ) {
         private PendingStoreRequest {

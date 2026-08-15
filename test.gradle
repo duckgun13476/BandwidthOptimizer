@@ -247,6 +247,15 @@ tasks.register('runPersistentChunkCacheLoadRegression', JavaExec) {
     }
 }
 
+tasks.register('runPersistentHotPathIndexRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies incremental immutable publication for the persistent cache hot-path index.',
+            'com.PinkCats.bandwidthoptimizer.chunk.persistent.PersistentHotPathIndexRegressionMain'
+    )
+}
+
 tasks.register('runPacketClassTraceDiagnosticRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,
