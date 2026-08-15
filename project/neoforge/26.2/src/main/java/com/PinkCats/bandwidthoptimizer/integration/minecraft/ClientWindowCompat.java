@@ -12,14 +12,14 @@ public final class ClientWindowCompat {
     }
 
     public static Screen screen(Minecraft minecraft) {
-        return minecraft == null ? null : minecraft.screen;
+        return minecraft == null ? null : minecraft.gui.screen();
     }
 
     public static boolean hasOverlay(Minecraft minecraft) {
-        return minecraft != null && minecraft.getOverlay() != null;
+        return minecraft != null && minecraft.gui.overlay() != null;
     }
 
     public static boolean isHudHidden(Minecraft minecraft) {
-        return minecraft != null && minecraft.options.hideGui;
+        return minecraft != null && minecraft.gui.hud.isHidden();
     }
 }

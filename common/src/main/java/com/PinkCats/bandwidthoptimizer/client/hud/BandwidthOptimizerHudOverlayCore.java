@@ -6,6 +6,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCac
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateClientController;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateMode;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateServerState;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.ClientWindowCompat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.resources.language.I18n;
@@ -44,15 +45,15 @@ final class BandwidthOptimizerHudOverlayCore {
     static boolean shouldRender(Minecraft minecraft) {
         return minecraft != null
                 && enabled
-                && !minecraft.options.hideGui
+                && !ClientWindowCompat.isHudHidden(minecraft)
                 && minecraft.player != null
-                && minecraft.screen == null;
+                && ClientWindowCompat.screen(minecraft) == null;
     }
 
     static String idleIndicator(Minecraft minecraft) {
         if (minecraft == null
                 || !enabled
-                || minecraft.options.hideGui
+                || ClientWindowCompat.isHudHidden(minecraft)
                 || minecraft.player == null
                 || shouldRender(minecraft)
                 || !IdleGateClientController.currentMode().isIdle()) {

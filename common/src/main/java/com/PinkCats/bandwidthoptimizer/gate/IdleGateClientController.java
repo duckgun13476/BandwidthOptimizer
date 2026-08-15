@@ -59,8 +59,8 @@ public final class IdleGateClientController {
         boolean background = stableWorldReady && isBackground(minecraft, backgroundMenu);
         IdleGateMode mode = resolveMode(nowMillis, background);
         boolean hudVisible = BandwidthOptimizerHudOverlay.isEnabled()
-                && !minecraft.options.hideGui
-                && minecraft.screen == null
+                && !ClientWindowCompat.isHudHidden(minecraft)
+                && ClientWindowCompat.screen(minecraft) == null
                 && !background;
         maybeSend(mode, hudVisible, nowMillis);
     }
@@ -150,7 +150,7 @@ public final class IdleGateClientController {
     }
 
     private static boolean isNonPauseScreen(Minecraft minecraft) {
-        return minecraft.screen != null && !isPauseScreen(minecraft);
+        return ClientWindowCompat.screen(minecraft) != null && !isPauseScreen(minecraft);
     }
 
     private static boolean isWindowInactiveOrIconified(Minecraft minecraft) {
@@ -181,10 +181,10 @@ public final class IdleGateClientController {
     }
 
     private static boolean isPauseScreen(Minecraft minecraft) {
-        if (minecraft.screen == null) {
+        if (ClientWindowCompat.screen(minecraft) == null) {
             return false;
         }
-        String screenClassName = minecraft.screen.getClass().getName();
+        String screenClassName = ClientWindowCompat.screen(minecraft).getClass().getName();
         return "net.minecraft.client.gui.screens.PauseScreen".equals(screenClassName)
                 || screenClassName.endsWith(".PauseScreen");
     }
