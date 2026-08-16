@@ -1,8 +1,20 @@
-#### v5.10.30.96-beta
+#### v5.10.30.99-release
+
+1. Fixed streaming recovery after late acknowledgements and preserved pending recovery data across timeouts and opposite-direction resets.
+2. Fixed re-entrant batch flushing from closing a second streaming epoch during recovery.
+3. Added tiered persistent cache retention and bounded maintenance, with recovery for interrupted migrations, crashes, and reconnects.
+4. Preserved chunk packet order while persistent cache entries are prepared and fixed transient Voxy holes during renderer handoff.
+5. Reduced persistent cache CPU and disk overhead by reusing hot indexes and writing only changed cache data.
+6. Improved BO Stats with interactive charts, per-player history, manual uploads, clickable links, and clearer memory reporting.
+7. Improved packet-source attribution with content namespaces and added exact runtime packet-class tracing for compatibility diagnostics.
+8. Added NeoForge 26.2 beta support.
+9. Added resilient Discord release notifications and prevented routine streaming epoch diagnostics from flooding logs.
+
+#### v5.10.30.88-beta
 
 1. Added recoverable cross-frame streaming Zstd compression with sequence-gap detection, independent recovery batches, and silent epoch resynchronization.
 2. Fixed streaming epoch boundaries during login, configuration, reconnects, and large synchronization bursts to prevent bounded-queue disconnects.
-3. Rebuilt the persistent chunk cache for on-demand offline reuse, incremental disk writes, tiered retention, resumable recovery, and lifecycle-safe reference cleanup.
+3. Rebuilt the persistent chunk cache for on-demand offline reuse, incremental disk writes, bounded recovery, and lifecycle-safe reference cleanup.
 4. Added rate-limited warnings when client cache I/O remains blocked for more than 1.5 seconds.
 5. Improved oversized transport fragmentation and reassembly compatibility.
 6. Fixed ProtocolLib proxy channel identity handling and added concise reporting for repeated compatibility failures.
@@ -16,7 +28,6 @@
 14. Restored HUD status colors and the idle indicator color on NeoForge 26.1.2.
 15. Improved cross-version compatibility for chunk coordinates, player display names, loader APIs, and transport regressions.
 16. Silenced known public protocol probes without hiding actionable decoder failures.
-17. Prevented normal streaming epoch diagnostics from flooding server logs.
 
 #### v3.9.26.72-release
 1. Added adaptive AFK traffic controls for background clients.
