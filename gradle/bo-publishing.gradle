@@ -124,6 +124,14 @@ ext.boReadPublishVersionId = {
     return "${minecraft_version}-${mod_version}${boReadPublishVersionSuffix()}"
 }
 
+ext.boReadPublishVersionType = {
+    String configured = publish_version.toString().trim().toLowerCase(Locale.ROOT)
+    if (!(configured in ['release', 'beta', 'alpha'])) {
+        throw new GradleException("Unsupported publish_version '${publish_version}' in ${project.path}")
+    }
+    return configured
+}
+
 ext.boReadPublishCurseForgeLoaders = {
     return boReadStringListProperty('bo_publish_curseforge_loaders')
 }
@@ -480,7 +488,9 @@ ext.boReadCurseForgeUploadVersionIds = {
     Map<String, Long> minecraftVersionIds = [
             '1.19.2': 9366L,
             '1.20.1': 9990L,
-            '1.21.1': 11779L
+            '1.21.1': 11779L,
+            '26.1.2': 16082L,
+            '26.2'  : 16498L
     ]
     Map<String, Long> loaderVersionIds = [
             'fabric'  : 7499L,
@@ -513,7 +523,7 @@ ext.boReadCurseForgeUploadMetadata = {
             changelog    : boReadPrimaryChangelog(),
             changelogType: 'markdown',
             displayName  : boReadPublishDisplayName(),
-            releaseType  : publish_version.toString(),
+            releaseType  : boReadPublishVersionType(),
             gameVersions : boReadCurseForgeUploadVersionIds()
     ]
 }
@@ -581,7 +591,8 @@ tasks.register('PublishInfo') {
     doLast {
         println "Publish artifact path: ${boReadPublishArtifactFile().absolutePath}"
         println "version = \"${boReadPublishVersionId()}\"\n" +
-                "    displayName = \"${boReadPublishDisplayName()}\""
+                "    displayName = \"${boReadPublishDisplayName()}\"\n" +
+                "    releaseType = \"${boReadPublishVersionType()}\""
         def properties = boReadPublishingProperties()
         if (properties != null) {
             println "CF_TOKEN: ${properties.getProperty('CF_TOKEN') == null ? 'missing' : 'present'}"
@@ -715,7 +726,8 @@ publishMods {
 
     file = boReadPublishArtifactFile()
     changelog = boReadFullChangelog()
-    type = STABLE
+    String publishVersionType = boReadPublishVersionType()
+    type = publishVersionType == 'beta' ? BETA : publishVersionType == 'alpha' ? ALPHA : STABLE
     version = boReadPublishVersionId()
     displayName = boReadPublishDisplayName()
 
