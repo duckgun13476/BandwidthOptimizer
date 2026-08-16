@@ -8,15 +8,13 @@
 
 # BandwidthOptimizer
 
-BandwidthOptimizer is a client-and-server network bandwidth optimization mod for
-heavily modded Minecraft servers. It reduces repeated and compressible PLAY
-traffic while trying to preserve the original Minecraft packet stream after
-decoding.
+BandwidthOptimizer is a client-and-server network optimization mod for heavily
+modded Minecraft servers. It reduces repeated PLAY traffic while restoring the
+original encoded packet stream before normal Minecraft packet handling.
 
-It is designed for modpacks and public servers where login sync, custom payloads,
-machine networks, storage systems, and repeated chunk visits can generate large
-amounts of network traffic. It is not an FPS optimizer, and it should not be
-treated as a replacement for normal server, proxy, or network tuning.
+It is intended for modpacks and public servers where login synchronization,
+custom payloads, machine networks, storage systems, repeated chunk visits, and
+idle clients generate substantial traffic. It is not an FPS or TPS optimizer.
 
 <p align="center">
   <a href="https://discord.gg/qdMbM9Rq6B"><img src="https://img.shields.io/badge/Discord-Feedback-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
@@ -26,189 +24,130 @@ treated as a replacement for normal server, proxy, or network tuning.
 
 ![BandwidthOptimizer preview](https://logistics.aisaveworld.tech/p/share/function.gif)
 
-## Development Status
+## Main Features
 
-BandwidthOptimizer is still under active development. Bugs and mod compatibility
-issues are still possible, especially in large modpacks, proxy networks, and
-servers with heavy custom payload traffic.
+- Compresses suitable packet traffic with recoverable cross-frame streaming
+  Zstd.
+- Reduces repeated packet structures through synchronized literal and template
+  mapping.
+- Batches compatible small packets without changing their restored order.
+- Reuses chunk data through verified `full`, `ref`, and `patch` transport paths.
+- Keeps a bounded persistent client chunk cache for reuse after reconnecting or
+  revisiting previously received terrain.
+- Uses incremental cache writes, tiered retention, corruption checks, and
+  background maintenance to limit disk and memory pressure.
+- Reduces presentation-only traffic while a client is lightly or deeply idle,
+  then restores current state when play resumes.
+- Preserves protocol transitions and sensitive packet boundaries through flush,
+  recovery, or compatibility paths.
+- Provides an in-game HUD, uploadable web reports, per-player traffic history,
+  packet-source attribution, and exact packet-class diagnostics.
 
-The mod is designed to optimize network packets, not to modify world data or save
-files. When a packet, boundary, or mod interaction looks unsafe,
-BandwidthOptimizer tries to fall back to direct or bypass behavior instead of
-forcing optimization.
+## Transport Design
 
-If you encounter an issue, please report it with client logs, server logs, proxy
-logs if applicable, and BandwidthOptimizer report files. Compatibility reports,
-suggestions, and contributions are welcome.
+BandwidthOptimizer observes complete packet bytes after Minecraft or the loader
+has encoded them. Suitable packets may be mapped, batched, compressed, or served
+from a verified chunk reference. On the receiving side, BO restores the original
+encoded bytes before normal packet decoding continues.
 
-## What It Does
+Cross-frame compression is protected by sequence and epoch validation. If a
+stream boundary is missing or invalid, BO requests a bounded recovery payload and
+resynchronizes the stream instead of continuing with unknown state.
 
-- Wraps already encoded Minecraft packets into reversible transport frames.
-- Compresses suitable packet payloads with streaming Zstd.
-- Uses synchronized literal/template mapping for repeated packet structures.
-- Batches safe small packet groups while respecting protocol and flush
-  boundaries.
-- Reuses chunk data through `full`, `ref`, and `patch` transport decisions.
-- Keeps reusable chunk cache data across reconnects and compatible proxy server
-  switches.
-- Bypasses sensitive packets, protocol transitions, and unsafe timing boundaries
-  instead of forcing every packet through the same optimization path.
-- Provides HUD, server stats, source reports, bypass reports, and decoder dump
-  files for debugging and reproducible measurements.
-
-## How It Works
-
-BandwidthOptimizer works below normal gameplay logic. On the sending side, it
-observes packets after Minecraft or the loader has encoded a complete packet into
-bytes. The transport layer may then wrap, batch, compress, or bypass that encoded
+Chunk reuse is hash-verified. Temporary in-memory reuse handles repeated traffic
+during a session, while the persistent cache can reuse compatible terrain data
+after reconnecting. Invalid, missing, or stale cache entries fall back to a full
 packet.
 
-On the receiving side, the transport frame is unwrapped back into the original
-encoded packet bytes before normal packet handling continues. The design goal is
-packet-stream equivalence: after restoration, the receiver should see the same
-packet types, packet contents, and relative order that it would have seen without
-BandwidthOptimizer.
+Idle traffic reduction has two states. Light idle reduces quickly recoverable
+presentation traffic while the game remains in the foreground. Deep idle applies
+stronger reduction when the game is paused, minimized, or left in the background,
+with recovery policies restoring current block, entity, HUD, and supported mod
+state when the player returns.
 
-| Layer | Purpose |
-| --- | --- |
-| Transparent transport | Carries already encoded packet bytes without rewriting gameplay logic. |
-| Streaming Zstd | Compresses packet bodies that benefit from byte-level compression. |
-| Literal/template mapping | Reduces repeated packet structures while keeping sender and receiver state synchronized. |
-| Light batch path | Uses cheaper batch encoding for sensitive flush paths where full template work is too expensive. |
-| Chunk transport | Chooses `full`, `ref`, `patch`, or `bypass` for chunk-related traffic based on cache state and safety checks. |
-| Boundary control | Forces flush, bypass, warmup, or reset around protocol transitions, login/config/play changes, proxy switches, and stale epochs. |
+## Performance
 
-## Measured Results
+Results depend on the modpack, player activity, proxy topology, and dominant
+packet sources. Older production measurements commonly reduced managed traffic
+to roughly 16-24% of its original size in heavily modded environments.
 
-Bandwidth reduction depends on the modpack, player activity, proxy setup, and
-which packets dominate the traffic. These examples come from real
-BandwidthOptimizer HUD snapshots and report files. They are reproducible examples,
-not guaranteed results.
+Current measurements for the 5.10.30.99 architecture have reduced managed
+traffic to about 3-11% of its original size. This is a substantial improvement
+over the older baseline, but it is not a guaranteed result for every server; the
+final ratio depends on packet composition and the amount of reusable traffic.
 
-The main metric is the compression ratio of traffic that actually enters the
-BandwidthOptimizer transport path. Whole-server raw/actual totals are useful
-context, but they also include direct packets, compatibility bypasses, cache
-reuse, and mod traffic that should not or cannot be compressed.
+Already-compressed, encrypted, media-like, or near-random payloads may have little
+additional compression potential. BO prioritizes packet correctness when further
+processing would provide little benefit or create compatibility risk.
 
-| Environment | Client optimized flow | Server raw to actual | Server optimized flow | Direct flow |
-| --- | ---: | ---: | ---: | ---: |
-| Create Delight Remake server 1 | `23.21 MB -> 3.93 MB` (`16.9%`) | `305.35 GB -> 51.12 GB` (`16.7%`) | `40.28 GB` (`13.2%`) | `49.46 GB` (`16.2%`) |
-| Create Delight Remake server 2 | `24.51 MB -> 4.15 MB` (`16.9%`) | `516.70 GB -> 83.24 GB` (`16.1%`) | `57.57 GB` (`11.1%`) | `57.01 GB` (`11.0%`) |
-
-High-impact traffic-source examples:
-
-| Source | Environment | Raw observed | Actual transmitted | Actual/raw ratio |
-| --- | --- | ---: | ---: | ---: |
-| `ClientboundLevelChunkWithLightPacket` | Create-focused core server | `9062.88 MiB` | `481.85 MiB` | `5.3%` |
-| `ClientboundLevelChunkWithLightPacket` | Create-focused test server | `713.65 MiB` | `16.84 MiB` | `2.4%` |
-| `ClientboundTabListPacket` | Create-focused core server | `6354.97 MiB` | `655.45 MiB` | `10.3%` |
-| `lightmanscurrency:network` | Create-focused core server | `8206.80 MiB` | `593.69 MiB` | `7.2%` |
-| `create:deployer` block entity data | Create Delight | `510.41 MiB` | `71.61 MiB` | `14.0%` |
-
-Low-benefit traffic-source examples:
-
-| Source | Environment | Raw observed | Actual transmitted | Actual/raw ratio | Path |
-| --- | --- | ---: | ---: | ---: | --- |
-| `watut:main` | Create-focused core server | `4157.94 MiB` | `3974.80 MiB` | `95.6%` | `BATCH_DIRECT_FALLBACK` |
-| `yes_steve_model:2_6_0` | Create-focused core server | `514.63 MiB` | `510.50 MiB` | `99.2%` | `BATCH_TRANSPORT_SHARE` |
-| `watut:main` | Create-focused mirror server | `146.07 MiB` | `143.07 MiB` | `97.9%` | `BATCH_TRANSPORT_SHARE` |
-| `watut:main` | Create Delight | `91.18 MiB` | `82.53 MiB` | `90.5%` | `BATCH_TRANSPORT_SHARE` |
-
-Already-compressed, encrypted, or near-random streams such as WATUT/YSM-style
-presence or model data may show little additional compression benefit. In those
-cases BandwidthOptimizer prioritizes compatibility and may bypass or carry them
-with minimal changes.
-
-Useful report paths:
-
-```text
-bandwidthoptimizer-native/transport-source-report/latest-source-report.md
-bandwidthoptimizer-native/transport-bypass-report/latest-bypass-report.md
-bandwidthoptimizer-native/decoder-exception-dump/
-```
-
-## Tested Modpack Environments
-
-BandwidthOptimizer has been tested in several heavily modded environments,
-including:
-
-- Create Delight
-- Brass Concerto
-- Aeronautics
-- Mechanomania
-
-This means these environments have been used for compatibility testing. It does
-not guarantee that every possible mod combination, proxy topology, or server
-configuration is covered.
+Some modpacks may contain mod conflicts that cause abnormal network packets. BO
+cannot guarantee meaningful reduction of this abnormal traffic, but server
+operators can run `/bandwidthoptimizer stats` to upload an analysis report and
+locate its source.
 
 ## Supported Versions
 
-Choose the build that matches both your Minecraft version and loader.
+Choose the build matching both the Minecraft version and loader.
 
-| Loader | Minecraft | Notes |
+| Loader | Minecraft | Status |
 | --- | --- | --- |
-| Forge | 1.19.2 | Forge 43.x target. |
-| Forge | 1.20.1 | Forge 47.x target. |
-| Fabric / Quilt | 1.20.1 | Requires Fabric API. Published for Fabric and Quilt loaders. |
-| Fabric / Quilt | 1.21.1 | Requires Fabric API. Published for Fabric and Quilt loaders. |
-| NeoForge | 1.21.1 | NeoForge 21.x target. |
+| Forge | 1.19.2 | Release |
+| Forge | 1.20.1 | Release |
+| Fabric / Quilt | 1.20.1 | Release; requires Fabric API |
+| Fabric / Quilt | 1.21.1 | Release; requires Fabric API |
+| NeoForge | 1.21.1 | Release |
+| NeoForge | 26.1.2 | Release |
+| NeoForge | 26.2 | Beta |
 
 ## Installation
 
-1. Download the BandwidthOptimizer jar for your loader and Minecraft version.
-2. Put the jar into the server `mods` folder.
-3. Put the same BandwidthOptimizer version into each client `mods` folder.
-4. Install Fabric API when using the Fabric or Quilt build.
+1. Download the jar matching your Minecraft version and loader.
+2. Install it in the server `mods` directory.
+3. Install the same BandwidthOptimizer version on every connecting client.
+4. Install Fabric API when using a Fabric or Quilt build.
 5. Restart the server and clients.
 
-If client and server versions do not match, the transport channel may be disabled
-or fail to negotiate correctly.
-
-## Configuration
-
-Main loader-generated config files:
-
-```text
-config/bandwidthoptimizer-common.toml
-config/bandwidthoptimizer-client.toml
-```
-
-Most servers should start with the default configuration and only change options
-while comparing report output before and after the change. Advanced runtime
-overrides include `bandwidthoptimizer.transport.batchWindowMillis`,
-`bandwidthoptimizer.transport.mappingEnabled`, and
-`bandwidthoptimizer.transport.zstdEnabled`.
+Client and server builds must use compatible BO network protocols. Keeping the
+exact same BO version on both sides is strongly recommended.
 
 ## Commands
 
-| Command | Description |
+| Command | Purpose |
 | --- | --- |
-| `/bandwidthoptimizer` | Shows available BandwidthOptimizer commands. |
-| `/bandwidthoptimizer hud` | Toggles the client HUD. |
-| `/bandwidthoptimizer stats` | Shows server bandwidth totals. |
-| `/bandwidthoptimizer stats total` | Shows persisted total server bandwidth stats. |
-| `/bandwidthoptimizer stats players [limit]` | Shows top player/channel bandwidth stats. |
-| `/bandwidthoptimizer stats reset` | Resets persisted server bandwidth stats. |
-| `/bandwidthoptimizer test transportreport run [ticks]` | Starts a short transport compression report. Requires debug analysis. |
-| `/bandwidthoptimizer test packetrank run [ticks]` | Starts a packet-rank capture. Requires debug analysis. |
+| `/bandwidthoptimizer hud` | Toggles the local client statistics HUD. |
+| `/bandwidthoptimizer stats` | Uploads the current server report and returns a clickable BO Stats link. Requires OP permission. |
+| `/bandwidthoptimizer debug` | Opens the on-demand diagnostic tools. Requires OP permission. |
 
-## Limitations
+## Web Reports
 
-- Both the client and server must install the mod.
-- Results vary by modpack, online count, traffic source, and activity pattern.
-- Already-compressed, encrypted, or near-random streams may have little or no
-  additional compression benefit.
-- Some packets are deliberately sent directly because optimizing them would cost
-  more than it saves or could risk compatibility.
-- BandwidthOptimizer reduces network traffic; it does not directly optimize FPS,
-  TPS, world generation, database latency, or proxy routing.
+Run `/bandwidthoptimizer stats` as an operator. BO collects the current server
+totals, player and time-period traffic history, transport and cache statistics,
+idle-gate savings, bypass details, and packet-source attribution. The command
+uploads the report and returns a clickable `bostats.torqueflux.com` viewer link.
 
-## Reporting Issues
+The report page is the preferred way to share bandwidth evidence. Client, server,
+and proxy logs are still required when investigating disconnects, decoder errors,
+or timing-sensitive compatibility problems.
 
-When reporting a problem, please include the Minecraft version, loader,
-BandwidthOptimizer version, proxy setup, client logs, server logs, proxy logs if
-applicable, and report files from `bandwidthoptimizer-native`.
+## Configuration
+
+The default configuration is designed to be appropriate for most servers and
+modpacks. Start with the defaults. Advanced administrators can tune the generated
+client and common configuration files after comparing BO Stats reports before
+and after a controlled test.
+
+## Compatibility
+
+BandwidthOptimizer has been tested with large Create-based modpacks, Aeronautics,
+Mechanomania, Velocity proxy switching, Voxy, AutoFish, and other network-heavy
+environments. These tests do not guarantee every possible mod combination.
+
+When BO cannot safely preserve an optimization path, it uses a verified fallback
+or recovery path. Compatibility reports should include the Minecraft version,
+loader, BO version, relevant client/server/proxy logs, and a BO Stats report link
+when available.
 
 ## License
 
-This project is licensed under GNU LGPL 2.1-only.
+This project is licensed under GNU LGPL 2.1 or any later version
+(`LGPL-2.1-or-later`).
