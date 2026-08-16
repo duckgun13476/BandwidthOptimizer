@@ -152,6 +152,26 @@ public final class ChannelTransportBatchManager {
             return;
         }
 
+        writeDrainedOutboundBatch(channel, drainedBatch, flushMode);
+    }
+
+    private static void writeDrainedOutboundBatch(
+            Channel channel,
+            OutboundBatchDrain drainedBatch,
+            OutboundBatchFlushMode flushMode
+    ) {
+        if (!isChannelUsable(channel)) {
+            completeBatchPacketTrace(drainedBatch.pendingPackets(), "discarded", "channel_closing", new byte[0]);
+            return;
+        }
+        if (ChannelTransportStreamingEpochGate.deferTaskIfClosed(
+                channel,
+                drainedBatch.totalPacketBytes(),
+                () -> writeDrainedOutboundBatch(channel, drainedBatch, flushMode)
+        )) {
+            return;
+        }
+
         try {
             PacketFlow packetFlow = drainedBatch.packetFlow();
             if (packetFlow == null

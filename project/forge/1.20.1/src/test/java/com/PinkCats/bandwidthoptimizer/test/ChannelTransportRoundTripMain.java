@@ -12,6 +12,7 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportAdaptiveBypass;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorithmId;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.KineticChannel;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.batch.ChannelTransportBatchManager;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.ChannelTransportOperationTelemetry;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.KineticStreamingLayer;
 import io.netty.buffer.Unpooled;
@@ -20,6 +21,7 @@ import io.netty.channel.ChannelOutboundHandlerAdapter;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
+import net.minecraft.network.protocol.game.ClientboundCustomPayloadPacket;
 import net.minecraft.network.protocol.game.ServerboundCustomPayloadPacket;
 import net.minecraft.resources.ResourceLocation;
 
@@ -75,6 +77,7 @@ public final class ChannelTransportRoundTripMain {
         verifyStreamingGapFallsBackToIndependentBatches();
         verifyStreamingRecoveryControlRoundTrip();
         verifyOpenEpochDoesNotAccumulateInternalWritePermits();
+        verifyClosedRecoveryGateDefersReentrantBatch();
         verifyProxySwitchBoundaryKeepsInboundTransportEnabled();
         verifyNonTransportPassThrough(receiverSession);
         System.out.println("All channel transport round trips passed.");
@@ -803,6 +806,100 @@ public final class ChannelTransportRoundTripMain {
             releasedBytes.release();
         } finally {
             ChannelTransportStreamingEpochGate.clear(channel);
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    private static void verifyClosedRecoveryGateDefersReentrantBatch() {
+        java.util.concurrent.atomic.AtomicReference<byte[]> capturedTransportFrame =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        EmbeddedChannel channel = new EmbeddedChannel();
+        channel.pipeline().addLast("encoder", new ChannelOutboundHandlerAdapter() {
+            @Override
+            public void write(
+                    io.netty.channel.ChannelHandlerContext context,
+                    Object message,
+                    io.netty.channel.ChannelPromise promise
+            ) throws Exception {
+                if (message instanceof ClientboundCustomPayloadPacket carrierPacket) {
+                    FriendlyByteBuf encodedCarrier = new FriendlyByteBuf(Unpooled.buffer());
+                    try {
+                        carrierPacket.write(encodedCarrier);
+                        encodedCarrier.readResourceLocation();
+                        byte[] transportFrameBytes = new byte[encodedCarrier.readableBytes()];
+                        encodedCarrier.readBytes(transportFrameBytes);
+                        capturedTransportFrame.set(transportFrameBytes);
+                    } finally {
+                        encodedCarrier.release();
+                    }
+                }
+                context.write(message, promise);
+            }
+        });
+        ChannelTransportSession sender = ChannelTransportStateManager.getOrCreateSession(channel);
+        ChannelTransportSession receiver = new ChannelTransportSession();
+        sender.setCrossFrameZstdEnabled(true);
+        receiver.setCrossFrameZstdEnabled(true);
+        try {
+            for (int sequence = 1; sequence < 64; sequence++) {
+                byte[] packetBytes = utf8Bytes("batch-reentry-prefix-" + sequence);
+                var frame = ChannelTransportPacketCodec.wrapBatchPackets(sender, List.of(packetBytes));
+                var restored = ChannelTransportPacketCodec.tryUnwrapPacket(receiver, frame.transportFrameBytes());
+                if (restored == null
+                        || restored.streamingSequence() != sequence
+                        || !Arrays.equals(packetBytes, restored.restoredPacketBytesList().get(0))) {
+                    throw new IllegalStateException("Streaming batch re-entry prefix did not round trip at " + sequence);
+                }
+            }
+
+            ChannelTransportStreamingEpochGate.closeForEpoch(channel, 91, 7);
+            channel.writeOutbound("recovery-batch");
+            channel.writeOutbound("epoch-reset");
+
+            byte[] deferredPacketBytes = utf8Bytes("deferred-normal-batch");
+            if (!ChannelTransportBatchManager.enqueueOutboundPacket(
+                    channel.pipeline().context("encoder"),
+                    deferredPacketBytes,
+                    deferredPacketBytes,
+                    PacketFlow.CLIENTBOUND,
+                    null,
+                    null,
+                    null
+            )) {
+                throw new IllegalStateException("Re-entrant batch was not accepted for batching");
+            }
+            ChannelTransportBatchManager.flushOutboundBatchNow(channel.pipeline().context("encoder"));
+            if (channel.outboundMessages().size() != 2) {
+                throw new IllegalStateException("Closed recovery gate emitted the re-entrant batch early");
+            }
+
+            ChannelTransportStreamingEpochGate.release(channel);
+            if (channel.outboundMessages().size() != 3) {
+                throw new IllegalStateException("Recovery gate did not release exactly one deferred batch carrier");
+            }
+            if (!"recovery-batch".equals(channel.readOutbound())
+                    || !"epoch-reset".equals(channel.readOutbound())) {
+                throw new IllegalStateException("Deferred batch changed recovery output ordering");
+            }
+            Object outbound = channel.readOutbound();
+            if (!(outbound instanceof ClientboundCustomPayloadPacket carrierPacket)) {
+                throw new IllegalStateException("Deferred batch did not resume through the normal carrier path");
+            }
+            byte[] transportFrameBytes = capturedTransportFrame.get();
+            if (transportFrameBytes == null) {
+                throw new IllegalStateException("Deferred batch carrier bytes were not captured before release");
+            }
+            var restored = ChannelTransportPacketCodec.tryUnwrapPacket(receiver, transportFrameBytes);
+            if (restored == null
+                    || restored.streamingSequence() != 64
+                    || restored.restoredPacketCount() != 1
+                    || !Arrays.equals(deferredPacketBytes, restored.restoredPacketBytesList().get(0))) {
+                throw new IllegalStateException("Deferred batch did not restore exact bytes after recovery release");
+            }
+        } finally {
+            ChannelTransportStreamingEpochGate.clear(channel);
+            ChannelTransportStateManager.clearSession(channel, "batch-reentry-regression");
+            receiver.close();
             channel.finishAndReleaseAll();
         }
     }

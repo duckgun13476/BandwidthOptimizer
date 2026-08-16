@@ -18,6 +18,8 @@ public final class CrossFrameZstdRegressionMain {
     public static void main(String[] args) {
         verifySustainedCrossFrameReuse();
         verifyLargeLoginBurst();
+        verifyOutboundFallbackPreservesInboundStream();
+        verifyTimeoutFallbackRetainsRecoverySuffix();
         verifyGapRecoveryAndResume();
         verifyClosedEpochIndependentSpillover();
         System.out.println("Cross-frame Zstd regression passed.");
@@ -163,6 +165,106 @@ public final class CrossFrameZstdRegressionMain {
             }
         }
         System.out.println("gap-recovery: missing suffix restored and fresh epoch resumed");
+    }
+
+    private static void verifyOutboundFallbackPreservesInboundStream() {
+        try (ChannelTransportSession client = new ChannelTransportSession();
+             ChannelTransportSession server = new ChannelTransportSession()) {
+            client.setCrossFrameZstdEnabled(true);
+            server.setCrossFrameZstdEnabled(true);
+
+            for (int index = 1; index <= 3; index++) {
+                String value = "clientbound-before-fallback-" + index;
+                assertRestored(List.of(bytes(value)), ChannelTransportPacketCodec.tryUnwrapPacket(
+                        client,
+                        wrapStreaming(server, value).transportFrameBytes()
+                ));
+            }
+
+            assertRestored(List.of(bytes("serverbound-awaiting-ack")), ChannelTransportPacketCodec.tryUnwrapPacket(
+                    server,
+                    wrapStreaming(client, "serverbound-awaiting-ack").transportFrameBytes()
+            ));
+            client.fallbackOutboundStreamingEpoch();
+            if (client.isCrossFrameZstdEnabled()) {
+                throw new IllegalStateException("Outbound streaming remained enabled after fallback");
+            }
+
+            for (int index = 4; index <= 8; index++) {
+                String value = "clientbound-after-fallback-" + index;
+                var restored = ChannelTransportPacketCodec.tryUnwrapPacket(
+                        client,
+                        wrapStreaming(server, value).transportFrameBytes()
+                );
+                assertRestored(List.of(bytes(value)), restored);
+                if (restored.streamingSequence() != index) {
+                    throw new IllegalStateException("Opposite-direction sequence was reset by outbound fallback");
+                }
+            }
+        }
+        System.out.println("cross-direction-fallback: outbound reset preserved active inbound stream");
+    }
+
+    private static void verifyTimeoutFallbackRetainsRecoverySuffix() {
+        verifyTimeoutFallbackRetainsRecoverySuffix("clientbound");
+        verifyTimeoutFallbackRetainsRecoverySuffix("serverbound");
+        System.out.println("timeout-fallback: retained recovery suffix in both directions");
+    }
+
+    private static void verifyTimeoutFallbackRetainsRecoverySuffix(String direction) {
+        try (ChannelTransportSession sender = new ChannelTransportSession();
+             ChannelTransportSession receiver = new ChannelTransportSession()) {
+            sender.setCrossFrameZstdEnabled(true);
+            receiver.setCrossFrameZstdEnabled(true);
+            List<ChannelTransportPacketCodec.WrappedTransportFrame> frames = new java.util.ArrayList<>();
+            for (int index = 1; index <= FRAMES_PER_EPOCH; index++) {
+                frames.add(wrapStreaming(sender, direction + "-frame-" + index));
+            }
+            ChannelTransportSession.StreamingEpochBoundary boundary = sender.outboundStreamingEpochBoundary();
+            if (boundary == null || boundary.lastSequence() != FRAMES_PER_EPOCH) {
+                throw new IllegalStateException("Timeout regression did not close the outbound epoch");
+            }
+
+            int missingSequence = FRAMES_PER_EPOCH - 12;
+            for (int sequence = 1; sequence < missingSequence; sequence++) {
+                assertRestored(List.of(bytes(direction + "-frame-" + sequence)),
+                        ChannelTransportPacketCodec.tryUnwrapPacket(receiver, frames.get(sequence - 1).transportFrameBytes()));
+            }
+            try {
+                ChannelTransportPacketCodec.tryUnwrapPacket(receiver, frames.get(missingSequence).transportFrameBytes());
+                throw new IllegalStateException("Timeout regression did not detect its injected gap");
+            } catch (ChannelTransportPacketCodec.StreamingRecoveryException expected) {
+                if (expected.recoveryRequest().epoch() != boundary.epoch()
+                        || expected.recoveryRequest().expectedSequence() != missingSequence) {
+                    throw expected;
+                }
+            }
+
+            receiver.resetInboundStreamingForRecovery();
+            sender.fallbackOutboundStreamingEpoch();
+            if (sender.isCrossFrameZstdEnabled()) {
+                throw new IllegalStateException("Timeout fallback did not disable streaming");
+            }
+            List<ChannelTransportSession.StreamingFallbackBatch> fallback =
+                    sender.fallbackOutboundStreamingBatches(boundary.epoch(), missingSequence);
+            if (fallback.size() != FRAMES_PER_EPOCH - missingSequence + 1) {
+                throw new IllegalStateException("Timeout fallback discarded the retained recovery suffix");
+            }
+            for (int index = 0; index < fallback.size(); index++) {
+                int sequence = missingSequence + index;
+                ChannelTransportPacketCodec.WrappedTransportFrame recoveryFrame =
+                        ChannelTransportPacketCodec.wrapStreamingFallbackBatch(sender, fallback.get(index));
+                assertRestored(List.of(bytes(direction + "-frame-" + sequence)),
+                        ChannelTransportPacketCodec.tryUnwrapPacket(receiver, recoveryFrame.transportFrameBytes()));
+            }
+
+            sender.restartOutboundStreamingEpoch();
+            receiver.resetInboundStreamingEpoch();
+            assertRestored(List.of(bytes(direction + "-resumed")), ChannelTransportPacketCodec.tryUnwrapPacket(
+                    receiver,
+                    wrapStreaming(sender, direction + "-resumed").transportFrameBytes()
+            ));
+        }
     }
 
     private static void verifyClosedEpochIndependentSpillover() {

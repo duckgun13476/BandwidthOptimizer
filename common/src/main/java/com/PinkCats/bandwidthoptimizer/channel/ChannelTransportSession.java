@@ -280,6 +280,18 @@ public final class ChannelTransportSession implements AutoCloseable {
         this.crossFrameZstdEnabled = this.outboundStreamingSession != null;
     }
 
+    public synchronized void fallbackOutboundStreamingEpoch() {
+        if (this.outboundStreamingSession != null) {
+            this.outboundStreamingSession.reset();
+        }
+        // Keep the closed epoch recoverable until its late ACK or recovery request arrives.
+        this.outboundStreamingEpoch = this.outboundStreamingEpoch == Integer.MAX_VALUE
+                ? 1
+                : this.outboundStreamingEpoch + 1;
+        this.outboundStreamingSequence = 0;
+        this.crossFrameZstdEnabled = false;
+    }
+
     private PacketResult encodeIndependentPacket(byte[] packetBytes) {
         try (ChannelTransportAlgorithmSession recoverySession = this.algorithm.createSession()) {
             ChannelTransportAlgorithmSession.OperationResult result =

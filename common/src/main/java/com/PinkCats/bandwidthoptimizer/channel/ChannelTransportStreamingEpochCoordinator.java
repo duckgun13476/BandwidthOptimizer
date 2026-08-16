@@ -153,7 +153,7 @@ public final class ChannelTransportStreamingEpochCoordinator {
                 releaseGate = !this.gateReleased;
                 this.gateReleased = true;
             }
-            session.setCrossFrameZstdEnabled(false);
+            session.fallbackOutboundStreamingEpoch();
             warnFallback(channel, epoch, lastSequence, reason);
             if (releaseGate) {
                 ChannelTransportStreamingEpochGate.release(channel);

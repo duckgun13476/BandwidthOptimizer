@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.channel;
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
+import io.netty.channel.Channel;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -102,6 +103,24 @@ public final class ChannelTransportRuntimeGuard {
                 failure.getClass().getSimpleName() + ": " + failure.getMessage(),
                 failure
         );
+    }
+
+    public static void reportStreamingRecoveryFailure(
+            String stageName,
+            Channel channel,
+            String flow,
+            int epoch,
+            int expectedSequence,
+            int fallbackBatchCount,
+            Throwable throwable
+    ) {
+        String detail = "flow=" + (flow == null ? "unknown" : flow)
+                + ", channel=" + ChannelIdentity.shortText(channel)
+                + ", epoch=" + epoch
+                + ", expectedSequence=" + expectedSequence
+                + ", fallbackBatches=" + fallbackBatchCount;
+        IllegalStateException failure = new IllegalStateException(detail, throwable);
+        reportRuntimeFailure(stageName, failure);
     }
 
 

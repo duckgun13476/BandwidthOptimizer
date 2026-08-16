@@ -815,6 +815,15 @@ public final class ChannelTransportHooks {
         List<ChannelTransportSession.StreamingFallbackBatch> fallbackBatches =
                 transportSession.fallbackOutboundStreamingBatches(request.epoch(), request.expectedSequence());
         if (fallbackBatches.isEmpty()) {
+            ChannelTransportRuntimeGuard.reportStreamingRecoveryFailure(
+                    "streaming-recovery-retention-missing",
+                    context.channel(),
+                    responseFlow.name(),
+                    request.epoch(),
+                    request.expectedSequence(),
+                    0,
+                    new IllegalStateException("No retained streaming suffix for recovery request")
+            );
             context.close();
             return true;
         }
@@ -863,11 +872,30 @@ public final class ChannelTransportHooks {
         if (!transportSession.beginInboundStreamingRecovery(request)) {
             return;
         }
-        writeTransportCarrierPacketToPipeline(
+        ChannelFuture recoveryRequestWrite = writeTransportCarrierPacketToPipeline(
                 context.channel(),
                 responseFlow,
                 ChannelTransportStreamingControlCodec.encodeRecoveryRequest(request.epoch(), request.expectedSequence())
         );
+        if (recoveryRequestWrite == null) {
+            ChannelTransportRuntimeGuard.reportStreamingRecoveryFailure(
+                    "streaming-recovery-request-not-submitted",
+                    context.channel(), responseFlow.name(), request.epoch(), request.expectedSequence(), 0,
+                    new IllegalStateException("Recovery request was not submitted")
+            );
+            context.close();
+            return;
+        }
+        recoveryRequestWrite.addListener(future -> {
+            if (!future.isSuccess()) {
+                ChannelTransportRuntimeGuard.reportStreamingRecoveryFailure(
+                        "streaming-recovery-request-write",
+                        context.channel(), responseFlow.name(), request.epoch(), request.expectedSequence(), 0,
+                        future.cause()
+                );
+                context.close();
+            }
+        });
     }
 
     // Fix decode handshake problem (not support for index)
