@@ -14,6 +14,8 @@ plugins {
 apply from: rootProject.file('gradle/bo-property-loader.gradle')
 apply from: rootProject.file('gradle/bo-runall-common.gradle')
 
+project.ext.publish_version = 'beta'
+
 ext.bo_publish_artifact_task_name = 'jar'
 ext.bo_publish_artifact_relative_path = "build/libs/${package_name}-${mod_version}-neoforge-${minecraft_version}.jar"
 ext.bo_publish_loader_id = 'neoforge'
@@ -551,6 +553,15 @@ tasks.register('runPersistentChunkCacheDiskStoreRegression', JavaExec) {
     dependsOn(tasks.named('testClasses'))
     classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
     mainClass = 'com.PinkCats.bandwidthoptimizer.chunk.persistent.PersistentChunkCacheDiskStoreRegressionMain'
+    javaLauncher = boJava25Launcher
+}
+
+tasks.register('runPersistentHotPathIndexRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies incremental immutable publication for the persistent cache hot-path index.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.chunk.persistent.PersistentHotPathIndexRegressionMain'
     javaLauncher = boJava25Launcher
 }
 
