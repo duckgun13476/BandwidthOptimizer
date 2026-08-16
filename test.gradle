@@ -235,6 +235,15 @@ tasks.register('runPersistentChunkCacheBoundaryRegression', JavaExec) {
     )
 }
 
+tasks.register('runVoxyVisualHandoffRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies PREPARE-to-Sodium visual handoff ordering for Voxy masks.',
+            'com.PinkCats.bandwidthoptimizer.integration.voxy.VoxyVisualHandoffRegressionMain'
+    )
+}
+
 tasks.register('runPersistentChunkCacheLoadRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,
@@ -253,6 +262,15 @@ tasks.register('runPersistentHotPathIndexRegression', JavaExec) {
             'verification',
             'Verifies incremental immutable publication for the persistent cache hot-path index.',
             'com.PinkCats.bandwidthoptimizer.chunk.persistent.PersistentHotPathIndexRegressionMain'
+    )
+}
+
+tasks.register('runPersistentChunkCacheDeltaRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies bounded persistent FULL/DELTA selection, recovery, and retention.',
+            'com.PinkCats.bandwidthoptimizer.chunk.persistent.PersistentChunkCacheDeltaRegressionMain'
     )
 }
 

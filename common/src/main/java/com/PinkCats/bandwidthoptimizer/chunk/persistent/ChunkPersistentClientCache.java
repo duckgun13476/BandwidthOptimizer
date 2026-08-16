@@ -15,6 +15,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprintService;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticRuntimeSwitch;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
+import com.PinkCats.bandwidthoptimizer.integration.voxy.VoxyChunkBoundCompat;
 import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 import io.netty.channel.Channel;
 import io.netty.util.AttributeKey;
@@ -92,6 +93,9 @@ public final class ChunkPersistentClientCache {
     private static final long DEFAULT_COMPACTION_BYTES_PER_SECOND = 8L * 1024L * 1024L;
     private static final long MAINTENANCE_IDLE_DELAY_MILLIS = 2_000L;
     private static final double COMPACTION_MINIMUM_INVALID_RATIO = 0.60D;
+    private static final double DELTA_MAXIMUM_FULL_COST_RATIO = 0.40D;
+    private static final String STORAGE_KIND_FULL = "FULL";
+    private static final String STORAGE_KIND_DELTA = "DELTA";
     private static final int STORE_DRAIN_BATCH_LIMIT = 256;
     private static final long HOT_PATH_PUBLISH_INTERVAL_NANOS = TimeUnit.MILLISECONDS.toNanos(50L);
     private static final long SLOW_IO_WARNING_MILLIS = 1_500L;
@@ -517,16 +521,60 @@ public final class ChunkPersistentClientCache {
         try {
             String keyPrefix = entryPrefix(serverScopeHash, frame.coordinate());
             PersistentChunkCacheDiskStore store = persistentDiskStore();
-            store.writeBlob(fingerprint.hashHex(), restoredPacketBytes);
 
             long previousHitCount = 0L;
             long previousSavedBytes = 0L;
             int previousTemperature = 9;
+            String previousHash = "";
+            String previousStorageKind = STORAGE_KIND_FULL;
+            String previousBaseHash = "";
             synchronized (LOCK) {
                 if (cachedSnapshot != null) {
                     previousHitCount = readLong(cachedSnapshot.index(), keyPrefix + "hitCount", 0L);
                     previousSavedBytes = readLong(cachedSnapshot.index(), keyPrefix + "savedBytes", 0L);
                     previousTemperature = readInt(cachedSnapshot.index(), keyPrefix + "temperature", 9);
+                    previousHash = cachedSnapshot.index().getProperty(keyPrefix + "hash", "");
+                    previousStorageKind = cachedSnapshot.index().getProperty(
+                            keyPrefix + "storageKind",
+                            STORAGE_KIND_FULL
+                    );
+                    previousBaseHash = cachedSnapshot.index().getProperty(keyPrefix + "baseHash", "");
+                }
+            }
+
+            String storageKind = STORAGE_KIND_FULL;
+            String baseHash = "";
+            String deltaHash = "";
+            if (!store.containsBlob(fingerprint.hashHex())) {
+                String candidateBaseHash = STORAGE_KIND_DELTA.equals(previousStorageKind)
+                        ? previousBaseHash
+                        : previousHash;
+                byte[] candidateBase = null;
+                if (isSafeHash(candidateBaseHash)) {
+                    try {
+                        candidateBase = store.readBlob(candidateBaseHash);
+                    } catch (IOException ignored) {
+                        // A damaged baseline is replaced by a new FULL snapshot.
+                    }
+                }
+                PersistentChunkCacheDiskStore.DeltaEvaluation deltaEvaluation = null;
+                if (candidateBase != null) {
+                    try {
+                        deltaEvaluation = store.evaluateDelta(
+                                candidateBase,
+                                restoredPacketBytes,
+                                DELTA_MAXIMUM_FULL_COST_RATIO
+                        );
+                    } catch (IOException ignored) {
+                        // Cost selection failure falls back to a self-contained FULL snapshot.
+                    }
+                }
+                if (deltaEvaluation != null && deltaEvaluation.useDelta()) {
+                    storageKind = STORAGE_KIND_DELTA;
+                    baseHash = candidateBaseHash;
+                    deltaHash = store.writeDeltaBlob(deltaEvaluation);
+                } else {
+                    store.writeEvaluatedFullBlob(fingerprint.hashHex(), restoredPacketBytes, deltaEvaluation);
                 }
             }
 
@@ -541,12 +589,17 @@ public final class ChunkPersistentClientCache {
             mutation.setProperty(keyPrefix + "hitCount", Long.toString(previousHitCount));
             mutation.setProperty(keyPrefix + "savedBytes", Long.toString(previousSavedBytes));
             mutation.setProperty(keyPrefix + "temperature", Integer.toString(previousTemperature));
+            mutation.setProperty(keyPrefix + "storageKind", storageKind);
+            mutation.setProperty(keyPrefix + "baseHash", baseHash);
+            mutation.setProperty(keyPrefix + "deltaHash", deltaHash);
             store.appendIndexEntry(keyPrefix, mutation);
 
             synchronized (LOCK) {
                 ZipCacheSnapshot cacheSnapshot = cachedZipCacheSnapshot();
                 applyIndexEntry(cacheSnapshot.index(), keyPrefix, mutation);
-                cacheSnapshot.verifiedBlobEntries().add(blobEntryName(fingerprint.hashHex()));
+                for (String storageHash : storageHashes(mutation, keyPrefix)) {
+                    cacheSnapshot.verifiedBlobEntries().add(blobEntryName(storageHash));
+                }
                 Set<String> evictedHashes = putReadyBlobLocked(fingerprint.hashHex(), restoredPacketBytes);
                 markDirty(restoredPacketBytes.length);
                 markManifestRefreshDirty();
@@ -739,6 +792,12 @@ public final class ChunkPersistentClientCache {
             requestedGeneration = activeScopeGeneration;
         }
 
+        VoxyChunkBoundCompat.beginVisualHandoff(
+                prepareFrame.coordinate().chunkX(),
+                prepareFrame.coordinate().chunkZ(),
+                prepareFrame.observedPacketCount()
+        );
+
         executeIo("cold-prepare-read", () -> {
             ColdCacheEntry coldEntry = findColdCacheEntry(requestedScope, prepareFrame.coordinate());
             if (coldEntry == null || coldEntry.encodedBytes() > readyCacheByteBudget()) {
@@ -748,7 +807,7 @@ public final class ChunkPersistentClientCache {
 
             byte[] packetBytes;
             try {
-                packetBytes = persistentDiskStore().readBlob(coldEntry.payloadHash());
+                packetBytes = readStoredPacketBytes(persistentDiskStore(), coldEntry);
             } catch (IOException exception) {
                 sendColdPrepareMiss(channel, prepareFrame, "persistent_cache_prepare_read_miss");
                 return;
@@ -805,6 +864,7 @@ public final class ChunkPersistentClientCache {
         String previousScopeHash = currentServerScopeHash();
         boolean hadManifestForChannel = hasManifestForChannel(channel);
         channel.attr(PREPARED_READY_STATE_KEY).set(null);
+        VoxyChunkBoundCompat.clearVisualHandoffs();
         clearActiveServerScope(channel, true);
         boolean cleared = (previousScopeHash != null && !previousScopeHash.isBlank()) || hadManifestForChannel;
         if (shouldLogCacheDiagnose()) {
@@ -1199,7 +1259,7 @@ public final class ChunkPersistentClientCache {
                         && scoped.coordinate() != null
                         && scoped.coordinate().present()
                         && isSafeHash(hash)
-                        && cachedSnapshot.verifiedBlobEntries().contains(blobEntryName(hash))) {
+                        && storageAvailable(cachedSnapshot.index(), coordinateKey + ".", cachedSnapshot.verifiedBlobEntries())) {
                     coordinates.add(scoped.coordinate());
                 }
             }
@@ -1219,7 +1279,7 @@ public final class ChunkPersistentClientCache {
             String keyPrefix = entryPrefix(serverScopeHash, coordinate);
             String hash = cachedSnapshot.index().getProperty(keyPrefix + "hash", "");
             if (!isSafeHash(hash)
-                    || !cachedSnapshot.verifiedBlobEntries().contains(blobEntryName(hash))) {
+                    || !storageAvailable(cachedSnapshot.index(), keyPrefix, cachedSnapshot.verifiedBlobEntries())) {
                 return null;
             }
             return new ColdCacheEntry(
@@ -1227,7 +1287,10 @@ public final class ChunkPersistentClientCache {
                     cachedSnapshot.index().getProperty(keyPrefix + "protocolName", "PLAY"),
                     cachedSnapshot.index().getProperty(keyPrefix + "packetClassName", ""),
                     readLong(cachedSnapshot.index(), keyPrefix + "fullSnapshotVersion", 1L),
-                    readInt(cachedSnapshot.index(), keyPrefix + "encodedBytes", 0)
+                    readInt(cachedSnapshot.index(), keyPrefix + "encodedBytes", 0),
+                    cachedSnapshot.index().getProperty(keyPrefix + "storageKind", STORAGE_KIND_FULL),
+                    cachedSnapshot.index().getProperty(keyPrefix + "baseHash", ""),
+                    cachedSnapshot.index().getProperty(keyPrefix + "deltaHash", "")
             );
         }
     }
@@ -1479,6 +1542,7 @@ public final class ChunkPersistentClientCache {
             CachePreloadResult preload = loadV2CacheFromDisk();
             cachedSnapshot = preload.snapshot();
             replaceReadyBlobsLocked(preload.readyBlobs());
+            publishLoadedHotPathSnapshotLocked();
         }
         ChunkLoadDelayProbe.logStage(
                 (Channel) null,
@@ -1572,7 +1636,7 @@ public final class ChunkPersistentClientCache {
                 continue;
             }
             try {
-                byte[] packetBytes = store.readBlob(hash);
+                byte[] packetBytes = readStoredPacketBytes(store, index, coordinateKey + ".");
                 if (packetBytes != null && packetBytes.length > 0 && matchesHash(packetBytes, hash)) {
                     ready.put(hash, packetBytes);
                     loadedBytes += packetBytes.length;
@@ -1663,13 +1727,78 @@ public final class ChunkPersistentClientCache {
         for (String key : index.stringPropertyNames()) {
             if (key.endsWith(".hash")) {
                 String coordinateKey = key.substring(0, key.length() - ".hash".length());
-                String hash = index.getProperty(key, "");
-                if (!availableHashes.contains(hash)) {
+                Set<String> entryStorageHashes = storageHashes(index, coordinateKey + ".");
+                if (entryStorageHashes.isEmpty() || !entryStorageHashes.stream().allMatch(availableHashes::contains)) {
                     stale.add(coordinateKey);
                 }
             }
         }
         stale.forEach(coordinateKey -> removeSnapshotIndexEntry(index, coordinateKey));
+    }
+
+    private static byte[] readStoredPacketBytes(
+            PersistentChunkCacheDiskStore store,
+            Properties index,
+            String keyPrefix
+    ) throws IOException {
+        String payloadHash = index.getProperty(keyPrefix + "hash", "");
+        String storageKind = index.getProperty(keyPrefix + "storageKind", STORAGE_KIND_FULL);
+        byte[] packetBytes;
+        if (STORAGE_KIND_DELTA.equals(storageKind)) {
+            String baseHash = index.getProperty(keyPrefix + "baseHash", "");
+            String deltaHash = index.getProperty(keyPrefix + "deltaHash", "");
+            if (!isSafeHash(baseHash) || !isSafeHash(deltaHash)) {
+                return null;
+            }
+            byte[] baseBytes = store.readBlob(baseHash);
+            byte[] deltaBytes = store.readBlob(deltaHash);
+            if (baseBytes == null || deltaBytes == null) {
+                return null;
+            }
+            packetBytes = PersistentChunkCacheDeltaCodec.decode(baseBytes, deltaBytes, 64 * 1024 * 1024);
+        } else {
+            packetBytes = store.readBlob(payloadHash);
+        }
+        int expectedBytes = readInt(index, keyPrefix + "encodedBytes", 0);
+        return packetBytes != null
+                && (expectedBytes <= 0 || packetBytes.length == expectedBytes)
+                && matchesHash(packetBytes, payloadHash)
+                ? packetBytes
+                : null;
+    }
+
+    private static byte[] readStoredPacketBytes(
+            PersistentChunkCacheDiskStore store,
+            ColdCacheEntry entry
+    ) throws IOException {
+        Properties index = new Properties();
+        String prefix = "entry.";
+        index.setProperty(prefix + "hash", entry.payloadHash());
+        index.setProperty(prefix + "encodedBytes", Integer.toString(entry.encodedBytes()));
+        index.setProperty(prefix + "storageKind", entry.storageKind());
+        index.setProperty(prefix + "baseHash", entry.baseHash());
+        index.setProperty(prefix + "deltaHash", entry.deltaHash());
+        return readStoredPacketBytes(store, index, prefix);
+    }
+
+    private static Set<String> storageHashes(Properties index, String keyPrefix) {
+        if (index == null || keyPrefix == null) {
+            return Set.of();
+        }
+        String storageKind = index.getProperty(keyPrefix + "storageKind", STORAGE_KIND_FULL);
+        if (STORAGE_KIND_DELTA.equals(storageKind)) {
+            String baseHash = index.getProperty(keyPrefix + "baseHash", "");
+            String deltaHash = index.getProperty(keyPrefix + "deltaHash", "");
+            return isSafeHash(baseHash) && isSafeHash(deltaHash) ? Set.of(baseHash, deltaHash) : Set.of();
+        }
+        String hash = index.getProperty(keyPrefix + "hash", "");
+        return isSafeHash(hash) ? Set.of(hash) : Set.of();
+    }
+
+    private static boolean storageAvailable(Properties index, String keyPrefix, Set<String> blobEntries) {
+        Set<String> storageHashes = storageHashes(index, keyPrefix);
+        return !storageHashes.isEmpty()
+                && storageHashes.stream().allMatch(hash -> blobEntries.contains(blobEntryName(hash)));
     }
 
     private static void markDirty(int encodedBytes) {
@@ -1785,7 +1914,8 @@ public final class ChunkPersistentClientCache {
                 cachedSnapshot.verifiedBlobEntries().removeIf(
                         blobEntry -> !retention.referencedHashes().contains(hashFromBlobEntry(blobEntry))
                 );
-                READY_BLOBS.keySet().removeIf(hash -> !retention.referencedHashes().contains(hash));
+                Set<String> retainedPayloadHashes = referencedPayloadHashes(workingIndex);
+                READY_BLOBS.keySet().removeIf(hash -> !retainedPayloadHashes.contains(hash));
                 readyBlobBytes = READY_BLOBS.values().stream().mapToLong(bytes -> bytes.length).sum();
                 dirty = false;
                 dirtyBlobWrites = 0;
@@ -2201,7 +2331,7 @@ public final class ChunkPersistentClientCache {
         for (String suffix : List.of(
                 "hash", "protocolName", "packetClassName", "fullSnapshotVersion",
                 "encodedBytes", "lastUsedAtMillis", "serverScopeHash",
-                "hitCount", "savedBytes", "temperature"
+                "hitCount", "savedBytes", "temperature", "storageKind", "baseHash", "deltaHash"
         )) {
             target.setProperty(keyPrefix + suffix, source.getProperty(keyPrefix + suffix, ""));
         }
@@ -2317,7 +2447,7 @@ public final class ChunkPersistentClientCache {
                     return false;
                 }
                 try {
-                    byte[] targetBytes = store.readBlob(targetHash);
+                    byte[] targetBytes = readStoredPacketBytes(store, targetIndex, coordinateKey + ".");
                     if (targetBytes != null && matchesHash(targetBytes, targetHash)) {
                         continue;
                     }
@@ -2646,6 +2776,9 @@ public final class ChunkPersistentClientCache {
         index.remove(coordinateKey + ".hitCount");
         index.remove(coordinateKey + ".savedBytes");
         index.remove(coordinateKey + ".temperature");
+        index.remove(coordinateKey + ".storageKind");
+        index.remove(coordinateKey + ".baseHash");
+        index.remove(coordinateKey + ".deltaHash");
     }
 
     private static Set<String> referencedBlobEntries(Properties index) {
@@ -2664,12 +2797,27 @@ public final class ChunkPersistentClientCache {
                     || !scopedCoordinateKey.coordinate().present()) {
                 continue;
             }
-            String hash = index.getProperty(key, "");
-            if (isSafeHash(hash)) {
-                referencedBlobEntries.add(blobEntryName(hash));
+            for (String storageHash : storageHashes(index, coordinateKey + ".")) {
+                referencedBlobEntries.add(blobEntryName(storageHash));
             }
         }
         return referencedBlobEntries;
+    }
+
+    private static Set<String> referencedPayloadHashes(Properties index) {
+        HashSet<String> hashes = new HashSet<>();
+        if (index == null) {
+            return hashes;
+        }
+        for (String key : index.stringPropertyNames()) {
+            if (key.endsWith(".hash")) {
+                String hash = index.getProperty(key, "");
+                if (isSafeHash(hash)) {
+                    hashes.add(hash);
+                }
+            }
+        }
+        return hashes;
     }
 
     private static int pruneLegacyUnscopedIndexEntries(Properties index) {
@@ -3176,7 +3324,10 @@ public final class ChunkPersistentClientCache {
             String protocolName,
             String packetClassName,
             long fullSnapshotVersion,
-            int encodedBytes
+            int encodedBytes,
+            String storageKind,
+            String baseHash,
+            String deltaHash
     ) {
     }
 

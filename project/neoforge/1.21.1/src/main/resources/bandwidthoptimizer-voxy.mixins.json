@@ -7,6 +7,7 @@
   "client": [
     "voxy.VoxyChunkBuildOutputMixin",
     "voxy.VoxyChunkBoundRendererMixin",
+    "voxy.VoxyChunkPacketHandoffMixin",
     "voxy.VoxyRenderSectionMixin"
   ],
   "injectors": {

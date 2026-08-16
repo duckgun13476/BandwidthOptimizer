@@ -64,7 +64,10 @@ final class PersistentChunkCacheDiskStore {
             "serverScopeHash",
             "hitCount",
             "savedBytes",
-            "temperature"
+            "temperature",
+            "storageKind",
+            "baseHash",
+            "deltaHash"
     );
     private static final String REMOVE_BATCH_PREFIX = "\u0000remove-batch";
     private static final int REMOVE_BATCH_ENTRIES = 1024;
@@ -176,6 +179,10 @@ final class PersistentChunkCacheDiskStore {
     }
 
     void writeBlob(String hash, byte[] packetBytes) throws IOException {
+        writeBlob(hash, packetBytes, null);
+    }
+
+    private void writeBlob(String hash, byte[] packetBytes, byte[] preparedCompressedBytes) throws IOException {
         String normalizedHash = normalizeHash(hash);
         if (normalizedHash.isBlank()
                 || packetBytes == null
@@ -188,7 +195,7 @@ final class PersistentChunkCacheDiskStore {
             return;
         }
 
-        byte[] compressedBytes = compress(packetBytes);
+        byte[] compressedBytes = preparedCompressedBytes == null ? compress(packetBytes) : preparedCompressedBytes;
         CRC32 crc32 = new CRC32();
         crc32.update(packetBytes);
         int recordBytes = SEGMENT_HEADER_BYTES + compressedBytes.length;
@@ -279,9 +286,51 @@ final class PersistentChunkCacheDiskStore {
         return removed;
     }
 
+    String writeDeltaBlob(DeltaEvaluation evaluation) throws IOException {
+        if (evaluation == null || !evaluation.useDelta()) {
+            throw new IOException("Invalid persistent chunk delta evaluation");
+        }
+        String hash = sha256(evaluation.encodedBytes());
+        writeBlob(hash, evaluation.encodedBytes(), evaluation.compressedDeltaBytes());
+        return hash;
+    }
+
+    void writeEvaluatedFullBlob(String hash, byte[] packetBytes, DeltaEvaluation evaluation) throws IOException {
+        writeBlob(hash, packetBytes, evaluation == null ? null : evaluation.compressedFullBytes());
+    }
+
     long storedBytes(String hash) {
         BlobLocation location = blobs.get(normalizeHash(hash));
         return location == null ? 0L : SEGMENT_HEADER_BYTES + (long) location.compressedLength();
+    }
+
+    DeltaEvaluation evaluateDelta(byte[] baseBytes, byte[] targetBytes, double maximumRatio) throws IOException {
+        if (baseBytes == null || targetBytes == null || targetBytes.length == 0) {
+            throw new IOException("Invalid persistent chunk delta inputs");
+        }
+        byte[] compressedFull = compress(targetBytes);
+        long fullBytes = SEGMENT_HEADER_BYTES + (long) compressedFull.length;
+        byte[] selected = null;
+        byte[] selectedCompressed = null;
+        long selectedBytes = Long.MAX_VALUE;
+        for (byte[] candidate : PersistentChunkCacheDeltaCodec.candidates(baseBytes, targetBytes)) {
+            byte[] compressedCandidate = compress(candidate);
+            long candidateBytes = SEGMENT_HEADER_BYTES + (long) compressedCandidate.length;
+            if (candidateBytes < selectedBytes) {
+                selected = candidate;
+                selectedCompressed = compressedCandidate;
+                selectedBytes = candidateBytes;
+            }
+        }
+        double safeRatio = Math.max(0.0D, Math.min(1.0D, maximumRatio));
+        boolean useDelta = selected != null && selectedBytes <= Math.floor(fullBytes * safeRatio);
+        return new DeltaEvaluation(
+                useDelta ? selected : new byte[0],
+                useDelta ? selectedCompressed : new byte[0],
+                compressedFull,
+                useDelta ? selectedBytes : 0L,
+                fullBytes
+        );
     }
 
     long totalSegmentBytes() throws IOException {
@@ -634,7 +683,7 @@ final class PersistentChunkCacheDiskStore {
         try {
             Properties backup = Files.isRegularFile(backupIndexPath()) ? readIndex(backupIndexPath()) : new Properties();
             for (String key : backup.stringPropertyNames()) {
-                if (key.endsWith(".hash")) {
+                if (key.endsWith(".hash") || key.endsWith(".baseHash") || key.endsWith(".deltaHash")) {
                     String hash = normalizeHash(backup.getProperty(key, ""));
                     if (!hash.isBlank()) {
                         protectedHashes.add(hash);
@@ -852,6 +901,24 @@ final class PersistentChunkCacheDiskStore {
 
         private static CompactionResult cancelled(Path segment, long beforeBytes, long totalSegmentBytes) {
             return new CompactionResult(false, true, segment, beforeBytes, beforeBytes, totalSegmentBytes);
+        }
+    }
+
+    record DeltaEvaluation(
+            byte[] encodedBytes,
+            byte[] compressedDeltaBytes,
+            byte[] compressedFullBytes,
+            long storedBytes,
+            long fullStoredBytes
+    ) {
+        DeltaEvaluation {
+            encodedBytes = encodedBytes == null ? new byte[0] : encodedBytes;
+            compressedDeltaBytes = compressedDeltaBytes == null ? new byte[0] : compressedDeltaBytes;
+            compressedFullBytes = compressedFullBytes == null ? new byte[0] : compressedFullBytes;
+        }
+
+        boolean useDelta() {
+            return encodedBytes.length > 0 && compressedDeltaBytes.length > 0;
         }
     }
 }

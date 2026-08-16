@@ -554,6 +554,26 @@ tasks.register('runPersistentChunkCacheDiskStoreRegression', JavaExec) {
     javaLauncher = boJava25Launcher
 }
 
+[
+        ['runPersistentChunkCacheBoundaryRegression', 'Verifies persistent cache scope, disconnect, migration, and corruption boundaries.', 'com.PinkCats.bandwidthoptimizer.chunk.persistent.PersistentChunkCacheBoundaryRegressionMain'],
+        ['runVoxyVisualHandoffRegression', 'Verifies PREPARE-to-Sodium visual handoff ordering for Voxy masks.', 'com.PinkCats.bandwidthoptimizer.integration.voxy.VoxyVisualHandoffRegressionMain'],
+        ['runPersistentChunkCacheLoadRegression', 'Verifies persistent cache capacity convergence, mixed load, and concurrent maintenance.', 'com.PinkCats.bandwidthoptimizer.chunk.persistent.PersistentChunkCacheLoadRegressionMain'],
+        ['runPersistentHotPathIndexRegression', 'Verifies incremental immutable publication for the persistent cache hot-path index.', 'com.PinkCats.bandwidthoptimizer.chunk.persistent.PersistentHotPathIndexRegressionMain'],
+        ['runPersistentChunkCacheDeltaRegression', 'Verifies bounded persistent FULL/DELTA selection, recovery, and retention.', 'com.PinkCats.bandwidthoptimizer.chunk.persistent.PersistentChunkCacheDeltaRegressionMain'],
+        ['runPacketClassTraceDiagnosticRegression', 'Verifies exact packet-class allowlisting, hashing, and default-off behavior.', 'com.PinkCats.bandwidthoptimizer.debug.PacketClassTraceDiagnosticRegressionMain'],
+        ['runTrafficPeriodReportStoreRegression', 'Verifies daily-backed month aggregation and independent hourly detail.', 'com.PinkCats.bandwidthoptimizer.report.traffic.TrafficPeriodReportStoreRegressionMain'],
+        ['runBandwidthReportCommandLinkRegression', 'Verifies clickable BO Stats report links across chat API revisions.', 'com.PinkCats.bandwidthoptimizer.report.unified.BandwidthReportCommandLinkRegression']
+].each { List<String> regression ->
+    tasks.register(regression[0], JavaExec) {
+        group = 'verification'
+        description = regression[1]
+        dependsOn(tasks.named('testClasses'))
+        classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+        mainClass = regression[2]
+        javaLauncher = boJava25Launcher
+    }
+}
+
 tasks.register('runChunkBranchCoverageVerify', JavaExec) {
     group = 'verification'
     description = 'Verifies NeoForge 26.1.2 runAll chunk transport branch coverage.'

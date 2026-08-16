@@ -30,13 +30,13 @@ public final class PersistentChunkCacheLoadRegressionMain {
     public static void main(String[] args) throws Exception {
         Path root = Files.createTempDirectory("bo-persistent-cache-load-");
         long startedNanos = System.nanoTime();
-        long heapBefore = usedHeap();
+        long heapBefore = settledUsedHeap();
         try {
             verifyLongTermCapacityConvergence();
             MixedLoadResult mixed = verifyMixedDiskLoad(root.resolve("mixed"));
             verifyConcurrentMaintenanceRequests();
             long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
-            long heapDelta = Math.max(usedHeap() - heapBefore, 0L);
+            long heapDelta = Math.max(settledUsedHeap() - heapBefore, 0L);
             require(elapsedMillis < 120_000L, "persistent cache load regression exceeded 120 seconds");
             require(heapDelta < 384L * 1024L * 1024L, "persistent cache load regression retained excessive heap");
             System.out.println("Persistent chunk cache load regression passed"
@@ -213,6 +213,16 @@ public final class PersistentChunkCacheLoadRegressionMain {
     private static long usedHeap() {
         Runtime runtime = Runtime.getRuntime();
         return runtime.totalMemory() - runtime.freeMemory();
+    }
+
+    private static long settledUsedHeap() throws InterruptedException {
+        long minimum = Long.MAX_VALUE;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            System.gc();
+            Thread.sleep(50L);
+            minimum = Math.min(minimum, usedHeap());
+        }
+        return minimum;
     }
 
     private static String sha256(byte[] bytes) throws Exception {

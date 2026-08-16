@@ -26,7 +26,10 @@ public final class VoxyChunkBoundCompat {
     private static final Set<Long> ACTIVE_MASKS = ConcurrentHashMap.newKeySet();
     private static final Set<Long> ALLOWED_MASKS = ConcurrentHashMap.newKeySet();
     private static final Set<Long> INVALIDATED_MASKS = ConcurrentHashMap.newKeySet();
+    private static final Set<Long> READY_MASKS = ConcurrentHashMap.newKeySet();
     private static final Map<Long, Long> MESH_BYTES_BY_SECTION = new ConcurrentHashMap<>();
+    private static final Map<Long, VisualHandoff> VISUAL_HANDOFFS = new ConcurrentHashMap<>();
+    private static final Map<Long, Long> HELD_SECTION_TOKENS = new ConcurrentHashMap<>();
     private static final AtomicBoolean READ_FAILED = new AtomicBoolean();
     private static final AtomicBoolean MESH_READ_FAILED = new AtomicBoolean();
     private static final AtomicBoolean UPSTREAM_FIX_LOGGED = new AtomicBoolean();
@@ -35,6 +38,7 @@ public final class VoxyChunkBoundCompat {
     private static volatile Field visibilityDataField;
     private static volatile Integer hasBlockGeometryMask;
     private static volatile Boolean upstreamFixPresent;
+    private static volatile Boolean voxyPresent;
 
     private VoxyChunkBoundCompat() {
     }
@@ -80,11 +84,112 @@ public final class VoxyChunkBoundCompat {
         }
     }
 
+    public static void beginVisualHandoff(int chunkX, int chunkZ, long token) {
+        if (!isCompatEnabled() || token <= 0L) {
+            return;
+        }
+        long chunkPosition = chunkKey(chunkX, chunkZ);
+        VisualHandoff handoff = new VisualHandoff(token);
+        VisualHandoff previous = VISUAL_HANDOFFS.put(chunkPosition, handoff);
+        if (previous != null) {
+            for (long sectionPosition : previous.heldSections()) {
+                handoff.hold(sectionPosition);
+                HELD_SECTION_TOKENS.put(sectionPosition, token);
+            }
+        }
+        for (long sectionPosition : Set.copyOf(ACTIVE_MASKS)) {
+            if (SectionPos.x(sectionPosition) != chunkX || SectionPos.z(sectionPosition) != chunkZ) {
+                continue;
+            }
+            ACTIVE_MASKS.remove(sectionPosition);
+            ALLOWED_MASKS.remove(sectionPosition);
+            READY_MASKS.remove(sectionPosition);
+            handoff.hold(sectionPosition);
+            HELD_SECTION_TOKENS.put(sectionPosition, token);
+            INVALIDATED_MASKS.add(sectionPosition);
+        }
+    }
+
+    public static void beginChunkApply(int chunkX, int chunkZ) {
+        VisualHandoff handoff = VISUAL_HANDOFFS.get(chunkKey(chunkX, chunkZ));
+        if (handoff != null) {
+            handoff.beginApply();
+        }
+    }
+
+    public static void completeChunkApply(int chunkX, int chunkZ) {
+        VisualHandoff handoff = VISUAL_HANDOFFS.get(chunkKey(chunkX, chunkZ));
+        if (handoff != null) {
+            handoff.completeApply();
+        }
+    }
+
+    public static void recordSectionBuildSubmitted(
+            int sectionX,
+            int sectionY,
+            int sectionZ,
+            int submitTime
+    ) {
+        long chunkPosition = chunkKey(sectionX, sectionZ);
+        VisualHandoff handoff = VISUAL_HANDOFFS.get(chunkPosition);
+        if (handoff == null || !handoff.acceptsSubmissions()) {
+            return;
+        }
+        long sectionPosition = SectionPos.asLong(sectionX, sectionY, sectionZ);
+        handoff.recordSubmission(sectionPosition, submitTime);
+        handoff.hold(sectionPosition);
+        HELD_SECTION_TOKENS.put(sectionPosition, handoff.token());
+    }
+
+    public static void acceptSectionUpload(
+            int sectionX,
+            int sectionY,
+            int sectionZ,
+            int uploadTime,
+            int flags,
+            long visibilityData,
+            long meshBytes
+    ) {
+        long sectionPosition = SectionPos.asLong(sectionX, sectionY, sectionZ);
+        MESH_BYTES_BY_SECTION.put(sectionPosition, Math.max(meshBytes, 0L));
+        updateAllowedMask(sectionPosition, flags, visibilityData);
+
+        long chunkPosition = chunkKey(sectionX, sectionZ);
+        VisualHandoff handoff = VISUAL_HANDOFFS.get(chunkPosition);
+        if (handoff == null || !handoff.acceptUpload(sectionPosition, uploadTime)) {
+            return;
+        }
+        HELD_SECTION_TOKENS.remove(sectionPosition, handoff.token());
+        handoff.release(sectionPosition);
+        if (ALLOWED_MASKS.contains(sectionPosition)) {
+            READY_MASKS.add(sectionPosition);
+        }
+        if (handoff.canRetire()) {
+            VISUAL_HANDOFFS.remove(chunkPosition, handoff);
+        }
+    }
+
+    public static void cancelVisualHandoff(int chunkX, int chunkZ) {
+        VisualHandoff handoff = VISUAL_HANDOFFS.remove(chunkKey(chunkX, chunkZ));
+        if (handoff == null) {
+            return;
+        }
+        for (long sectionPosition : handoff.heldSections()) {
+            HELD_SECTION_TOKENS.remove(sectionPosition, handoff.token());
+        }
+    }
+
+    public static void clearVisualHandoffs() {
+        VISUAL_HANDOFFS.clear();
+        HELD_SECTION_TOKENS.clear();
+        READY_MASKS.clear();
+    }
+
     public static boolean allowMaskAdd(long sectionPosition) {
         if (!isCompatEnabled()) {
             return true;
         }
-        if (!ALLOWED_MASKS.contains(sectionPosition)) {
+        if (isVisualHandoffPending(sectionPosition) || !ALLOWED_MASKS.contains(sectionPosition)) {
             return false;
         }
         ACTIVE_MASKS.add(sectionPosition);
@@ -107,6 +212,16 @@ public final class VoxyChunkBoundCompat {
         }
         Set<Long> drained = Set.copyOf(INVALIDATED_MASKS);
         INVALIDATED_MASKS.removeAll(drained);
+        ACTIVE_MASKS.removeAll(drained);
+        return drained;
+    }
+
+    public static Set<Long> drainReadyMasks() {
+        if (!isCompatEnabled()) {
+            return Collections.emptySet();
+        }
+        Set<Long> drained = Set.copyOf(READY_MASKS);
+        READY_MASKS.removeAll(drained);
         return drained;
     }
 
@@ -120,12 +235,18 @@ public final class VoxyChunkBoundCompat {
         ACTIVE_MASKS.clear();
         ALLOWED_MASKS.clear();
         INVALIDATED_MASKS.clear();
+        READY_MASKS.clear();
         MESH_BYTES_BY_SECTION.clear();
+        VISUAL_HANDOFFS.clear();
+        HELD_SECTION_TOKENS.clear();
         return false;
     }
 
     // Avoid managing chunk bounds when Voxy already ships the native fix.
     private static boolean hasVoxyNativeMaskFix() {
+        if (!isVoxyPresent()) {
+            return true;
+        }
         Boolean cached = upstreamFixPresent;
         if (cached != null) {
             return cached;
@@ -135,6 +256,20 @@ public final class VoxyChunkBoundCompat {
                 upstreamFixPresent = containsClassMarker(VOXY_RENDER_SECTION_MANAGER_CLASS, VOXY_NATIVE_MASK_FIX_MARKER);
             }
             return upstreamFixPresent;
+        }
+    }
+
+    private static boolean isVoxyPresent() {
+        Boolean cached = voxyPresent;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (VoxyChunkBoundCompat.class) {
+            if (voxyPresent == null) {
+                voxyPresent = VoxyChunkBoundCompat.class.getClassLoader()
+                        .getResource(VOXY_RENDER_SECTION_MANAGER_CLASS) != null;
+            }
+            return voxyPresent;
         }
     }
 
@@ -179,6 +314,32 @@ public final class VoxyChunkBoundCompat {
         }
         Long meshBytes = MESH_BYTES_BY_SECTION.get(sectionPosition);
         return meshBytes != null && meshBytes > 0L && meshBytes <= OPEN_SECTION_MAX_MASK_MESH_BYTES;
+    }
+
+    private static void updateAllowedMask(long sectionPosition, int flags, long visibilityData) {
+        if (shouldMaskLod(sectionPosition, flags, visibilityData)) {
+            ALLOWED_MASKS.add(sectionPosition);
+            return;
+        }
+        ALLOWED_MASKS.remove(sectionPosition);
+        READY_MASKS.remove(sectionPosition);
+        if (ACTIVE_MASKS.contains(sectionPosition)) {
+            INVALIDATED_MASKS.add(sectionPosition);
+        }
+    }
+
+    private static boolean isVisualHandoffPending(long sectionPosition) {
+        if (HELD_SECTION_TOKENS.containsKey(sectionPosition)) {
+            return true;
+        }
+        return VISUAL_HANDOFFS.containsKey(chunkKey(
+                SectionPos.x(sectionPosition),
+                SectionPos.z(sectionPosition)
+        ));
+    }
+
+    private static long chunkKey(int chunkX, int chunkZ) {
+        return Integer.toUnsignedLong(chunkX) | (Integer.toUnsignedLong(chunkZ) << Integer.SIZE);
     }
 
     // Sodium stores flag indexes here, not shifted masks.
@@ -257,5 +418,67 @@ public final class VoxyChunkBoundCompat {
     }
 
     private record SectionInfo(int flags, long visibilityData) {
+    }
+
+    private static final class VisualHandoff {
+        private final long token;
+        private final Map<Long, Integer> requiredUploads = new ConcurrentHashMap<>();
+        private final Set<Long> heldSections = ConcurrentHashMap.newKeySet();
+        private volatile boolean applying;
+        private volatile boolean applied;
+        private volatile boolean sawSubmission;
+
+        private VisualHandoff(long token) {
+            this.token = token;
+        }
+
+        private long token() {
+            return this.token;
+        }
+
+        private void beginApply() {
+            this.applying = true;
+        }
+
+        private void completeApply() {
+            this.applying = false;
+            this.applied = true;
+        }
+
+        private boolean acceptsSubmissions() {
+            return this.applying || this.applied;
+        }
+
+        private void recordSubmission(long sectionPosition, int submitTime) {
+            this.sawSubmission = true;
+            this.requiredUploads.merge(sectionPosition, submitTime, Math::max);
+        }
+
+        private void hold(long sectionPosition) {
+            this.heldSections.add(sectionPosition);
+        }
+
+        private void release(long sectionPosition) {
+            this.heldSections.remove(sectionPosition);
+        }
+
+        private Set<Long> heldSections() {
+            return Set.copyOf(this.heldSections);
+        }
+
+        private boolean acceptUpload(long sectionPosition, int uploadTime) {
+            Integer required = this.requiredUploads.get(sectionPosition);
+            if (required == null || uploadTime < required) {
+                return false;
+            }
+            return this.requiredUploads.remove(sectionPosition, required);
+        }
+
+        private boolean canRetire() {
+            return this.applied
+                    && this.sawSubmission
+                    && this.requiredUploads.isEmpty()
+                    && this.heldSections.isEmpty();
+        }
     }
 }

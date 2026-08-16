@@ -38,8 +38,10 @@ final class PersistentChunkCacheRetentionPolicy {
         HashMap<String, Long> hashBytes = new HashMap<>();
         for (CacheEntry entry : entries) {
             scopeCounts.merge(entry.scopeHash(), 1, Integer::sum);
-            hashReferences.merge(entry.hash(), 1, Integer::sum);
-            hashBytes.putIfAbsent(entry.hash(), entry.storedBytes());
+            for (String storageHash : entry.storageHashes()) {
+                hashReferences.merge(storageHash, 1, Integer::sum);
+                hashBytes.putIfAbsent(storageHash, Math.max(storedBytes.applyAsLong(storageHash), 0L));
+            }
         }
         long retainedBytes = hashBytes.values().stream().mapToLong(Long::longValue).sum();
         int retainedEntries = entries.size();
@@ -117,12 +119,14 @@ final class PersistentChunkCacheRetentionPolicy {
             evicted.add(entry.keyPrefix());
             retainedEntries[0]--;
             scopeCounts.put(entry.scopeHash(), Math.max(scopeCount - 1, 0));
-            int hashCount = hashReferences.getOrDefault(entry.hash(), 0) - 1;
-            if (hashCount <= 0) {
-                hashReferences.remove(entry.hash());
-                retainedBytes[0] -= hashBytes.getOrDefault(entry.hash(), 0L);
-            } else {
-                hashReferences.put(entry.hash(), hashCount);
+            for (String storageHash : entry.storageHashes()) {
+                int hashCount = hashReferences.getOrDefault(storageHash, 0) - 1;
+                if (hashCount <= 0) {
+                    hashReferences.remove(storageHash);
+                    retainedBytes[0] -= hashBytes.getOrDefault(storageHash, 0L);
+                } else {
+                    hashReferences.put(storageHash, hashCount);
+                }
             }
         }
     }
@@ -145,7 +149,17 @@ final class PersistentChunkCacheRetentionPolicy {
             long lastUsed = readLong(index, keyPrefix + "lastUsedAtMillis", 0L);
             long hitCount = readLong(index, keyPrefix + "hitCount", 0L);
             long savedBytes = readLong(index, keyPrefix + "savedBytes", 0L);
-            long physicalBytes = Math.max(storedBytes.applyAsLong(hash), 0L);
+            String storageKind = index.getProperty(keyPrefix + "storageKind", "FULL");
+            String baseHash = index.getProperty(keyPrefix + "baseHash", "").toLowerCase(java.util.Locale.ROOT);
+            String deltaHash = index.getProperty(keyPrefix + "deltaHash", "").toLowerCase(java.util.Locale.ROOT);
+            Set<String> storageHashes;
+            if ("DELTA".equals(storageKind)
+                    && baseHash.matches("[0-9a-f]{64}")
+                    && deltaHash.matches("[0-9a-f]{64}")) {
+                storageHashes = Set.of(baseHash, deltaHash);
+            } else {
+                storageHashes = Set.of(hash);
+            }
             entries.add(new CacheEntry(
                     keyPrefix,
                     scopeHash,
@@ -153,7 +167,7 @@ final class PersistentChunkCacheRetentionPolicy {
                     lastUsed,
                     hitCount,
                     savedBytes,
-                    physicalBytes,
+                    storageHashes,
                     score(lastUsed, hitCount, savedBytes)
             ));
         }
@@ -208,7 +222,7 @@ final class PersistentChunkCacheRetentionPolicy {
             long lastUsedAtMillis,
             long hitCount,
             long savedBytes,
-            long storedBytes,
+            Set<String> storageHashes,
             double score
     ) {
     }
