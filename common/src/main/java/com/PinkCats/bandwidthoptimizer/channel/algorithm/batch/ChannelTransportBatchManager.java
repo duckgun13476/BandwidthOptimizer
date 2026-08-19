@@ -11,6 +11,7 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
+import com.PinkCats.bandwidthoptimizer.connection.ConnectionDisconnectClassifier;
 import com.PinkCats.bandwidthoptimizer.debug.PacketClassTraceDiagnostic;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.ConnectionProtocolNameCompat;
 import com.PinkCats.bandwidthoptimizer.report.ChunkBoundaryBandwidthRecorder;
@@ -591,6 +592,11 @@ public final class ChannelTransportBatchManager {
         } catch (Throwable throwable) {
             ChannelTransportRuntimeGuard.reportRuntimeFailure("inbound-batch-replay", throwable);
             if (context != null) {
+                ConnectionDisconnectClassifier.markBoInitiatedClose(
+                        context.channel(),
+                        "inbound-batch-replay",
+                        throwable
+                );
                 context.close();
             }
         }

@@ -93,7 +93,12 @@ public final class DiagnosticToolRegistry {
                     .append('=')
                     .append(enabled ? "on" : "off");
             if (enabled) {
-                builder.append(" expiresIn=").append(formatRemaining(remainingMillis(tool)));
+                long expiresAt = tool.expiresAtMillis.get();
+                if (expiresAt > 0L) {
+                    builder.append(" expiresIn=").append(formatRemaining(Math.max(0L, expiresAt - System.currentTimeMillis())));
+                } else {
+                    builder.append(" mode=always");
+                }
             }
             builder
                     .append(" - ")
@@ -218,6 +223,12 @@ public final class DiagnosticToolRegistry {
                 Cost.SMALL,
                 "Cross-frame Zstd epoch lifecycle events"
         ),
+        CONNECTION_CLOSE(
+                "connectionClose",
+                Cost.SMALL,
+                "Connection close cause and recovery-policy classification",
+                true
+        ),
         CHUNK_TRANSPORT_FRAMES(
                 "chunkTransportFrames",
                 Cost.MEDIUM,
@@ -287,13 +298,18 @@ public final class DiagnosticToolRegistry {
         private final String id;
         private final Cost cost;
         private final String description;
-        private final AtomicBoolean enabled = new AtomicBoolean();
+        private final AtomicBoolean enabled;
         private final AtomicLong expiresAtMillis = new AtomicLong();
 
         Tool(String id, Cost cost, String description) {
+            this(id, cost, description, false);
+        }
+
+        Tool(String id, Cost cost, String description, boolean enabledByDefault) {
             this.id = id;
             this.cost = cost;
             this.description = description;
+            this.enabled = new AtomicBoolean(enabledByDefault);
         }
 
         public String id() {

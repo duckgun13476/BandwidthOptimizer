@@ -283,6 +283,33 @@ tasks.register('runPacketClassTraceDiagnosticRegression', JavaExec) {
     )
 }
 
+tasks.register('runConnectionDisconnectClassifierRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies disconnect cause precedence and reconnect-policy classification.',
+            'com.PinkCats.bandwidthoptimizer.connection.ConnectionDisconnectClassifierRegressionMain'
+    )
+}
+
+tasks.register('runConnectionDisconnectClassifierPerformance', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Measures disconnect classifier packet and exception-path overhead.',
+            'com.PinkCats.bandwidthoptimizer.connection.ConnectionDisconnectClassifierPerformanceMain'
+    )
+}
+
+tasks.register('runConnectionPayloadTaskGuardRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies stale client payload tasks are rejected across protocol generations and disconnects.',
+            'com.PinkCats.bandwidthoptimizer.connection.ConnectionPayloadTaskGuardRegressionMain'
+    )
+}
+
 tasks.register('runTrafficPeriodReportStoreRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,

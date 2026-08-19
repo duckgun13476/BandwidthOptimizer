@@ -144,7 +144,8 @@ public final class ChannelTransportControlPlane {
 
     private static ListenerTransportPolicy classifyListenerTransportPolicy(Packet<?> packet) {
         String packetClassName = packetClassName(packet);
-        if (packetClassName.endsWith("ClientboundUpdateRecipesPacket")
+        if (packetClassName.endsWith("ClientboundStartConfigurationPacket")
+                || packetClassName.endsWith("ClientboundUpdateRecipesPacket")
                 || packetClassName.endsWith("ClientboundRecipePacket")) {
             return ListenerTransportPolicy.DIRECT;
         }

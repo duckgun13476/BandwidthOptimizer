@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
+import com.PinkCats.bandwidthoptimizer.connection.ConnectionDisconnectClassifier;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
 import io.netty.channel.Channel;
 
@@ -120,6 +121,7 @@ public final class ChannelTransportRuntimeGuard {
                 + ", expectedSequence=" + expectedSequence
                 + ", fallbackBatches=" + fallbackBatchCount;
         IllegalStateException failure = new IllegalStateException(detail, throwable);
+        ConnectionDisconnectClassifier.markBoInitiatedClose(channel, stageName, failure);
         reportRuntimeFailure(stageName, failure);
     }
 

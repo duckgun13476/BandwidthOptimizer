@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.channel;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.debug.PacketClassTraceDiagnostic;
+import com.PinkCats.bandwidthoptimizer.connection.ConnectionDisconnectClassifier;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
@@ -455,6 +456,11 @@ public final class ChannelTransportHooks {
                     if (!future.isSuccess()) {
                         Bandwidthoptimizer.LOGGER.warn(
                                 "[Transport][StreamingEpoch] boundary carrier write failed",
+                                future.cause()
+                        );
+                        ConnectionDisconnectClassifier.markBoInitiatedClose(
+                                context.channel(),
+                                "streaming-boundary-carrier-write",
                                 future.cause()
                         );
                         context.close();
@@ -1084,6 +1090,11 @@ public final class ChannelTransportHooks {
                 : new IllegalStateException("Stateful transport output was not committed", throwable);
         ChannelTransportRuntimeGuard.reportRuntimeFailure("outbound-carrier-commit", failure);
         if (context != null) {
+            ConnectionDisconnectClassifier.markBoInitiatedClose(
+                    context.channel(),
+                    "outbound-carrier-commit",
+                    failure
+            );
             context.close();
         }
         return failure;
@@ -1099,6 +1110,7 @@ public final class ChannelTransportHooks {
                 : new IllegalStateException("Transport output failed", throwable);
         ChannelTransportRuntimeGuard.reportRuntimeFailure(stageName, failure);
         if (context != null) {
+            ConnectionDisconnectClassifier.markBoInitiatedClose(context.channel(), stageName, failure);
             context.close();
         }
         return failure;

@@ -15,7 +15,9 @@
     "minecraft.PacketInPipeMixin",
     "minecraft.ServerGamePacketListenerImplAccessor"
   ],
-  "client": [],
+  "client": [
+    "neoforge.ClientPayloadContextMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
   },

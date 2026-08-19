@@ -6,6 +6,7 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
+import com.PinkCats.bandwidthoptimizer.connection.ConnectionDisconnectClassifier;
 import com.PinkCats.bandwidthoptimizer.debug.MovementDiagnosticProbe;
 import com.PinkCats.bandwidthoptimizer.debug.PacketClassTraceDiagnostic;
 import com.PinkCats.bandwidthoptimizer.integration.trueuuid.TrueUuidLateLoginQueryGuard;
@@ -79,6 +80,11 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
                 this.bandwidthoptimizer$outputSizeBeforeDecode,
                 this
         )) {
+            ConnectionDisconnectClassifier.observeInboundDecodedPackets(
+                    context,
+                    out,
+                    this.bandwidthoptimizer$outputSizeBeforeDecode
+            );
             MovementDiagnosticProbe.BO_Diag_movementBurst(
                     context,
                     this.flow,
@@ -90,6 +96,11 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
             return;
         }
 
+        ConnectionDisconnectClassifier.observeInboundDecodedPackets(
+                context,
+                out,
+                this.bandwidthoptimizer$outputSizeBeforeDecode
+        );
         TrueUuidLateLoginQueryGuard.observeInboundDecodedPackets(context, out, this.bandwidthoptimizer$outputSizeBeforeDecode);
         ChunkInboundObservationService.observeInboundDecodedPackets(
                 context,

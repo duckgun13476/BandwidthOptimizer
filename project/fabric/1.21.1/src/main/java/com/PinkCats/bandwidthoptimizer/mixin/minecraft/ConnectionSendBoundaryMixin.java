@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTranspor
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportBypassRankLogger;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportControlPlane;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportTraceJournal;
+import com.PinkCats.bandwidthoptimizer.connection.ConnectionDisconnectClassifier;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelDecoderExceptionDumper;
 import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateBlockEntityUpdateGate;
 import com.PinkCats.bandwidthoptimizer.debug.MovementDiagnosticProbe;
@@ -28,6 +29,7 @@ public abstract class ConnectionSendBoundaryMixin {
     // Chunk send
     @Inject(method = "sendPacket", at = @At("HEAD"), cancellable = true)
     private void bandwidthoptimizer$notePacketSendBoundary(Packet<?> packet, PacketSendListener listener, boolean flush, CallbackInfo ci) {
+        ConnectionDisconnectClassifier.observeOutboundPacket(this.channel, packet);
         MovementDiagnosticProbe.BO_Diag_movementCorrection(this.channel, packet);
         CreateBlockEntityUpdateGate.observeConnectionSend(this.channel, packet);
         if (CreateBlockEntityUpdateGate.tryDelayConnectionSend(this.channel, packet, listener)) {
@@ -40,6 +42,7 @@ public abstract class ConnectionSendBoundaryMixin {
 
     @Inject(method = "channelInactive", at = @At("HEAD"))
     private void bandwidthoptimizer$dumpTransportTraceOnInactive(ChannelHandlerContext context, CallbackInfo ci) {
+        ConnectionDisconnectClassifier.onChannelInactive(this.channel);
         ChannelTransportBypassRankLogger.dumpNow("channelInactive");
         ChannelTransportSourceRankCore.dumpNow("channelInactive");
         ChannelTransportTraceJournal.dumpAndClear(this.channel, "channelInactive", null);
@@ -51,6 +54,7 @@ public abstract class ConnectionSendBoundaryMixin {
             Throwable throwable,
             CallbackInfo ci
     ) {
+        ConnectionDisconnectClassifier.observeException(this.channel, throwable);
         ChannelDecoderExceptionDumper.dumpIfDecoderException(context, this.channel, throwable);
         ChannelTransportBypassRankLogger.dumpNow("exceptionCaught");
         ChannelTransportSourceRankCore.dumpNow("exceptionCaught");

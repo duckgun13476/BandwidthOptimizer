@@ -530,6 +530,14 @@ tasks.register('runPersistentCacheBloomRegression', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentBloomCatalogRegressionMain'
 }
 
+tasks.register('runConnectionPayloadTaskGuardRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies stale client payload tasks are rejected across protocol generations and disconnects.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.connection.ConnectionPayloadTaskGuardRegressionMain'
+}
+
 tasks.register('runChunkBranchCoverageVerify', JavaExec) {
     group = 'verification'
     description = 'Verifies NeoForge 1.21.1 runAll chunk transport branch coverage.'
