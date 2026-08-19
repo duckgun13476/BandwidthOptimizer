@@ -8,6 +8,7 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
 import com.PinkCats.bandwidthoptimizer.connection.ConnectionDisconnectClassifier;
+import com.PinkCats.bandwidthoptimizer.connection.ConnectionInternetProbeGuard;
 import com.PinkCats.bandwidthoptimizer.debug.MovementDiagnosticProbe;
 import com.PinkCats.bandwidthoptimizer.debug.PacketClassTraceDiagnostic;
 import com.PinkCats.bandwidthoptimizer.integration.trueuuid.TrueUuidLateLoginQueryGuard;
@@ -77,6 +78,7 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
 
     @Inject(method = "decode", at = @At("RETURN"))
     private void bandwidthoptimizer$finishDecodeFrame(ChannelHandlerContext context, ByteBuf in, List<Object> out, CallbackInfo ci) throws Exception {
+        ConnectionInternetProbeGuard.markMinecraftPacketDecoded(context);
         if (ChannelTransportHooks.expandDecodedTransportCarrierPackets(
                 context,
                 out,

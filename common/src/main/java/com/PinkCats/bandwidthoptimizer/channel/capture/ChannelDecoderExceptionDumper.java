@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel.capture;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.connection.ConnectionInternetProbeGuard;
 import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -43,7 +44,7 @@ public final class ChannelDecoderExceptionDumper {
         try {
             DumpPaths paths = writeDump(frame, throwable);
             ChannelCaptureHooks.clearInboundDecodeCandidate(channel);
-            if (!isKnownInternetProbe(frame.encodedBytes())) {
+            if (!ConnectionInternetProbeGuard.isKnownProbe(frame.encodedBytes())) {
                 Bandwidthoptimizer.LOGGER.warn(
                         "[DecoderExceptionDump] Dumped decoder failure packet. channel={}, protocol={}, packetId={}, bytes={}, capturedPayloadBytes={}, truncated={}, fingerprint={}, report={}, payload={}",
                         frame.channelId(),
@@ -89,36 +90,6 @@ public final class ChannelDecoderExceptionDumper {
             current = current.getCause();
         }
         return false;
-    }
-
-    private static boolean isKnownInternetProbe(byte[] payload) {
-        return startsWithAscii(payload, "GET ")
-                || startsWithAscii(payload, "POST ")
-                || startsWithAscii(payload, "HEAD ")
-                || startsWithAscii(payload, "PUT ")
-                || startsWithAscii(payload, "DELETE ")
-                || startsWithAscii(payload, "OPTIONS ")
-                || startsWithAscii(payload, "CONNECT ")
-                || startsWithAscii(payload, "TRACE ")
-                || startsWithAscii(payload, "PATCH ")
-                || startsWithAscii(payload, "PRI * HTTP/2.0")
-                || startsWithAscii(payload, "SIP/2.0")
-                || startsWithAscii(payload, "REGISTER sip:")
-                || startsWithAscii(payload, "INVITE sip:")
-                || startsWithAscii(payload, "OPTIONS sip:")
-                || startsWithAscii(payload, "SSH-");
-    }
-
-    private static boolean startsWithAscii(byte[] payload, String prefix) {
-        if (payload == null || payload.length < prefix.length()) {
-            return false;
-        }
-        for (int index = 0; index < prefix.length(); index++) {
-            if ((payload[index] & 0xFF) != prefix.charAt(index)) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private static DumpPaths writeDump(ChannelCapturedFrame frame, Throwable throwable) {

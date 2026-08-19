@@ -7,6 +7,7 @@ import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkInboundObservationService;
 import com.PinkCats.bandwidthoptimizer.connection.ConnectionDisconnectClassifier;
+import com.PinkCats.bandwidthoptimizer.connection.ConnectionInternetProbeGuard;
 import com.PinkCats.bandwidthoptimizer.debug.MovementDiagnosticProbe;
 import com.PinkCats.bandwidthoptimizer.debug.PacketClassTraceDiagnostic;
 import com.PinkCats.bandwidthoptimizer.integration.trueuuid.TrueUuidLateLoginQueryGuard;
@@ -74,6 +75,7 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
     // 替换只调整 PacketDecoder 本次输出队列的内容和顺序，不直接调用 packet.handle(...)。
     @Inject(method = "decode", at = @At("RETURN"))
     private void bandwidthoptimizer$finishDecodeFrame(ChannelHandlerContext context, ByteBuf in, List<Object> out, CallbackInfo ci) throws Exception {
+        ConnectionInternetProbeGuard.markMinecraftPacketDecoded(context);
         if (ChannelTransportHooks.expandDecodedTransportCarrierPackets(
                 context,
                 out,

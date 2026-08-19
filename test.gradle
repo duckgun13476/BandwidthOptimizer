@@ -310,6 +310,15 @@ tasks.register('runConnectionPayloadTaskGuardRegression', JavaExec) {
     )
 }
 
+tasks.register('runConnectionInternetProbeGuardRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies known non-Minecraft protocol probes are rejected only before Minecraft decoding starts.',
+            'com.PinkCats.bandwidthoptimizer.connection.ConnectionInternetProbeGuardRegressionMain'
+    )
+}
+
 tasks.register('runTrafficPeriodReportStoreRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,
