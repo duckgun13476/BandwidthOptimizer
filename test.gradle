@@ -292,6 +292,15 @@ tasks.register('runConnectionDisconnectClassifierRegression', JavaExec) {
     )
 }
 
+tasks.register('runChunkLanePacketSnapshotRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies retained packet payload ownership across snapshot access metadata updates.',
+            'com.PinkCats.bandwidthoptimizer.chunk.snapshot.lane.ChunkLanePacketSnapshotRegressionMain'
+    )
+}
+
 tasks.register('runConnectionDisconnectClassifierPerformance', JavaExec) {
     configureTestJavaExecTask(
             delegate,
