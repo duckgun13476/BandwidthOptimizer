@@ -13,6 +13,14 @@ plugins {
     id 'idea'
 }
 
+// COMPAT contains local multi-world/runtime regression fixtures, not BO source.
+// Keep it out of IntelliJ project analysis while retaining it for manual tests.
+idea {
+    module {
+        excludeDirs += file('COMPAT')
+    }
+}
+
 allprojects {
     repositories {
         maven {
