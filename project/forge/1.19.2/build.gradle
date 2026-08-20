@@ -81,7 +81,8 @@ def forge1192ExcludedForge1201Java = [
 ]
 
 def forge1192ExcludedCommonJava = [
-        'com/PinkCats/bandwidthoptimizer/integration/minecraft/CommandSourceCompat.java'
+        'com/PinkCats/bandwidthoptimizer/integration/minecraft/CommandSourceCompat.java',
+        'com/PinkCats/bandwidthoptimizer/mixin/minecraft/PauseScreenDisconnectMixin.java'
 ]
 
 sourceSets {

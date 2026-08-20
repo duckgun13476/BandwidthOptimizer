@@ -30,13 +30,28 @@ public final class ConnectionDisconnectClassifier {
             return;
         }
         int startIndex = Math.max(outputSizeBeforeDecode, 0);
-        State existing = context.channel().attr(STATE_KEY).get();
         for (int index = startIndex; index < decodedPackets.size(); index++) {
-            String packetClass = packetClassName(decodedPackets.get(index));
-            observePacketClass(context.channel(), packetClass, "inbound-packet");
-            if (existing == null && isConnectionSessionPacket(packetClass)) {
-                existing = state(context.channel());
-            }
+            observeInboundPacketClass(context.channel(), packetClassName(decodedPackets.get(index)));
+        }
+    }
+
+    static void observeInboundPacketClass(Channel channel, String packetClass) {
+        if (channel == null) {
+            return;
+        }
+        observePacketClass(channel, packetClass, "inbound-packet");
+        State existing = channel.attr(STATE_KEY).get();
+        if (existing == null && isConnectionSessionPacket(packetClass)) {
+            existing = state(channel);
+        }
+        if (existing != null && isPlayPacket(packetClass)) {
+            existing.markPlayObserved();
+        }
+    }
+
+    public static void markLocalDisconnect(Channel channel) {
+        if (channel != null) {
+            state(channel).markLocalDisconnect();
         }
     }
 
@@ -197,11 +212,17 @@ public final class ConnectionDisconnectClassifier {
                 || packetClass.startsWith("net.minecraft.network.protocol.game.");
     }
 
+    private static boolean isPlayPacket(String packetClass) {
+        return packetClass.startsWith("net.minecraft.network.protocol.game.");
+    }
+
     private static RecoveryPolicy recoveryPolicy(Category category) {
         return switch (category) {
-            case READ_TIMEOUT, CONNECT_TIMEOUT, CONNECTION_RESET, REMOTE_EOF, CONNECT_FAILURE, BO_TRANSPORT_FAILURE ->
+            case READ_TIMEOUT, CONNECT_TIMEOUT, CONNECTION_RESET, REMOTE_EOF, CONNECT_FAILURE,
+                    BO_TRANSPORT_FAILURE, UNEXPECTED_CLEAN_CLOSE ->
                     RecoveryPolicy.RECONNECT_CANDIDATE;
-            case EXPLICIT_DISCONNECT, PROTOCOL_FAILURE, SECURITY_FAILURE -> RecoveryPolicy.DO_NOT_AUTO_RECONNECT;
+            case EXPLICIT_DISCONNECT, LOCAL_DISCONNECT, PROTOCOL_FAILURE, SECURITY_FAILURE ->
+                    RecoveryPolicy.DO_NOT_AUTO_RECONNECT;
             case UNKNOWN -> RecoveryPolicy.MANUAL_REVIEW;
         };
     }
@@ -210,12 +231,13 @@ public final class ConnectionDisconnectClassifier {
         return switch (category) {
             case BO_TRANSPORT_FAILURE -> 100;
             case EXPLICIT_DISCONNECT -> 90;
+            case LOCAL_DISCONNECT -> 85;
             case SECURITY_FAILURE -> 80;
             case PROTOCOL_FAILURE -> 70;
             case CONNECTION_RESET -> 60;
             case READ_TIMEOUT, CONNECT_TIMEOUT -> 50;
             case REMOTE_EOF, CONNECT_FAILURE -> 40;
-            case UNKNOWN -> 0;
+            case UNEXPECTED_CLEAN_CLOSE, UNKNOWN -> 0;
         };
     }
 
@@ -246,6 +268,7 @@ public final class ConnectionDisconnectClassifier {
     public enum Category {
         BO_TRANSPORT_FAILURE,
         EXPLICIT_DISCONNECT,
+        LOCAL_DISCONNECT,
         READ_TIMEOUT,
         CONNECT_TIMEOUT,
         CONNECTION_RESET,
@@ -253,6 +276,7 @@ public final class ConnectionDisconnectClassifier {
         CONNECT_FAILURE,
         PROTOCOL_FAILURE,
         SECURITY_FAILURE,
+        UNEXPECTED_CLEAN_CLOSE,
         UNKNOWN
     }
 
@@ -283,6 +307,18 @@ public final class ConnectionDisconnectClassifier {
         private String boStage = "";
         private int priority;
         private long evidenceAtMillis;
+        private boolean playObserved;
+        private boolean localDisconnect;
+        private long localDisconnectAtMillis;
+
+        synchronized void markPlayObserved() {
+            this.playObserved = true;
+        }
+
+        synchronized void markLocalDisconnect() {
+            this.localDisconnect = true;
+            this.localDisconnectAtMillis = System.currentTimeMillis();
+        }
 
         synchronized void record(
                 Category nextCategory,
@@ -307,6 +343,32 @@ public final class ConnectionDisconnectClassifier {
         }
 
         synchronized Decision decision() {
+            if (this.localDisconnect
+                    && this.category != Category.BO_TRANSPORT_FAILURE
+                    && this.category != Category.EXPLICIT_DISCONNECT
+                    && this.category != Category.PROTOCOL_FAILURE
+                    && this.category != Category.SECURITY_FAILURE) {
+                return new Decision(
+                        Category.LOCAL_DISCONNECT,
+                        RecoveryPolicy.DO_NOT_AUTO_RECONNECT,
+                        "local-disconnect",
+                        "",
+                        "",
+                        "",
+                        ageMillis(this.localDisconnectAtMillis)
+                );
+            }
+            if (this.category == Category.UNKNOWN && this.playObserved) {
+                return new Decision(
+                        Category.UNEXPECTED_CLEAN_CLOSE,
+                        RecoveryPolicy.RECONNECT_CANDIDATE,
+                        "channelInactive-after-play",
+                        "",
+                        "",
+                        "",
+                        0L
+                );
+            }
             long ageMillis = this.evidenceAtMillis <= 0L
                     ? 0L
                     : Math.max(0L, System.currentTimeMillis() - this.evidenceAtMillis);
@@ -319,6 +381,12 @@ public final class ConnectionDisconnectClassifier {
                     this.boStage,
                     ageMillis
             );
+        }
+
+        private static long ageMillis(long timestampMillis) {
+            return timestampMillis <= 0L
+                    ? 0L
+                    : Math.max(0L, System.currentTimeMillis() - timestampMillis);
         }
     }
 }

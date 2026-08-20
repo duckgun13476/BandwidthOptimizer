@@ -23,6 +23,7 @@
   ],
   "client": [
     "minecraft.ClientPacketListenerChunkHandleMixin",
+    "minecraft.PauseScreenDisconnectMixin",
     "watut.WatutPlayerStatusManagerClientMixin"
   ],
   "injectors": {

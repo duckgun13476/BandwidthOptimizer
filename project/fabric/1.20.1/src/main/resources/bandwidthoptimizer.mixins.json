@@ -18,7 +18,9 @@
     "minecraft.ServerboundCustomPayloadPacketAccessor",
     "minecraft.ServerGamePacketListenerImplAccessor"
   ],
-  "client": [],
+  "client": [
+    "minecraft.PauseScreenDisconnectMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
   },

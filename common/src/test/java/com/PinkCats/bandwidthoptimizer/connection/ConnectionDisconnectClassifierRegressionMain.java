@@ -47,6 +47,31 @@ public final class ConnectionDisconnectClassifierRegressionMain {
                 ConnectionDisconnectClassifier.RecoveryPolicy.RECONNECT_CANDIDATE
         );
 
+        EmbeddedChannel unexpectedPlayClose = new EmbeddedChannel();
+        ConnectionDisconnectClassifier.observeInboundPacketClass(
+                unexpectedPlayClose,
+                "net.minecraft.network.protocol.game.ClientboundKeepAlivePacket"
+        );
+        assertDecision(
+                ConnectionDisconnectClassifier.onChannelInactive(unexpectedPlayClose),
+                ConnectionDisconnectClassifier.Category.UNEXPECTED_CLEAN_CLOSE,
+                ConnectionDisconnectClassifier.RecoveryPolicy.RECONNECT_CANDIDATE
+        );
+        unexpectedPlayClose.finishAndReleaseAll();
+
+        EmbeddedChannel localDisconnect = new EmbeddedChannel();
+        ConnectionDisconnectClassifier.observeInboundPacketClass(
+                localDisconnect,
+                "net.minecraft.network.protocol.game.ClientboundKeepAlivePacket"
+        );
+        ConnectionDisconnectClassifier.markLocalDisconnect(localDisconnect);
+        assertDecision(
+                ConnectionDisconnectClassifier.onChannelInactive(localDisconnect),
+                ConnectionDisconnectClassifier.Category.LOCAL_DISCONNECT,
+                ConnectionDisconnectClassifier.RecoveryPolicy.DO_NOT_AUTO_RECONNECT
+        );
+        localDisconnect.finishAndReleaseAll();
+
         ConnectionDisconnectClassifier.observePacketClass(
                 channel,
                 "net.minecraft.network.protocol.common.ClientboundDisconnectPacket",

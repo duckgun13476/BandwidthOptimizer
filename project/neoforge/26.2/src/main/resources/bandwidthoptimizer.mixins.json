@@ -17,6 +17,7 @@
     "minecraft.ServerGamePacketListenerImplAccessor"
   ],
   "client": [
+    "minecraft.PauseScreenDisconnectMixin",
     "neoforge.ClientPayloadContextMixin"
   ],
   "injectors": {
