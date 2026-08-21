@@ -46,8 +46,43 @@ public final class ConnectionPayloadTaskGuardRegressionMain {
         assertEquals(1, executions.get(), "closed connections must reject old and newly captured tasks");
         assertEquals(4L, ConnectionPayloadTaskGuard.droppedTasks(channel), "all stale tasks must be counted");
 
+        verifyDropLogBounds();
+
         channel.finishAndReleaseAll();
         System.out.println("Connection payload task guard regression passed");
+    }
+
+    private static void verifyDropLogBounds() {
+        try {
+            Class<?> stateClass = Class.forName(
+                    "com.PinkCats.bandwidthoptimizer.connection.ConnectionPayloadTaskGuard$State"
+            );
+            var constructor = stateClass.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            Object state = constructor.newInstance();
+            var permit = stateClass.getDeclaredMethod("tryAcquireDropLogPermit", long.class);
+            permit.setAccessible(true);
+
+            int firstWindow = 0;
+            for (int index = 0; index < 40; index++) {
+                if ((boolean) permit.invoke(state, 1_000L)) {
+                    firstWindow++;
+                }
+            }
+            assertEquals(20, firstWindow, "drop diagnostics must be capped per second");
+
+            int total = firstWindow;
+            for (int window = 1; window <= 10; window++) {
+                for (int index = 0; index < 40; index++) {
+                    if ((boolean) permit.invoke(state, 1_000L + window * 1_000L)) {
+                        total++;
+                    }
+                }
+            }
+            assertEquals(100, total, "drop diagnostics must be capped per connection");
+        } catch (ReflectiveOperationException exception) {
+            throw new AssertionError("could not verify drop diagnostic bounds", exception);
+        }
     }
 
     private static void assertEquals(long expected, long actual, String message) {

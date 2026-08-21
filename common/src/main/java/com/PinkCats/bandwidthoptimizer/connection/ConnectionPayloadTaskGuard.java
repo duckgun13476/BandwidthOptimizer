@@ -6,6 +6,7 @@ import io.netty.channel.Channel;
 import io.netty.util.AttributeKey;
 
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
@@ -102,22 +103,66 @@ public final class ConnectionPayloadTaskGuard {
             }
             long dropped = this.state.droppedTasks.incrementAndGet();
             if (DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CONNECTION_CLOSE)
-                    && (dropped == 1L || (dropped & (dropped - 1L)) == 0L)) {
+                    && this.state.tryAcquireDropLogPermit(System.currentTimeMillis())) {
+                boolean active = this.channel != null && this.channel.isActive();
+                long currentGeneration = this.state.generation.get();
                 DiagnosticLog.info(
                         DiagnosticToolRegistry.Tool.CONNECTION_CLOSE,
-                        "event=stale_payload_task_drop payload={} generation={} currentGeneration={} dropped={}",
+                        "event=stale_payload_task_drop payload={} reason={} closed={} active={} generation={} currentGeneration={} dropped={}",
                         this.payloadId,
+                        dropReason(active, currentGeneration),
+                        this.state.closed,
+                        active,
                         this.generation,
-                        this.state.generation.get(),
+                        currentGeneration,
                         dropped
                 );
             }
         }
+
+        private String dropReason(boolean active, long currentGeneration) {
+            if (this.state.closed) {
+                return "closed";
+            }
+            if (!active) {
+                return "inactive";
+            }
+            if (currentGeneration != this.generation) {
+                return "generation_changed";
+            }
+            return "state_changed_during_check";
+        }
     }
 
     private static final class State {
+        private static final long DROP_LOG_WINDOW_MILLIS = 1_000L;
+        private static final int DROP_LOG_WINDOW_LIMIT = 20;
+        private static final int DROP_LOG_TOTAL_LIMIT = 100;
+
         private final AtomicLong generation = new AtomicLong();
         private final AtomicLong droppedTasks = new AtomicLong();
+        private final AtomicLong loggedDrops = new AtomicLong();
+        private final AtomicLong dropLogWindowStartMillis = new AtomicLong(Long.MIN_VALUE);
+        private final AtomicInteger dropLogWindowCount = new AtomicInteger();
         private volatile boolean closed;
+
+        private synchronized boolean tryAcquireDropLogPermit(long nowMillis) {
+            if (this.loggedDrops.get() >= DROP_LOG_TOTAL_LIMIT) {
+                return false;
+            }
+            long windowStart = this.dropLogWindowStartMillis.get();
+            if (windowStart == Long.MIN_VALUE
+                    || nowMillis < windowStart
+                    || nowMillis - windowStart >= DROP_LOG_WINDOW_MILLIS) {
+                this.dropLogWindowStartMillis.set(nowMillis);
+                this.dropLogWindowCount.set(0);
+            }
+            if (this.dropLogWindowCount.get() >= DROP_LOG_WINDOW_LIMIT) {
+                return false;
+            }
+            this.dropLogWindowCount.incrementAndGet();
+            this.loggedDrops.incrementAndGet();
+            return true;
+        }
     }
 }
