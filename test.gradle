@@ -292,6 +292,15 @@ tasks.register('runConnectionDisconnectClassifierRegression', JavaExec) {
     )
 }
 
+tasks.register('runClientReconnectCoordinatorRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies bounded client reconnect admission and retry behavior.',
+            'com.PinkCats.bandwidthoptimizer.connection.ClientReconnectCoordinatorRegressionMain'
+    )
+}
+
 tasks.register('runChunkLanePacketSnapshotRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,
@@ -445,6 +454,11 @@ def readRunAllLatencyDelayMillis(Project projectRef) {
 def isRunAllLatencyProxyEnabled(Project projectRef) {
 
     return readRunAllLatencyDelayMillis(projectRef) > 0L
+            || project.ext.boReadRunAllLongProperty.call(
+                    projectRef,
+                    'boRunAllLatencyResetFirstConnectionAfterMillis',
+                    0L
+            ) > 0L
 }
 
 def readRunAllLatencyListenHost(Project projectRef) {
@@ -531,7 +545,19 @@ def startRunAllLatencyProxyProcess(Project projectRef, boolean isWindows, File o
             '--target-port',
             String.valueOf(readRunAllLatencyTargetPort(projectRef)),
             '--delay-ms',
-            String.valueOf(readRunAllLatencyDelayMillis(projectRef))
+            String.valueOf(readRunAllLatencyDelayMillis(projectRef)),
+            '--reset-first-connection-after-ms',
+            String.valueOf(project.ext.boReadRunAllLongProperty.call(
+                    projectRef,
+                    'boRunAllLatencyResetFirstConnectionAfterMillis',
+                    0L
+            )),
+            '--reset-connection-id',
+            String.valueOf(project.ext.boReadRunAllLongProperty.call(
+                    projectRef,
+                    'boRunAllLatencyResetConnectionId',
+                    1L
+            ))
     ]
 
     ProcessBuilder builder = new ProcessBuilder(command.collect { it.toString() })

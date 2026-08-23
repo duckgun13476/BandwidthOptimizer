@@ -5,6 +5,8 @@ import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.DecoderException;
 import io.netty.handler.timeout.ReadTimeoutException;
 
+import java.util.concurrent.atomic.AtomicReference;
+
 import javax.net.ssl.SSLHandshakeException;
 import java.io.EOFException;
 
@@ -46,6 +48,36 @@ public final class ConnectionDisconnectClassifierRegressionMain {
                 ConnectionDisconnectClassifier.Category.READ_TIMEOUT,
                 ConnectionDisconnectClassifier.RecoveryPolicy.RECONNECT_CANDIDATE
         );
+
+        AtomicReference<ConnectionDisconnectClassifier.Decision> reconnectCandidate = new AtomicReference<>();
+        ConnectionDisconnectClassifier.setReconnectCandidateListener(reconnectCandidate::set);
+        EmbeddedChannel clientPlayReset = new EmbeddedChannel();
+        ConnectionDisconnectClassifier.observeInboundPacketClass(
+                clientPlayReset,
+                "net.minecraft.network.protocol.game.ClientboundLoginPacket"
+        );
+        ConnectionDisconnectClassifier.observeException(
+                clientPlayReset,
+                new java.net.SocketException("Connection reset")
+        );
+        ConnectionDisconnectClassifier.onChannelInactive(clientPlayReset);
+        check(reconnectCandidate.get() != null
+                        && reconnectCandidate.get().category() == ConnectionDisconnectClassifier.Category.CONNECTION_RESET,
+                "client PLAY reset should notify reconnect listener");
+
+        reconnectCandidate.set(null);
+        EmbeddedChannel serverPlayReset = new EmbeddedChannel();
+        ConnectionDisconnectClassifier.observeInboundPacketClass(
+                serverPlayReset,
+                "net.minecraft.network.protocol.game.ServerboundMovePlayerPacket"
+        );
+        ConnectionDisconnectClassifier.observeException(
+                serverPlayReset,
+                new java.net.SocketException("Connection reset")
+        );
+        ConnectionDisconnectClassifier.onChannelInactive(serverPlayReset);
+        check(reconnectCandidate.get() == null, "server endpoint must not notify client reconnect listener");
+        ConnectionDisconnectClassifier.setReconnectCandidateListener(null);
 
         EmbeddedChannel unexpectedPlayClose = new EmbeddedChannel();
         ConnectionDisconnectClassifier.observeInboundPacketClass(
@@ -111,6 +143,12 @@ public final class ConnectionDisconnectClassifierRegressionMain {
     ) {
         if (decision.category() != expectedCategory || decision.recoveryPolicy() != expectedPolicy) {
             throw new AssertionError("Unexpected decision: " + decision);
+        }
+    }
+
+    private static void check(boolean condition, String message) {
+        if (!condition) {
+            throw new IllegalStateException(message);
         }
     }
 }

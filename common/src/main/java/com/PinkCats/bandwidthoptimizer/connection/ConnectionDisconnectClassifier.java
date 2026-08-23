@@ -14,6 +14,7 @@ public final class ConnectionDisconnectClassifier {
 
     private static final AttributeKey<State> STATE_KEY =
             AttributeKey.valueOf("bandwidthoptimizer:disconnect_classifier");
+    private static volatile ReconnectCandidateListener reconnectCandidateListener;
 
     private ConnectionDisconnectClassifier() {}
 
@@ -44,9 +45,13 @@ public final class ConnectionDisconnectClassifier {
         if (existing == null && isConnectionSessionPacket(packetClass)) {
             existing = state(channel);
         }
-        if (existing != null && isPlayPacket(packetClass)) {
-            existing.markPlayObserved();
+        if (existing != null) {
+            existing.markInboundPacket(packetClass);
         }
+    }
+
+    public static void setReconnectCandidateListener(ReconnectCandidateListener listener) {
+        reconnectCandidateListener = listener;
     }
 
     public static void markLocalDisconnect(Channel channel) {
@@ -90,6 +95,11 @@ public final class ConnectionDisconnectClassifier {
     public static Decision onChannelInactive(Channel channel) {
         State existing = channel == null ? null : channel.attr(STATE_KEY).get();
         Decision decision = existing == null ? unknownDecision() : existing.decision();
+        ReconnectCandidateListener listener = reconnectCandidateListener;
+        if (listener != null && existing != null && existing.isClientPlayEndpoint()
+                && isFirstPriorityReconnectCandidate(decision)) {
+            listener.onReconnectCandidate(decision);
+        }
         if (existing != null && DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CONNECTION_CLOSE)) {
             DiagnosticLog.info(
                     DiagnosticToolRegistry.Tool.CONNECTION_CLOSE,
@@ -216,6 +226,17 @@ public final class ConnectionDisconnectClassifier {
         return packetClass.startsWith("net.minecraft.network.protocol.game.");
     }
 
+    private static boolean isClientboundPacket(String packetClass) {
+        int simpleNameIndex = packetClass.lastIndexOf('.') + 1;
+        return simpleNameIndex > 0 && packetClass.startsWith("Clientbound", simpleNameIndex);
+    }
+
+    private static boolean isFirstPriorityReconnectCandidate(Decision decision) {
+        return decision.recoveryPolicy() == RecoveryPolicy.RECONNECT_CANDIDATE
+                && (decision.category() == Category.CONNECTION_RESET
+                || decision.category() == Category.READ_TIMEOUT);
+    }
+
     private static RecoveryPolicy recoveryPolicy(Category category) {
         return switch (category) {
             case READ_TIMEOUT, CONNECT_TIMEOUT, CONNECTION_RESET, REMOTE_EOF, CONNECT_FAILURE,
@@ -296,6 +317,11 @@ public final class ConnectionDisconnectClassifier {
             long evidenceAgeMillis
     ) { }
 
+    @FunctionalInterface
+    public interface ReconnectCandidateListener {
+        void onReconnectCandidate(Decision decision);
+    }
+
     private record ClassifiedThrowable(Category category, String throwableClass) { }
 
     private static final class State {
@@ -308,11 +334,21 @@ public final class ConnectionDisconnectClassifier {
         private int priority;
         private long evidenceAtMillis;
         private boolean playObserved;
+        private boolean clientEndpoint;
         private boolean localDisconnect;
         private long localDisconnectAtMillis;
 
-        synchronized void markPlayObserved() {
-            this.playObserved = true;
+        synchronized void markInboundPacket(String packetClass) {
+            if (isClientboundPacket(packetClass)) {
+                this.clientEndpoint = true;
+            }
+            if (isPlayPacket(packetClass)) {
+                this.playObserved = true;
+            }
+        }
+
+        synchronized boolean isClientPlayEndpoint() {
+            return this.clientEndpoint && this.playObserved;
         }
 
         synchronized void markLocalDisconnect() {

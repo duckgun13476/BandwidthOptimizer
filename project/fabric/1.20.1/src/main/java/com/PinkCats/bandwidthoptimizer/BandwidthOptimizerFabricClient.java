@@ -4,6 +4,8 @@ import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
 import com.PinkCats.bandwidthoptimizer.client.hud.BandwidthOptimizerHudOverlay;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
 import com.PinkCats.bandwidthoptimizer.command.ClientHudCommand;
+import com.PinkCats.bandwidthoptimizer.connection.ClientReconnectCoordinator;
+import com.PinkCats.bandwidthoptimizer.connection.ClientReconnectPlatform;
 import com.PinkCats.bandwidthoptimizer.experimental.runall.ExperientAutoConnectController;
 import com.PinkCats.bandwidthoptimizer.experimental.runall.ExperientClientCaptureResetHooks;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateClientController;
@@ -19,6 +21,7 @@ public class BandwidthOptimizerFabricClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         ClientChunkCacheConfig.applyRuntimeConfig(ClientChunkCacheConfig.currentRuntimeConfig());
+        ClientReconnectCoordinator.install(ClientReconnectPlatform.INSTANCE);
         IdleGateClientNetworkSender.register();
         ChunkPersistentClientCache.startAsyncPreload("fabric_client_startup");
         ClientLifecycleEvents.CLIENT_STOPPING.register(client ->
@@ -33,6 +36,7 @@ public class BandwidthOptimizerFabricClient implements ClientModInitializer {
             ChunkPersistentClientCache.flushAsync("fabric_client_disconnect");
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            ClientReconnectCoordinator.onClientTick();
             IdleGateClientController.onClientTick(client);
             com.PinkCats.bandwidthoptimizer.experimental.runall.ExperientClientCaptureResetHooks.onClientTick();
             com.PinkCats.bandwidthoptimizer.experimental.runall.ExperientAutoConnectController.onClientTick(client);

@@ -29,6 +29,14 @@ public final class LatencyTcpProxyMain {
         String targetHost = options.getOrDefault("target-host", "127.0.0.1");
         int targetPort = parsePort(options.getOrDefault("target-port", "25567"), "target-port");
         long delayMillis = parseNonNegativeLong(options.getOrDefault("delay-ms", "300"), "delay-ms");
+        long resetFirstConnectionAfterMillis = parseNonNegativeLong(
+                options.getOrDefault("reset-first-connection-after-ms", "0"),
+                "reset-first-connection-after-ms"
+        );
+        int resetConnectionId = parsePositiveInt(
+                options.getOrDefault("reset-connection-id", "1"),
+                "reset-connection-id"
+        );
 
         AtomicInteger connectionIds = new AtomicInteger();
         try (ServerSocket serverSocket = new ServerSocket()) {
@@ -36,12 +44,21 @@ public final class LatencyTcpProxyMain {
             serverSocket.bind(new InetSocketAddress(listenHost, listenPort));
             log("listening " + listenHost + ":" + listenPort
                     + " -> " + targetHost + ":" + targetPort
-                    + ", delay=" + delayMillis + "ms");
+                    + ", delay=" + delayMillis + "ms"
+                    + ", resetConnectionId=" + resetConnectionId
+                    + ", resetAfter=" + resetFirstConnectionAfterMillis + "ms");
             while (true) {
                 Socket clientSocket = serverSocket.accept();
                 int connectionId = connectionIds.incrementAndGet();
                 Thread connectionThread = new Thread(
-                        () -> handleConnection(connectionId, clientSocket, targetHost, targetPort, delayMillis),
+                        () -> handleConnection(
+                                connectionId,
+                                clientSocket,
+                                targetHost,
+                                targetPort,
+                                delayMillis,
+                                connectionId == resetConnectionId ? resetFirstConnectionAfterMillis : 0L
+                        ),
                         "latency-tcp-proxy-connection-" + connectionId
                 );
                 connectionThread.setDaemon(true);
@@ -55,7 +72,8 @@ public final class LatencyTcpProxyMain {
             Socket clientSocket,
             String targetHost,
             int targetPort,
-            long delayMillis
+            long delayMillis,
+            long resetAfterMillis
     ) {
         Socket targetSocket = new Socket();
         try {
@@ -67,6 +85,15 @@ public final class LatencyTcpProxyMain {
                     + " target=" + targetHost + ":" + targetPort);
 
             AtomicBoolean closed = new AtomicBoolean(false);
+            ScheduledExecutorService resetScheduler = null;
+            if (resetAfterMillis > 0L) {
+                resetScheduler = newSingleThreadScheduler("latency-tcp-proxy-reset-" + connectionId);
+                resetScheduler.schedule(
+                        () -> resetConnection(connectionId, clientSocket, targetSocket, closed),
+                        resetAfterMillis,
+                        TimeUnit.MILLISECONDS
+                );
+            }
             ScheduledExecutorService clientToServerDelay = newSingleThreadScheduler("latency-tcp-proxy-c2s-" + connectionId);
             ScheduledExecutorService serverToClientDelay = newSingleThreadScheduler("latency-tcp-proxy-s2c-" + connectionId);
             Thread clientToServerThread = new Thread(
@@ -103,6 +130,9 @@ public final class LatencyTcpProxyMain {
             serverToClientDelay.shutdown();
             clientToServerDelay.awaitTermination(delayMillis + 5000L, TimeUnit.MILLISECONDS);
             serverToClientDelay.awaitTermination(delayMillis + 5000L, TimeUnit.MILLISECONDS);
+            if (resetScheduler != null) {
+                resetScheduler.shutdownNow();
+            }
         } catch (Exception exception) {
             log("closed id=" + connectionId + " error=" + exception.getClass().getSimpleName()
                     + ": " + exception.getMessage());
@@ -173,6 +203,24 @@ public final class LatencyTcpProxyMain {
         socket.setKeepAlive(true);
     }
 
+    private static void resetConnection(
+            int connectionId,
+            Socket clientSocket,
+            Socket targetSocket,
+            AtomicBoolean closed
+    ) {
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
+        log("resetting id=" + connectionId);
+        try {
+            clientSocket.setSoLinger(true, 0);
+        } catch (SocketException ignored) {
+        }
+        closeQuietly(clientSocket);
+        closeQuietly(targetSocket);
+    }
+
     private static ScheduledExecutorService newSingleThreadScheduler(String threadName) {
         ThreadFactory threadFactory = runnable -> {
             Thread thread = new Thread(runnable, threadName);
@@ -217,6 +265,14 @@ public final class LatencyTcpProxyMain {
         } catch (NumberFormatException exception) {
             throw new IllegalArgumentException(label + " must be an integer: " + rawValue, exception);
         }
+    }
+
+    private static int parsePositiveInt(String rawValue, String label) {
+        long parsedValue = parseNonNegativeLong(rawValue, label);
+        if (parsedValue < 1L || parsedValue > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(label + " must be positive: " + rawValue);
+        }
+        return (int) parsedValue;
     }
 
     private static void closeQuietly(Socket socket) {
