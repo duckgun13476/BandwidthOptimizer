@@ -15,10 +15,15 @@ import com.PinkCats.bandwidthoptimizer.channel.algorithm.KineticChannel;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.batch.ChannelTransportBatchManager;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.ChannelTransportOperationTelemetry;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.KineticStreamingLayer;
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
+import net.minecraft.network.Connection;
+import net.minecraft.network.ConnectionProtocol;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.Varint21LengthFieldPrepender;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.network.protocol.game.ClientboundCustomPayloadPacket;
@@ -26,6 +31,7 @@ import net.minecraft.network.protocol.game.ServerboundCustomPayloadPacket;
 import net.minecraft.resources.ResourceLocation;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -66,6 +72,7 @@ public final class ChannelTransportRoundTripMain {
         verifyAdaptiveBypassLearnsAfterSixteenUnprofitableCarriers();
         verifyOversizedBatchRejectedAtEncode();
         verifyOversizedSinglePacketRejectedAtEncode();
+        verifyOversizedInlineCarrierUsesIndependentMinecraftFrames();
         verifyFragmentedTransportReplayPreservesBytesAndOrder();
         reportFragmentedTransportLatency();
         verifyStreamingRejectsMergedCarrierFrames();
@@ -81,6 +88,116 @@ public final class ChannelTransportRoundTripMain {
         verifyProxySwitchBoundaryKeepsInboundTransportEnabled();
         verifyNonTransportPassThrough(receiverSession);
         System.out.println("All channel transport round trips passed.");
+    }
+
+    private static void verifyOversizedInlineCarrierUsesIndependentMinecraftFrames() {
+        verifyOversizedInlineCarrierUsesIndependentMinecraftFrames(PacketFlow.CLIENTBOUND, 1_048_576, 1_625_500);
+        verifyOversizedInlineCarrierUsesIndependentMinecraftFrames(PacketFlow.SERVERBOUND, 32_767, 80_000);
+    }
+
+    private static void verifyOversizedInlineCarrierUsesIndependentMinecraftFrames(
+            PacketFlow packetFlow,
+            int payloadLimitBytes,
+            int frameBytes
+    ) {
+        byte[] transportFrame = randomLargeBytes(frameBytes);
+        int expectedCarrierCount = ChannelTransportFragmentCodec.fragmentTransportFrame(
+                transportFrame,
+                payloadLimitBytes,
+                91
+        ).size();
+        if (expectedCarrierCount <= 1) {
+            throw new IllegalStateException("Oversized inline carrier regression did not require fragmentation.");
+        }
+
+        EmbeddedChannel channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
+        channel.attr(Connection.ATTRIBUTE_PROTOCOL).set(ConnectionProtocol.PLAY);
+        ByteBuf inlineOutput = Unpooled.buffer();
+        List<ByteBuf> encodedPacketBodies = new ArrayList<>();
+        try {
+            ChannelHandlerContext context = channel.pipeline().firstContext();
+            if (!ChannelTransportHooks.writeTransportCarrierPacket(context, packetFlow, inlineOutput, transportFrame)) {
+                throw new IllegalStateException("Oversized inline carrier was not encoded.");
+            }
+            context.flush();
+
+            Object outbound;
+            while ((outbound = channel.readOutbound()) != null) {
+                if (!(outbound instanceof ByteBuf buffer)) {
+                    throw new IllegalStateException("Unexpected outbound regression value: " + outbound.getClass().getName());
+                }
+                encodedPacketBodies.add(buffer);
+            }
+            if (inlineOutput.isReadable()) {
+                encodedPacketBodies.add(inlineOutput.retainedDuplicate());
+            }
+
+            if (encodedPacketBodies.size() != expectedCarrierCount) {
+                int trailingBytes = encodedPacketBodies.isEmpty()
+                        ? -1
+                        : decodeOnePacketAndReturnTrailingBytes(encodedPacketBodies.get(0), packetFlow);
+                throw new IllegalStateException(
+                        "Issue #24 framing reproduced: expected " + expectedCarrierCount
+                                + " independent carrier packets but observed " + encodedPacketBodies.size()
+                                + ", firstPacketTrailingBytes=" + trailingBytes
+                );
+            }
+            for (ByteBuf encodedPacketBody : encodedPacketBodies) {
+                int trailingBytes = frameAndDecodeOnePacket(encodedPacketBody, packetFlow);
+                if (trailingBytes != 0) {
+                    throw new IllegalStateException("Carrier packet decode left " + trailingBytes + " trailing bytes.");
+                }
+            }
+        } finally {
+            for (ByteBuf encodedPacketBody : encodedPacketBodies) {
+                encodedPacketBody.release();
+            }
+            inlineOutput.release();
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    private static int frameAndDecodeOnePacket(ByteBuf encodedPacketBody, PacketFlow packetFlow) {
+        EmbeddedChannel framingChannel = new EmbeddedChannel(new Varint21LengthFieldPrepender());
+        ByteBuf framedPacket = null;
+        try {
+            if (!framingChannel.writeOutbound(encodedPacketBody.retainedDuplicate())) {
+                throw new IllegalStateException("Minecraft length prepender did not emit a carrier frame.");
+            }
+            framedPacket = framingChannel.readOutbound();
+            FriendlyByteBuf wire = new FriendlyByteBuf(framedPacket.retainedDuplicate());
+            try {
+                int declaredPacketBytes = wire.readVarInt();
+                if (declaredPacketBytes != wire.readableBytes()) {
+                    throw new IllegalStateException(
+                            "Carrier frame length mismatch: declared=" + declaredPacketBytes
+                                    + ", actual=" + wire.readableBytes()
+                    );
+                }
+                return decodeOnePacketAndReturnTrailingBytes(wire, packetFlow);
+            } finally {
+                wire.release();
+            }
+        } finally {
+            if (framedPacket != null) {
+                framedPacket.release();
+            }
+            framingChannel.finishAndReleaseAll();
+        }
+    }
+
+    private static int decodeOnePacketAndReturnTrailingBytes(ByteBuf encodedPacketBody, PacketFlow packetFlow) {
+        FriendlyByteBuf buffer = new FriendlyByteBuf(encodedPacketBody.retainedDuplicate());
+        try {
+            int packetId = buffer.readVarInt();
+            Packet<?> packet = ConnectionProtocol.PLAY.createPacket(packetFlow, packetId, buffer);
+            if (packet == null) {
+                throw new IllegalStateException("Vanilla decode returned null for transport carrier packet id " + packetId);
+            }
+            return buffer.readableBytes();
+        } finally {
+            buffer.release();
+        }
     }
 
     private static void verifyManagedSessionEnablesStreamingByDefault() {

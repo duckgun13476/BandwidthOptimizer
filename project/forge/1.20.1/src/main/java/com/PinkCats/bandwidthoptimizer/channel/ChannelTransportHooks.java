@@ -1125,12 +1125,17 @@ public final class ChannelTransportHooks {
                 payloadLimitBytes,
                 ChannelTransportStateManager.nextOutboundFragmentStreamId(context.channel())
         );
-        for (byte[] carrierPayload : carrierPayloads) {
-            if (!writeSingleTransportCarrierPacket(context, packetFlow, out, carrierPayload)) {
-                return false;
-            }
-        }
-        return true;
+        return ChannelTransportInlineFrameWriter.writeIndependentPacketBodies(
+                context,
+                out,
+                carrierPayloads,
+                (packetBody, carrierPayload) -> writeSingleTransportCarrierPacket(
+                        context,
+                        packetFlow,
+                        packetBody,
+                        carrierPayload
+                )
+        );
     }
 
     private static boolean writeSingleTransportCarrierPacket(
