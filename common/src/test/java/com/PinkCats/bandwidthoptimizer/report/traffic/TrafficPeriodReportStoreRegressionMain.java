@@ -20,25 +20,37 @@ public final class TrafficPeriodReportStoreRegressionMain {
         try {
             ZoneId zone = ZoneId.of("UTC");
             ZonedDateTime previousHour = ZonedDateTime.of(2026, 8, 14, 10, 0, 0, 0, zone);
+            ZonedDateTime legacyHour = previousHour.minusHours(1L);
             ZonedDateTime currentHour = ZonedDateTime.of(2026, 8, 15, 11, 0, 0, 0, zone);
             TrafficPeriodReport archived = report(previousHour, zone, true, 100L);
+            TrafficPeriodReport legacy = report(legacyHour, zone, true, 50L);
             TrafficPeriodReport live = report(currentHour, zone, false, 25L);
 
+            Path legacyPath = TrafficPeriodReportStore.legacyHourlyPath(legacy);
+            Files.createDirectories(legacyPath.getParent());
+            Files.write(legacyPath, TrafficPeriodReportJson.encode(legacy));
             TrafficPeriodReportStore.saveBlocking(archived);
             check(Files.isRegularFile(TrafficPeriodReportStore.dailyPath(previousHour.toLocalDate())),
                     "daily report was not rebuilt from the hourly archive");
+            check(Files.isRegularFile(TrafficPeriodReportStore.hourlyPath(archived)),
+                    "hourly day archive was not written");
+            check(!Files.exists(legacyPath.getParent()),
+                    "legacy hourly directory was not removed after migration");
+            Path hourlyRoot = TrafficPeriodReportStore.hourlyPath(archived).getParent();
+            try (var paths = Files.list(hourlyRoot)) {
+                List<Path> entries = paths.toList();
+                check(entries.size() == 1 && Files.isRegularFile(entries.get(0)),
+                        "hourly reports were not compacted to one file per day");
+            }
 
-            Files.write(
-                    TrafficPeriodReportStore.hourlyPath(archived),
-                    TrafficPeriodReportJson.encode(report(previousHour, zone, true, 900L))
-            );
+            TrafficPeriodReportStore.saveBlocking(report(previousHour, zone, true, 900L));
             TrafficHistoryReport history = TrafficPeriodReportStore.loadCurrentMonth(live);
 
             check(history != null, "month history was not produced");
-            check(history.totals().outboundWireBytes() == 125L,
+            check(history.totals().outboundWireBytes() == 975L,
                     "month totals did not use the daily archive plus the live day");
-            check(history.hours().size() == 2, "hourly detail was not retained");
-            check(history.hours().get(0).totals().outboundWireBytes() == 900L,
+            check(history.hours().size() == 3, "hourly detail was not retained");
+            check(history.hours().get(1).totals().outboundWireBytes() == 900L,
                     "hourly detail did not remain independent from month aggregation");
             check(history.players().size() == 1 && "TestPlayer".equals(history.players().get(0).playerName()),
                     "player identity was not aggregated by UUID");
