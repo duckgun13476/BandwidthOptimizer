@@ -1,3 +1,7 @@
+#### v5.10.30.104-release
+
+1. Fixed streaming epoch transitions that could disconnect clients while preserving recovery for genuinely missing frames.
+
 #### v5.10.30.103-release
 
 1. Fixed oversized fragmented transport frames that could cause decoder errors and disconnect players (#24).
