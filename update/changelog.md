@@ -1,3 +1,13 @@
+#### v5.10.30.103-release
+
+1. Fixed oversized fragmented transport frames that could cause decoder errors and disconnect players (#24).
+2. Added automatic recovery from supported transient connection losses.
+3. Reduced server memory pressure by sharing immutable chunk snapshot data across cache access updates.
+4. Prevented stale client payload tasks from running after protocol changes or disconnects.
+5. Rejected non-Minecraft HTTP probes before packet decoding.
+6. Compacted hourly traffic reports into daily files to reduce filesystem clutter.
+7. Bounded diagnostic output to prevent repeated failures from flooding logs.
+
 #### v5.10.30.99-release
 
 1. Fixed streaming recovery after late acknowledgements and preserved pending recovery data across timeouts and opposite-direction resets.

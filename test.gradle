@@ -283,6 +283,15 @@ tasks.register('runPacketClassTraceDiagnosticRegression', JavaExec) {
     )
 }
 
+tasks.register('runDiagnosticLogRateLimitRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies bounded diagnostic output per tool event.',
+            'com.PinkCats.bandwidthoptimizer.debug.DiagnosticLogRateLimitRegressionMain'
+    )
+}
+
 tasks.register('runConnectionDisconnectClassifierRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,
