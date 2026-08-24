@@ -21,6 +21,8 @@ public final class CrossFrameZstdRegressionMain {
         verifyOutboundFallbackPreservesInboundStream();
         verifyTimeoutFallbackRetainsRecoverySuffix();
         verifyGapRecoveryAndResume();
+        verifyEpochFirstFrameSelfSynchronizes();
+        verifyNewEpochGapRecoversFromFirstFrame();
         verifyClosedEpochIndependentSpillover();
         System.out.println("Cross-frame Zstd regression passed.");
     }
@@ -165,6 +167,76 @@ public final class CrossFrameZstdRegressionMain {
             }
         }
         System.out.println("gap-recovery: missing suffix restored and fresh epoch resumed");
+    }
+
+    private static void verifyEpochFirstFrameSelfSynchronizes() {
+        try (ChannelTransportSession sender = new ChannelTransportSession();
+             ChannelTransportSession receiver = new ChannelTransportSession()) {
+            sender.setCrossFrameZstdEnabled(true);
+            receiver.setCrossFrameZstdEnabled(true);
+
+            assertRestored(List.of(bytes("old-epoch")), ChannelTransportPacketCodec.tryUnwrapPacket(
+                    receiver,
+                    wrapStreaming(sender, "old-epoch").transportFrameBytes()
+            ));
+            int oldEpoch = sender.outboundStreamingEpoch();
+            sender.restartOutboundStreamingEpoch();
+
+            var firstNewEpochFrame = wrapStreaming(sender, "new-epoch-first");
+            var restored = ChannelTransportPacketCodec.tryUnwrapPacket(
+                    receiver,
+                    firstNewEpochFrame.transportFrameBytes()
+            );
+            assertRestored(List.of(bytes("new-epoch-first")), restored);
+            if (restored.streamingEpoch() == oldEpoch || restored.streamingSequence() != 1) {
+                throw new IllegalStateException("New epoch first frame did not self-synchronize the receiver");
+            }
+        }
+        System.out.println("epoch-transition: first frame reset the inbound stream without dropping payload");
+    }
+
+    private static void verifyNewEpochGapRecoversFromFirstFrame() {
+        try (ChannelTransportSession sender = new ChannelTransportSession();
+             ChannelTransportSession receiver = new ChannelTransportSession()) {
+            sender.setCrossFrameZstdEnabled(true);
+            receiver.setCrossFrameZstdEnabled(true);
+
+            assertRestored(List.of(bytes("old-epoch")), ChannelTransportPacketCodec.tryUnwrapPacket(
+                    receiver,
+                    wrapStreaming(sender, "old-epoch").transportFrameBytes()
+            ));
+            sender.restartOutboundStreamingEpoch();
+            var missingFirst = wrapStreaming(sender, "new-epoch-first");
+            var observedSecond = wrapStreaming(sender, "new-epoch-second");
+
+            ChannelTransportPacketCodec.StreamingRecoveryException gap;
+            try {
+                ChannelTransportPacketCodec.tryUnwrapPacket(receiver, observedSecond.transportFrameBytes());
+                throw new IllegalStateException("A new epoch gap skipped its missing first frame");
+            } catch (ChannelTransportPacketCodec.StreamingRecoveryException expected) {
+                gap = expected;
+            }
+            if (gap.recoveryRequest().epoch() != sender.outboundStreamingEpoch()
+                    || gap.recoveryRequest().expectedSequence() != 1
+                    || !receiver.beginInboundStreamingRecovery(gap.recoveryRequest())) {
+                throw new IllegalStateException("A new epoch gap exposed the wrong recovery point", gap);
+            }
+
+            List<ChannelTransportSession.StreamingFallbackBatch> fallback =
+                    sender.fallbackOutboundStreamingBatches(sender.outboundStreamingEpoch(), 1);
+            if (fallback.size() != 2) {
+                throw new IllegalStateException("New epoch recovery did not retain both frames");
+            }
+            String[] expectedValues = {"new-epoch-first", "new-epoch-second"};
+            for (int index = 0; index < fallback.size(); index++) {
+                assertRestored(List.of(bytes(expectedValues[index])), ChannelTransportPacketCodec.tryUnwrapPacket(
+                        receiver,
+                        ChannelTransportPacketCodec.wrapStreamingFallbackBatch(sender, fallback.get(index))
+                                .transportFrameBytes()
+                ));
+            }
+        }
+        System.out.println("epoch-transition-gap: recovery retained the new epoch from sequence one");
     }
 
     private static void verifyOutboundFallbackPreservesInboundStream() {

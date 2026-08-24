@@ -36,7 +36,7 @@ final class ChannelTransportStreamingRecoveryState {
         this.outboundEpochClosed = false;
     }
 
-    void acceptInboundFrame(int epoch, int sequence) {
+    boolean acceptInboundFrame(int epoch, int sequence) {
         if (epoch <= 0 || sequence <= 0) {
             throw new IllegalStateException("Invalid streaming epoch or sequence");
         }
@@ -50,18 +50,30 @@ final class ChannelTransportStreamingRecoveryState {
             this.inboundEpoch = epoch;
             this.nextInboundSequence = 1;
             this.inboundRecoveryPending = false;
+            this.inboundRecoveryRequested = false;
+            return true;
         }
         if (this.inboundEpoch == 0) {
             this.inboundEpoch = epoch;
             this.nextInboundSequence = 1;
         }
         if (this.inboundEpoch != epoch) {
-            throw new StreamingGapException(this.inboundEpoch, this.nextInboundSequence, sequence, "epoch-mismatch");
+            this.inboundEpoch = epoch;
+            this.nextInboundSequence = 1;
+            this.inboundRecoveryRequested = false;
+            if (sequence != 1) {
+                this.inboundRecoveryPending = true;
+                throw new StreamingGapException(epoch, 1, sequence, "new-epoch-sequence");
+            }
+            this.inboundRecoveryPending = false;
+            return true;
         }
         if (this.nextInboundSequence != sequence) {
             this.inboundRecoveryPending = true;
+            this.inboundRecoveryRequested = false;
             throw new StreamingGapException(this.inboundEpoch, this.nextInboundSequence, sequence, "sequence-gap");
         }
+        return false;
     }
 
     void completeInboundFrame(int epoch, int sequence) {

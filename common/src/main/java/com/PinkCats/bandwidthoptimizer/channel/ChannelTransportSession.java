@@ -168,7 +168,10 @@ public final class ChannelTransportSession implements AutoCloseable {
     }
 
     public synchronized void acceptInboundStreamingFrame(int epoch, int sequence) {
-        this.streamingRecoveryState.acceptInboundFrame(epoch, sequence);
+        boolean newEpoch = this.streamingRecoveryState.acceptInboundFrame(epoch, sequence);
+        if (newEpoch && this.inboundStreamingSession != null) {
+            this.inboundStreamingSession.reset();
+        }
     }
 
     public synchronized void completeInboundStreamingFrame(int epoch, int sequence) {
