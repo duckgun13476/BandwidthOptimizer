@@ -11,8 +11,12 @@ public final class BungeeCordPluginMessageCompatRegressionMain {
         assertProxyControl("bungeecord");
         assertProxyControl("bungeecord:main");
         assertProxyControl("BUNGEE:MAIN");
+        assertProxyControl("potato:chat");
+        assertProxyControl("POTATO:PCPBRIDGE");
+        assertProxyControl("potato:tpa");
         assertNotProxyControl("minecraft:brand");
         assertNotProxyControl("modid:payload");
+        assertNotProxyControl("potato:nametag");
         System.out.println("BungeeCord plugin-message compatibility regression passed.");
     }
 
