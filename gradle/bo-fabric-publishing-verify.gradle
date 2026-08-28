@@ -31,6 +31,46 @@ tasks.register('verifyFabricPublishJarContents') {
                 missing.add('META-INF/jars/TorqueAPI-*.jar')
             }
 
+            if (project.ext.has('minecraft_version') && project.ext.minecraft_version == '1.20.1') {
+                def torqueEntry = zipFile.entries().find { entry ->
+                    entry.name.startsWith('META-INF/jars/TorqueAPI-1.20.1-fabric-') && entry.name.endsWith('.jar')
+                }
+                if (torqueEntry == null) {
+                    missing.add('META-INF/jars/TorqueAPI-1.20.1-fabric-*.jar')
+                } else {
+                    File inspectionDir = new File(project.buildDir, 'tmp/verifyFabricPublishJarContents')
+                    inspectionDir.mkdirs()
+                    File torqueJar = new File(inspectionDir, 'TorqueAPI-1.20.1-fabric.jar')
+                    torqueJar.withOutputStream { output ->
+                        zipFile.getInputStream(torqueEntry).withCloseable { input -> input.transferTo(output) }
+                    }
+
+                    boolean windows = System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')
+                    File javap = new File(System.getProperty('java.home'), windows ? 'bin/javap.exe' : 'bin/javap')
+                    if (!javap.isFile()) {
+                        throw new GradleException("Fabric publish verification requires javap from the active JDK: ${javap.absolutePath}")
+                    }
+
+                    ByteArrayOutputStream disassemblyOutput = new ByteArrayOutputStream()
+                    def result = project.exec {
+                        executable javap.absolutePath
+                        args '-classpath', torqueJar.absolutePath, '-c', '-p',
+                                'com.pinkcats.torque.layer.fabric.mixin.ChunkMapTrackingMixin'
+                        standardOutput = disassemblyOutput
+                        errorOutput = disassemblyOutput
+                        ignoreExitValue = true
+                    }
+                    String disassembly = disassemblyOutput.toString('UTF-8')
+                    if (result.exitValue != 0 || disassembly.contains(' putfield')) {
+                        throw new GradleException(
+                                'Fabric publish artifact embeds an invalid Torque ChunkMapTrackingMixin: '
+                                        + 'the mixin constructor must not write target ChunkMap fields. '
+                                        + "Inspect ${torqueEntry.name} before publishing."
+                        )
+                    }
+                }
+            }
+
             boolean hasZstdJar = entries.any { entryName ->
                 entryName.startsWith('META-INF/bandwidthoptimizer/libs/zstd-jni-') && entryName.endsWith('.jar')
             }
@@ -65,4 +105,10 @@ tasks.register('verifyFabricPublishJarContents') {
 
 tasks.named('verifyPublishArtifact').configure {
     dependsOn tasks.named('verifyFabricPublishJarContents')
+}
+
+['runAll', 'runAllAutoExitCompare'].each { taskName ->
+    tasks.matching { it.name == taskName }.configureEach {
+        dependsOn tasks.named('verifyFabricPublishJarContents')
+    }
 }

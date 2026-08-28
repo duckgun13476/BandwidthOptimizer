@@ -42,6 +42,16 @@ base {
 }
 
 repositories {
+    def localTorqueMaven = project.findProperty('torqueLocalMaven')
+    if (localTorqueMaven != null && !localTorqueMaven.toString().isBlank()) {
+        maven {
+            name = 'PinkCatsLocalTorque'
+            url = uri(localTorqueMaven.toString())
+            content {
+                includeGroup 'com.pinkcats.torque'
+            }
+        }
+    }
     maven {
         name = 'PinkCatsMaven'
         url = uri('https://logistics.aisaveworld.tech/d/share/maven/torque')
