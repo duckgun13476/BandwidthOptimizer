@@ -209,6 +209,15 @@ tasks.register('runChannelTransportRoundTrip', JavaExec) {
     )
 }
 
+tasks.register('runInternalTransportCarrierRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies that BO transport carriers are never re-entered into the outbound transport hook.',
+            'com.PinkCats.bandwidthoptimizer.test.InternalTransportCarrierRegressionMain'
+    )
+}
+
 tasks.register('runCrossFrameZstdRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,
