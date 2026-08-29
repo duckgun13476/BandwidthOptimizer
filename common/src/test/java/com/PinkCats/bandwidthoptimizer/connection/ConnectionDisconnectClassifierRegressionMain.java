@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import javax.net.ssl.SSLHandshakeException;
 import java.io.EOFException;
+import java.nio.channels.ClosedChannelException;
 
 public final class ConnectionDisconnectClassifierRegressionMain {
 
@@ -126,6 +127,29 @@ public final class ConnectionDisconnectClassifierRegressionMain {
             throw new AssertionError("BO close stage was not preserved: " + decision);
         }
         channel.finishAndReleaseAll();
+
+        EmbeddedChannel closedBeforeTransportWrite = new EmbeddedChannel();
+        ConnectionDisconnectClassifier.observeInboundPacketClass(
+                closedBeforeTransportWrite,
+                "net.minecraft.network.protocol.game.ClientboundKeepAlivePacket"
+        );
+        ConnectionDisconnectClassifier.markBoInitiatedClose(
+                closedBeforeTransportWrite,
+                "streaming-boundary-carrier-write",
+                new ClosedChannelException()
+        );
+        assertDecision(
+                ConnectionDisconnectClassifier.onChannelInactive(closedBeforeTransportWrite),
+                ConnectionDisconnectClassifier.Category.REMOTE_EOF,
+                ConnectionDisconnectClassifier.RecoveryPolicy.RECONNECT_CANDIDATE
+        );
+        ConnectionDisconnectClassifier.Decision closedWriteDecision =
+                ConnectionDisconnectClassifier.snapshot(closedBeforeTransportWrite);
+        if (!"transport-write-after-close".equals(closedWriteDecision.trigger())
+                || !"streaming-boundary-carrier-write".equals(closedWriteDecision.boStage())) {
+            throw new AssertionError("post-close transport write lost its evidence: " + closedWriteDecision);
+        }
+        closedBeforeTransportWrite.finishAndReleaseAll();
         System.out.println("Connection disconnect classifier regression passed");
     }
 

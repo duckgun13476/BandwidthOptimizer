@@ -81,6 +81,22 @@ public final class ConnectionDisconnectClassifier {
         if (channel == null) {
             return;
         }
+        ClassifiedThrowable classified = classifyThrowableChain(throwable);
+        if (!channel.isActive() || isExternalCloseCategory(classified.category())) {
+            Category category = classified.category() == Category.UNKNOWN
+                    ? Category.REMOTE_EOF
+                    : classified.category();
+            state(channel).record(
+                    category,
+                    recoveryPolicy(category),
+                    "transport-write-after-close",
+                    "",
+                    classified.throwableClass(),
+                    safe(stage),
+                    priority(category)
+            );
+            return;
+        }
         state(channel).record(
                 Category.BO_TRANSPORT_FAILURE,
                 RecoveryPolicy.RECONNECT_CANDIDATE,
@@ -260,6 +276,10 @@ public final class ConnectionDisconnectClassifier {
             case REMOTE_EOF, CONNECT_FAILURE -> 40;
             case UNEXPECTED_CLEAN_CLOSE, UNKNOWN -> 0;
         };
+    }
+
+    private static boolean isExternalCloseCategory(Category category) {
+        return category == Category.CONNECTION_RESET || category == Category.REMOTE_EOF;
     }
 
     private static String packetClassName(Object packet) {
