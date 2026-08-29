@@ -17,10 +17,25 @@ tasks.register('verifyFabricPublishJarContents') {
             [
                     'fabric.mod.json',
                     'bandwidthoptimizer.mixins.json',
-                    'com/PinkCats/bandwidthoptimizer/Bandwidthoptimizer.class'
+                    'com/PinkCats/bandwidthoptimizer/Bandwidthoptimizer.class',
+                    'com/PinkCats/bandwidthoptimizer/BandwidthOptimizerFabricClient.class',
+                    'com/PinkCats/bandwidthoptimizer/channel/ChannelTransportNetworkChannel.class',
+                    'com/PinkCats/bandwidthoptimizer/channel/ChannelTransportClientReceiver.class'
             ].each { requiredEntry ->
                 if (!entries.contains(requiredEntry)) {
                     missing.add(requiredEntry)
+                }
+            }
+
+            if (entries.contains('fabric.mod.json')) {
+                def metadata = new groovy.json.JsonSlurper().parse(zipFile.getInputStream(zipFile.getEntry('fabric.mod.json')))
+                def mainEntrypoints = metadata.entrypoints?.main ?: []
+                def clientEntrypoints = metadata.entrypoints?.client ?: []
+                if (!mainEntrypoints.contains('com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer')) {
+                    missing.add('fabric.mod.json main entrypoint Bandwidthoptimizer')
+                }
+                if (!clientEntrypoints.contains('com.PinkCats.bandwidthoptimizer.BandwidthOptimizerFabricClient')) {
+                    missing.add('fabric.mod.json client entrypoint BandwidthOptimizerFabricClient')
                 }
             }
 

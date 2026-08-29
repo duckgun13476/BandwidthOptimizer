@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.channel;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.resources.ResourceLocation;
 
 public final class ChannelTransportNetworkChannel {
@@ -27,5 +28,11 @@ public final class ChannelTransportNetworkChannel {
                 TRANSPORT_PAYLOAD_ID,
                 PROTOCOL_VERSION
         );
+    }
+
+    public static void registerServerReceiver() {
+        ServerPlayNetworking.registerGlobalReceiver(ChannelTransportBytePayload.TYPE, (payload, context) -> {
+            // Transport carriers are consumed by the Netty decode hook before play dispatch.
+        });
     }
 }

@@ -80,6 +80,7 @@ def applySharedBandwidthOptimizerRunProperties = { Project projectRef, def runCo
             ['boExperientChunkHotspotPathRangeRoundTrips', 'bandwidthoptimizer.experient.chunkHotspotPathRangeRoundTrips'],
             ['boExperientChunkHotspotPathInitialDelayTicks', 'bandwidthoptimizer.experient.chunkHotspotPathInitialDelayTicks'],
             ['boDebugDiagnose', 'bandwidthoptimizer.debug.diagnose'],
+            ['boDebugAnalysis', 'bandwidthoptimizer.debug.analysis'],
             ['boChunkDiagnosticOutputsEnabled', 'bandwidthoptimizer.chunk.diagnosticOutputsEnabled'],
             ['boTransportEnabled', 'bandwidthoptimizer.transport.enabled'],
             ['boTransportMappingEnabled', 'bandwidthoptimizer.transport.mappingEnabled'],
@@ -635,6 +636,7 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathRangeStepBlocks')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boExperientChunkHotspotPathRangeRoundTrips')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boDebugDiagnose')
+    project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boDebugAnalysis')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boChunkDiagnosticOutputsEnabled')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportEnabled')
     project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, 'boTransportMappingEnabled')
@@ -673,10 +675,45 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
     if (!projectRef.hasProperty('boDebugDiagnose')) {
         args.add('-PboDebugDiagnose=true')
     }
+    if (!projectRef.hasProperty('boDebugAnalysis')) {
+        args.add('-PboDebugAnalysis=true')
+    }
     if (!projectRef.hasProperty('boExperientRunAllMarkerExit')) {
         args.add('-PboExperientRunAllMarkerExit=true')
     }
+    if (!projectRef.hasProperty('boTransportTelemetryDumpFileName')) {
+        args.add('-PboTransportTelemetryDumpFileName=transport-telemetry-dump.properties')
+    }
     return args
+}
+
+def verifyRunAllTransportTelemetry(Project projectRef, File clientDump, File serverDump) {
+
+    if (projectRef.hasProperty('boTransportEnabled')
+            && !projectRef.property('boTransportEnabled').toString().toBoolean()) {
+        println 'runAll: transport telemetry verification skipped because transport is explicitly disabled.'
+        return
+    }
+
+    [client: clientDump, server: serverDump].each { String side, File dumpFile ->
+        if (!dumpFile.isFile()) {
+            throw new GradleException("runAll transport verification missing ${side} telemetry dump: ${dumpFile.absolutePath}")
+        }
+
+        Properties telemetry = new Properties()
+        dumpFile.withInputStream { telemetry.load(it) }
+        ['outbound.frames', 'inbound.frames'].each { String key ->
+            long value
+            try {
+                value = Long.parseLong(telemetry.getProperty(key, '0'))
+            } catch (NumberFormatException exception) {
+                throw new GradleException("runAll transport verification invalid ${side} ${key} in ${dumpFile.absolutePath}", exception)
+            }
+            if (value <= 0L) {
+                throw new GradleException("runAll transport verification expected ${side} ${key} > 0, found ${value} in ${dumpFile.absolutePath}")
+            }
+        }
+    }
 }
 
 def buildWatchBoundaryRefreshPatchRegressionGradleArgs(Project projectRef) {
@@ -942,6 +979,16 @@ def forceStopRunAllProcesses(Project projectRef, File projectDirFile, boolean is
 
     processes.findAll { it != null }.each { Process process ->
         if (!process.isAlive()) {
+            return
+        }
+
+        if (isWindows) {
+            // runServer/runClient are Gradle wrappers; terminate their owned JVM tree as one test unit.
+            projectRef.exec {
+                commandLine 'cmd', '/c', 'taskkill', '/PID', String.valueOf(process.pid()), '/T', '/F'
+                ignoreExitValue = true
+            }
+            process.waitFor(5L, TimeUnit.SECONDS)
             return
         }
 
@@ -1280,6 +1327,7 @@ tasks.register('runAll') {
                 180000L
         )
 
+        verifyRunAllTransportTelemetry(project, clientTransportTelemetryDump, serverTransportTelemetryDump)
         println 'runAll: 四个方向的 jsonl 都已经开始写入。'
         println "服务端目录 ${serverDir.absolutePath}"
         println "客户端目录 ${clientDir.absolutePath}"
@@ -1331,6 +1379,8 @@ tasks.register('runAll') {
         if (serverProcess.isAlive()) {
             serverProcess.waitFor(30L, TimeUnit.SECONDS)
         }
+
+        forceStopRunAllProcesses(project, projectDirFile, isWindows, [serverProcess, clientProcess, latencyProxyProcess])
 
         if (verifyChunkBranches) {
             project.ext.boWaitForFilesToSettle.call(
@@ -1492,6 +1542,7 @@ tasks.register('runAllAutoExitCompare') {
                     settleTimeoutMillis
             )
 
+            verifyRunAllTransportTelemetry(project, clientTransportTelemetryDump, serverTransportTelemetryDump)
             println 'runAllAutoExitCompare: jsonl 已稳定，正在执行 compare。'
             runChannelJsonlCompareNow(project)
         } finally {

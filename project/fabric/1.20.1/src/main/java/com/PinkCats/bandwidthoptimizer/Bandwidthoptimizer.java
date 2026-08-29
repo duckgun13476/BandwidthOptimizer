@@ -62,6 +62,7 @@ public class Bandwidthoptimizer implements ModInitializer {
         Config.applyRuntimeConfig(Config.currentLocalRuntimeConfig());
         BandwidthOptimizerLifecycle.register(TorqueLayer.platform());
         ChannelTransportNetworkChannel.register();
+        ChannelTransportNetworkChannel.registerServerReceiver();
         ServerBandwidthStatsNetworkChannel.register();
         IdleGateNetworkChannel.register();
         PacketClassTraceNetworkChannel.register();

@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer;
 
 import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
 import com.PinkCats.bandwidthoptimizer.client.hud.BandwidthOptimizerHudOverlay;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportClientReceiver;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
 import com.PinkCats.bandwidthoptimizer.command.ClientHudCommand;
 import com.PinkCats.bandwidthoptimizer.connection.ClientReconnectCoordinator;
@@ -21,6 +22,7 @@ public class BandwidthOptimizerFabricClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         ClientChunkCacheConfig.applyRuntimeConfig(ClientChunkCacheConfig.currentRuntimeConfig());
+        ChannelTransportClientReceiver.register();
         ClientReconnectCoordinator.install(ClientReconnectPlatform.INSTANCE);
         IdleGateClientNetworkSender.register();
         ChunkPersistentClientCache.startAsyncPreload("fabric_client_startup");

@@ -42,6 +42,16 @@ base {
 }
 
 repositories {
+    def localTorqueMaven = project.findProperty('torqueLocalMaven')
+    if (localTorqueMaven != null && !localTorqueMaven.toString().isBlank()) {
+        maven {
+            name = 'PinkCatsLocalTorque'
+            url = uri(localTorqueMaven.toString())
+            content {
+                includeGroup 'com.pinkcats.torque'
+            }
+        }
+    }
     maven {
         name = 'PinkCatsMaven'
         url = uri('https://logistics.aisaveworld.tech/d/share/maven/torque')
@@ -87,14 +97,10 @@ dependencies {
     mappings loom.officialMojangMappings()
     modImplementation 'net.fabricmc:fabric-loader:0.19.1'
     modImplementation 'net.fabricmc.fabric-api:fabric-api:0.116.11+1.21.1'
-    modImplementation("com.pinkcats.torque:TorqueAPI-1.21.1-fabric:${torque_api_version}") {
-        changing = true
-    }
-    include("com.pinkcats.torque:TorqueAPI-1.21.1-fabric:${torque_api_version}")
-    implementation("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}") {
-        changing = true
-    }
-    include("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}")
+    modImplementation "com.pinkcats.torque:TorqueAPI-1.21.1-fabric:${fabric_torque_api_version}"
+    include "com.pinkcats.torque:TorqueAPI-1.21.1-fabric:${fabric_torque_api_version}"
+    implementation "com.pinkcats.torque:TorqueAPI-layer-api:${fabric_torque_api_version}"
+    include "com.pinkcats.torque:TorqueAPI-layer-api:${fabric_torque_api_version}"
     compileOnly "com.github.luben:zstd-jni:${zstdJniVersion}"
     testRuntimeOnly "com.github.luben:zstd-jni:${zstdJniVersion}"
     embeddedRuntimeLibs "com.github.luben:zstd-jni:${zstdJniVersion}"

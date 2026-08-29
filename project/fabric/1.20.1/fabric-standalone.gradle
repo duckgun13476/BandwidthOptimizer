@@ -97,13 +97,9 @@ dependencies {
     mappings loom.officialMojangMappings()
     modImplementation 'net.fabricmc:fabric-loader:0.17.2'
     modImplementation 'net.fabricmc.fabric-api:fabric-api:0.92.6+1.20.1'
-    modImplementation("com.pinkcats.torque:TorqueAPI-1.20.1-fabric:${torque_api_version}") {
-        changing = true
-    }
-    include("com.pinkcats.torque:TorqueAPI-1.20.1-fabric:${torque_api_version}")
-    compileOnly("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}") {
-        changing = true
-    }
+    modImplementation "com.pinkcats.torque:TorqueAPI-1.20.1-fabric:${fabric_torque_api_version}"
+    include "com.pinkcats.torque:TorqueAPI-1.20.1-fabric:${fabric_torque_api_version}"
+    compileOnly "com.pinkcats.torque:TorqueAPI-layer-api:${fabric_torque_api_version}"
     compileOnly "com.github.luben:zstd-jni:${zstdJniVersion}"
     testRuntimeOnly "com.github.luben:zstd-jni:${zstdJniVersion}"
     embeddedRuntimeLibs "com.github.luben:zstd-jni:${zstdJniVersion}"
