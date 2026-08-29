@@ -30,8 +30,6 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -696,13 +694,12 @@ public final class CreateBlockEntityUpdateGate {
         }
         BlockEntity blockEntity = level.getBlockEntity(pos);
         List<Entity> contraptions = new ArrayList<>();
-        collectCreateContraption(contraptions, invokeNoArg(blockEntity, "getAttachedContraption"));
-        collectCreateContraption(contraptions, invokeNoArg(blockEntity, "getMovedContraption"));
-        collectCreateContraption(contraptions, readField(blockEntity, "movedContraption"));
-        collectCreateContraption(contraptions, readField(blockEntity, "hourHand"));
-        collectCreateContraption(contraptions, readField(blockEntity, "minuteHand"));
-        collectCreateContraption(contraptions, readField(blockEntity, "sharedMirrorContraption"));
-        if (contraptions.isEmpty()) {
+        CreateContraptionReferenceResolver.Resolution resolution =
+                CreateContraptionReferenceResolver.resolve(blockEntity, BlockEntityTypeKeyCompat.keyOf(blockEntity.getType()));
+        for (Object reference : resolution.references()) {
+            collectCreateContraption(contraptions, reference);
+        }
+        if (contraptions.isEmpty() && resolution.requiresNearbyScan()) {
             contraptions.addAll(scanNearbyCreateContraptions(level, pos));
         }
         AABB bounds = null;
@@ -741,7 +738,7 @@ public final class CreateBlockEntityUpdateGate {
         if (entity == null || pos == null) {
             return false;
         }
-        Object anchor = invokeNoArg(entity, "getAnchorVec");
+        Object anchor = CreateContraptionReferenceResolver.readAnchorVector(entity);
         Vec3 target = anchor instanceof Vec3 anchorVec ? anchorVec : entity.position();
         return target.distanceToSqr(centerOf(pos)) <= 128.0D * 128.0D;
     }
@@ -772,40 +769,6 @@ public final class CreateBlockEntityUpdateGate {
         if (value instanceof Entity entity && isUsableCreateContraption(entity) && !contraptions.contains(entity)) {
             contraptions.add(entity);
         }
-    }
-
-    private static Object invokeNoArg(Object target, String methodName) {
-        if (target == null || methodName == null || methodName.isBlank()) {
-            return null;
-        }
-        Class<?> type = target.getClass();
-        while (type != null) {
-            try {
-                Method method = type.getDeclaredMethod(methodName);
-                method.setAccessible(true);
-                return method.invoke(target);
-            } catch (ReflectiveOperationException | LinkageError | SecurityException ignored) {
-                type = type.getSuperclass();
-            }
-        }
-        return null;
-    }
-
-    private static Object readField(Object target, String fieldName) {
-        if (target == null || fieldName == null || fieldName.isBlank()) {
-            return null;
-        }
-        Class<?> type = target.getClass();
-        while (type != null) {
-            try {
-                Field field = type.getDeclaredField(fieldName);
-                field.setAccessible(true);
-                return field.get(target);
-            } catch (ReflectiveOperationException | LinkageError | SecurityException ignored) {
-                type = type.getSuperclass();
-            }
-        }
-        return null;
     }
 
     private static AABB union(AABB first, AABB second) {

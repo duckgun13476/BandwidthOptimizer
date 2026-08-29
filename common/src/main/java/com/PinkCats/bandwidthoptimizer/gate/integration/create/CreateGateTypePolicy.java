@@ -11,6 +11,14 @@ public final class CreateGateTypePolicy {
         GENERAL
     }
 
+    enum ContraptionReferenceKind {
+        PISTON,
+        BEARING,
+        CLOCKWORK,
+        PULLEY,
+        NEARBY_SCAN
+    }
+
     private static final Set<String> SOUND_CLASSIFIED_BLOCK_ENTITY_TYPES = Set.of(
             "cuckoo_clock",
             "deployer",
@@ -111,6 +119,16 @@ public final class CreateGateTypePolicy {
     static boolean isMovingContraptionController(String typeKey) {
         return isCreateBlockEntity(typeKey)
                 && MOVING_CONTRAPTION_CONTROLLER_TYPES.contains(path(typeKey));
+    }
+
+    static ContraptionReferenceKind contraptionReferenceKind(String typeKey) {
+        return switch (path(typeKey)) {
+            case "mechanical_piston" -> ContraptionReferenceKind.PISTON;
+            case "windmill_bearing", "mechanical_bearing" -> ContraptionReferenceKind.BEARING;
+            case "clockwork_bearing" -> ContraptionReferenceKind.CLOCKWORK;
+            case "rope_pulley", "hose_pulley", "elevator_pulley" -> ContraptionReferenceKind.PULLEY;
+            default -> ContraptionReferenceKind.NEARBY_SCAN;
+        };
     }
 
     static boolean isVisibleRawBypassController(String typeKey) {

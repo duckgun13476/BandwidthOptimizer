@@ -538,6 +538,14 @@ tasks.register('runConnectionPayloadTaskGuardRegression', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.connection.ConnectionPayloadTaskGuardRegressionMain'
 }
 
+tasks.register('runCreateContraptionReferenceResolverRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies type-specific Create contraption reference resolution.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateContraptionReferenceResolverRegressionMain'
+}
+
 tasks.register('runChunkBranchCoverageVerify', JavaExec) {
     group = 'verification'
     description = 'Verifies NeoForge 1.21.1 runAll chunk transport branch coverage.'
