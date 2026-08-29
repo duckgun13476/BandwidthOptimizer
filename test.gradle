@@ -107,7 +107,8 @@ def applySharedBandwidthOptimizerRunProperties = { Project projectRef, def runCo
             ['boCreateBlockEntityUpdateGateEnabled', 'bandwidthoptimizer.create.blockEntityUpdateGateEnabled'],
             ['boCreateBlockEntityUpdateGateMaxDelayMillis', 'bandwidthoptimizer.create.blockEntityUpdateGateMaxDelayMillis'],
             ['boCreateBlockEntityUpdateGateMaxPendingPerPlayer', 'bandwidthoptimizer.create.blockEntityUpdateGateMaxPendingPerPlayer'],
-            ['boCreateBlockEntityUpdateGateChunkBootstrapMillis', 'bandwidthoptimizer.create.blockEntityUpdateGateChunkBootstrapMillis']
+            ['boCreateBlockEntityUpdateGateChunkBootstrapMillis', 'bandwidthoptimizer.create.blockEntityUpdateGateChunkBootstrapMillis'],
+            ['boExperientSingleplayerCarrierMarker', 'bandwidthoptimizer.experient.singleplayerCarrierMarker']
     ].each { List<String> mapping ->
         applyOptionalRunProperty(projectRef, runConfig, mapping[0], mapping[1])
     }
@@ -124,6 +125,7 @@ def applySharedBandwidthOptimizerRunProperties = { Project projectRef, def runCo
             ['boExperientChunkHotspotPathDimensionHopMode', 'bandwidthoptimizer.experient.chunkHotspotPathDimensionHopMode'],
             ['boExperientChunkHotspotPathRangeBounceMode', 'bandwidthoptimizer.experient.chunkHotspotPathRangeBounceMode'],
             ['boExperientRunAllMarkerExit', 'bandwidthoptimizer.experient.runAllMarkerExit'],
+            ['boExperientSingleplayerCarrierRegression', 'bandwidthoptimizer.experient.singleplayerCarrierRegression'],
             ['boExperientWatchBoundaryRefreshPatchEnabled', 'bandwidthoptimizer.experient.watchBoundaryRefreshPatchEnabled']
     ].each { List<String> mapping ->
         applyBooleanRunProperty(projectRef, runConfig, mapping[0], mapping[1])
@@ -1101,6 +1103,63 @@ gradle.taskGraph.whenReady { TaskExecutionGraph taskGraph ->
         Task taskRef = tasks.named(taskName).get()
         if (taskGraph.hasTask(taskRef)) {
             project.ext.boRequireExplicitVersionRunAllTaskRequest.call(project, taskName)
+        }
+    }
+}
+
+tasks.register('runSingleplayerCarrierRegression') {
+    group = 'verification'
+    description = 'Starts an integrated Fabric world and verifies the BO carrier path survives LocalChannel transport.'
+    dependsOn(tasks.named('testClasses'))
+
+    doLast {
+        boolean isWindows = System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')
+        File projectDirFile = project.projectDir
+        String wrapperPath = new File(boRepositoryRootDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        File marker = new File(projectDirFile, 'run/client/bo-singleplayer-carrier-regression.ok')
+        File clientTaskLog = new File(projectDirFile, 'run/runall-singleplayer-carrier-client-task.log')
+        Files.deleteIfExists(marker.toPath())
+
+        List<String> clientGradleArgs = [
+                '--console=plain',
+                '-PboExperientEnabled=true',
+                '-PboExperientSingleplayerCarrierRegression=true',
+                "-PboExperientSingleplayerCarrierMarker=${marker.absolutePath}"
+        ]
+        Process clientProcess = startExistingRunTaskProcess(
+                projectDirFile,
+                isWindows,
+                wrapperPath,
+                'runClient',
+                clientGradleArgs,
+                null,
+                clientTaskLog,
+                'singleplayer-carrier'
+        )
+        try {
+            project.ext.boWaitForMarkerFile.call(
+                    marker,
+                    180000L,
+                    'runSingleplayerCarrierRegression 等待集成服 LocalChannel marker'
+            )
+            if (!clientProcess.waitFor(30L, TimeUnit.SECONDS)) {
+                throw new GradleException('Integrated client wrote its marker but did not stop.')
+            }
+            if (clientProcess.exitValue() != 0) {
+                throw new GradleException("Integrated client exited with ${clientProcess.exitValue()}; see ${clientTaskLog.absolutePath}")
+            }
+        } finally {
+            if (clientProcess.isAlive()) {
+                if (isWindows) {
+                    project.exec {
+                        commandLine 'cmd', '/c', 'taskkill', '/PID', String.valueOf(clientProcess.pid()), '/T', '/F'
+                        ignoreExitValue = true
+                    }
+                } else {
+                    clientProcess.destroyForcibly()
+                }
+                clientProcess.waitFor(5L, TimeUnit.SECONDS)
+            }
         }
     }
 }

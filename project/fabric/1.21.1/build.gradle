@@ -79,6 +79,7 @@ if (standaloneFabricBuild) {
             ['runChannelTransportReport', 'verification', 'Runs Fabric 1.21.1 transport report scenarios.'],
             ['runChannelTransportRoundTrip', 'verification', 'Verifies Fabric 1.21.1 transport codec round trips.'],
             ['runInternalTransportCarrierRegression', 'verification', 'Verifies Fabric 1.21.1 internal carrier isolation.'],
+            ['runSingleplayerCarrierRegression', 'verification', 'Runs Fabric 1.21.1 LocalChannel carrier regression.'],
             ['runCrossFrameZstdRegression', 'verification', 'Verifies Fabric 1.21.1 cross-frame Zstd reuse and recovery.'],
             ['runChunkBranchCoverageVerify', 'verification', 'Verifies Fabric 1.21.1 chunk branch coverage.'],
             ['runWatchBoundaryRefreshPatchRegression', 'verification', 'Runs Fabric 1.21.1 watch-boundary refresh-patch regression.'],

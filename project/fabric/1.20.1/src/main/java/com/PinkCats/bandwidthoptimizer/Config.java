@@ -441,6 +441,10 @@ public class Config {
             public static final int DEFAULT_SERVER_COMMAND_DELAY_TICKS = 0;
             public static final String RUN_ALL_MARKER_EXIT =
                     "bandwidthoptimizer.experient.runAllMarkerExit";
+            public static final String SINGLEPLAYER_CARRIER_REGRESSION =
+                    "bandwidthoptimizer.experient.singleplayerCarrierRegression";
+            public static final String SINGLEPLAYER_CARRIER_MARKER =
+                    "bandwidthoptimizer.experient.singleplayerCarrierMarker";
             public static final String CHUNK_HOTSPOT_PATH_ENABLED =
                     "bandwidthoptimizer.experient.chunkHotspotPathEnabled";
             public static final String CHUNK_HOTSPOT_PATH_INITIAL_DELAY_TICKS =

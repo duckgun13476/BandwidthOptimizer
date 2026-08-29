@@ -46,6 +46,7 @@ public class BandwidthOptimizerFabricClient implements ClientModInitializer {
             IdleGateClientController.onClientTick(client);
             com.PinkCats.bandwidthoptimizer.experimental.runall.ExperientClientCaptureResetHooks.onClientTick();
             com.PinkCats.bandwidthoptimizer.experimental.runall.ExperientAutoConnectController.onClientTick(client);
+            com.PinkCats.bandwidthoptimizer.experimental.runall.ExperientSingleplayerCarrierRegressionController.onClientTick(client);
         });
         HudRenderCallback.EVENT.register((guiGraphics, tickDelta) ->
                 BandwidthOptimizerHudOverlay.render(guiGraphics));

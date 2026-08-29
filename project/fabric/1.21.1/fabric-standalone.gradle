@@ -185,6 +185,7 @@ tasks.named('jar', Jar).configure {
 
 tasks.withType(Jar).configureEach {
     if (name == 'sourcesJar') {
+        dependsOn tasks.named('prepareEmbeddedRuntimeLibs')
         duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     }
 }
