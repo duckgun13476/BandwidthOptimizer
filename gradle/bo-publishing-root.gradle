@@ -82,7 +82,9 @@ tasks.register('publishAllVersions') {
 tasks.register('allworkPackageAllVersions') {
     group = 'Allwork'
     description = 'Build final jars for all publishable BandwidthOptimizer versions.'
-    dependsOn boPublishableProjectPaths.collect { "${it}:allworkJarJar" }
+    // Fabric version projects proxy this task into standalone Gradle builds.
+    // verifyPublishArtifact already builds the final artifact, so scheduling both
+    // aliases would launch duplicate Fabric builds against the same project state.
     dependsOn boPublishableProjectPaths.collect { "${it}:verifyPublishArtifact" }
 }
 
