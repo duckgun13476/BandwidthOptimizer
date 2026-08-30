@@ -27,4 +27,5 @@ logs
 /tools/
 /update/publish-ledger.json
 /update/discord-publish-ledger.json
+/project/**/bandwidthoptimizer-native/
 /.tmp/

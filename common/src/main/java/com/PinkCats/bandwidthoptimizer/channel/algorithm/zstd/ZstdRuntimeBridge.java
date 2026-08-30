@@ -22,15 +22,11 @@ final class ZstdRuntimeBridge {
     private static final String COMPRESS_CONTEXT_CLASS = "com.github.luben.zstd.ZstdCompressCtx";
     private static final String DECOMPRESS_CONTEXT_CLASS = "com.github.luben.zstd.ZstdDecompressCtx";
     private static final String END_DIRECTIVE_CLASS = "com.github.luben.zstd.EndDirective";
-    private static final String NATIVE_CLASS = "com.github.luben.zstd.util.Native";
     private static final String EMBEDDED_ZSTD_RESOURCE = "META-INF/bandwidthoptimizer/libs/zstd-jni-1.5.7-7.jar";
     private static final String EMBEDDED_ZSTD_FILE_NAME = "zstd-jni-1.5.7-7.jar";
-    private static final String WINDOWS_AMD64_NATIVE_RESOURCE = "win/amd64/libzstd-jni-1.5.7-7.dll";
-    private static final String WINDOWS_AMD64_NATIVE_FILE_NAME = "libzstd-jni-1.5.7-7.dll";
     private static final String ZSTD_TEMP_FOLDER_PROPERTY = "ZstdTempFolder";
     private static final String DRIVER_BACKUP_DIRECTORY = "driver-backup";
     private static final String EMBEDDED_LIBS_DIRECTORY = "embedded-libs";
-    private static final String WINDOWS_NATIVE_DIRECTORY = "native-libs";
     private static final int MAX_PRIMARY_NATIVE_DRIVER_FILES = 3;
     private static final int MAX_LEGACY_ROOT_NATIVE_DRIVER_FILES = 1;
     private static final DateTimeFormatter BACKUP_DIRECTORY_TIME_FORMAT =
@@ -45,12 +41,26 @@ final class ZstdRuntimeBridge {
     }
 
     private static Bindings loadBindings() {
-        Throwable firstFailure = null;
+        Throwable embeddedFailure = null;
+        try {
+            // Keep BO's Java bindings and native driver in the same isolated loader.
+            return bindEmbedded(false);
+        } catch (Throwable throwable) {
+            embeddedFailure = throwable;
+        }
+
+        try {
+            return bindEmbedded(true);
+        } catch (Throwable backupEmbeddedFailure) {
+            embeddedFailure.addSuppressed(backupEmbeddedFailure);
+        }
+
+        Throwable externalFailure = null;
         ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
         try {
             return bind(contextClassLoader);
         } catch (Throwable throwable) {
-            firstFailure = throwable;
+            externalFailure = throwable;
         }
 
         ClassLoader ownClassLoader = ZstdRuntimeBridge.class.getClassLoader();
@@ -58,23 +68,13 @@ final class ZstdRuntimeBridge {
             try {
                 return bind(ownClassLoader);
             } catch (Throwable throwable) {
-                firstFailure.addSuppressed(throwable);
+                externalFailure.addSuppressed(throwable);
             }
         }
 
-        try {
-            return bindEmbedded(false);
-        } catch (Throwable primaryEmbeddedFailure) {
-            try {
-                return bindEmbedded(true);
-            } catch (Throwable backupEmbeddedFailure) {
-                primaryEmbeddedFailure.addSuppressed(backupEmbeddedFailure);
-                Throwable throwable = primaryEmbeddedFailure;
-                IllegalStateException exception = new IllegalStateException("zstd-jni is unavailable", throwable);
-                exception.addSuppressed(firstFailure);
-                throw exception;
-            }
-        }
+        IllegalStateException exception = new IllegalStateException("zstd-jni is unavailable", embeddedFailure);
+        exception.addSuppressed(externalFailure);
+        throw exception;
     }
 
     private static Bindings bind(ClassLoader classLoader) throws ReflectiveOperationException {
@@ -125,9 +125,7 @@ final class ZstdRuntimeBridge {
         System.setProperty(ZSTD_TEMP_FOLDER_PROPERTY, driverDirectory.toAbsolutePath().toString());
         try {
             ClassLoader embeddedClassLoader = createEmbeddedClassLoader(driverDirectory, backupDriver);
-            if (isWindowsAmd64()) {
-                loadEmbeddedWindowsNative(embeddedClassLoader, driverDirectory, backupDriver);
-            }
+            // Native.load() must run from the embedded loader so JNI ownership stays with its Zstd classes.
             Bindings bindings = bind(embeddedClassLoader);
             if (backupDriver) {
                 cleanupInactiveBackupDrivers(driverDirectory);
@@ -143,75 +141,6 @@ final class ZstdRuntimeBridge {
             throw failure;
         } finally {
             restoreZstdTempFolder(previousTempFolder);
-        }
-    }
-
-    private static boolean isWindowsAmd64() {
-        return System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("windows")
-                && "amd64".equalsIgnoreCase(System.getProperty("os.arch", ""));
-    }
-
-    private static void loadEmbeddedWindowsNative(
-            ClassLoader embeddedClassLoader,
-            Path driverDirectory,
-            boolean forceUniqueFile
-    ) throws IOException, ReflectiveOperationException {
-        Path nativeDriver = writeEmbeddedWindowsNative(embeddedClassLoader, driverDirectory, forceUniqueFile);
-        try {
-            if (!Files.isRegularFile(nativeDriver) || Files.size(nativeDriver) <= 0L) {
-                throw new IOException("Embedded zstd native driver disappeared before load: " + nativeDriver);
-            }
-            System.load(nativeDriver.toAbsolutePath().toString());
-        } catch (UnsatisfiedLinkError error) {
-            UnsatisfiedLinkError failure = new UnsatisfiedLinkError(
-                    "Embedded zstd native load failed: path=" + nativeDriver
-                            + ", exists=" + Files.isRegularFile(nativeDriver)
-                            + ", bytes=" + safeFileSize(nativeDriver)
-                            + ", reason=" + error.getMessage()
-            );
-            failure.initCause(error);
-            throw failure;
-        }
-
-        Class<?> nativeClass = Class.forName(NATIVE_CLASS, true, embeddedClassLoader);
-        nativeClass.getMethod("assumeLoaded").invoke(null);
-    }
-
-    private static Path writeEmbeddedWindowsNative(
-            ClassLoader embeddedClassLoader,
-            Path driverDirectory,
-            boolean forceUniqueFile
-    ) throws IOException {
-        Path nativeDirectory = driverDirectory.resolve(WINDOWS_NATIVE_DIRECTORY);
-        String suffix = forceUniqueFile ? "-" + Thread.currentThread().getId() : "";
-        Path nativeDriver = nativeDirectory.resolve(WINDOWS_AMD64_NATIVE_FILE_NAME.replace(".dll", suffix + ".dll"));
-        if (!forceUniqueFile && Files.isRegularFile(nativeDriver) && Files.size(nativeDriver) > 0L) {
-            return nativeDriver;
-        }
-
-        Files.createDirectories(nativeDirectory);
-        Path temporaryDriver = Files.createTempFile(nativeDirectory, "bo-zstd-", ".tmp");
-        try (InputStream inputStream = embeddedClassLoader.getResourceAsStream(WINDOWS_AMD64_NATIVE_RESOURCE)) {
-            if (inputStream == null) {
-                throw new IOException("Missing embedded Windows zstd native resource: " + WINDOWS_AMD64_NATIVE_RESOURCE);
-            }
-            Files.copy(inputStream, temporaryDriver, StandardCopyOption.REPLACE_EXISTING);
-            try {
-                Files.move(temporaryDriver, nativeDriver, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-            } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
-                Files.move(temporaryDriver, nativeDriver, StandardCopyOption.REPLACE_EXISTING);
-            }
-        } finally {
-            Files.deleteIfExists(temporaryDriver);
-        }
-        return nativeDriver;
-    }
-
-    private static long safeFileSize(Path path) {
-        try {
-            return Files.isRegularFile(path) ? Files.size(path) : -1L;
-        } catch (IOException ignored) {
-            return -1L;
         }
     }
 
