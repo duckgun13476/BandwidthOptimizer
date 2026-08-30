@@ -530,6 +530,14 @@ tasks.register('runClientboundCommandTreeDeduplicatorRegression', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.channel.packet.ClientboundCommandTreeDeduplicatorRegressionMain'
 }
 
+tasks.register('runOutboundBurstWarningRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies NeoForge 1.21.1 outbound burst warning bounds.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.channel.ChannelOutboundBurstWarningRegressionMain'
+}
+
 tasks.register('runPersistentCacheBloomRegression', JavaExec) {
     group = 'verification'
     description = 'Verifies persistent cache Bloom catalog round trips and false-negative safety.'

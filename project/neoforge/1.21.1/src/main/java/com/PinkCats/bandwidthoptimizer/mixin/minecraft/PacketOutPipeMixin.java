@@ -67,6 +67,7 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
     @Inject(method = "encode*", at = @At("RETURN"))
     private void bandwidthoptimizer$captureAndMaybeWrap(ChannelHandlerContext context, Packet<T> packet, ByteBuf out, CallbackInfo ci) {
         if (ChannelTransportHooks.isInternalTransportCarrierPacket(packet)) {
+            com.PinkCats.bandwidthoptimizer.channel.ChannelOutboundBurstWarning.recordWireFrame(context, this.protocolInfo.flow(), out.writerIndex() - this.bandwidthoptimizer$writerIndexBefore, true);
             return;
         }
         if (TrueUuidLateLoginQueryGuard.tryDropOutboundLateCustomQueryAck(context, packet, this.protocolInfo.flow(), out, this.bandwidthoptimizer$writerIndexBefore)) {
@@ -91,6 +92,7 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
             return;
         }
         IdleGateBackgroundPacketGate.recordPassedPacket(context == null ? null : context.channel(), packet, this.protocolInfo.flow(), encodedByteLength);
+        com.PinkCats.bandwidthoptimizer.channel.ChannelOutboundBurstWarning.recordLogicalPacket(context, this.protocolInfo.flow(), packet.getClass().getName(), encodedByteLength);
         if (ChannelTransportStreamingEpochGate.deferIfClosed(
                 context,
                 ChannelTransportHooks.isInternalTransportCarrierPacket(packet),
@@ -133,6 +135,7 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
             //handle
             stageStartNanos = HotpathCostProbe.start();
             ChannelTransportHooks.tryToWrapOutboundPacket(context, packet, out, this.bandwidthoptimizer$writerIndexBefore, this);
+            com.PinkCats.bandwidthoptimizer.channel.ChannelOutboundBurstWarning.recordWireFrame(context, this.protocolInfo.flow(), out.writerIndex() - this.bandwidthoptimizer$writerIndexBefore, false);
             ClientboundCommandTreeDeduplicator.commit(commandTreeCandidate);
             HotpathCostProbe.end("transportWrap", stageStartNanos);
             long hookNanos = System.nanoTime() - returnHookStartNanos;

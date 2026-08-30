@@ -451,6 +451,7 @@ public final class ChannelTransportHooks {
                 int carrierLength = out.writerIndex() - startIndexInclusive;
                 byte[] encodedCarrier = ByteBufUtil.getBytes(out, startIndexInclusive, carrierLength, false);
                 out.writerIndex(startIndexInclusive);
+                ChannelOutboundBurstWarning.recordWireFrame(context, outboundPacketFlow, encodedCarrier.length, true);
                 ChannelFuture boundaryWrite = context.write(Unpooled.wrappedBuffer(encodedCarrier));
                 boundaryWrite.addListener(future -> {
                     if (!future.isSuccess()) {

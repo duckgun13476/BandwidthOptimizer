@@ -229,6 +229,11 @@ public final class DiagnosticToolRegistry {
                 "Connection close cause and recovery-policy classification",
                 true
         ),
+        OUTBOUND_BURST(
+                "outboundBurst",
+                Cost.SMALL,
+                "Elevated clientbound BO wire-burst summaries"
+        ),
         CHUNK_TRANSPORT_FRAMES(
                 "chunkTransportFrames",
                 Cost.MEDIUM,

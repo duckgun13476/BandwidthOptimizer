@@ -220,6 +220,15 @@ tasks.register('runClientboundCommandTreeDeduplicatorRegression', JavaExec) {
     )
 }
 
+tasks.register('runOutboundBurstWarningRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies bounded clientbound outbound burst warning windows and cooldowns.',
+            'com.PinkCats.bandwidthoptimizer.channel.ChannelOutboundBurstWarningRegressionMain'
+    )
+}
+
 tasks.register('runInternalTransportCarrierRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,
