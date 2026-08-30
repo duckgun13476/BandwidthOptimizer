@@ -211,6 +211,15 @@ tasks.register('runChannelTransportRoundTrip', JavaExec) {
     )
 }
 
+tasks.register('runClientboundCommandTreeDeduplicatorRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies byte-exact command-tree deduplication commit and epoch semantics.',
+            'com.PinkCats.bandwidthoptimizer.channel.packet.ClientboundCommandTreeDeduplicatorRegressionMain'
+    )
+}
+
 tasks.register('runInternalTransportCarrierRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,

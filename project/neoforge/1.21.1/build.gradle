@@ -522,6 +522,14 @@ tasks.register('runCrossFrameZstdRegression', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.test.CrossFrameZstdRegressionMain'
 }
 
+tasks.register('runClientboundCommandTreeDeduplicatorRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies NeoForge 1.21.1 command-tree de-duplication.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.channel.packet.ClientboundCommandTreeDeduplicatorRegressionMain'
+}
+
 tasks.register('runPersistentCacheBloomRegression', JavaExec) {
     group = 'verification'
     description = 'Verifies persistent cache Bloom catalog round trips and false-negative safety.'

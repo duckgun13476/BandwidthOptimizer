@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStreamingEpochGate;
+import com.PinkCats.bandwidthoptimizer.channel.packet.ClientboundCommandTreeDeduplicator;
 import com.PinkCats.bandwidthoptimizer.channel.access.PacketEncoderFlowAccess;
 import com.PinkCats.bandwidthoptimizer.channel.access.PacketEncoderProtocolInfoAccess;
 import com.PinkCats.bandwidthoptimizer.debug.HotpathCostProbe;
@@ -84,6 +85,11 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
             out.writerIndex(this.bandwidthoptimizer$writerIndexBefore);
             return;
         }
+        ClientboundCommandTreeDeduplicator.Candidate commandTreeCandidate =
+                ClientboundCommandTreeDeduplicator.inspect(context, packet, this.protocolInfo.flow(), out, this.bandwidthoptimizer$writerIndexBefore);
+        if (commandTreeCandidate.dropped()) {
+            return;
+        }
         IdleGateBackgroundPacketGate.recordPassedPacket(context == null ? null : context.channel(), packet, this.protocolInfo.flow(), encodedByteLength);
         if (ChannelTransportStreamingEpochGate.deferIfClosed(
                 context,
@@ -92,6 +98,7 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
                 this.bandwidthoptimizer$writerIndexBefore,
                 bytes -> ChannelTransportHooks.recordCommittedOutboundPacketStream(context, packet, bytes)
         )) {
+            ClientboundCommandTreeDeduplicator.commit(commandTreeCandidate);
             return;
         }
         long returnHookStartNanos = System.nanoTime();
@@ -126,6 +133,7 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
             //handle
             stageStartNanos = HotpathCostProbe.start();
             ChannelTransportHooks.tryToWrapOutboundPacket(context, packet, out, this.bandwidthoptimizer$writerIndexBefore, this);
+            ClientboundCommandTreeDeduplicator.commit(commandTreeCandidate);
             HotpathCostProbe.end("transportWrap", stageStartNanos);
             long hookNanos = System.nanoTime() - returnHookStartNanos;
 
