@@ -53,6 +53,7 @@ public class Bandwidthoptimizer {
     public Bandwidthoptimizer() {
         ModLoadingContext modLoadingContext = ForgeModLoadingContextCompat.getCurrentModLoadingContext();
         configureNetworkProtocolVersion(readModVersionFromModList());
+        rejectHariChunkTransportStack();
         ZstdRuntimeSupport.configureNativeTempFolder();
         if (ChannelCaptureRuntimeConfig.isJsonlCaptureEnabled()) {
             ChannelFrameJsonlLogger.initializeOutputFiles();
@@ -95,6 +96,16 @@ public class Bandwidthoptimizer {
                 .getModContainerById(MODID)
                 .map(modContainer -> modContainer.getModInfo().getVersion().toString())
                 .orElse(null);
+    }
+
+    private static void rejectHariChunkTransportStack() {
+        if (!ModList.get().isLoaded("hariplayer") && !ModList.get().isLoaded("harichunk")) {
+            return;
+        }
+        throw new IllegalStateException(
+                "BandwidthOptimizer is incompatible with HariPlayer/HariChunk on Forge 1.20.1: "
+                        + "both mods take ownership of chunk sending and Netty scheduling. Remove one before starting."
+        );
     }
 
     private static void configureNetworkProtocolVersion(String rawVersion) {
