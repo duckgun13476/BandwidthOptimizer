@@ -556,6 +556,16 @@ tasks.register('runOutboundBurstWarningRegression', JavaExec) {
     javaLauncher = boJava25Launcher
 }
 
+tasks.register('runDirectBufferReuseRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies NeoForge 26.2 bounded direct Zstd workspaces.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.KineticStreamingDirectBufferReuseRegressionMain'
+    javaLauncher = boJava25Launcher
+    jvmArgs '-XX:MaxDirectMemorySize=16m'
+}
+
 tasks.register('runPersistentCacheBloomRegression', JavaExec) {
     group = 'verification'
     description = 'Verifies persistent cache Bloom catalog round trips and false-negative safety.'

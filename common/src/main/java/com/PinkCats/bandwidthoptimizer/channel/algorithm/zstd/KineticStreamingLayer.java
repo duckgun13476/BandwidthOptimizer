@@ -15,6 +15,8 @@ public final class KineticStreamingLayer implements TransportLayer, AutoCloseabl
     private final FrameTermination frameTermination;
     private final ZstdRuntimeBridge.Context zstdContext;
     private byte[] pendingDecodedBytes = new byte[0];
+    private ByteBuffer sourceWorkspace;
+    private ByteBuffer targetWorkspace;
 
     public KineticStreamingLayer(int compressionLevel) {
         this(compressionLevel, FrameTermination.END);
@@ -70,26 +72,26 @@ public final class KineticStreamingLayer implements TransportLayer, AutoCloseabl
 
     // This function compresses one framed packet batch into a complete zstd stream chunk.
     private byte[] compressStreaming(byte[] inputBytes) {
-        ByteBuffer sourceBuffer = ByteBuffer.allocateDirect(inputBytes.length);
-        sourceBuffer.put(inputBytes);
-        sourceBuffer.flip();
-
-        ByteBuffer targetBuffer = ByteBuffer.allocateDirect(DIRECT_BUFFER_BYTES);
+        ByteBuffer sourceBuffer = sourceWorkspace();
+        ByteBuffer targetBuffer = targetWorkspace();
         ByteArrayOutputStream output = new ByteArrayOutputStream();
+        int inputOffset = 0;
+        clearToEmpty(sourceBuffer);
 
-        while (sourceBuffer.hasRemaining()) {
+        while (inputOffset < inputBytes.length || sourceBuffer.hasRemaining()) {
+            if (!sourceBuffer.hasRemaining()) {
+                inputOffset = refillSourceBuffer(sourceBuffer, inputBytes, inputOffset);
+            }
             targetBuffer.clear();
-            boolean flushed = this.zstdContext.compressDirectByteBufferStream(
+            this.zstdContext.compressDirectByteBufferStream(
                     targetBuffer,
                     sourceBuffer,
                     ZstdRuntimeBridge.StreamDirective.CONTINUE
             );
             writeBuffer(output, targetBuffer);
-            if (flushed && !sourceBuffer.hasRemaining()) {
-                break;
-            }
         }
 
+        clearToEmpty(sourceBuffer);
         while (true) {
             targetBuffer.clear();
             boolean flushed = this.zstdContext.compressDirectByteBufferStream(
@@ -110,21 +112,25 @@ public final class KineticStreamingLayer implements TransportLayer, AutoCloseabl
 
     // This function inflates one transport body into newly produced clear-text bytes.
     private byte[] decompressStreaming(byte[] inputBytes) {
-        ByteBuffer sourceBuffer = ByteBuffer.allocateDirect(inputBytes.length);
-        sourceBuffer.put(inputBytes);
-        sourceBuffer.flip();
-
-        ByteBuffer targetBuffer = ByteBuffer.allocateDirect(DIRECT_BUFFER_BYTES);
+        ByteBuffer sourceBuffer = sourceWorkspace();
+        ByteBuffer targetBuffer = targetWorkspace();
         ByteArrayOutputStream output = new ByteArrayOutputStream();
+        int inputOffset = 0;
+        clearToEmpty(sourceBuffer);
 
-        while (sourceBuffer.hasRemaining()) {
+        while (inputOffset < inputBytes.length || sourceBuffer.hasRemaining()) {
+            if (!sourceBuffer.hasRemaining()) {
+                inputOffset = refillSourceBuffer(sourceBuffer, inputBytes, inputOffset);
+            }
             targetBuffer.clear();
             this.zstdContext.decompressDirectByteBufferStream(targetBuffer, sourceBuffer);
             int writtenBytes = targetBuffer.position();
             writeBuffer(output, targetBuffer);
             ensureDecodedSizeWithinLimit(output);
             // A full direct output buffer can leave decoded bytes pending after input is consumed.
-            while (!sourceBuffer.hasRemaining() && writtenBytes == DIRECT_BUFFER_BYTES) {
+            while (inputOffset >= inputBytes.length
+                    && !sourceBuffer.hasRemaining()
+                    && writtenBytes == DIRECT_BUFFER_BYTES) {
                 targetBuffer.clear();
                 this.zstdContext.decompressDirectByteBufferStream(targetBuffer, sourceBuffer);
                 writtenBytes = targetBuffer.position();
@@ -137,6 +143,44 @@ public final class KineticStreamingLayer implements TransportLayer, AutoCloseabl
         }
 
         return output.toByteArray();
+    }
+
+    private ByteBuffer sourceWorkspace() {
+        if (this.sourceWorkspace == null) {
+            this.sourceWorkspace = ByteBuffer.allocateDirect(DIRECT_BUFFER_BYTES);
+        }
+        return this.sourceWorkspace;
+    }
+
+    private ByteBuffer targetWorkspace() {
+        if (this.targetWorkspace == null) {
+            this.targetWorkspace = ByteBuffer.allocateDirect(DIRECT_BUFFER_BYTES);
+        }
+        return this.targetWorkspace;
+    }
+
+    private static int refillSourceBuffer(ByteBuffer sourceBuffer, byte[] inputBytes, int inputOffset) {
+        sourceBuffer.clear();
+        int copiedBytes = Math.min(sourceBuffer.remaining(), inputBytes.length - inputOffset);
+        sourceBuffer.put(inputBytes, inputOffset, copiedBytes);
+        sourceBuffer.flip();
+        return inputOffset + copiedBytes;
+    }
+
+    private static void clearToEmpty(ByteBuffer buffer) {
+        buffer.clear();
+        buffer.limit(0);
+    }
+
+    int directWorkspaceBufferCountForTesting() {
+        int count = 0;
+        if (this.sourceWorkspace != null) {
+            count++;
+        }
+        if (this.targetWorkspace != null) {
+            count++;
+        }
+        return count;
     }
 
     // This function appends the latest decoded clear-text bytes into the pending buffer.

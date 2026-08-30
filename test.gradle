@@ -229,6 +229,16 @@ tasks.register('runOutboundBurstWarningRegression', JavaExec) {
     )
 }
 
+tasks.register('runDirectBufferReuseRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies bounded direct Zstd workspaces and independent recovery reuse.',
+            'com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.KineticStreamingDirectBufferReuseRegressionMain'
+    )
+    jvmArgs '-XX:MaxDirectMemorySize=16m'
+}
+
 tasks.register('runInternalTransportCarrierRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,

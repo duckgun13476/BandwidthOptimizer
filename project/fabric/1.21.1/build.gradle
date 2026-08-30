@@ -83,6 +83,7 @@ if (standaloneFabricBuild) {
             ['runCrossFrameZstdRegression', 'verification', 'Verifies Fabric 1.21.1 cross-frame Zstd reuse and recovery.'],
             ['runClientboundCommandTreeDeduplicatorRegression', 'verification', 'Verifies Fabric 1.21.1 command-tree de-duplication.'],
             ['runOutboundBurstWarningRegression', 'verification', 'Verifies Fabric 1.21.1 outbound burst warning bounds.'],
+            ['runDirectBufferReuseRegression', 'verification', 'Verifies Fabric 1.21.1 bounded direct Zstd workspaces.'],
             ['runChunkBranchCoverageVerify', 'verification', 'Verifies Fabric 1.21.1 chunk branch coverage.'],
             ['runWatchBoundaryRefreshPatchRegression', 'verification', 'Runs Fabric 1.21.1 watch-boundary refresh-patch regression.'],
             ['verifyPublishArtifact', 'Publishing', 'Verifies the Fabric 1.21.1 publish artifact.'],

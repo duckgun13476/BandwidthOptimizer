@@ -16,6 +16,8 @@ public final class ChannelTransportSession implements AutoCloseable {
     private final TransportAlgorithm algorithm = ChannelTransportAlgorithms.defaultAlgorithm();
     private final ChannelTransportAlgorithmSession outboundSession = this.algorithm.createSession();
     private final ChannelTransportAlgorithmSession inboundSession = this.algorithm.createSession();
+    private final ChannelTransportAlgorithmSession outboundRecoverySession = this.algorithm.createSession();
+    private final ChannelTransportAlgorithmSession inboundRecoverySession = this.algorithm.createSession();
     private boolean crossFrameZstdEnabled;
     private final ChannelTransportAlgorithmSession outboundStreamingSession;
     private final ChannelTransportAlgorithmSession inboundStreamingSession;
@@ -45,6 +47,8 @@ public final class ChannelTransportSession implements AutoCloseable {
     public synchronized void reset() {
         this.outboundSession.reset();
         this.inboundSession.reset();
+        this.outboundRecoverySession.reset();
+        this.inboundRecoverySession.reset();
         resetStreamingSessions();
     }
 
@@ -65,6 +69,8 @@ public final class ChannelTransportSession implements AutoCloseable {
                 failure.addSuppressed(exception);
             }
         }
+        failure = closeStreamingSession(this.outboundRecoverySession, failure);
+        failure = closeStreamingSession(this.inboundRecoverySession, failure);
         failure = closeStreamingSession(this.outboundStreamingSession, failure);
         failure = closeStreamingSession(this.inboundStreamingSession, failure);
         if (failure != null) {
@@ -237,13 +243,16 @@ public final class ChannelTransportSession implements AutoCloseable {
 
     private PacketResult decodeIndependentPacket(byte[] transportBytes) {
         byte[] safeBytes = copyBytesOrEmpty(transportBytes);
-        try (ChannelTransportAlgorithmSession recoverySession = this.algorithm.createSession()) {
+        this.inboundRecoverySession.reset();
+        try {
             ChannelTransportAlgorithmSession.OperationResult result =
-                    recoverySession.decodePacketWithTelemetry(safeBytes);
+                    this.inboundRecoverySession.decodePacketWithTelemetry(safeBytes);
             return new PacketResult(
                     copyBytesOrEmpty(result.bytes()),
                     fallbackTelemetry(result.telemetry(), safeBytes.length)
             );
+        } finally {
+            this.inboundRecoverySession.reset();
         }
     }
 
@@ -296,13 +305,16 @@ public final class ChannelTransportSession implements AutoCloseable {
     }
 
     private PacketResult encodeIndependentPacket(byte[] packetBytes) {
-        try (ChannelTransportAlgorithmSession recoverySession = this.algorithm.createSession()) {
+        this.outboundRecoverySession.reset();
+        try {
             ChannelTransportAlgorithmSession.OperationResult result =
-                    recoverySession.encodePacketWithLiteralMappingTelemetry(packetBytes);
+                    this.outboundRecoverySession.encodePacketWithLiteralMappingTelemetry(packetBytes);
             return new PacketResult(
                     copyBytesOrEmpty(result.bytes()),
                     fallbackTelemetry(result.telemetry(), packetBytes.length)
             );
+        } finally {
+            this.outboundRecoverySession.reset();
         }
     }
 
