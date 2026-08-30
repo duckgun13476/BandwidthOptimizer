@@ -1,11 +1,12 @@
-#### v5.10.30.108-release
+#### v5.10.30.109-release
 
-1. Fixed Fabric transport carrier re-entry in integrated worlds and corrected Fabric runtime dependency packaging.
-2. Fixed the embedded Windows Zstd runtime loader and cleaned obsolete native fallback directories.
-3. Reused bounded direct Zstd workspaces and recovery sessions to prevent direct-memory allocation churn during large synchronization bursts.
-4. Optimized Create contraption reference resolution and preserved external connection-close causes in diagnostics.
-5. Added exact command-tree de-duplication and timed clientbound burst diagnostics.
-6. Added compatibility for Potato proxy protocol messages.
+1. Lowered the Fabric 1.21.1 Fabric API requirement while retaining the typed networking API used by BO.
+2. Fixed Fabric transport carrier re-entry in integrated worlds and corrected Fabric runtime dependency packaging.
+3. Fixed the embedded Windows Zstd runtime loader and cleaned obsolete native fallback directories.
+4. Reused bounded direct Zstd workspaces and recovery sessions to prevent direct-memory allocation churn during large synchronization bursts.
+5. Optimized Create contraption reference resolution and preserved external connection-close causes in diagnostics.
+6. Added exact command-tree de-duplication and timed clientbound burst diagnostics.
+7. Added compatibility for Potato proxy protocol messages.
 
 #### v5.10.30.104-release
 

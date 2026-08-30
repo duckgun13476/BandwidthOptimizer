@@ -82,6 +82,7 @@ configurations.configureEach {
 }
 
 def embeddedRuntimeLibsOutputDir = layout.buildDirectory.dir('generated/boEmbeddedRuntimeLibs')
+def fabricApiVersion = '0.102.1+1.21.1'
 
 tasks.register('prepareEmbeddedRuntimeLibs', Copy) {
     from(configurations.embeddedRuntimeLibs)
@@ -96,7 +97,7 @@ dependencies {
     minecraft 'com.mojang:minecraft:1.21.1'
     mappings loom.officialMojangMappings()
     modImplementation 'net.fabricmc:fabric-loader:0.19.1'
-    modImplementation 'net.fabricmc.fabric-api:fabric-api:0.116.11+1.21.1'
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${fabricApiVersion}"
     modImplementation "com.pinkcats.torque:TorqueAPI-1.21.1-fabric:${fabric_torque_api_version}"
     include "com.pinkcats.torque:TorqueAPI-1.21.1-fabric:${fabric_torque_api_version}"
     implementation "com.pinkcats.torque:TorqueAPI-layer-api:${fabric_torque_api_version}"
@@ -164,7 +165,7 @@ processResources {
             mod_license       : mod_license,
             loader_version    : '0.19.1',
             minecraft_version : '1.21.1',
-            fabric_api_version: '0.116.11+1.21.1'
+            fabric_api_version: fabricApiVersion
     ]
     inputs.properties replaceProperties
     filesMatching(['fabric.mod.json', 'pack.mcmeta']) {
