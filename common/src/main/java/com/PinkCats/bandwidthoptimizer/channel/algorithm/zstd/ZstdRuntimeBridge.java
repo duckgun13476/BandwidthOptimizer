@@ -31,7 +31,6 @@ final class ZstdRuntimeBridge {
     private static final String DRIVER_BACKUP_DIRECTORY = "driver-backup";
     private static final String EMBEDDED_LIBS_DIRECTORY = "embedded-libs";
     private static final String WINDOWS_NATIVE_DIRECTORY = "native-libs";
-    private static final int MAX_BACKUP_DRIVER_DIRECTORIES = 3;
     private static final int MAX_PRIMARY_NATIVE_DRIVER_FILES = 3;
     private static final int MAX_LEGACY_ROOT_NATIVE_DRIVER_FILES = 1;
     private static final DateTimeFormatter BACKUP_DIRECTORY_TIME_FORMAT =
@@ -64,9 +63,7 @@ final class ZstdRuntimeBridge {
         }
 
         try {
-            Bindings bindings = bindEmbedded(false);
-            cleanupDriversAfterPrimarySuccess();
-            return bindings;
+            return bindEmbedded(false);
         } catch (Throwable primaryEmbeddedFailure) {
             try {
                 return bindEmbedded(true);
@@ -131,7 +128,19 @@ final class ZstdRuntimeBridge {
             if (isWindowsAmd64()) {
                 loadEmbeddedWindowsNative(embeddedClassLoader, driverDirectory, backupDriver);
             }
-            return bind(embeddedClassLoader);
+            Bindings bindings = bind(embeddedClassLoader);
+            if (backupDriver) {
+                cleanupInactiveBackupDrivers(driverDirectory);
+            } else {
+                cleanupDriversAfterPrimarySuccess();
+            }
+            return bindings;
+        } catch (Throwable failure) {
+            if (backupDriver) {
+                deleteDirectoryIfPossible(driverDirectory);
+                cleanupInactiveBackupDrivers(null);
+            }
+            throw failure;
         } finally {
             restoreZstdTempFolder(previousTempFolder);
         }
@@ -265,11 +274,11 @@ final class ZstdRuntimeBridge {
         return backupDirectory;
     }
 
-    // 主驱动目录可用时，清理多余的 backup 驱动目录；被占用或删除失败的目录直接跳过。
+    // Remove inactive fallback drivers; active Windows locks are left untouched.
     private static void cleanupDriversAfterPrimarySuccess() {
         cleanupPrimaryNativeDrivers();
         cleanupLegacyRootDrivers();
-        cleanupBackupDriversAfterPrimarySuccess();
+        cleanupInactiveBackupDrivers(null);
     }
 
     // 主驱动目录可用时，清理旧的 zstd native dll/so/dylib；当前被加载的文件删除失败会自动保留。
@@ -373,7 +382,7 @@ final class ZstdRuntimeBridge {
         }
     }
 
-    private static void cleanupBackupDriversAfterPrimarySuccess() {
+    private static void cleanupInactiveBackupDrivers(Path activeDriverDirectory) {
         Path backupRoot = BandwidthOptimizerOutputPaths.nativeDriveDirectory().resolve(DRIVER_BACKUP_DIRECTORY);
         if (!Files.isDirectory(backupRoot)) {
             return;
@@ -384,8 +393,11 @@ final class ZstdRuntimeBridge {
                     .filter(Files::isDirectory)
                     .sorted(java.util.Comparator.reverseOrder())
                     .toList();
-            for (int index = MAX_BACKUP_DRIVER_DIRECTORIES; index < backupDirectories.size(); index++) {
-                deleteDirectoryIfPossible(backupDirectories.get(index));
+            for (Path backupDirectory : backupDirectories) {
+                if (activeDriverDirectory != null && backupDirectory.equals(activeDriverDirectory)) {
+                    continue;
+                }
+                deleteDirectoryIfPossible(backupDirectory);
             }
         } catch (IOException ignored) {
         }
