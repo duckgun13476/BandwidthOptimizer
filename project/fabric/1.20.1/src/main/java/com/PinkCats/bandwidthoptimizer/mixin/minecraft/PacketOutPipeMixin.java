@@ -3,6 +3,8 @@ package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureHooks;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStreamingEpochGate;
+import com.PinkCats.bandwidthoptimizer.channel.packet.ChannelTransportBypassPacketList;
+import com.PinkCats.bandwidthoptimizer.channel.packet.ClientboundCommandTreeDeduplicator;
 import com.PinkCats.bandwidthoptimizer.channel.access.PacketEncoderFlowAccess;
 import com.PinkCats.bandwidthoptimizer.debug.HotpathCostProbe;
 import com.PinkCats.bandwidthoptimizer.debug.TransportDiagnosticProbe;
@@ -75,9 +77,19 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
             return;
         }
         IdleGateBackgroundPacketGate.recordPassedPacket(context == null ? null : context.channel(), packet, this.flow, encodedByteLength);
+        if (ClientboundCommandTreeDeduplicator.tryDropDuplicate(
+                context,
+                packet,
+                this.flow,
+                out,
+                this.bandwidthoptimizer$writerIndexBefore
+        )) {
+            return;
+        }
         if (ChannelTransportStreamingEpochGate.deferIfClosed(
                 context,
-                ChannelTransportHooks.isInternalTransportCarrierPacket(packet),
+                ChannelTransportHooks.isInternalTransportCarrierPacket(packet)
+                        || ChannelTransportBypassPacketList.mayOvertakePendingTransportBatch(packet),
                 out,
                 this.bandwidthoptimizer$writerIndexBefore,
                 bytes -> ChannelTransportHooks.recordCommittedOutboundPacketStream(context, packet, bytes)

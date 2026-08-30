@@ -294,6 +294,9 @@ public class Config {
             public static final boolean DEFAULT_PACKET_ID_MAPPING_ENABLED = true;
             public static final String BATCH_ENABLED = "bandwidthoptimizer.transport.batchEnabled";
             public static final boolean DEFAULT_BATCH_ENABLED = true;
+            public static final String COMMAND_TREE_DEDUP_ENABLED =
+                    "bandwidthoptimizer.transport.commandTreeDedupEnabled";
+            public static final boolean DEFAULT_COMMAND_TREE_DEDUP_ENABLED = true;
             public static final String BATCH_WINDOW_MILLIS = "bandwidthoptimizer.transport.batchWindowMillis";
             public static final long DEFAULT_BATCH_WINDOW_MILLIS = 20L;
             public static final long DEFAULT_BATCH_WARMUP_MILLIS = 5_000L;

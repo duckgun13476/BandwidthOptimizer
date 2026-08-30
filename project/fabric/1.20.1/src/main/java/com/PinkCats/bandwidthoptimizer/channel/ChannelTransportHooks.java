@@ -1730,7 +1730,9 @@ public final class ChannelTransportHooks {
         if (!ChannelTransportBypassPacketList.shouldBypassTransparentTransport(packet)) {
             return false;
         }
-        ChannelTransportBatchManager.flushOutboundBatchNow(context);
+        if (!ChannelTransportBypassPacketList.mayOvertakePendingTransportBatch(packet)) {
+            ChannelTransportBatchManager.flushOutboundBatchNow(context);
+        }
         return true;
     }
 

@@ -23,11 +23,11 @@ public final class ChannelTransportStreamingEpochGate {
 
     public static boolean deferIfClosed(
             ChannelHandlerContext context,
-            boolean internalTransportCarrier,
+            boolean bypassClosedGate,
             ByteBuf out,
             int startIndexInclusive
     ) {
-        return deferIfClosed(context, internalTransportCarrier, out, startIndexInclusive, null);
+        return deferIfClosed(context, bypassClosedGate, out, startIndexInclusive, null);
     }
 
     public static void closeForEpoch(Channel channel, int epoch, int lastSequence) {
@@ -39,7 +39,7 @@ public final class ChannelTransportStreamingEpochGate {
 
     public static boolean deferIfClosed(
             ChannelHandlerContext context,
-            boolean internalTransportCarrier,
+            boolean bypassClosedGate,
             ByteBuf out,
             int startIndexInclusive,
             Consumer<byte[]> onDeferred
@@ -48,7 +48,7 @@ public final class ChannelTransportStreamingEpochGate {
             return false;
         }
         State state = context.channel().attr(STATE_KEY).get();
-        if (state == null || internalTransportCarrier) {
+        if (state == null || bypassClosedGate) {
             return false;
         }
         int length = out.writerIndex() - startIndexInclusive;

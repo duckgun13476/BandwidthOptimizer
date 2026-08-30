@@ -97,4 +97,17 @@ public final class ChannelTransportBypassPacketList {
                         || CLIENTBOUND_KEEP_ALIVE_PACKET_CLASS_NAMES.contains(packet.getClass().getName())
         );
     }
+
+    /**
+     * KeepAlive has no ordering dependency on PLAY state and may pass BO-owned queues while a
+     * transport batch or streaming recovery epoch is pending. Already submitted Netty writes keep
+     * their normal order; this policy never reorders data inside Netty's outbound buffer.
+     */
+    public static boolean mayOvertakePendingTransportBatch(Packet<?> packet) {
+        return packet != null && mayOvertakePendingTransportBatch(packet.getClass().getName());
+    }
+
+    static boolean mayOvertakePendingTransportBatch(String packetClassName) {
+        return packetClassName != null && CLIENTBOUND_KEEP_ALIVE_PACKET_CLASS_NAMES.contains(packetClassName);
+    }
 }

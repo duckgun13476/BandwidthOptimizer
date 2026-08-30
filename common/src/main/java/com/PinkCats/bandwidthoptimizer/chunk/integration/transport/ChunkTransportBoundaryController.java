@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
+import com.PinkCats.bandwidthoptimizer.channel.packet.ChannelTransportBypassPacketList;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
@@ -51,11 +52,6 @@ public final class ChunkTransportBoundaryController {
     private static final long CHUNK_FAILURE_DISABLE_NANOS = TimeUnit.SECONDS.toNanos(15L);
     private static final long CHANNEL_FAILURE_WINDOW_NANOS = TimeUnit.SECONDS.toNanos(60L);
     private static final long CHANNEL_FAILURE_DISABLE_NANOS = TimeUnit.SECONDS.toNanos(20L);
-    private static final java.util.Set<String> CLIENTBOUND_KEEP_ALIVE_PACKET_CLASS_NAMES = java.util.Set.of(
-            "net.minecraft.network.protocol.common.ClientboundKeepAlivePacket",
-            "net.minecraft.network.protocol.game.ClientboundKeepAlivePacket"
-    );
-
     private ChunkTransportBoundaryController() {}
 
 
@@ -261,9 +257,9 @@ public final class ChunkTransportBoundaryController {
                     "bundle_boundary"
             );
         }
-        if (packet != null && CLIENTBOUND_KEEP_ALIVE_PACKET_CLASS_NAMES.contains(packet.getClass().getName())) {
+        if (ChannelTransportBypassPacketList.mayOvertakePendingTransportBatch(packet)) {
             return new BoundaryTrigger(
-                    true,
+                    false,
                     KEEP_ALIVE_WARMUP_CHUNK_PACKETS,
                     KEEP_ALIVE_MIN_BYPASS_NANOS,
                     false,

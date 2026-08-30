@@ -85,6 +85,7 @@ def applySharedBandwidthOptimizerRunProperties = { Project projectRef, def runCo
             ['boTransportMappingEnabled', 'bandwidthoptimizer.transport.mappingEnabled'],
             ['boTransportZstdEnabled', 'bandwidthoptimizer.transport.zstdEnabled'],
             ['boTransportBatchEnabled', 'bandwidthoptimizer.transport.batchEnabled'],
+            ['boTransportCommandTreeDedupEnabled', 'bandwidthoptimizer.transport.commandTreeDedupEnabled'],
             ['boTransportBatchWindowMillis', 'bandwidthoptimizer.transport.batchWindowMillis'],
             ['boTransportPacketIdMappingEnabled', 'bandwidthoptimizer.transport.packetIdMappingEnabled'],
             ['boTestStreamingZstd', 'bandwidthoptimizer.test.streamingZstd'],
@@ -161,6 +162,15 @@ def configureTestJavaExecTask = { JavaExec taskRef, String groupName, String tas
     taskRef.dependsOn(tasks.named('testClasses'))
     taskRef.classpath = sourceSets.test.runtimeClasspath
     taskRef.mainClass = mainClassName
+}
+
+tasks.register('runClientboundCommandTreeDeduplicatorRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies final-byte command-tree deduplication, connection epochs, concurrency, and KeepAlive queue priority.',
+            'com.PinkCats.bandwidthoptimizer.channel.packet.ClientboundCommandTreeDeduplicatorRegressionMain'
+    )
 }
 
 tasks.register('runChannelSimulate', JavaExec) {

@@ -63,6 +63,7 @@ def applySharedBandwidthOptimizerNeoForgeRunProperties = { Project projectRef, d
             ['boTransportMappingEnabled', 'bandwidthoptimizer.transport.mappingEnabled'],
             ['boTransportZstdEnabled', 'bandwidthoptimizer.transport.zstdEnabled'],
             ['boTransportBatchEnabled', 'bandwidthoptimizer.transport.batchEnabled'],
+            ['boTransportCommandTreeDedupEnabled', 'bandwidthoptimizer.transport.commandTreeDedupEnabled'],
             ['boTransportBatchWindowMillis', 'bandwidthoptimizer.transport.batchWindowMillis'],
             ['boTransportPacketIdMappingEnabled', 'bandwidthoptimizer.transport.packetIdMappingEnabled'],
             ['boTransportTelemetryDumpFileName', 'bandwidthoptimizer.transport.telemetryDumpFileName'],
@@ -533,6 +534,15 @@ tasks.register('runCrossFrameZstdRegression', JavaExec) {
     dependsOn(tasks.named('testClasses'))
     classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
     mainClass = 'com.PinkCats.bandwidthoptimizer.test.CrossFrameZstdRegressionMain'
+    javaLauncher = boJava25Launcher
+}
+
+tasks.register('runClientboundCommandTreeDeduplicatorRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies final-byte command-tree deduplication, connection epochs, concurrency, and KeepAlive queue priority.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.channel.packet.ClientboundCommandTreeDeduplicatorRegressionMain'
     javaLauncher = boJava25Launcher
 }
 
