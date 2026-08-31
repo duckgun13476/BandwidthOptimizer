@@ -8,6 +8,10 @@ public final class CreateContraptionReferenceResolverRegressionMain {
     private CreateContraptionReferenceResolverRegressionMain() {}
 
     public static void main(String[] args) {
+        if (CreateBlockEntityUpdateGate.resolveCreateContraptionReferences(null) != null) {
+            throw new AssertionError("removed block entity must fall back to immediate delivery");
+        }
+
         Object piston = new Object();
         assertReferences("mechanical piston", CreateContraptionReferenceResolver.resolve(
                 new PistonController(piston), "create:mechanical_piston"), piston);

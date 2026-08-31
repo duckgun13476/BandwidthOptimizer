@@ -694,8 +694,10 @@ public final class CreateBlockEntityUpdateGate {
         }
         BlockEntity blockEntity = level.getBlockEntity(pos);
         List<Entity> contraptions = new ArrayList<>();
-        CreateContraptionReferenceResolver.Resolution resolution =
-                CreateContraptionReferenceResolver.resolve(blockEntity, BlockEntityTypeKeyCompat.keyOf(blockEntity.getType()));
+        CreateContraptionReferenceResolver.Resolution resolution = resolveCreateContraptionReferences(blockEntity);
+        if (resolution == null) {
+            return null;
+        }
         for (Object reference : resolution.references()) {
             collectCreateContraption(contraptions, reference);
         }
@@ -717,6 +719,13 @@ public final class CreateBlockEntityUpdateGate {
             return null;
         }
         return new DynamicTarget(centerOf(bounds), cornersOf(bounds), false, true);
+    }
+
+    static CreateContraptionReferenceResolver.Resolution resolveCreateContraptionReferences(BlockEntity blockEntity) {
+        if (blockEntity == null) {
+            return null;
+        }
+        return CreateContraptionReferenceResolver.resolve(blockEntity, BlockEntityTypeKeyCompat.keyOf(blockEntity.getType()));
     }
 
     private static List<Entity> scanNearbyCreateContraptions(Level level, BlockPos pos) {
