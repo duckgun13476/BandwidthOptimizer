@@ -2436,15 +2436,14 @@ public final class ChunkPersistentClientCache {
         }
         try {
             ZipCacheSnapshot legacy = readZipCacheSnapshot();
-            for (String key : legacy.index().stringPropertyNames()) {
+            for (String key : targetIndex.stringPropertyNames()) {
                 if (!key.endsWith(".hash")) {
                     continue;
                 }
                 String coordinateKey = key.substring(0, key.length() - ".hash".length());
-                String legacyHash = legacy.index().getProperty(key, "");
-                String targetHash = targetIndex.getProperty(coordinateKey + ".hash", "");
+                String targetHash = targetIndex.getProperty(key, "");
                 if (!isSafeHash(targetHash)) {
-                    return false;
+                    continue;
                 }
                 try {
                     byte[] targetBytes = readStoredPacketBytes(store, targetIndex, coordinateKey + ".");
@@ -2454,12 +2453,13 @@ public final class ChunkPersistentClientCache {
                 } catch (IOException ignored) {
                     // Repair the migrated copy from the retained legacy source below.
                 }
+                String legacyHash = legacy.index().getProperty(key, "");
                 if (!targetHash.equals(legacyHash)) {
-                    return false;
+                    continue;
                 }
                 byte[] legacyBytes = readZipBlobEntryBytes(legacy.sourcePath(), blobEntryName(legacyHash));
                 if (legacyBytes == null || !matchesHash(legacyBytes, legacyHash)) {
-                    return false;
+                    continue;
                 }
                 store.rewriteBlob(legacyHash, legacyBytes);
                 byte[] repairedBytes = store.readBlob(legacyHash);

@@ -338,6 +338,15 @@ public final class PersistentChunkCacheBoundaryRegressionMain {
         );
         require(Arrays.equals(second, damaged.readBlob(secondHash)), "legacy recovery changed the repaired blob");
 
+        Properties retainedAfterEviction = damaged.loadIndex();
+        retainedAfterEviction.remove(entryPrefix(SCOPE_A, 3, 4) + "hash");
+        damaged.checkpoint(retainedAfterEviction);
+        PersistentChunkCacheDiskStore afterEviction = PersistentChunkCacheDiskStore.open(v2Root, 2);
+        require(
+                (boolean) verifyMigration.invoke(null, afterEviction, afterEviction.loadIndex()),
+                "retention eviction incorrectly kept the legacy migration pending"
+        );
+
         Method cleanup = ChunkPersistentClientCache.class.getDeclaredMethod("cleanupLegacyCachesAfterVerifiedRestart");
         cleanup.setAccessible(true);
         cleanup.invoke(null);
