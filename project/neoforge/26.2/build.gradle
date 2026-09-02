@@ -322,7 +322,7 @@ tasks.withType(JavaCompile).configureEach {
 apply from: rootProject.file('gradle/bo-publishing.gradle')
 
 def buildRunAllSharedGradleArgs(Project projectRef) {
-    List<String> args = ['--console=plain', '-PboExperientEnabled=true']
+    List<String> args = ['--console=plain', '--configure-on-demand', '-PboExperientEnabled=true']
     [
             'boExperientServerCommand',
             'boExperientServerCommandDelayTicks',
@@ -680,7 +680,16 @@ tasks.register('runAll') {
             project.ext.boWaitForLogMarker.call(
                     clientTaskLog,
                     ['Connecting to 127.0.0.1, 25565', 'Connecting to 127.0.0.1:25565'],
-                    ['Failed to connect to the server', 'Connection refused', 'Internal Exception', 'Reached max attempts'],
+                    [
+                            'Failed to connect to the server',
+                            'Connection refused',
+                            'Internal Exception',
+                            'Reached max attempts',
+                            'Mixin apply for mod bandwidthoptimizer failed',
+                            'InvalidInjectionException',
+                            'Preparing crash report',
+                            'Game crashed!'
+                    ],
                     240000L,
                     'NeoForge runAll client connect'
             )
