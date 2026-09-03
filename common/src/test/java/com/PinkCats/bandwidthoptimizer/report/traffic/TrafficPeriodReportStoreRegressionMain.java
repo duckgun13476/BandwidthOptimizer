@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.report.traffic;
 
 import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
+import com.google.gson.Gson;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -8,6 +9,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 public final class TrafficPeriodReportStoreRegressionMain {
     private TrafficPeriodReportStoreRegressionMain() {
@@ -25,6 +27,15 @@ public final class TrafficPeriodReportStoreRegressionMain {
             TrafficPeriodReport archived = report(previousHour, zone, true, 100L);
             TrafficPeriodReport legacy = report(legacyHour, zone, true, 50L);
             TrafficPeriodReport live = report(currentHour, zone, false, 25L);
+
+            Gson legacyGson = new Gson();
+            check(TrafficPeriodReportJson.decode(legacyGson.toJson(archived)).equals(archived),
+                    "legacy Gson direct report JSON was not readable");
+            check(TrafficPeriodReportJson.decodeHourlyDay(legacyGson.toJson(Map.of(
+                    "schemaVersion", 1,
+                    "day", previousHour.toLocalDate().toString(),
+                    "hours", List.of(archived)
+            ))).equals(List.of(archived)), "legacy Gson hourly archive was not readable");
 
             Path legacyPath = TrafficPeriodReportStore.legacyHourlyPath(legacy);
             Files.createDirectories(legacyPath.getParent());
