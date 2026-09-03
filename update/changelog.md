@@ -1,9 +1,10 @@
-#### v5.10.30.111-release
+#### v5.10.30.112-release
 
 1. Added stable NeoForge 26.2.0.75 runtime compatibility.
 2. Fixed a Create block-entity update race after its source block entity is removed.
 3. Cleaned obsolete legacy persistent-cache ZIP archives after successful V2 migration and normal retention eviction.
 4. Marked conflicting Hari chunk transport mods as incompatible.
+5. Fixed legacy Forge Gson report decoding that could crash repeated server stops (#28).
 
 #### v5.10.30.109-release
 
