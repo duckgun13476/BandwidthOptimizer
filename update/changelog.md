@@ -1,3 +1,10 @@
+#### v5.10.30.111-release
+
+1. Added stable NeoForge 26.2.0.75 runtime compatibility.
+2. Fixed a Create block-entity update race after its source block entity is removed.
+3. Cleaned obsolete legacy persistent-cache ZIP archives after successful V2 migration and normal retention eviction.
+4. Marked conflicting Hari chunk transport mods as incompatible.
+
 #### v5.10.30.109-release
 
 1. Lowered the Fabric 1.21.1 Fabric API requirement while retaining the typed networking API used by BO.
