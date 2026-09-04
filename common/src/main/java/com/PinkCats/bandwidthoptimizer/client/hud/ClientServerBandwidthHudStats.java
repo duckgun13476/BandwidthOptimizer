@@ -63,7 +63,8 @@ public final class ClientServerBandwidthHudStats {
                 payload.serverCreateTransportPackets(),
                 payload.serverIdleGateSavedBytes(),
                 payload.serverIdleGateSavedPackets(),
-                payload.idlePlayers()
+                payload.idlePlayers(),
+                payload.serverChunkReuseLogicalBytes()
         );
     }
 
@@ -119,7 +120,8 @@ public final class ClientServerBandwidthHudStats {
             long serverCreateTransportPackets,
             long serverIdleGateSavedBytes,
             long serverIdleGateSavedPackets,
-            List<IdleGateServerState.IdlePlayerSnapshot> idlePlayers
+            List<IdleGateServerState.IdlePlayerSnapshot> idlePlayers,
+            long serverChunkReuseLogicalBytes
     ) {
 
         public Snapshot {
@@ -127,7 +129,7 @@ public final class ClientServerBandwidthHudStats {
         }
 
         private static Snapshot empty() {
-            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false, 0L, 0L, 0L, 0L, 0L, 0L, List.of());
+            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false, 0L, 0L, 0L, 0L, 0L, 0L, List.of(), 0L);
         }
 
         public boolean fresh() {

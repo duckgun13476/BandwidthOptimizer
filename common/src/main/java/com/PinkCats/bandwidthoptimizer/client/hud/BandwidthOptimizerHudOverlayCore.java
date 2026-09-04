@@ -191,10 +191,11 @@ final class BandwidthOptimizerHudOverlayCore {
             return;
         }
         long serverBaselineBytes = serverBaselineBytes(snapshot);
+        long serverChunkReuseLogicalBytes = Math.max(snapshot.serverChunkReuseLogicalBytes(), 0L);
         lines.add("  " + text("hud.bandwidthoptimizer.metric.offline_cache") + " "
-                + formatSavedShare(serverBaselineBytes, snapshot.serverOfflineReuseConfirmedSavedBytes())
+                + formatSavedShare(serverChunkReuseLogicalBytes, snapshot.serverOfflineReuseConfirmedSavedBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.temporary_cache") + " "
-                + formatSavedShare(serverBaselineBytes, snapshot.serverTemporaryReuseSavedBytes()));
+                + formatSavedShare(serverChunkReuseLogicalBytes, snapshot.serverTemporaryReuseSavedBytes()));
         long createObservedBytes = Math.max(
                 snapshot.serverCreateTransportRawBytes() + snapshot.serverCreateGateSavedBytes(),
                 0L);

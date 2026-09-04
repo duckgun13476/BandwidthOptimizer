@@ -52,7 +52,8 @@ public record ServerBandwidthStatsPayload(
         long serverCreateTransportPackets,
         long serverIdleGateSavedBytes,
         long serverIdleGateSavedPackets,
-        List<IdleGateServerState.IdlePlayerSnapshot> idlePlayers
+        List<IdleGateServerState.IdlePlayerSnapshot> idlePlayers,
+        long serverChunkReuseLogicalBytes
 ) {
 
     private static final int MAX_IDLE_PLAYERS = 128;
@@ -134,13 +135,14 @@ public record ServerBandwidthStatsPayload(
                 createTransportSnapshot.packets(),
                 totals.serverIdleGateSavedBytes(),
                 totals.serverIdleGateSavedPackets(),
-                IdleGateServerState.snapshotIdlePlayers(MAX_IDLE_PLAYERS)
+                IdleGateServerState.snapshotIdlePlayers(MAX_IDLE_PLAYERS),
+                ServerBandwidthStatsRegistry.snapshotServerChunkReuseLogicalBytes()
         );
     }
 
 
     public static ServerBandwidthStatsPayload empty() {
-        return new ServerBandwidthStatsPayload(System.currentTimeMillis(), 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false, 0L, 0L, 0L, 0L, 0L, 0L, List.of());
+        return new ServerBandwidthStatsPayload(System.currentTimeMillis(), 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false, 0L, 0L, 0L, 0L, 0L, 0L, List.of(), 0L);
     }
 
     public static void encode(ServerBandwidthStatsPayload payload, FriendlyByteBuf buffer) {
@@ -196,6 +198,7 @@ public record ServerBandwidthStatsPayload(
             buffer.writeUtf(playerName);
             buffer.writeByte(idlePlayer.mode().id());
         }
+        buffer.writeVarLong(Math.max(safePayload.serverChunkReuseLogicalBytes(), 0L));
     }
 
     public static ServerBandwidthStatsPayload decode(FriendlyByteBuf buffer) {
@@ -239,6 +242,7 @@ public record ServerBandwidthStatsPayload(
         long serverIdleGateSavedBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         long serverIdleGateSavedPackets = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         List<IdleGateServerState.IdlePlayerSnapshot> idlePlayers = decodeIdlePlayers(buffer);
+        long serverChunkReuseLogicalBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         return new ServerBandwidthStatsPayload(
                 capturedAtMillis,
                 activeChannels,
@@ -279,7 +283,8 @@ public record ServerBandwidthStatsPayload(
                 serverCreateTransportPackets,
                 serverIdleGateSavedBytes,
                 serverIdleGateSavedPackets,
-                idlePlayers
+                idlePlayers,
+                serverChunkReuseLogicalBytes
         );
     }
 

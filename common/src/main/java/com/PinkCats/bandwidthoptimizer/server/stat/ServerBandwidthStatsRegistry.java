@@ -281,6 +281,16 @@ public final class ServerBandwidthStatsRegistry {
                 + operationSavedBytes(outboundTotals, ChunkHotspotFrameOp.PUBLISH_PATCH);
     }
 
+    public static long snapshotServerChunkReuseLogicalBytes() {
+        ChunkHotspotReport report = ChunkHotspotStats.snapshotReport();
+        ChunkHotspotReport.DirectionTotals outboundTotals =
+                report == null || report.outboundTotals() == null
+                        ? ChunkHotspotReport.DirectionTotals.empty()
+                        : report.outboundTotals();
+        return operationLogicalBytes(outboundTotals, ChunkHotspotFrameOp.PUBLISH_REF)
+                + operationLogicalBytes(outboundTotals, ChunkHotspotFrameOp.PUBLISH_PATCH);
+    }
+
     private static long operationSavedBytes(
             ChunkHotspotReport.DirectionTotals directionTotals,
             ChunkHotspotFrameOp operation
@@ -291,6 +301,18 @@ public final class ServerBandwidthStatsRegistry {
         ChunkHotspotReport.OperationTotals operationTotals =
                 directionTotals.operationTotals().getOrDefault(operation, ChunkHotspotReport.OperationTotals.empty());
         return Math.max(operationTotals.logicalPacketBytes() - operationTotals.wireFrameBytes(), 0L);
+    }
+
+    private static long operationLogicalBytes(
+            ChunkHotspotReport.DirectionTotals directionTotals,
+            ChunkHotspotFrameOp operation
+    ) {
+        if (directionTotals == null || directionTotals.operationTotals() == null || operation == null) {
+            return 0L;
+        }
+        ChunkHotspotReport.OperationTotals operationTotals =
+                directionTotals.operationTotals().getOrDefault(operation, ChunkHotspotReport.OperationTotals.empty());
+        return Math.max(operationTotals.logicalPacketBytes(), 0L);
     }
 
     public static ServerCacheReuseSnapshot snapshotServerCacheReuse() {
