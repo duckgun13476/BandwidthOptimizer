@@ -133,6 +133,8 @@ public final class ChannelDecoderExceptionDumper {
 
     private static String toJson(ChannelCapturedFrame frame, Throwable throwable) {
         byte[] payload = frame.encodedBytes();
+        LevelChunkNbtDepthFailureDiagnostic.Result chunkDepthDiagnostic =
+                LevelChunkNbtDepthFailureDiagnostic.inspect(frame, throwable);
         return "{"
                 + "\"captured_at_ms\":" + frame.capturedAtMillis() + ","
                 + "\"dumped_at_ms\":" + System.currentTimeMillis() + ","
@@ -151,6 +153,24 @@ public final class ChannelDecoderExceptionDumper {
                 + "\"root_cause_message\":\"" + escapeJson(rootCauseMessage(throwable)) + "\","
                 + "\"payload_sha256\":\"" + sha256Hex(payload) + "\","
                 + "\"payload_hex\":\"" + hex(payload) + "\""
+                + chunkDepthDiagnosticJson(chunkDepthDiagnostic)
+                + "}";
+    }
+
+    private static String chunkDepthDiagnosticJson(LevelChunkNbtDepthFailureDiagnostic.Result result) {
+        if (result == null || !result.matched()) {
+            return "";
+        }
+        LevelChunkNbtDepthFailureDiagnostic.Coordinates coordinates = result.coordinates();
+        if (coordinates == null || !coordinates.available()) {
+            return ",\"chunk_nbt_depth_diagnostic\":{\"packet_type\":\"clientbound/minecraft:level_chunk_with_light\",\"chunk_coordinate\":\"unavailable\"}";
+        }
+        return ",\"chunk_nbt_depth_diagnostic\":{"
+                + "\"packet_type\":\"clientbound/minecraft:level_chunk_with_light\","
+                + "\"chunk_x\":" + coordinates.chunkX() + ","
+                + "\"chunk_z\":" + coordinates.chunkZ() + ","
+                + "\"block_x\":" + coordinates.blockX() + ","
+                + "\"block_z\":" + coordinates.blockZ()
                 + "}";
     }
 

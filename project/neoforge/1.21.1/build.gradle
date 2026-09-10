@@ -571,6 +571,14 @@ tasks.register('runCreateContraptionReferenceResolverRegression', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateContraptionReferenceResolverRegressionMain'
 }
 
+tasks.register('runLevelChunkNbtDepthFailureDiagnosticRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies safe metadata extraction for level-chunk NBT depth decoder failures.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.channel.capture.LevelChunkNbtDepthFailureDiagnosticRegressionMain'
+}
+
 tasks.register('runChunkBranchCoverageVerify', JavaExec) {
     group = 'verification'
     description = 'Verifies NeoForge 1.21.1 runAll chunk transport branch coverage.'
