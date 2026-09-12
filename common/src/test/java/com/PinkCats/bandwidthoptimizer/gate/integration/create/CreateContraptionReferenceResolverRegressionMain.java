@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.gate.integration.create;
 
+import net.minecraft.world.phys.AABB;
+
 import java.lang.ref.WeakReference;
 import java.util.List;
 
@@ -30,16 +32,44 @@ public final class CreateContraptionReferenceResolverRegressionMain {
         assertReferences("pulley", CreateContraptionReferenceResolver.resolve(
                 new PulleyController(attached, mirror), "create:rope_pulley"), attached, mirror);
 
-        CreateContraptionReferenceResolver.Resolution nearby = CreateContraptionReferenceResolver.resolve(
+        CreateContraptionReferenceResolver.Resolution registryOnly = CreateContraptionReferenceResolver.resolve(
                 new NearbyOnlyController(), "create:gantry_shaft");
-        if (!nearby.requiresNearbyScan() || !nearby.references().isEmpty()) {
-            throw new AssertionError("gantry controller must retain nearby-entity fallback");
+        if (!registryOnly.references().isEmpty()) {
+            throw new AssertionError("gantry controller must use its lifecycle registry");
         }
 
         Object secondPiston = new Object();
         assertReferences("cached inherited piston field", CreateContraptionReferenceResolver.resolve(
                 new PistonController(secondPiston), "create:mechanical_piston"), secondPiston);
+        verifySnapshotIndex();
         System.out.println("Create contraption reference resolver regression passed");
+    }
+
+    private static void verifySnapshotIndex() {
+        CreateContraptionSnapshotRegistry.SnapshotIndex index =
+                new CreateContraptionSnapshotRegistry.SnapshotIndex();
+        AABB first = bounds(0.0D, 2.0D);
+        AABB second = bounds(4.0D, 6.0D);
+        index.track(1, 10L, 0L, 1, first, 20L);
+        index.track(2, 10L, 0L, 1, second, 20L);
+        CreateContraptionSnapshotRegistry.Snapshot combined = index.find(10L, 20L);
+        if (combined == null || combined.bounds().minX != 0.0D || combined.bounds().maxX != 6.0D) {
+            throw new AssertionError("controller snapshot union failed");
+        }
+        index.track(1, 11L, 0L, 1, first, 21L);
+        CreateContraptionSnapshotRegistry.Snapshot oldController = index.find(10L, 21L);
+        CreateContraptionSnapshotRegistry.Snapshot moved = index.find(11L, 21L);
+        if (oldController == null || oldController.bounds().minX != 4.0D
+                || moved == null || moved.bounds() != first) {
+            throw new AssertionError("controller snapshot movement failed");
+        }
+        if (index.find(11L, 24L) != null) {
+            throw new AssertionError("stale controller snapshot did not expire");
+        }
+    }
+
+    private static AABB bounds(double minX, double maxX) {
+        return new AABB(minX, 0.0D, 0.0D, maxX, 2.0D, 2.0D);
     }
 
     private static void assertReferences(
@@ -47,9 +77,6 @@ public final class CreateContraptionReferenceResolverRegressionMain {
             CreateContraptionReferenceResolver.Resolution resolution,
             Object... expected
     ) {
-        if (resolution.requiresNearbyScan()) {
-            throw new AssertionError(label + " unexpectedly requires nearby scan");
-        }
         List<Object> actual = resolution.references();
         if (actual.size() != expected.length) {
             throw new AssertionError(label + " expected=" + expected.length + " actual=" + actual.size());

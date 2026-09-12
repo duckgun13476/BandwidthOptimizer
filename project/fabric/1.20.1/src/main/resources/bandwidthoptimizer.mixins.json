@@ -5,8 +5,11 @@
   "compatibilityLevel": "JAVA_17",
   "refmap": "bandwidthoptimizer.refmap.json",
   "mixins": [
+    "create.CreateControlledContraptionEntityMixin",
+    "create.CreateGantryContraptionEntityMixin",
     "minecraft.ClientboundSectionBlocksUpdatePacketAccessor",
     "minecraft.ClientboundMoveEntityPacketAccessor",
+    "minecraft.EntityLevelAccessor",
     "minecraft.ClientboundCustomPayloadPacketAccessor",
     "minecraft.ConnectionAccessor",
     "minecraft.ConnectionBandwidthStatsMixin",

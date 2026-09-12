@@ -16,7 +16,7 @@ public final class CreateGateTypePolicy {
         BEARING,
         CLOCKWORK,
         PULLEY,
-        NEARBY_SCAN
+        REGISTRY_ONLY
     }
 
     private static final Set<String> SOUND_CLASSIFIED_BLOCK_ENTITY_TYPES = Set.of(
@@ -47,9 +47,7 @@ public final class CreateGateTypePolicy {
             "hose_pulley",
             "elevator_pulley",
             "gantry_shaft",
-            "gantry_pinion",
-            "cart_assembler",
-            "contraption_controls"
+            "gantry_pinion"
     );
     private static final Set<String> TRANSFER_BLOCK_ENTITY_TYPES = Set.of(
             "andesite_funnel",
@@ -127,7 +125,7 @@ public final class CreateGateTypePolicy {
             case "windmill_bearing", "mechanical_bearing" -> ContraptionReferenceKind.BEARING;
             case "clockwork_bearing" -> ContraptionReferenceKind.CLOCKWORK;
             case "rope_pulley", "hose_pulley", "elevator_pulley" -> ContraptionReferenceKind.PULLEY;
-            default -> ContraptionReferenceKind.NEARBY_SCAN;
+            default -> ContraptionReferenceKind.REGISTRY_ONLY;
         };
     }
 

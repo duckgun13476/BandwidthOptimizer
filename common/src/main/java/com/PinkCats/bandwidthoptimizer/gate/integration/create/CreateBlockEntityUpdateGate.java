@@ -30,6 +30,7 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -37,6 +38,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -63,6 +65,13 @@ public final class CreateBlockEntityUpdateGate {
     private static final AtomicLong DROPPED_SAVED_BYTES = new AtomicLong();
     private static final AtomicLong LAST_CREATE_CONTRAPTION_FALLBACK_WARN_NANOS = new AtomicLong();
     private static final long CREATE_CONTRAPTION_FALLBACK_WARN_INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(5L);
+    private static final int MAX_VISIBILITY_CHECKS_PER_TICK = 2048;
+    private static final int MAX_VISIBILITY_CHECKS_PER_PLAYER_TICK = 256;
+    private static final int MAX_RELEASE_PACKETS_PER_TICK = 512;
+    private static final int MAX_RELEASE_PACKETS_PER_PLAYER_TICK = 128;
+    private static final long MAX_RELEASE_BYTES_PER_TICK = 2L * 1024L * 1024L;
+    private static final long MAX_RELEASE_BYTES_PER_PLAYER_TICK = 512L * 1024L;
+    private static int nextPlayerDrainOffset;
     private CreateBlockEntityUpdateGate() {}
 
     public static void bindPlayer(ServerPlayer player) {
@@ -311,13 +320,22 @@ public final class CreateBlockEntityUpdateGate {
         if (!isEnabled() || PLAYER_STATES.isEmpty()) {
             return;
         }
+        CreateContraptionSnapshotRegistry.prune();
         long nowNanos = System.nanoTime();
-        for (PlayerState state : PLAYER_STATES.values()) {
+        List<PlayerState> states = new ArrayList<>(PLAYER_STATES.values());
+        if (states.isEmpty()) {
+            return;
+        }
+        int start = Math.floorMod(nextPlayerDrainOffset, states.size());
+        WorkBudget globalBudget = WorkBudget.global();
+        int visited = 0;
+        for (; visited < states.size() && globalBudget.hasCapacity(); visited++) {
+            PlayerState state = states.get((start + visited) % states.size());
             ServerPlayer player = state.player();
             if (player == null || player.connection == null) {
                 continue;
             }
-            List<PendingUpdate> readyUpdates = state.drainReady(player, nowNanos);
+            List<PendingUpdate> readyUpdates = state.drainReady(player, nowNanos, globalBudget);
             for (PendingUpdate pendingUpdate : readyUpdates) {
                 sendForced(player, pendingUpdate.packet());
                 long released = RELEASED_COUNT.incrementAndGet();
@@ -333,6 +351,7 @@ public final class CreateBlockEntityUpdateGate {
                 }
             }
         }
+        nextPlayerDrainOffset = (start + (visited >= states.size() ? 1 : Math.max(visited, 1))) % states.size();
     }
 
     public static void resetStats() {
@@ -573,6 +592,10 @@ public final class CreateBlockEntityUpdateGate {
         return resolveDynamicTargetOnServerThread(player, pos, typeKey);
     }
 
+    public static boolean shouldTrackContraptions() {
+        return isEnabled() && !PLAYER_STATES.isEmpty();
+    }
+
     private static DynamicTarget resolveDynamicTargetForConnectionSend(
             ServerPlayer player,
             BlockPos pos,
@@ -692,6 +715,11 @@ public final class CreateBlockEntityUpdateGate {
         if (level == null) {
             return null;
         }
+        CreateContraptionSnapshotRegistry.Snapshot snapshot =
+                CreateContraptionSnapshotRegistry.find(level, pos);
+        if (snapshot != null) {
+            return new DynamicTarget(snapshot.center(), snapshot.points(), false, true);
+        }
         BlockEntity blockEntity = level.getBlockEntity(pos);
         List<Entity> contraptions = new ArrayList<>();
         CreateContraptionReferenceResolver.Resolution resolution = resolveCreateContraptionReferences(blockEntity);
@@ -700,9 +728,6 @@ public final class CreateBlockEntityUpdateGate {
         }
         for (Object reference : resolution.references()) {
             collectCreateContraption(contraptions, reference);
-        }
-        if (contraptions.isEmpty() && resolution.requiresNearbyScan()) {
-            contraptions.addAll(scanNearbyCreateContraptions(level, pos));
         }
         AABB bounds = null;
         for (Entity entity : contraptions) {
@@ -728,29 +753,6 @@ public final class CreateBlockEntityUpdateGate {
         return CreateContraptionReferenceResolver.resolve(blockEntity, BlockEntityTypeKeyCompat.keyOf(blockEntity.getType()));
     }
 
-    private static List<Entity> scanNearbyCreateContraptions(Level level, BlockPos pos) {
-        if (level == null || pos == null) {
-            return List.of();
-        }
-        AABB searchBox = new AABB(
-                pos.getX() - 128.0D,
-                pos.getY() - 128.0D,
-                pos.getZ() - 128.0D,
-                pos.getX() + 129.0D,
-                pos.getY() + 129.0D,
-                pos.getZ() + 129.0D);
-        return level.getEntities((Entity) null, searchBox, entity ->
-                isUsableCreateContraption(entity) && isCreateContraptionNearController(entity, pos));
-    }
-
-    private static boolean isCreateContraptionNearController(Entity entity, BlockPos pos) {
-        if (entity == null || pos == null) {
-            return false;
-        }
-        Object anchor = CreateContraptionReferenceResolver.readAnchorVector(entity);
-        Vec3 target = anchor instanceof Vec3 anchorVec ? anchorVec : entity.position();
-        return target.distanceToSqr(centerOf(pos)) <= 128.0D * 128.0D;
-    }
 
     private static boolean isUsableCreateContraption(Entity entity) {
         return entity != null && !entity.isRemoved() && isCreateContraptionEntity(entity);
@@ -780,7 +782,7 @@ public final class CreateBlockEntityUpdateGate {
         }
     }
 
-    private static AABB union(AABB first, AABB second) {
+    static AABB union(AABB first, AABB second) {
         return new AABB(
                 Math.min(first.minX, second.minX),
                 Math.min(first.minY, second.minY),
@@ -790,7 +792,7 @@ public final class CreateBlockEntityUpdateGate {
                 Math.max(first.maxZ, second.maxZ));
     }
 
-    private static Vec3 centerOf(AABB bounds) {
+    static Vec3 centerOf(AABB bounds) {
         if (bounds == null) {
             return null;
         }
@@ -800,7 +802,7 @@ public final class CreateBlockEntityUpdateGate {
                 (bounds.minZ + bounds.maxZ) * 0.5D);
     }
 
-    private static Vec3[] cornersOf(AABB bounds) {
+    static Vec3[] cornersOf(AABB bounds) {
         if (bounds == null) {
             return new Vec3[0];
         }
@@ -1057,8 +1059,79 @@ public final class CreateBlockEntityUpdateGate {
         }
     }
 
+    private record QueueEntry(PendingKey key, long token) implements Comparable<QueueEntry> {
+        @Override
+        public int compareTo(QueueEntry other) {
+            return Long.compare(this.token, other.token);
+        }
+    }
+
+    private static final class WorkBudget {
+        private int visibilityChecks;
+        private int releasePackets;
+        private long releaseBytes;
+        private int releasedPackets;
+
+        private WorkBudget(int visibilityChecks, int releasePackets, long releaseBytes) {
+            this.visibilityChecks = visibilityChecks;
+            this.releasePackets = releasePackets;
+            this.releaseBytes = releaseBytes;
+        }
+
+        private static WorkBudget global() {
+            return new WorkBudget(
+                    MAX_VISIBILITY_CHECKS_PER_TICK,
+                    MAX_RELEASE_PACKETS_PER_TICK,
+                    MAX_RELEASE_BYTES_PER_TICK);
+        }
+
+        private boolean hasCapacity() {
+            return this.visibilityChecks > 0
+                    && this.releasePackets > 0
+                    && (this.releaseBytes > 0L || this.releasedPackets == 0);
+        }
+
+        private boolean tryCheck() {
+            if (this.visibilityChecks <= 0) {
+                return false;
+            }
+            this.visibilityChecks--;
+            return true;
+        }
+
+        private boolean tryRelease(int rawBytes, PlayerWork playerWork) {
+            long bytes = Math.max(rawBytes, 0);
+            if (this.releasePackets <= 0 || playerWork.releasePackets <= 0) {
+                return false;
+            }
+            if (bytes > this.releaseBytes && this.releasedPackets > 0) {
+                return false;
+            }
+            if (bytes > playerWork.releaseBytes && playerWork.releasedPackets > 0) {
+                return false;
+            }
+            this.releasePackets--;
+            this.releaseBytes = Math.max(this.releaseBytes - bytes, 0L);
+            playerWork.releasePackets--;
+            playerWork.releaseBytes = Math.max(playerWork.releaseBytes - bytes, 0L);
+            this.releasedPackets++;
+            playerWork.releasedPackets++;
+            return true;
+        }
+    }
+
+    private static final class PlayerWork {
+        private int visibilityChecks = MAX_VISIBILITY_CHECKS_PER_PLAYER_TICK;
+        private int releasePackets = MAX_RELEASE_PACKETS_PER_PLAYER_TICK;
+        private long releaseBytes = MAX_RELEASE_BYTES_PER_PLAYER_TICK;
+        private int releasedPackets;
+    }
+
     private static final class PlayerState {
         private final Map<PendingKey, PendingUpdate> pendingUpdates = new LinkedHashMap<>();
+        private final ArrayDeque<QueueEntry> visibilityQueue = new ArrayDeque<>();
+        private final ArrayDeque<QueueEntry> dynamicVisibilityQueue = new ArrayDeque<>();
+        private final PriorityQueue<QueueEntry> expiryQueue = new PriorityQueue<>();
         private final Map<PendingKey, CreateGateSoundPolicy.SoundState> soundStates = new LinkedHashMap<>();
         private volatile ServerPlayer player;
         private volatile String channelId = "";
@@ -1066,8 +1139,7 @@ public final class CreateBlockEntityUpdateGate {
         private CreateGateViewPolicy.ViewState lastDrainViewState;
         private boolean lastDrainChunkBootstrapActive;
         private boolean hasDrainSnapshot;
-        private boolean hasRefreshRequired;
-        private long earliestFirstQueuedNanos = Long.MAX_VALUE;
+        private int visibilityPassRemaining;
 
         private void bind(ServerPlayer player, String channelId) {
             this.player = player;
@@ -1126,26 +1198,42 @@ public final class CreateBlockEntityUpdateGate {
             long nowNanos = System.nanoTime();
             PendingUpdate existing = this.pendingUpdates.get(key);
             if (existing == null) {
-                this.pendingUpdates.put(
-                        key,
-                        new PendingUpdate(key, packet, rawBytes, nowNanos, nowNanos, 0, "", dynamicTarget));
-                this.earliestFirstQueuedNanos = Math.min(this.earliestFirstQueuedNanos, nowNanos);
+                PendingUpdate pendingUpdate =
+                        new PendingUpdate(key, packet, rawBytes, nowNanos, nowNanos, 0, "", dynamicTarget);
+                this.pendingUpdates.put(key, pendingUpdate);
+                QueueEntry queueEntry = new QueueEntry(key, nowNanos);
+                this.visibilityQueue.addLast(queueEntry);
+                if (dynamicTarget != null && dynamicTarget.refreshRequired()) {
+                    this.dynamicVisibilityQueue.addLast(queueEntry);
+                }
+                this.expiryQueue.add(queueEntry);
             } else {
-                this.pendingUpdates.put(key, existing.withLatest(packet, rawBytes, nowNanos, dynamicTarget));
+                PendingUpdate updated = existing.withLatest(packet, rawBytes, nowNanos, dynamicTarget);
+                this.pendingUpdates.put(key, updated);
+                if (dynamicTarget != null && dynamicTarget.refreshRequired()
+                        && (existing.dynamicTarget() == null || !existing.dynamicTarget().refreshRequired())) {
+                    this.dynamicVisibilityQueue.addLast(new QueueEntry(key, existing.firstQueuedNanos()));
+                }
                 recordSuperseded(existing);
             }
-            this.hasRefreshRequired |= dynamicTarget != null && dynamicTarget.refreshRequired();
+            compactIndexesIfNeeded(maxPending);
             return true;
         }
 
         private synchronized PendingDropStats forgetPending(PendingKey key) {
             if (key != null) {
-                return PendingDropStats.EMPTY.plus(this.pendingUpdates.remove(key));
+                PendingDropStats dropped = PendingDropStats.EMPTY.plus(this.pendingUpdates.remove(key));
+                clearIndexesIfEmpty();
+                return dropped;
             }
             return PendingDropStats.EMPTY;
         }
 
-        private synchronized List<PendingUpdate> drainReady(ServerPlayer player, long nowNanos) {
+        private synchronized List<PendingUpdate> drainReady(
+                ServerPlayer player,
+                long nowNanos,
+                WorkBudget globalBudget
+        ) {
             if (this.pendingUpdates.isEmpty()) {
                 return List.of();
             }
@@ -1155,18 +1243,53 @@ public final class CreateBlockEntityUpdateGate {
             boolean viewChanged = !this.hasDrainSnapshot || !viewState.equals(this.lastDrainViewState);
             boolean bootstrapChanged = !this.hasDrainSnapshot
                     || chunkBootstrapActive != this.lastDrainChunkBootstrapActive;
-            boolean expiryDue = !chunkBootstrapActive
-                    && nowNanos - this.earliestFirstQueuedNanos >= maxDelayNanos;
-            if (!viewChanged && !bootstrapChanged && !expiryDue && !this.hasRefreshRequired) {
-                return List.of();
+            if (viewChanged || bootstrapChanged) {
+                this.visibilityPassRemaining = Math.max(this.visibilityPassRemaining, this.visibilityQueue.size());
             }
             List<PendingUpdate> readyUpdates = new ArrayList<>();
-            long nextEarliestFirstQueuedNanos = Long.MAX_VALUE;
-            boolean nextHasRefreshRequired = false;
-            Iterator<Map.Entry<PendingKey, PendingUpdate>> iterator = this.pendingUpdates.entrySet().iterator();
-            while (iterator.hasNext()) {
-                Map.Entry<PendingKey, PendingUpdate> entry = iterator.next();
-                PendingUpdate pendingUpdate = entry.getValue();
+            PlayerWork playerWork = new PlayerWork();
+
+            if (!chunkBootstrapActive) {
+                while (!this.expiryQueue.isEmpty() && playerWork.visibilityChecks > 0 && globalBudget.tryCheck()) {
+                    playerWork.visibilityChecks--;
+                    QueueEntry queueEntry = this.expiryQueue.peek();
+                    PendingUpdate pendingUpdate = current(queueEntry);
+                    if (pendingUpdate == null) {
+                        this.expiryQueue.remove();
+                        continue;
+                    }
+                    if (nowNanos - pendingUpdate.firstQueuedNanos() < maxDelayNanos) {
+                        break;
+                    }
+                    if (!globalBudget.tryRelease(pendingUpdate.rawBytes(), playerWork)) {
+                        break;
+                    }
+                    this.expiryQueue.remove();
+                    this.pendingUpdates.remove(pendingUpdate.key());
+                    readyUpdates.add(pendingUpdate.withReleaseReason("max_delay"));
+                }
+            }
+
+            boolean fullVisibilityPass = this.visibilityPassRemaining > 0;
+            ArrayDeque<QueueEntry> scanQueue = fullVisibilityPass
+                    ? this.visibilityQueue
+                    : this.dynamicVisibilityQueue;
+            int visibilityEntries = fullVisibilityPass
+                    ? Math.min(this.visibilityPassRemaining, scanQueue.size())
+                    : scanQueue.size();
+            while (visibilityEntries-- > 0
+                    && playerWork.visibilityChecks > 0
+                    && globalBudget.hasCapacity()
+                    && globalBudget.tryCheck()) {
+                playerWork.visibilityChecks--;
+                QueueEntry queueEntry = scanQueue.removeFirst();
+                if (fullVisibilityPass) {
+                    this.visibilityPassRemaining--;
+                }
+                PendingUpdate pendingUpdate = current(queueEntry);
+                if (pendingUpdate == null) {
+                    continue;
+                }
                 DynamicTarget dynamicTarget = pendingUpdate.dynamicTarget();
                 if (dynamicTarget == null || dynamicTarget.refreshRequired()) {
                     dynamicTarget = resolveDynamicTargetOnServerThread(
@@ -1174,7 +1297,7 @@ public final class CreateBlockEntityUpdateGate {
                             pendingUpdate.key().pos(),
                             pendingUpdate.key().typeKey());
                     pendingUpdate = pendingUpdate.withDynamicTarget(dynamicTarget);
-                    entry.setValue(pendingUpdate);
+                    this.pendingUpdates.put(pendingUpdate.key(), pendingUpdate);
                 }
                 boolean visible = dynamicTarget.forceImmediate()
                         || CreateGateViewPolicy.shouldSendImmediately(
@@ -1183,24 +1306,73 @@ public final class CreateBlockEntityUpdateGate {
                                 allowLookDirectionForGatedUpdate(
                                         pendingUpdate.key().typeKey(),
                                         chunkBootstrapActive));
-                boolean expired = !chunkBootstrapActive
-                        && nowNanos - pendingUpdate.firstQueuedNanos() >= maxDelayNanos;
-                if (!visible && !expired) {
-                    nextEarliestFirstQueuedNanos = Math.min(
-                            nextEarliestFirstQueuedNanos,
-                            pendingUpdate.firstQueuedNanos());
-                    nextHasRefreshRequired |= dynamicTarget.refreshRequired();
+                if (!visible) {
+                    if (fullVisibilityPass || dynamicTarget.refreshRequired()) {
+                        scanQueue.addLast(queueEntry);
+                    }
                     continue;
                 }
-                iterator.remove();
-                readyUpdates.add(pendingUpdate.withReleaseReason(visible ? "visible" : "max_delay"));
+                if (!globalBudget.tryRelease(pendingUpdate.rawBytes(), playerWork)) {
+                    scanQueue.addFirst(queueEntry);
+                    if (fullVisibilityPass) {
+                        this.visibilityPassRemaining++;
+                    }
+                    break;
+                }
+                this.pendingUpdates.remove(pendingUpdate.key());
+                readyUpdates.add(pendingUpdate.withReleaseReason("visible"));
             }
             this.lastDrainViewState = viewState;
             this.lastDrainChunkBootstrapActive = chunkBootstrapActive;
             this.hasDrainSnapshot = true;
-            this.earliestFirstQueuedNanos = nextEarliestFirstQueuedNanos;
-            this.hasRefreshRequired = nextHasRefreshRequired;
+            compactIndexesIfNeeded(CreateGateQueueConfig.maxPendingPerPlayer());
+            clearIndexesIfEmpty();
             return readyUpdates;
+        }
+
+        private PendingUpdate current(QueueEntry queueEntry) {
+            if (queueEntry == null) {
+                return null;
+            }
+            PendingUpdate pendingUpdate = this.pendingUpdates.get(queueEntry.key());
+            return pendingUpdate != null && pendingUpdate.firstQueuedNanos() == queueEntry.token()
+                    ? pendingUpdate
+                    : null;
+        }
+
+        private void clearIndexesIfEmpty() {
+            if (this.pendingUpdates.isEmpty()) {
+                this.visibilityQueue.clear();
+                this.dynamicVisibilityQueue.clear();
+                this.expiryQueue.clear();
+                this.visibilityPassRemaining = 0;
+            }
+        }
+
+        private void compactIndexesIfNeeded(int maxPending) {
+            int staleAllowance = Math.max(maxPending, 64);
+            int threshold = this.pendingUpdates.size() + staleAllowance;
+            if (this.visibilityQueue.size() <= threshold
+                    && this.dynamicVisibilityQueue.size() <= threshold
+                    && this.expiryQueue.size() <= threshold) {
+                return;
+            }
+            this.visibilityQueue.clear();
+            this.dynamicVisibilityQueue.clear();
+            this.expiryQueue.clear();
+            for (PendingUpdate pendingUpdate : this.pendingUpdates.values()) {
+                QueueEntry queueEntry = new QueueEntry(
+                        pendingUpdate.key(),
+                        pendingUpdate.firstQueuedNanos());
+                this.visibilityQueue.addLast(queueEntry);
+                if (pendingUpdate.dynamicTarget() != null && pendingUpdate.dynamicTarget().refreshRequired()) {
+                    this.dynamicVisibilityQueue.addLast(queueEntry);
+                }
+                this.expiryQueue.add(queueEntry);
+            }
+            if (this.visibilityPassRemaining > 0) {
+                this.visibilityPassRemaining = this.visibilityQueue.size();
+            }
         }
 
         private synchronized PendingDropStats dropChunk(int chunkX, int chunkZ) {
@@ -1218,6 +1390,7 @@ public final class CreateBlockEntityUpdateGate {
                     this.soundStates.remove(key);
                 }
             }
+            clearIndexesIfEmpty();
             return dropped;
         }
 
@@ -1227,6 +1400,9 @@ public final class CreateBlockEntityUpdateGate {
                 dropped = dropped.plus(pendingUpdate);
             }
             this.pendingUpdates.clear();
+            this.visibilityQueue.clear();
+            this.dynamicVisibilityQueue.clear();
+            this.expiryQueue.clear();
             this.soundStates.clear();
             return dropped;
         }

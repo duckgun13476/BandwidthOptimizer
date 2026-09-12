@@ -16,6 +16,7 @@ final class CreateContraptionReferenceResolver {
     private static final MemberKey MINUTE_HAND = MemberKey.field("minuteHand");
     private static final MemberKey SHARED_MIRROR = MemberKey.field("sharedMirrorContraption");
     private static final MemberKey ANCHOR_VECTOR = MemberKey.method("getAnchorVec");
+    private static final MemberKey CONTRAPTION = MemberKey.method("getContraption");
 
     private static final ClassValue<ConcurrentHashMap<MemberKey, Accessor>> ACCESSORS = new ClassValue<>() {
         @Override
@@ -28,7 +29,7 @@ final class CreateContraptionReferenceResolver {
 
     static Resolution resolve(Object controller, String typeKey) {
         if (controller == null) {
-            return Resolution.nearbyScan();
+            return Resolution.empty();
         }
         List<Object> references = new ArrayList<>(2);
         switch (CreateGateTypePolicy.contraptionReferenceKind(typeKey)) {
@@ -42,15 +43,19 @@ final class CreateContraptionReferenceResolver {
                 add(references, read(controller, ATTACHED_CONTRAPTION));
                 add(references, read(controller, SHARED_MIRROR));
             }
-            case NEARBY_SCAN -> {
-                return Resolution.nearbyScan();
+            case REGISTRY_ONLY -> {
+                return Resolution.empty();
             }
         }
-        return new Resolution(references, false);
+        return new Resolution(references);
     }
 
     static Object readAnchorVector(Object entity) {
         return read(entity, ANCHOR_VECTOR);
+    }
+
+    static Object readContraption(Object entity) {
+        return read(entity, CONTRAPTION);
     }
 
     private static void add(List<Object> references, Object value) {
@@ -71,9 +76,9 @@ final class CreateContraptionReferenceResolver {
         return accessor.read(target);
     }
 
-    record Resolution(List<Object> references, boolean requiresNearbyScan) {
-        private static Resolution nearbyScan() {
-            return new Resolution(List.of(), true);
+    record Resolution(List<Object> references) {
+        private static Resolution empty() {
+            return new Resolution(List.of());
         }
     }
 
