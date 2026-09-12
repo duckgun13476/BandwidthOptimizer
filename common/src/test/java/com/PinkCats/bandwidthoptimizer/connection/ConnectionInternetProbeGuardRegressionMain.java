@@ -17,25 +17,46 @@ public final class ConnectionInternetProbeGuardRegressionMain {
         assertProbe("POST /status HTTP/1.1\r\n\r\n");
         assertProbe("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
         assertProbe("SSH-2.0-test\r\n");
+        assertProbe(hex("160301002e01"));
+        assertProbe(hex("0300002f2ae0"));
+        assertProbe(hex("1201000800000100"));
         assertNotProbe("GE");
         assertNotProbe("\u0005\u0000test");
+        assertNotProbe(hex("160301002e02"));
+        assertNotProbe(hex("0300002f2a00"));
+        assertNotProbe(hex("1201000700000100"));
+        assertNotProbe(hex("1200f805096c6f63616c686f737463dd02"));
         assertRejectedBeforeMinecraftDecode();
         assertIgnoredAfterMinecraftDecode();
         System.out.println("Connection internet probe guard regression passed");
     }
 
     private static void assertProbe(String value) {
-        byte[] bytes = value.getBytes(StandardCharsets.ISO_8859_1);
-        if (!ConnectionInternetProbeGuard.isKnownProbe(bytes)) {
-            throw new AssertionError("Expected probe prefix: " + value);
-        }
+        assertProbe(value.getBytes(StandardCharsets.ISO_8859_1));
     }
 
     private static void assertNotProbe(String value) {
-        byte[] bytes = value.getBytes(StandardCharsets.ISO_8859_1);
-        if (ConnectionInternetProbeGuard.isKnownProbe(bytes)) {
-            throw new AssertionError("Unexpected probe prefix: " + value);
+        assertNotProbe(value.getBytes(StandardCharsets.ISO_8859_1));
+    }
+
+    private static void assertProbe(byte[] bytes) {
+        if (!ConnectionInternetProbeGuard.isKnownProbe(bytes)) {
+            throw new AssertionError("Expected probe prefix");
         }
+    }
+
+    private static void assertNotProbe(byte[] bytes) {
+        if (ConnectionInternetProbeGuard.isKnownProbe(bytes)) {
+            throw new AssertionError("Unexpected probe prefix");
+        }
+    }
+
+    private static byte[] hex(String value) {
+        byte[] bytes = new byte[value.length() / 2];
+        for (int index = 0; index < bytes.length; index++) {
+            bytes[index] = (byte) Integer.parseInt(value.substring(index * 2, index * 2 + 2), 16);
+        }
+        return bytes;
     }
 
     private static void assertRejectedBeforeMinecraftDecode() {

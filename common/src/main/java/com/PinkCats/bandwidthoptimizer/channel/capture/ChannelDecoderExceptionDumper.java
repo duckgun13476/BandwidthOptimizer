@@ -5,6 +5,7 @@ import com.PinkCats.bandwidthoptimizer.connection.ConnectionInternetProbeGuard;
 import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.util.AttributeKey;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -14,6 +15,7 @@ import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class ChannelDecoderExceptionDumper {
 
@@ -22,6 +24,9 @@ public final class ChannelDecoderExceptionDumper {
     private static final String LATEST_JSON_FILE_NAME = "latest-decoder-exception.json";
     private static final String HISTORY_JSONL_FILE_NAME = "decoder-exception-history.jsonl";
     private static final String LATEST_PAYLOAD_FILE_NAME = "latest-decoder-exception-payload.bin";
+    static final int MAX_DUMPS_PER_CONNECTION = 50;
+    private static final AttributeKey<AtomicInteger> DUMP_COUNT_KEY =
+            AttributeKey.valueOf("bandwidthoptimizer:decoder_exception_dump_count");
 
     private ChannelDecoderExceptionDumper() {}
 
@@ -31,6 +36,14 @@ public final class ChannelDecoderExceptionDumper {
         }
         Channel channel = context != null ? context.channel() : fallbackChannel;
         ChannelCapturedFrame frame = ChannelCaptureHooks.lastInboundDecodeCandidate(channel);
+        if (isInitialHandshakeNoise(channel, frame)) {
+            ChannelCaptureHooks.clearInboundDecodeCandidate(channel);
+            return;
+        }
+        if (!claimDumpSlot(channel)) {
+            ChannelCaptureHooks.clearInboundDecodeCandidate(channel);
+            return;
+        }
         if (frame == null) {
             Bandwidthoptimizer.LOGGER.warn(
                     "[DecoderExceptionDump] Decoder exception detected but no inbound candidate frame was captured. channel={}, exception={}: {}",
@@ -68,6 +81,39 @@ public final class ChannelDecoderExceptionDumper {
                     dumpFailure
             );
         }
+    }
+
+    static boolean shouldCaptureFailure(Channel channel, String protocolName) {
+        return protocolName == null
+                || !"HANDSHAKING".equalsIgnoreCase(protocolName)
+                || ConnectionInternetProbeGuard.hasMinecraftPacketDecoded(channel);
+    }
+
+    static boolean claimDumpSlot(Channel channel) {
+        if (channel == null) {
+            return true;
+        }
+        AtomicInteger newCounter = new AtomicInteger();
+        AtomicInteger counter = channel.attr(DUMP_COUNT_KEY).setIfAbsent(newCounter);
+        if (counter == null) {
+            counter = newCounter;
+        }
+        while (true) {
+            int current = counter.get();
+            if (current >= MAX_DUMPS_PER_CONNECTION) {
+                return false;
+            }
+            if (counter.compareAndSet(current, current + 1)) {
+                return true;
+            }
+        }
+    }
+
+    private static boolean isInitialHandshakeNoise(Channel channel, ChannelCapturedFrame frame) {
+        if (ConnectionInternetProbeGuard.hasMinecraftPacketDecoded(channel)) {
+            return false;
+        }
+        return frame == null || !shouldCaptureFailure(channel, frame.protocolName());
     }
 
     private static boolean isDecoderBoundaryException(Throwable throwable) {

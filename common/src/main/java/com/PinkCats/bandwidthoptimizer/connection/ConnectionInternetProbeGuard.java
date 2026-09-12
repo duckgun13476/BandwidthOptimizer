@@ -53,6 +53,10 @@ public final class ConnectionInternetProbeGuard {
         }
     }
 
+    public static boolean hasMinecraftPacketDecoded(Channel channel) {
+        return channel != null && Boolean.TRUE.equals(channel.attr(MINECRAFT_PACKET_DECODED_KEY).get());
+    }
+
     public static boolean isKnownProbe(byte[] payload) {
         if (payload == null) {
             return false;
@@ -62,7 +66,7 @@ public final class ConnectionInternetProbeGuard {
                 return true;
             }
         }
-        return false;
+        return isBinaryProbe(payload, 0, payload.length);
     }
 
     static boolean isKnownProbe(ByteBuf input) {
@@ -73,7 +77,49 @@ public final class ConnectionInternetProbeGuard {
                 return true;
             }
         }
-        return false;
+        return isBinaryProbe(input, readerIndex, readableBytes);
+    }
+
+    private static boolean isBinaryProbe(ByteBuf input, int offset, int length) {
+        return isTlsClientHello(length, index -> input.getUnsignedByte(offset + index))
+                || isRdpConnectionRequest(length, index -> input.getUnsignedByte(offset + index))
+                || isTdsPreLogin(length, index -> input.getUnsignedByte(offset + index));
+    }
+
+    private static boolean isBinaryProbe(byte[] input, int offset, int length) {
+        return isTlsClientHello(length, index -> input[offset + index] & 0xFF)
+                || isRdpConnectionRequest(length, index -> input[offset + index] & 0xFF)
+                || isTdsPreLogin(length, index -> input[offset + index] & 0xFF);
+    }
+
+    private static boolean isTlsClientHello(int length, ByteReader input) {
+        return length >= 6
+                && input.get(0) == 0x16
+                && input.get(1) == 0x03
+                && input.get(2) <= 0x04
+                && input.get(5) == 0x01;
+    }
+
+    private static boolean isRdpConnectionRequest(int length, ByteReader input) {
+        if (length < 6 || input.get(0) != 0x03 || input.get(1) != 0x00) {
+            return false;
+        }
+        int declaredLength = input.get(2) << 8 | input.get(3);
+        int x224Code = input.get(5);
+        return declaredLength >= 7 && (x224Code == 0xE0 || x224Code == 0xD0);
+    }
+
+    private static boolean isTdsPreLogin(int length, ByteReader input) {
+        if (length < 8
+                || input.get(0) != 0x12
+                || (input.get(1) & 0x01) == 0
+                || input.get(4) != 0
+                || input.get(5) != 0
+                || input.get(7) != 0) {
+            return false;
+        }
+        int declaredLength = input.get(2) << 8 | input.get(3);
+        return declaredLength >= 8 && declaredLength <= length;
     }
 
     private static boolean startsWith(ByteBuf input, int readerIndex, int readableBytes, byte[] prefix) {
@@ -102,5 +148,10 @@ public final class ConnectionInternetProbeGuard {
 
     private static byte[] ascii(String value) {
         return value.getBytes(StandardCharsets.US_ASCII);
+    }
+
+    @FunctionalInterface
+    private interface ByteReader {
+        int get(int index);
     }
 }

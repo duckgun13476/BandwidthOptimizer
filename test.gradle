@@ -386,6 +386,15 @@ tasks.register('runConnectionInternetProbeGuardRegression', JavaExec) {
     )
 }
 
+tasks.register('runChannelDecoderExceptionDumperRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies initial handshake noise is skipped and each connection writes at most one decoder dump.',
+            'com.PinkCats.bandwidthoptimizer.channel.capture.ChannelDecoderExceptionDumperRegressionMain'
+    )
+}
+
 tasks.register('runTrafficPeriodReportStoreRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,
