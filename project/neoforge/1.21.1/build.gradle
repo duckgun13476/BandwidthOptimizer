@@ -564,6 +564,15 @@ tasks.register('runChunkTransportEnvelopeSecurityRegression', JavaExec) {
     maxHeapSize = '48m'
 }
 
+tasks.register('runKineticTemplateDictionarySecurityRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies inbound mapping frames are bounded and applied transactionally.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.channel.algorithm.mapping.KineticTemplateDictionarySecurityRegressionMain'
+    maxHeapSize = '64m'
+}
+
 tasks.register('runConnectionPayloadTaskGuardRegression', JavaExec) {
     group = 'verification'
     description = 'Verifies stale client payload tasks are rejected across protocol generations and disconnects.'

@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel.algorithm.mapping;
 
 import com.PinkCats.bandwidthoptimizer.Config;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
 
@@ -8,9 +9,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 // Session for transport direction.
 final class KineticTemplateDictionarySession {
@@ -18,6 +21,8 @@ final class KineticTemplateDictionarySession {
     private static final int MAX_RECENT_SEEDS_PER_LENGTH = 48;
     private static final int MAX_RECENT_SEEDS = 2048;
     private static final int MAX_UNSYNCED_EXACT_SEEDS = 4096;
+    private static final int MAX_DICTIONARY_ENTRIES = 8192;
+    private static final int MAX_DICTIONARY_PAYLOAD_BYTES = ChannelTransportPayloadLimits.MAX_BATCH_PAYLOAD_BYTES;
     private static final int MAX_CANDIDATE_SEEDS_PER_LOOKUP = 24;
     private static final int MIN_TEMPLATE_LITERAL_BYTES = 8;
 
@@ -55,7 +60,7 @@ final class KineticTemplateDictionarySession {
 
     KineticMapTableLayer.LayerResult encodeWithTelemetry(byte[] packetBytes) {
         byte[] safePacketBytes = copyBytes(packetBytes);
-        List<KineticTemplateMappingCodec.MappingRemoval> removalsToSend = List.copyOf(this.pendingRemovals);
+        List<KineticTemplateMappingCodec.MappingRemoval> removalsToSend = new ArrayList<>(this.pendingRemovals);
         this.pendingRemovals.clear();
 
         List<KineticTemplateMappingCodec.MappingAddition> additions = new ArrayList<>();
@@ -64,9 +69,11 @@ final class KineticTemplateDictionarySession {
 
         rememberSeed(safePacketBytes);
         evictMappings(protectedIds);
+        removalsToSend.addAll(this.pendingRemovals);
+        this.pendingRemovals.clear();
 
         KineticTemplateMappingCodec.FrameData frameData =
-                new KineticTemplateMappingCodec.FrameData(List.copyOf(additions), removalsToSend, entry);
+                new KineticTemplateMappingCodec.FrameData(List.copyOf(additions), List.copyOf(removalsToSend), entry);
         byte[] encodedFrame = KineticTemplateMappingCodec.encodeFrame(frameData);
         return new KineticMapTableLayer.LayerResult(encodedFrame, toTelemetry(frameData));
     }
@@ -84,8 +91,9 @@ final class KineticTemplateDictionarySession {
 
     KineticMapTableLayer.LayerResult decodeWithTelemetry(byte[] encodedBytes) {
         KineticTemplateMappingCodec.FrameData frameData = KineticTemplateMappingCodec.decodeFrame(copyBytes(encodedBytes));
-        applyAdditions(frameData.additions());
+        validateInboundFrame(frameData);
         applyRemovals(frameData.removals());
+        applyAdditions(frameData.additions());
         byte[] restoredBytes = decodeEntry(frameData.entry(), encodedBytes);
         return new KineticMapTableLayer.LayerResult(restoredBytes, toTelemetry(frameData));
     }
@@ -121,7 +129,7 @@ final class KineticTemplateDictionarySession {
 
         UnsyncedExactSeed unsyncedSeed = this.unsyncedExactSeeds.get(payloadKey);
         if (unsyncedSeed != null && Arrays.equals(unsyncedSeed.payload(), payload) && exactAdditionWorthwhile(payload.length)) {
-            int mappingId = this.nextId++;
+            int mappingId = allocateMappingId();
             byte[] storedPayload = copyBytes(payload);
             this.exactIdByHash.put(new HashKey(storedPayload), mappingId);
             this.exactEntriesById.put(mappingId, new ExactEntry(storedPayload, nextTouch()));
@@ -136,7 +144,7 @@ final class KineticTemplateDictionarySession {
         if (templateCandidate != null && templateCandidate.referenceEncodedBytes(this.nextId) < literalEncodedBytes) {
             Integer mappingId = this.templateIdByKey.get(templateCandidate.key());
             if (mappingId == null && templateAdditionWorthwhile(templateCandidate, payload.length)) {
-                mappingId = this.nextId++;
+                mappingId = allocateMappingId();
                 TemplateEntry templateEntry = templateCandidate.templateEntry().touch(nextTouch());
                 this.templateIdByKey.put(templateCandidate.key(), mappingId);
                 this.templateEntriesById.put(mappingId, templateEntry);
@@ -188,12 +196,211 @@ final class KineticTemplateDictionarySession {
         }
     }
 
+    private void validateInboundFrame(KineticTemplateMappingCodec.FrameData frameData) {
+        Set<Integer> removalIds = frameData.removals().isEmpty() ? Set.of() : new HashSet<>(frameData.removals().size());
+        long removedBytes = 0L;
+        for (KineticTemplateMappingCodec.MappingRemoval removal : frameData.removals()) {
+            requireValidMappingId(removal.mappingId(), "removal");
+            if (!removalIds.add(removal.mappingId())) {
+                throw new IllegalArgumentException("Duplicate mapping removal id " + removal.mappingId());
+            }
+            if (removal.kind() == KineticTemplateMappingCodec.ADD_EXACT) {
+                ExactEntry entry = this.exactEntriesById.get(removal.mappingId());
+                if (entry == null || this.templateEntriesById.containsKey(removal.mappingId())) {
+                    throw new IllegalArgumentException("Unknown or mismatched exact mapping removal id " + removal.mappingId());
+                }
+                removedBytes += entry.payload().length;
+                continue;
+            }
+            if (removal.kind() != KineticTemplateMappingCodec.ADD_TEMPLATE) {
+                throw new IllegalArgumentException("Unknown mapping removal kind: " + removal.kind());
+            }
+            TemplateEntry entry = this.templateEntriesById.get(removal.mappingId());
+            if (entry == null || this.exactEntriesById.containsKey(removal.mappingId())) {
+                throw new IllegalArgumentException("Unknown or mismatched template mapping removal id " + removal.mappingId());
+            }
+            removedBytes += entry.literalByteCount();
+        }
+
+        Set<Integer> additionIds = frameData.additions().isEmpty() ? Set.of() : new HashSet<>(frameData.additions().size());
+        long addedBytes = 0L;
+        for (KineticTemplateMappingCodec.MappingAddition addition : frameData.additions()) {
+            requireValidMappingId(addition.mappingId(), "addition");
+            if (!additionIds.add(addition.mappingId())) {
+                throw new IllegalArgumentException("Duplicate mapping addition id " + addition.mappingId());
+            }
+            if (removalIds.contains(addition.mappingId())
+                    || this.exactEntriesById.containsKey(addition.mappingId())
+                    || this.templateEntriesById.containsKey(addition.mappingId())) {
+                throw new IllegalArgumentException("Mapping addition replaces existing id " + addition.mappingId());
+            }
+            if (addition.kind() == KineticTemplateMappingCodec.ADD_EXACT) {
+                byte[] payload = addition.exactPayload();
+                if (payload == null || payload.length == 0) {
+                    throw new IllegalArgumentException("Exact mapping payload must not be empty");
+                }
+                addedBytes += payload.length;
+                continue;
+            }
+            if (addition.kind() != KineticTemplateMappingCodec.ADD_TEMPLATE) {
+                throw new IllegalArgumentException("Unknown mapping addition kind: " + addition.kind());
+            }
+            addedBytes += validateTemplateDescription(addition.templateDescription());
+        }
+
+        long projectedEntries = (long) this.exactEntriesById.size()
+                + this.templateEntriesById.size()
+                - removalIds.size()
+                + additionIds.size();
+        long projectedBytes = (long) this.totalStoredBytes - removedBytes + addedBytes;
+        if (projectedEntries < 0L || projectedEntries > maxEntries()) {
+            throw new IllegalArgumentException(
+                    "Mapping dictionary entry budget exceeded: " + projectedEntries + " > " + maxEntries()
+            );
+        }
+        if (projectedBytes < 0L || projectedBytes > maxPayloadBytes()) {
+            throw new IllegalArgumentException(
+                    "Mapping dictionary byte budget exceeded: " + projectedBytes + " > " + maxPayloadBytes()
+            );
+        }
+
+        if (!frameData.additions().isEmpty()) {
+            validateInboundKeys(frameData.additions(), removalIds);
+        }
+        validateInboundEntry(frameData, removalIds);
+    }
+
+    private void validateInboundKeys(
+            List<KineticTemplateMappingCodec.MappingAddition> additions,
+            Set<Integer> removalIds
+    ) {
+        Set<HashKey> exactKeys = new HashSet<>(additions.size());
+        Set<TemplateKey> templateKeys = new HashSet<>(additions.size());
+        for (KineticTemplateMappingCodec.MappingAddition addition : additions) {
+            if (addition.kind() == KineticTemplateMappingCodec.ADD_EXACT) {
+                HashKey key = new HashKey(addition.exactPayload());
+                Integer existingId = this.exactIdByHash.get(key);
+                if (!exactKeys.add(key) || (existingId != null && !removalIds.contains(existingId))) {
+                    throw new IllegalArgumentException("Duplicate exact mapping payload for id " + addition.mappingId());
+                }
+                continue;
+            }
+            TemplateEntry entry = templateEntryFrom(addition.templateDescription(), 0L);
+            TemplateKey key = TemplateKey.from(entry);
+            Integer existingId = this.templateIdByKey.get(key);
+            if (!templateKeys.add(key) || (existingId != null && !removalIds.contains(existingId))) {
+                throw new IllegalArgumentException("Duplicate template mapping payload for id " + addition.mappingId());
+            }
+        }
+    }
+
+    private void validateInboundEntry(
+            KineticTemplateMappingCodec.FrameData frameData,
+            Set<Integer> removalIds
+    ) {
+        KineticTemplateMappingCodec.MappingEntry entry = frameData.entry();
+        if (entry.type() == KineticTemplateMappingCodec.ENTRY_LITERAL) {
+            if (entry.literalPayload() == null) {
+                throw new IllegalArgumentException("Literal mapping entry payload is missing");
+            }
+            return;
+        }
+        requireValidMappingId(entry.mappingId(), "entry");
+        if (entry.type() == KineticTemplateMappingCodec.ENTRY_EXACT_REFERENCE) {
+            boolean existing = this.exactEntriesById.containsKey(entry.mappingId()) && !removalIds.contains(entry.mappingId());
+            boolean added = containsAddition(frameData.additions(), KineticTemplateMappingCodec.ADD_EXACT, entry.mappingId());
+            if (!existing && !added) {
+                throw new IllegalArgumentException("Missing exact mapping id " + entry.mappingId());
+            }
+            return;
+        }
+        if (entry.type() != KineticTemplateMappingCodec.ENTRY_TEMPLATE_REFERENCE) {
+            throw new IllegalArgumentException("Unknown mapping entry type: " + entry.type());
+        }
+        TemplateEntry templateEntry = this.templateEntriesById.get(entry.mappingId());
+        if (templateEntry == null || removalIds.contains(entry.mappingId())) {
+            KineticTemplateMappingCodec.MappingAddition addition = findAddition(
+                    frameData.additions(),
+                    KineticTemplateMappingCodec.ADD_TEMPLATE,
+                    entry.mappingId()
+            );
+            if (addition == null) {
+                throw new IllegalArgumentException("Missing template mapping id " + entry.mappingId());
+            }
+            templateEntry = templateEntryFrom(addition.templateDescription(), 0L);
+        }
+        int expectedVariableBytes = templateEntry.totalLength() - templateEntry.literalByteCount();
+        int actualVariableBytes = entry.rawVariablePayload() == null ? 0 : entry.rawVariablePayload().length;
+        if (actualVariableBytes != expectedVariableBytes) {
+            throw new IllegalArgumentException(
+                    "Template variable payload bytes do not match mapping: "
+                            + actualVariableBytes + " != " + expectedVariableBytes
+            );
+        }
+    }
+
+    private static long validateTemplateDescription(
+            KineticTemplateMappingCodec.TemplateDescription description
+    ) {
+        if (description == null || description.totalLength() <= 0 || description.segments().isEmpty()) {
+            throw new IllegalArgumentException("Template mapping description must not be empty");
+        }
+        long describedBytes = 0L;
+        long literalBytes = 0L;
+        for (KineticTemplateMappingCodec.MappingSegment segment : description.segments()) {
+            if (segment == null || segment.length() <= 0) {
+                throw new IllegalArgumentException("Template mapping segment length must be positive");
+            }
+            describedBytes += segment.length();
+            if (describedBytes > description.totalLength()) {
+                throw new IllegalArgumentException("Template mapping segments exceed total bytes");
+            }
+            if (!segment.variable()) {
+                if (segment.literalBytes() == null || segment.literalBytes().length != segment.length()) {
+                    throw new IllegalArgumentException("Template literal segment length mismatch");
+                }
+                literalBytes += segment.length();
+            }
+        }
+        if (describedBytes != description.totalLength()) {
+            throw new IllegalArgumentException("Template mapping segment bytes do not match total bytes");
+        }
+        return literalBytes;
+    }
+
+    private static boolean containsAddition(
+            List<KineticTemplateMappingCodec.MappingAddition> additions,
+            int kind,
+            int mappingId
+    ) {
+        return findAddition(additions, kind, mappingId) != null;
+    }
+
+    private static KineticTemplateMappingCodec.MappingAddition findAddition(
+            List<KineticTemplateMappingCodec.MappingAddition> additions,
+            int kind,
+            int mappingId
+    ) {
+        for (KineticTemplateMappingCodec.MappingAddition addition : additions) {
+            if (addition.kind() == kind && addition.mappingId() == mappingId) {
+                return addition;
+            }
+        }
+        return null;
+    }
+
+    private static void requireValidMappingId(int mappingId, String fieldName) {
+        if (mappingId < 0 || mappingId > KineticTemplateMappingCodec.MAX_MAPPING_ID) {
+            throw new IllegalArgumentException("Invalid mapping " + fieldName + " id " + mappingId);
+        }
+    }
+
     private void applyRemovals(List<KineticTemplateMappingCodec.MappingRemoval> removals) {
         for (KineticTemplateMappingCodec.MappingRemoval removal : removals) {
             if (removal.kind() == KineticTemplateMappingCodec.ADD_EXACT) {
                 ExactEntry removedEntry = this.exactEntriesById.remove(removal.mappingId());
                 if (removedEntry != null) {
-                    this.exactIdByHash.remove(new HashKey(removedEntry.payload()));
+                    this.exactIdByHash.remove(new HashKey(removedEntry.payload()), removal.mappingId());
                     this.totalStoredBytes -= removedEntry.payload().length;
                 }
                 continue;
@@ -206,7 +413,7 @@ final class KineticTemplateDictionarySession {
             if (removedEntry == null) {
                 continue;
             }
-            this.templateIdByKey.remove(TemplateKey.from(removedEntry));
+            this.templateIdByKey.remove(TemplateKey.from(removedEntry), removal.mappingId());
             List<Integer> ids = this.templateIdsByLength.get(removedEntry.totalLength());
             if (ids != null) {
                 ids.removeIf(id -> id == removal.mappingId());
@@ -418,7 +625,7 @@ final class KineticTemplateDictionarySession {
                 if (removedEntry == null) {
                     continue;
                 }
-                this.exactIdByHash.remove(new HashKey(removedEntry.payload()));
+                this.exactIdByHash.remove(new HashKey(removedEntry.payload()), candidate.mappingId());
                 this.totalStoredBytes -= removedEntry.payload().length;
                 this.pendingRemovals.add(new KineticTemplateMappingCodec.MappingRemoval(KineticTemplateMappingCodec.ADD_EXACT, candidate.mappingId()));
                 continue;
@@ -428,7 +635,7 @@ final class KineticTemplateDictionarySession {
             if (removedEntry == null) {
                 continue;
             }
-            this.templateIdByKey.remove(TemplateKey.from(removedEntry));
+            this.templateIdByKey.remove(TemplateKey.from(removedEntry), candidate.mappingId());
             List<Integer> ids = this.templateIdsByLength.get(removedEntry.totalLength());
             if (ids != null) {
                 ids.removeIf(id -> id == candidate.mappingId());
@@ -474,6 +681,13 @@ final class KineticTemplateDictionarySession {
     }
 
     private TemplateEntry templateEntryFrom(KineticTemplateMappingCodec.TemplateDescription templateDescription) {
+        return templateEntryFrom(templateDescription, nextTouch());
+    }
+
+    private static TemplateEntry templateEntryFrom(
+            KineticTemplateMappingCodec.TemplateDescription templateDescription,
+            long lastTouched
+    ) {
         int literalByteCount = templateDescription.segments().stream()
                 .filter(segment -> !segment.variable())
                 .mapToInt(KineticTemplateMappingCodec.MappingSegment::length)
@@ -482,11 +696,14 @@ final class KineticTemplateDictionarySession {
                 templateDescription.totalLength(),
                 templateDescription.segments(),
                 literalByteCount,
-                nextTouch()
+                lastTouched
         );
     }
 
     private boolean exactAdditionWorthwhile(int payloadLength) {
+        if (payloadLength > maxPayloadBytes()) {
+            return false;
+        }
         int mappingId = this.nextId;
         int literalBytes = KineticTemplateMappingCodec.literalEntryEncodedBytes(payloadLength);
         int referenceBytes = KineticTemplateMappingCodec.exactReferenceEntryEncodedBytes(mappingId);
@@ -495,6 +712,9 @@ final class KineticTemplateDictionarySession {
     }
 
     private boolean templateAdditionWorthwhile(TemplateCandidate templateCandidate, int payloadLength) {
+        if (templateCandidate.templateEntry().literalByteCount() > maxPayloadBytes()) {
+            return false;
+        }
         int mappingId = this.nextId;
         int literalBytes = KineticTemplateMappingCodec.literalEntryEncodedBytes(payloadLength);
         int referenceBytes = templateCandidate.referenceEncodedBytes(mappingId);
@@ -618,16 +838,32 @@ final class KineticTemplateDictionarySession {
         return ++this.touchCounter;
     }
 
+    private int allocateMappingId() {
+        if (this.nextId < 0 || this.nextId > KineticTemplateMappingCodec.MAX_MAPPING_ID) {
+            throw new IllegalStateException("Mapping id space exhausted");
+        }
+        return this.nextId++;
+    }
+
     private static int maxPacketBytes() {
-        return Config.batchTemplateDictionaryMaxPacketBytes > 0 ? Config.batchTemplateDictionaryMaxPacketBytes : 4096;
+        int configured = Config.batchTemplateDictionaryMaxPacketBytes > 0
+                ? Config.batchTemplateDictionaryMaxPacketBytes
+                : 4096;
+        return Math.min(configured, ChannelTransportPayloadLimits.MAX_SINGLE_PACKET_BYTES);
     }
 
     private static int maxEntries() {
-        return Config.batchTemplateDictionaryMaxEntries > 0 ? Config.batchTemplateDictionaryMaxEntries : 8192;
+        int configured = Config.batchTemplateDictionaryMaxEntries > 0
+                ? Config.batchTemplateDictionaryMaxEntries
+                : MAX_DICTIONARY_ENTRIES;
+        return Math.min(configured, MAX_DICTIONARY_ENTRIES);
     }
 
     private static int maxPayloadBytes() {
-        return Config.batchTemplateDictionaryMaxPayloadBytes > 0 ? Config.batchTemplateDictionaryMaxPayloadBytes : 2097152;
+        int configured = Config.batchTemplateDictionaryMaxPayloadBytes > 0
+                ? Config.batchTemplateDictionaryMaxPayloadBytes
+                : 2097152;
+        return Math.min(configured, MAX_DICTIONARY_PAYLOAD_BYTES);
     }
 
     private static int maxDiffRuns() {
