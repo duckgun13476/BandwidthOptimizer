@@ -5,6 +5,7 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URLEncoder
 import java.security.MessageDigest
+import java.util.zip.ZipFile
 
 // BandwidthOptimizer publish mission
 
@@ -479,6 +480,79 @@ ext.boReadCurseForgeUploadApiToken = {
     return properties?.getProperty('CF_TOKEN')
 }
 
+ext.boTrustedDependencyChecksums = {
+    File checksumFile = new File(boPublishingRepositoryRootDir, 'gradle/bo-trusted-dependencies.properties')
+    if (!checksumFile.isFile()) {
+        throw new GradleException("Missing trusted dependency checksums: ${checksumFile.absolutePath}")
+    }
+    Properties checksums = new Properties()
+    checksumFile.withInputStream { checksums.load(it) }
+    return checksums
+}
+
+ext.boValidateTrustedDependencyChecksum = { String fileName, String actualHash ->
+    Properties checksums = boTrustedDependencyChecksums()
+    List<String> expected = checksums.getProperty(fileName)?.split(',')
+            ?.collect { it.trim().toLowerCase(Locale.ROOT) }
+            ?.findAll { !it.isEmpty() }
+    if (expected == null || expected.isEmpty() || expected.any { !(it ==~ /[0-9a-f]{64}/) }) {
+        throw new GradleException("No trusted checksum is registered for embedded dependency '${fileName}'")
+    }
+    String actual = actualHash == null ? '' : actualHash.trim().toLowerCase(Locale.ROOT)
+    if (!expected.contains(actual)) {
+        throw new GradleException(
+                "Embedded dependency checksum mismatch for '${fileName}': expected=${expected.join(',')}, actual=${actual}"
+        )
+    }
+}
+
+ext.boVerifyTrustedEmbeddedDependencies = { File artifactFile ->
+    int verified = 0
+    new ZipFile(artifactFile).withCloseable { ZipFile zipFile ->
+        zipFile.entries().findAll { entry ->
+            !entry.directory && entry.name.tokenize('/').last().startsWith('TorqueAPI-') && entry.name.endsWith('.jar')
+        }.each { entry ->
+            String fileName = entry.name.tokenize('/').last()
+            MessageDigest digest = MessageDigest.getInstance('SHA-256')
+            zipFile.getInputStream(entry).withCloseable { InputStream input ->
+                byte[] buffer = new byte[8192]
+                int read
+                while ((read = input.read(buffer)) > 0) {
+                    digest.update(buffer, 0, read)
+                }
+            }
+            String actual = digest.digest().collect { String.format('%02x', it & 0xff) }.join('')
+            boValidateTrustedDependencyChecksum(fileName, actual)
+            verified++
+        }
+    }
+    if (verified == 0) {
+        throw new GradleException("Publish artifact contains no trusted TorqueAPI dependency: ${artifactFile.absolutePath}")
+    }
+    println "Verified ${verified} trusted embedded dependency artifact(s) for ${project.path}"
+}
+
+tasks.register('runTrustedDependencyChecksumRegression') {
+    group = 'verification'
+    description = 'Verifies trusted embedded dependency checksums accept exact bytes and reject drift.'
+
+    doLast {
+        Properties checksums = boTrustedDependencyChecksums()
+        String fileName = checksums.stringPropertyNames().sort().first()
+        String trustedHash = checksums.getProperty(fileName).split(',')[0].trim()
+        boValidateTrustedDependencyChecksum(fileName, trustedHash)
+        try {
+            boValidateTrustedDependencyChecksum(fileName, '0' * 64)
+            throw new GradleException('Trusted dependency checksum regression accepted a mismatched hash')
+        } catch (GradleException expected) {
+            if (!expected.message.startsWith('Embedded dependency checksum mismatch')) {
+                throw expected
+            }
+        }
+        println 'Trusted dependency checksum regression passed'
+    }
+}
+
 ext.boReadCurseForgeUploadEndpoint = {
     return project.findProperty('bo_publish_curseforge_upload_endpoint')?.toString()?.trim() ?: 'https://authors-old.curseforge.com'
 }
@@ -691,6 +765,7 @@ tasks.register('verifyPublishArtifact') {
 
     doLast {
         File artifactFile = boVerifyPublishArtifactFile()
+        boVerifyTrustedEmbeddedDependencies(artifactFile)
         println "Verified publish artifact for ${project.path}: ${artifactFile.absolutePath} (${artifactFile.length()} bytes)"
     }
 }

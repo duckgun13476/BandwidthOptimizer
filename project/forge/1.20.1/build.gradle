@@ -1,7 +1,7 @@
 plugins {
     id 'eclipse'
     id 'idea'
-    id 'net.minecraftforge.gradle' version '[6.0.16,6.2)'
+    id 'net.minecraftforge.gradle' version '6.0.54'
     id 'me.modmuss50.mod-publish-plugin' version '1.0.0'
 }
 
@@ -130,11 +130,8 @@ dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
 
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
-    compileOnly("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}") {
-        changing = true
-    }
+    compileOnly("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}")
     implementation fg.deobf("com.pinkcats.torque:TorqueAPI-${minecraft_version}-forge:${torque_api_version}") {
-        changing = true
         transitive = false
     }
     compileOnly "com.github.luben:zstd-jni:${bo_zstd_jni_version}"

@@ -42,7 +42,6 @@ embeddedTorqueConfiguration.transitive = false
 dependencies {
     embeddedJarJarEntries.each { entry ->
         boJarJarEmbedded(entry.notation) {
-            changing = true
             transitive = false
         }
     }

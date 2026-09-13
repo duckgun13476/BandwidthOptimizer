@@ -77,10 +77,6 @@ configurations {
     }
 }
 
-configurations.configureEach {
-    resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
-}
-
 def embeddedRuntimeLibsOutputDir = layout.buildDirectory.dir('generated/boEmbeddedRuntimeLibs')
 
 tasks.register('prepareEmbeddedRuntimeLibs', Copy) {

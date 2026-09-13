@@ -102,9 +102,9 @@ def configureBandwidthOptimizerNeoForgeClientRun = { Project projectRef, def run
         if (!mcpAgentClientJar.isFile()) {
             throw new GradleException("MCP client jar was not found: ${mcpAgentClientJar.absolutePath}")
         }
-        String mcpAgentClientToken = (projectRef.findProperty('boMcpAgentClientToken') ?: '').toString().trim()
+        String mcpAgentClientToken = (System.getenv('MCP_TOOL_FOR_AGENT_CLIENT_BRIDGE_TOKEN') ?: '').trim()
         if (mcpAgentClientToken.isEmpty()) {
-            throw new GradleException('boMcpAgentClientToken is required when boMcpAgentClientJar is set')
+            throw new GradleException('MCP_TOOL_FOR_AGENT_CLIENT_BRIDGE_TOKEN is required when boMcpAgentClientJar is set')
         }
         TaskProvider<Copy> prepareMcpAgentClientRunMod = projectRef.tasks.register(
                 'prepareMcpAgentClientRunMod',
@@ -116,7 +116,7 @@ def configureBandwidthOptimizerNeoForgeClientRun = { Project projectRef, def run
         runConfig.taskBefore(prepareMcpAgentClientRunMod)
         runConfig.systemProperty('mcp_tool_for_agent_client.bridge.enabled', 'true')
         runConfig.systemProperty('mcp_tool_for_agent_client.bridge.port', (projectRef.findProperty('boMcpAgentClientPort') ?: '18765').toString())
-        runConfig.systemProperty('mcp_tool_for_agent_client.bridge.token', mcpAgentClientToken)
+        runConfig.environment('MCP_TOOL_FOR_AGENT_CLIENT_BRIDGE_TOKEN', mcpAgentClientToken)
     }
     if ((projectRef.findProperty('boExperientEnabled') ?: 'false').toString().toBoolean()) {
         runConfig.systemProperty('bandwidthoptimizer.experient.enabled', 'true')
@@ -238,10 +238,6 @@ repositories {
     }
 }
 
-configurations.configureEach {
-    resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
-}
-
 ext.bo_torque_embed_notation = "com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}"
 ext.bo_torque_embed_is_obfuscated = false
 apply from: rootProject.file('gradle/torque-embed-modern.gradle')
@@ -265,11 +261,8 @@ tasks.register('prepareEmbeddedRuntimeLibs', Copy) {
 sourceSets.main.resources.srcDir embeddedRuntimeLibsOutputDir
 
 dependencies {
-    compileOnly("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}") {
-        changing = true
-    }
+    compileOnly("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}")
     implementation("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}") {
-        changing = true
         transitive = false
     }
     compileOnly "com.github.luben:zstd-jni:${bo_zstd_jni_version}"
@@ -363,8 +356,7 @@ def buildRunAllSharedGradleArgs(Project projectRef) {
             'boExperientAutoConnectRejoinConnectedTicks',
             'boExperientAutoConnectRejoinDelayTicks',
             'boMcpAgentClientJar',
-            'boMcpAgentClientPort',
-            'boMcpAgentClientToken'
+            'boMcpAgentClientPort'
     ].each { String propertyName ->
         project.ext.boAppendOptionalRunAllProperty.call(args, projectRef, propertyName)
     }

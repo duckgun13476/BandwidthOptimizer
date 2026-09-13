@@ -1,7 +1,7 @@
 plugins {
     id 'eclipse'
     id 'idea'
-    id 'net.minecraftforge.gradle' version '[6.0.16,6.2)'
+    id 'net.minecraftforge.gradle' version '6.0.54'
     id 'me.modmuss50.mod-publish-plugin' version '1.0.0'
 }
 
@@ -131,10 +131,6 @@ configurations {
     }
 }
 
-configurations.configureEach {
-    resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
-}
-
 ext.bo_torque_embed_notation = "com.pinkcats.torque:TorqueAPI-${minecraft_version}-forge:${torque_api_version}"
 ext.bo_mapped_create_runtime_mods = [
         "${System.getProperty('user.home')}/.gradle/caches/forge_gradle/deobf_dependencies/com/simibubi/create/create-1.19.2/0.5.1.c-36_mapped_official_1.19.2/create-1.19.2-0.5.1.c-36_mapped_official_1.19.2-slim.jar",
@@ -158,11 +154,8 @@ dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
 
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
-    compileOnly("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}") {
-        changing = true
-    }
+    compileOnly("com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}")
     implementation fg.deobf("com.pinkcats.torque:TorqueAPI-${minecraft_version}-forge:${torque_api_version}") {
-        changing = true
         transitive = false
     }
     compileOnly "com.github.luben:zstd-jni:${zstdJniVersion}"

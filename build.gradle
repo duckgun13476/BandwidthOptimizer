@@ -5,7 +5,7 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath 'org.spongepowered:mixingradle:0.7-SNAPSHOT'
+        classpath 'org.spongepowered:mixingradle:0.7-20230803.124500-15'
     }
 }
 
@@ -31,10 +31,6 @@ allprojects {
             }
         }
         mavenCentral()
-    }
-
-    configurations.configureEach {
-        resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
     }
 }
 

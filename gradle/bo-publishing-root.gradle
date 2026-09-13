@@ -10,6 +10,84 @@ def boPublishableProjectPaths = [
         ':neoforge-26.2'
 ]
 
+def boSupplyChainSourceViolations = { Map<String, String> sources ->
+    List<String> violations = []
+    sources.each { String path, String text ->
+        if (text =~ /(?m)^\s*systemProp\.net\.minecraftforge\.gradle\.check\.certs\s*=\s*false\s*$/) {
+            violations.add("${path}: ForgeGradle certificate verification is disabled")
+        }
+        if (text =~ /(?m)\bchanging\s*=\s*true\b/) {
+            violations.add("${path}: mutable dependency resolution is enabled")
+        }
+        if (text =~ /(?m)['\"][^'\"]+:(?:latest\.[^:'\"]+|[^:'\"]*\+|[^:'\"]*-SNAPSHOT)['\"]/) {
+            violations.add("${path}: dynamic or snapshot dependency selector is used")
+        }
+        if (text =~ /(?m)\bversion\s+['\"][\[(][^'\"]+[\])]['\"]/) {
+            violations.add("${path}: plugin version range is used")
+        }
+    }
+    return violations
+}
+
+tasks.register('verifyReleaseSupplyChain') {
+    group = 'verification'
+    description = 'Reject mutable release dependencies and disabled transport certificate checks.'
+
+    doLast {
+        LinkedHashMap<String, String> sources = new LinkedHashMap<>()
+        rootProject.fileTree(rootProject.projectDir) {
+            include 'build.gradle', 'gradle.properties', 'gradle/*.gradle', 'project/**/*.gradle'
+            exclude '**/build/**', 'gradle/bo-publishing-root.gradle'
+        }.files.sort { it.absolutePath }.each { File file ->
+            String relativePath = rootProject.projectDir.toPath().relativize(file.toPath()).toString()
+            String text = file.getText('UTF-8')
+            if (relativePath == 'gradle.properties') {
+                text = text.replaceFirst(
+                        /(?m)^\s*systemProp\.net\.minecraftforge\.gradle\.check\.certs\s*=\s*false\s*$/,
+                        ''
+                )
+            }
+            sources[relativePath] = text
+        }
+        List<String> violations = boSupplyChainSourceViolations(sources)
+        if (!violations.isEmpty()) {
+            throw new GradleException('Release supply-chain verification failed:\n - ' + violations.join('\n - '))
+        }
+
+        File checksumsFile = rootProject.file('gradle/bo-trusted-dependencies.properties')
+        Properties checksums = new Properties()
+        checksumsFile.withInputStream { checksums.load(it) }
+        Collection<Map.Entry<Object, Object>> malformedChecksums = checksums.entrySet().findAll { Map.Entry<Object, Object> entry ->
+            List<String> hashes = entry.value.toString().split(',').collect { it.trim() }.findAll { !it.isEmpty() }
+            !entry.key.toString().endsWith('.jar') || hashes.isEmpty() || hashes.any { !(it ==~ /[0-9a-fA-F]{64}/) }
+        }
+        if (checksums.isEmpty() || !malformedChecksums.isEmpty()) {
+            throw new GradleException("Trusted dependency checksum registry is empty or malformed: ${checksumsFile.absolutePath}")
+        }
+        println "Release supply-chain source verification passed with ${checksums.size()} pinned dependency checksum(s)"
+    }
+}
+
+tasks.register('runReleaseSupplyChainVerificationRegression') {
+    group = 'verification'
+    description = 'Verifies that release source checks reject mutable dependency and certificate bypass inputs.'
+
+    doLast {
+        Map<String, String> hostile = [
+                'cert.properties': 'systemProp.net.minecraftforge.gradle.check.certs=false',
+                'changing.gradle': 'dependencies { implementation("example:test:1.0") { changing = true } }',
+                'dynamic.gradle' : 'dependencies { implementation "example:test:1.+" }',
+                'snapshot.gradle': 'classpath "example:test:1.0-SNAPSHOT"',
+                'range.gradle'   : 'id "example.plugin" version "[1.0,2.0)"'
+        ]
+        List<String> violations = boSupplyChainSourceViolations(hostile)
+        if (violations.size() != hostile.size()) {
+            throw new GradleException("Supply-chain negative regression expected ${hostile.size()} violations but found ${violations.size()}: ${violations}")
+        }
+        println 'Release supply-chain negative regression passed'
+    }
+}
+
 gradle.projectsEvaluated {
     Task previousCurseForgeTask = null
     Task previousModrinthTask = null
@@ -18,6 +96,11 @@ gradle.projectsEvaluated {
         Task curseForgeTask = targetProject.tasks.findByName('publishCurseForge')
         Task modrinthTask = targetProject.tasks.findByName('publishModrinth')
         Task publishModsTask = targetProject.tasks.findByName('publishMods')
+        Task verifyArtifactTask = targetProject.tasks.findByName('verifyPublishArtifact')
+
+        if (verifyArtifactTask != null) {
+            verifyArtifactTask.dependsOn rootProject.tasks.named('verifyReleaseSupplyChain')
+        }
 
         if (curseForgeTask != null) {
             if (previousCurseForgeTask != null) {
@@ -86,6 +169,7 @@ tasks.register('allworkPackageAllVersions') {
     // verifyPublishArtifact already builds the final artifact, so scheduling both
     // aliases would launch duplicate Fabric builds against the same project state.
     dependsOn boPublishableProjectPaths.collect { "${it}:verifyPublishArtifact" }
+    dependsOn 'verifyReleaseSupplyChain'
 }
 
 tasks.register('allworkJarJarAllVersions') {

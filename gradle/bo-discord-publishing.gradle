@@ -168,7 +168,8 @@ ext.boDiscordPublishingDisabled = {
 }
 
 ext.boDiscordDefaultProjectDirectory = {
-    return System.getProperty('os.name', '').toLowerCase(Locale.ROOT).contains('windows') ? 'C:\\F\\Discord' : ''
+    File siblingProject = new File(rootProject.projectDir.parentFile, 'Discord')
+    return siblingProject.isDirectory() ? siblingProject.absolutePath : ''
 }
 
 ext.boDiscordResolveInvocation = { Map overrides = [:] ->

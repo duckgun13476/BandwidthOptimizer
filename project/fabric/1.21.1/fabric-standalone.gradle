@@ -77,10 +77,6 @@ configurations {
     }
 }
 
-configurations.configureEach {
-    resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
-}
-
 def embeddedRuntimeLibsOutputDir = layout.buildDirectory.dir('generated/boEmbeddedRuntimeLibs')
 def fabricApiVersion = '0.102.1+1.21.1'
 
