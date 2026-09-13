@@ -5,6 +5,7 @@ import io.netty.channel.Channel;
 import io.netty.util.AttributeKey;
 import net.minecraft.network.protocol.PacketFlow;
 
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -24,6 +25,9 @@ public final class ChannelTransportStateManager {
 
     private static final AttributeKey<ChannelTransportFragmentReassembler> INBOUND_FRAGMENT_REASSEMBLER_KEY =
             AttributeKey.valueOf("bandwidthoptimizer:channel_transport_fragment_reassembler");
+
+    private static final AttributeKey<ScheduledFuture<?>> INBOUND_FRAGMENT_EXPIRY_KEY =
+            AttributeKey.valueOf("bandwidthoptimizer:channel_transport_fragment_expiry");
 
     private static final AttributeKey<Boolean> TEST_STREAMING_DROP_CONSUMED_KEY =
             AttributeKey.valueOf("bandwidthoptimizer:test_streaming_drop_consumed");
@@ -106,6 +110,7 @@ public final class ChannelTransportStateManager {
         if (reassembler != null) {
             reassembler.clear();
         }
+        cancelInboundFragmentExpiry(channel);
         channel.attr(OUTBOUND_FRAGMENT_STREAM_ID_KEY).set(null);
         ChannelTransportStreamingEpochGate.clear(channel);
     }
@@ -127,13 +132,53 @@ public final class ChannelTransportStateManager {
         if (channel == null) {
             throw new IllegalArgumentException("channel");
         }
+        ensureSessionCloseCleanup(channel);
         ChannelTransportFragmentReassembler reassembler = channel.attr(INBOUND_FRAGMENT_REASSEMBLER_KEY).get();
         if (reassembler == null) {
             ChannelTransportFragmentReassembler created = new ChannelTransportFragmentReassembler();
             ChannelTransportFragmentReassembler raced = channel.attr(INBOUND_FRAGMENT_REASSEMBLER_KEY).setIfAbsent(created);
             reassembler = raced == null ? created : raced;
         }
-        return reassembler.accept(payloadBytes);
+        try {
+            return reassembler.accept(payloadBytes);
+        } finally {
+            updateInboundFragmentExpiry(channel, reassembler);
+        }
+    }
+
+    private static void updateInboundFragmentExpiry(
+            Channel channel,
+            ChannelTransportFragmentReassembler reassembler
+    ) {
+        if (!reassembler.hasPendingFrame()) {
+            cancelInboundFragmentExpiry(channel);
+            return;
+        }
+        ScheduledFuture<?> existing = channel.attr(INBOUND_FRAGMENT_EXPIRY_KEY).get();
+        if (existing != null && !existing.isDone()) {
+            return;
+        }
+        long deadlineNanos = reassembler.pendingFrameDeadlineNanos();
+        long delayNanos = reassembler.pendingFrameRemainingNanos(System.nanoTime());
+        ScheduledFuture<?> created = channel.eventLoop().schedule(() -> {
+            channel.attr(INBOUND_FRAGMENT_EXPIRY_KEY).set(null);
+            ChannelTransportFragmentReassembler current = channel.attr(INBOUND_FRAGMENT_REASSEMBLER_KEY).get();
+            if (current != reassembler) {
+                return;
+            }
+            current.expirePendingFrameAtDeadline(deadlineNanos);
+        }, delayNanos, TimeUnit.NANOSECONDS);
+        ScheduledFuture<?> raced = channel.attr(INBOUND_FRAGMENT_EXPIRY_KEY).setIfAbsent(created);
+        if (raced != null) {
+            created.cancel(false);
+        }
+    }
+
+    private static void cancelInboundFragmentExpiry(Channel channel) {
+        ScheduledFuture<?> expiry = channel.attr(INBOUND_FRAGMENT_EXPIRY_KEY).getAndSet(null);
+        if (expiry != null) {
+            expiry.cancel(false);
+        }
     }
 
     private static void closeSession(ChannelTransportSession session, String reason) {
