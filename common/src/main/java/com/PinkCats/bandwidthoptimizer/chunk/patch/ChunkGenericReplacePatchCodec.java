@@ -61,32 +61,31 @@ public final class ChunkGenericReplacePatchCodec {
         byte[] safeBasePacketBytes = basePacketBytes == null
                 ? new byte[0]
                 : Arrays.copyOf(basePacketBytes, basePacketBytes.length);
-        GenericReplacePayload payload = decodePayload(chunkPatch.copyPatchPayloadBytes());
+        int targetLength = ChunkPatchDecodeBounds.requireTargetLength(chunkPatch.targetLength());
+        GenericReplacePayload payload = decodePayload(chunkPatch.copyPatchPayloadBytes(), targetLength);
 
-        if (payload.prefixLength() + payload.baseReplaceLength() > safeBasePacketBytes.length) {
-            throw new IllegalStateException(
-                    "Chunk patch base range overflow. prefix="
-                            + payload.prefixLength()
-                            + ", replace="
-                            + payload.baseReplaceLength()
-                            + ", baseLength="
-                            + safeBasePacketBytes.length
-            );
-        }
-
-        int baseSuffixStart = payload.prefixLength() + payload.baseReplaceLength();
+        int baseSuffixStart = ChunkPatchDecodeBounds.checkedRangeEnd(
+                payload.prefixLength(),
+                payload.baseReplaceLength(),
+                safeBasePacketBytes.length,
+                "Chunk patch base range"
+        );
         int suffixLength = safeBasePacketBytes.length - baseSuffixStart;
-        int expectedTargetLength = payload.prefixLength() + payload.replacementBytes().length + suffixLength;
-        if (expectedTargetLength != chunkPatch.targetLength()) {
+        int expectedTargetLength = ChunkPatchDecodeBounds.checkedTargetLength(
+                payload.prefixLength(),
+                payload.replacementBytes().length,
+                suffixLength
+        );
+        if (expectedTargetLength != targetLength) {
             throw new IllegalStateException(
                     "Chunk patch target length mismatch. expected="
                             + expectedTargetLength
                             + ", target="
-                            + chunkPatch.targetLength()
+                            + targetLength
             );
         }
 
-        byte[] targetPacketBytes = new byte[chunkPatch.targetLength()];
+        byte[] targetPacketBytes = new byte[targetLength];
         System.arraycopy(safeBasePacketBytes, 0, targetPacketBytes, 0, payload.prefixLength());
         System.arraycopy(
                 payload.replacementBytes(),
@@ -120,15 +119,16 @@ public final class ChunkGenericReplacePatchCodec {
         }
     }
 
-    private static GenericReplacePayload decodePayload(byte[] payloadBytes) {
+    private static GenericReplacePayload decodePayload(byte[] payloadBytes, int maximumReplacementBytes) {
         ByteBuf byteBuf = Unpooled.wrappedBuffer(payloadBytes == null ? new byte[0] : payloadBytes);
         try {
             FriendlyByteBuf friendlyByteBuf = new FriendlyByteBuf(byteBuf);
             int prefixLength = friendlyByteBuf.readVarInt();
             int baseReplaceLength = friendlyByteBuf.readVarInt();
-            int replacementLength = friendlyByteBuf.readVarInt();
-            byte[] replacementBytes = new byte[replacementLength];
-            friendlyByteBuf.readBytes(replacementBytes);
+            byte[] replacementBytes = ChunkPatchDecodeBounds.readReplacementBytes(
+                    friendlyByteBuf,
+                    maximumReplacementBytes
+            );
             if (friendlyByteBuf.isReadable()) {
                 throw new IllegalStateException("Generic replace patch left extra bytes: " + friendlyByteBuf.readableBytes());
             }
@@ -170,8 +170,6 @@ public final class ChunkGenericReplacePatchCodec {
     ) {
 
         private GenericReplacePayload {
-            prefixLength = Math.max(prefixLength, 0);
-            baseReplaceLength = Math.max(baseReplaceLength, 0);
             replacementBytes = replacementBytes == null ? new byte[0] : Arrays.copyOf(replacementBytes, replacementBytes.length);
         }
     }

@@ -314,6 +314,16 @@ tasks.register('runPersistentChunkCacheDeltaRegression', JavaExec) {
     )
 }
 
+tasks.register('runChunkPatchDecodeSecurityRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies patch decoders reject hostile lengths before allocation and preserve legal bytes.',
+            'com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatchDecodeSecurityRegressionMain'
+    )
+    maxHeapSize = '64m'
+}
+
 tasks.register('runPacketClassTraceDiagnosticRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,

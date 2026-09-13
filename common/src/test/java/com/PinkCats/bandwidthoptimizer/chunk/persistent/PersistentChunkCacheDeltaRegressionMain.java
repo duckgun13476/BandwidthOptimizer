@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.chunk.persistent;
 
 import java.lang.reflect.Method;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -23,6 +24,7 @@ public final class PersistentChunkCacheDeltaRegressionMain {
             verifyCostSelectionAndRecovery(root.resolve("storage"));
             verifyRetentionDependencies();
             verifyCorruptionRejection();
+            verifyHostileLengthRejection();
             System.out.println("Persistent chunk cache delta regression passed");
         } finally {
             deleteTree(root);
@@ -116,6 +118,35 @@ public final class PersistentChunkCacheDeltaRegressionMain {
             rejected = true;
         }
         require(rejected, "corrupt delta header was accepted");
+    }
+
+    private static void verifyHostileLengthRejection() {
+        byte[] base = new byte[16];
+        expectDecodeRejected(base, deltaHeader((byte) 1, Integer.MAX_VALUE, 0, 0), Integer.MAX_VALUE);
+        expectDecodeRejected(base, deltaHeader((byte) 2, 16, Integer.MAX_VALUE, 1), 16);
+        expectDecodeRejected(base, deltaHeader((byte) 2, 16, 0, 0), 0);
+    }
+
+    private static byte[] deltaHeader(byte mode, int targetLength, int prefixLength, int suffixLength) {
+        return ByteBuffer.allocate(18)
+                .putInt(0x424F4431)
+                .put((byte) 1)
+                .put(mode)
+                .putInt(targetLength)
+                .putInt(prefixLength)
+                .putInt(suffixLength)
+                .array();
+    }
+
+    private static void expectDecodeRejected(byte[] base, byte[] encoded, int maximumTargetBytes) {
+        try {
+            PersistentChunkCacheDeltaCodec.decode(base, encoded, maximumTargetBytes);
+        } catch (OutOfMemoryError error) {
+            throw new AssertionError("Persistent delta attempted an oversized allocation", error);
+        } catch (Exception expected) {
+            return;
+        }
+        throw new AssertionError("Persistent delta accepted hostile lengths");
     }
 
     private static boolean roundTrips(byte[] base, byte[] target, byte[] candidate) {

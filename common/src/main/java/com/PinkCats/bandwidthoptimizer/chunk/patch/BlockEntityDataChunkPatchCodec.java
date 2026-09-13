@@ -64,8 +64,9 @@ public final class BlockEntityDataChunkPatchCodec {
             throw new IllegalStateException("Failed to parse base block entity packet");
         }
 
-        ReplacePayload replacePayload = decodeReplacePayload(chunkPatch.copyPatchPayloadBytes());
-        byte[] targetNbtBytes = applyReplacePayload(basePacket.nbtBytes(), replacePayload);
+        int targetLength = ChunkPatchDecodeBounds.requireTargetLength(chunkPatch.targetLength());
+        ReplacePayload replacePayload = decodeReplacePayload(chunkPatch.copyPatchPayloadBytes(), targetLength);
+        byte[] targetNbtBytes = applyReplacePayload(basePacket.nbtBytes(), replacePayload, targetLength);
         byte[] targetPacketBytes = encodePacket(
                 new BlockEntityPacket(
                         basePacket.packetId(),
@@ -74,10 +75,10 @@ public final class BlockEntityDataChunkPatchCodec {
                         targetNbtBytes
                 )
         );
-        if (targetPacketBytes.length != chunkPatch.targetLength()) {
+        if (targetPacketBytes.length != targetLength) {
             throw new IllegalStateException(
                     "Block entity patch target length mismatch. expected="
-                            + chunkPatch.targetLength()
+                            + targetLength
                             + ", actual="
                             + targetPacketBytes.length
             );
@@ -102,22 +103,24 @@ public final class BlockEntityDataChunkPatchCodec {
         return new ReplacePayload(prefixLength, baseReplaceLength, replacementBytes);
     }
 
-    private static byte[] applyReplacePayload(byte[] baseBytes, ReplacePayload replacePayload) {
+    private static byte[] applyReplacePayload(byte[] baseBytes, ReplacePayload replacePayload, int maximumTargetBytes) {
         byte[] safeBaseBytes = baseBytes == null ? new byte[0] : Arrays.copyOf(baseBytes, baseBytes.length);
-        if (replacePayload.prefixLength() + replacePayload.baseReplaceLength() > safeBaseBytes.length) {
-            throw new IllegalStateException(
-                    "Block entity patch base range overflow. prefix="
-                            + replacePayload.prefixLength()
-                            + ", replace="
-                            + replacePayload.baseReplaceLength()
-                            + ", baseLength="
-                            + safeBaseBytes.length
-            );
-        }
-
-        int baseSuffixStart = replacePayload.prefixLength() + replacePayload.baseReplaceLength();
+        int baseSuffixStart = ChunkPatchDecodeBounds.checkedRangeEnd(
+                replacePayload.prefixLength(),
+                replacePayload.baseReplaceLength(),
+                safeBaseBytes.length,
+                "Block entity patch base range"
+        );
         int suffixLength = safeBaseBytes.length - baseSuffixStart;
-        byte[] targetBytes = new byte[replacePayload.prefixLength() + replacePayload.replacementBytes().length + suffixLength];
+        int targetLength = ChunkPatchDecodeBounds.checkedTargetLength(
+                replacePayload.prefixLength(),
+                replacePayload.replacementBytes().length,
+                suffixLength
+        );
+        if (targetLength > maximumTargetBytes) {
+            throw new IllegalStateException("Block entity patch target exceeds its declared packet length");
+        }
+        byte[] targetBytes = new byte[targetLength];
         System.arraycopy(safeBaseBytes, 0, targetBytes, 0, replacePayload.prefixLength());
         System.arraycopy(
                 replacePayload.replacementBytes(),
@@ -150,15 +153,16 @@ public final class BlockEntityDataChunkPatchCodec {
         }
     }
 
-    private static ReplacePayload decodeReplacePayload(byte[] payloadBytes) {
+    private static ReplacePayload decodeReplacePayload(byte[] payloadBytes, int maximumReplacementBytes) {
         ByteBuf byteBuf = Unpooled.wrappedBuffer(payloadBytes == null ? new byte[0] : payloadBytes);
         try {
             FriendlyByteBuf friendlyByteBuf = new FriendlyByteBuf(byteBuf);
             int prefixLength = friendlyByteBuf.readVarInt();
             int baseReplaceLength = friendlyByteBuf.readVarInt();
-            int replacementLength = friendlyByteBuf.readVarInt();
-            byte[] replacementBytes = new byte[replacementLength];
-            friendlyByteBuf.readBytes(replacementBytes);
+            byte[] replacementBytes = ChunkPatchDecodeBounds.readReplacementBytes(
+                    friendlyByteBuf,
+                    maximumReplacementBytes
+            );
             if (friendlyByteBuf.isReadable()) {
                 throw new IllegalStateException("Block entity patch left extra bytes: " + friendlyByteBuf.readableBytes());
             }
@@ -254,8 +258,6 @@ public final class BlockEntityDataChunkPatchCodec {
     ) {
 
         private ReplacePayload {
-            prefixLength = Math.max(prefixLength, 0);
-            baseReplaceLength = Math.max(baseReplaceLength, 0);
             replacementBytes = replacementBytes == null ? new byte[0] : Arrays.copyOf(replacementBytes, replacementBytes.length);
         }
     }

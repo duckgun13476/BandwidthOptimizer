@@ -63,7 +63,7 @@ public record ChunkPatch(
                     ChunkPatchMode.fromCodecId(friendlyByteBuf.readVarInt()),
                     friendlyByteBuf.readUtf(),
                     readHashHex(friendlyByteBuf),
-                    friendlyByteBuf.readVarInt(),
+                    ChunkPatchDecodeBounds.requireTargetLength(friendlyByteBuf.readVarInt()),
                     readPatchPayloadBytes(friendlyByteBuf)
             );
             if (friendlyByteBuf.isReadable()) {
@@ -94,21 +94,15 @@ public record ChunkPatch(
     }
 
     private static String readHashHex(FriendlyByteBuf friendlyByteBuf) {
-        int hashLength = friendlyByteBuf.readVarInt();
-        if (hashLength <= 0) {
+        byte[] hashBytes = ChunkPatchDecodeBounds.readHashBytes(friendlyByteBuf);
+        if (hashBytes.length == 0) {
             return "";
         }
-
-        byte[] hashBytes = new byte[hashLength];
-        friendlyByteBuf.readBytes(hashBytes);
         return HexFormat.of().formatHex(hashBytes);
     }
 
     private static byte[] readPatchPayloadBytes(FriendlyByteBuf friendlyByteBuf) {
-        int payloadLength = friendlyByteBuf.readVarInt();
-        byte[] payloadBytes = new byte[payloadLength];
-        friendlyByteBuf.readBytes(payloadBytes);
-        return payloadBytes;
+        return ChunkPatchDecodeBounds.readPayloadBytes(friendlyByteBuf);
     }
 
     private static byte[] decodeHashHex(String hashHex) {

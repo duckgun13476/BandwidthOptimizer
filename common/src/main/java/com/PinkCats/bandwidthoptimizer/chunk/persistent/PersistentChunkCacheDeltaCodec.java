@@ -34,31 +34,35 @@ final class PersistentChunkCacheDeltaCodec {
         int targetLength = input.getInt();
         int prefixLength = input.getInt();
         int suffixLength = input.getInt();
+        long retainedLength = (long) prefixLength + suffixLength;
         if (magic != MAGIC
                 || version != VERSION
+                || maximumTargetBytes <= 0
                 || targetLength <= 0
                 || targetLength > maximumTargetBytes
                 || prefixLength < 0
                 || suffixLength < 0
-                || prefixLength + suffixLength > targetLength
-                || prefixLength + suffixLength > base.length) {
+                || retainedLength > targetLength
+                || retainedLength > base.length) {
             throw new IOException("Invalid persistent chunk delta header");
         }
 
-        byte[] target = new byte[targetLength];
         if (mode == MODE_XOR) {
             if (prefixLength != 0 || suffixLength != 0 || input.remaining() != targetLength) {
                 throw new IOException("Invalid persistent chunk XOR delta");
             }
+            byte[] target = new byte[targetLength];
             for (int index = 0; index < targetLength; index++) {
                 byte baseByte = index < base.length ? base[index] : 0;
                 target[index] = (byte) (baseByte ^ input.get());
             }
             return target;
         }
-        if (mode != MODE_REPLACE || input.remaining() != targetLength - prefixLength - suffixLength) {
+        int replacementLength = (int) (targetLength - retainedLength);
+        if (mode != MODE_REPLACE || input.remaining() != replacementLength) {
             throw new IOException("Invalid persistent chunk replacement delta");
         }
+        byte[] target = new byte[targetLength];
         System.arraycopy(base, 0, target, 0, prefixLength);
         input.get(target, prefixLength, input.remaining());
         if (suffixLength > 0) {

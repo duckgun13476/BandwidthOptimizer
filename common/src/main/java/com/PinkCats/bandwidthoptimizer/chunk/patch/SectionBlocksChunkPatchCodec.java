@@ -66,6 +66,7 @@ public final class SectionBlocksChunkPatchCodec {
         if (basePacket == null) {
             throw new IllegalStateException("Failed to parse base section packet");
         }
+        int targetLength = ChunkPatchDecodeBounds.requireTargetLength(chunkPatch.targetLength());
 
         SectionStateDelta delta = decodeDeltaPayload(chunkPatch.copyPatchPayloadBytes(), basePacket.stateIds.length);
         int[] targetStateIds = Arrays.copyOf(basePacket.stateIds, basePacket.stateIds.length);
@@ -83,10 +84,10 @@ public final class SectionBlocksChunkPatchCodec {
                         targetStateIds
                 )
         );
-        if (targetPacketBytes.length != chunkPatch.targetLength()) {
+        if (targetPacketBytes.length != targetLength) {
             throw new IllegalStateException(
                     "Section patch target length mismatch. expected="
-                            + chunkPatch.targetLength()
+                            + targetLength
                             + ", actual="
                             + targetPacketBytes.length
             );
@@ -178,9 +179,15 @@ public final class SectionBlocksChunkPatchCodec {
         try {
             FriendlyByteBuf friendlyByteBuf = new FriendlyByteBuf(byteBuf);
             int flags = friendlyByteBuf.readUnsignedByte();
+            if ((flags & ~(FLAG_UNIFORM_STATE | FLAG_APPLY_ALL_ENTRIES)) != 0) {
+                throw new IllegalStateException("Section patch contains unknown flags: " + flags);
+            }
             boolean uniformState = (flags & FLAG_UNIFORM_STATE) != 0;
             boolean applyAllEntries = (flags & FLAG_APPLY_ALL_ENTRIES) != 0;
             int uniformStateId = uniformState ? friendlyByteBuf.readVarInt() : -1;
+            if (uniformState && uniformStateId < 0) {
+                throw new IllegalStateException("Section patch contains a negative state id");
+            }
 
             int[] changedIndices;
             if (applyAllEntries) {
@@ -199,6 +206,9 @@ public final class SectionBlocksChunkPatchCodec {
             } else {
                 for (int index = 0; index < changedStateIds.length; index++) {
                     changedStateIds[index] = friendlyByteBuf.readVarInt();
+                    if (changedStateIds[index] < 0) {
+                        throw new IllegalStateException("Section patch contains a negative state id");
+                    }
                 }
             }
 
@@ -226,18 +236,25 @@ public final class SectionBlocksChunkPatchCodec {
     }
 
     private static int[] readDeltaEncodedIndices(FriendlyByteBuf friendlyByteBuf, int changedCount, int baseEntryCount) {
-        int[] changedIndices = new int[Math.max(changedCount, 0)];
+        if (baseEntryCount < 0
+                || baseEntryCount > ChunkPatchDecodeBounds.MAX_SECTION_ENTRIES
+                || changedCount < 0
+                || changedCount > baseEntryCount
+                || changedCount > friendlyByteBuf.readableBytes()) {
+            throw new IllegalStateException("Section patch changed count out of range: " + changedCount);
+        }
+        int[] changedIndices = new int[changedCount];
         int previousIndex = -1;
         for (int index = 0; index < changedIndices.length; index++) {
             int deltaIndex = friendlyByteBuf.readVarInt();
-            int resolvedIndex = previousIndex + deltaIndex + 1;
-            if (resolvedIndex < 0 || resolvedIndex >= baseEntryCount) {
+            long resolvedIndex = (long) previousIndex + deltaIndex + 1L;
+            if (deltaIndex < 0 || resolvedIndex < 0L || resolvedIndex >= baseEntryCount) {
                 throw new IllegalStateException(
                         "Section patch index overflow. index=" + resolvedIndex + ", baseEntryCount=" + baseEntryCount
                 );
             }
-            changedIndices[index] = resolvedIndex;
-            previousIndex = resolvedIndex;
+            changedIndices[index] = (int) resolvedIndex;
+            previousIndex = (int) resolvedIndex;
         }
         return changedIndices;
     }
@@ -285,8 +302,13 @@ public final class SectionBlocksChunkPatchCodec {
             int packetId = friendlyByteBuf.readVarInt();
             long sectionPosLong = friendlyByteBuf.readLong();
             int entryCount = friendlyByteBuf.readVarInt();
-            short[] positions = new short[Math.max(entryCount, 0)];
-            int[] stateIds = new int[Math.max(entryCount, 0)];
+            if (entryCount < 0
+                    || entryCount > ChunkPatchDecodeBounds.MAX_SECTION_ENTRIES
+                    || entryCount > friendlyByteBuf.readableBytes()) {
+                return null;
+            }
+            short[] positions = new short[entryCount];
+            int[] stateIds = new int[entryCount];
             for (int index = 0; index < entryCount; index++) {
                 long packedState = friendlyByteBuf.readVarLong();
                 positions[index] = (short) (packedState & SECTION_POSITION_MASK);

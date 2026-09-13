@@ -582,6 +582,15 @@ tasks.register('runChannelTransportFragmentSecurityRegression', JavaExec) {
     maxHeapSize = '192m'
 }
 
+tasks.register('runChunkPatchDecodeSecurityRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies patch decoders reject hostile lengths before allocation and preserve legal bytes.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatchDecodeSecurityRegressionMain'
+    maxHeapSize = '64m'
+}
+
 tasks.register('runConnectionPayloadTaskGuardRegression', JavaExec) {
     group = 'verification'
     description = 'Verifies stale client payload tasks are rejected across protocol generations and disconnects.'
