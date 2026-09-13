@@ -110,6 +110,8 @@ public final class ChunkPersistentClientCache {
     private static final ConcurrentHashMap<String, PendingStoreRequest> PENDING_STORE_REQUESTS = new ConcurrentHashMap<>();
     private static final AtomicInteger PENDING_STORE_REQUEST_COUNT = new AtomicInteger();
     private static final AtomicLong PENDING_STORE_REQUEST_BYTES = new AtomicLong();
+    private static final AtomicLong PREPARED_READY_BYTES = new AtomicLong();
+    private static final Set<PreparedReadyState> PREPARED_READY_STATES = ConcurrentHashMap.newKeySet();
     private static final AtomicBoolean STORE_DRAIN_QUEUED = new AtomicBoolean();
     private static final AttributeKey<PreparedReadyState> PREPARED_READY_STATE_KEY =
             AttributeKey.valueOf("bandwidthoptimizer:persistent_prepared_ready");
@@ -136,7 +138,7 @@ public final class ChunkPersistentClientCache {
     private static ZipCacheSnapshot cachedSnapshot;
     private static volatile PersistentChunkCacheDiskStore diskStore;
     private static final LinkedHashMap<String, byte[]> READY_BLOBS = new LinkedHashMap<>(256, 0.75f, true);
-    private static long readyBlobBytes;
+    private static volatile long readyBlobBytes;
     private static volatile LoadedHotPathSnapshot loadedHotPathSnapshot = LoadedHotPathSnapshot.empty("");
     private static final HashMap<String, String> HOT_PATH_HASH_BY_KEY = new HashMap<>();
     private static final HashMap<String, HashSet<String>> HOT_PATH_KEYS_BY_HASH = new HashMap<>();
@@ -863,7 +865,7 @@ public final class ChunkPersistentClientCache {
         }
         String previousScopeHash = currentServerScopeHash();
         boolean hadManifestForChannel = hasManifestForChannel(channel);
-        channel.attr(PREPARED_READY_STATE_KEY).set(null);
+        clearPreparedReadyState(channel);
         VoxyChunkBoundCompat.clearVisualHandoffs();
         clearActiveServerScope(channel, true);
         boolean cleared = (previousScopeHash != null && !previousScopeHash.isBlank()) || hadManifestForChannel;
@@ -1866,7 +1868,7 @@ public final class ChunkPersistentClientCache {
         if (channel == null) {
             return;
         }
-        channel.attr(PREPARED_READY_STATE_KEY).set(null);
+        clearPreparedReadyState(channel);
         if (clearActiveServerScope(channel, false)) {
             MAINTENANCE_COORDINATOR.request(safeText(reason, "channel_close"));
         }
@@ -2313,8 +2315,85 @@ public final class ChunkPersistentClientCache {
             return existing;
         }
         PreparedReadyState created = new PreparedReadyState(channel);
+        PREPARED_READY_STATES.add(created);
         PreparedReadyState raced = channel.attr(PREPARED_READY_STATE_KEY).setIfAbsent(created);
-        return raced == null ? created : raced;
+        if (raced != null) {
+            created.close();
+            return raced;
+        }
+        channel.closeFuture().addListener(ignored -> clearPreparedReadyState(channel));
+        return created;
+    }
+
+    private static void clearPreparedReadyState(Channel channel) {
+        PreparedReadyState state = channel.attr(PREPARED_READY_STATE_KEY).getAndSet(null);
+        if (state != null) {
+            state.close();
+        }
+    }
+
+    public static MemoryUsageSnapshot memoryUsageSnapshot() {
+        return new MemoryUsageSnapshot(
+                readyBlobBytes,
+                PREPARED_READY_BYTES.get(),
+                PENDING_STORE_REQUEST_BYTES.get()
+        );
+    }
+
+    public static MemoryTrimResult trimRetainedMemoryTo(long targetBytes) {
+        long safeTargetBytes = Math.max(targetBytes, 0L);
+        MemoryUsageSnapshot before = memoryUsageSnapshot();
+        trimPendingStoreRequestsTo(Math.max(safeTargetBytes - before.readyBytes() - before.preparedBytes(), 0L));
+
+        MemoryUsageSnapshot afterPending = memoryUsageSnapshot();
+        trimPreparedReadyStatesTo(Math.max(safeTargetBytes - afterPending.readyBytes() - afterPending.pendingStoreBytes(), 0L));
+
+        MemoryUsageSnapshot afterPrepared = memoryUsageSnapshot();
+        trimReadyBlobsTo(Math.max(safeTargetBytes - afterPrepared.preparedBytes() - afterPrepared.pendingStoreBytes(), 0L));
+        return new MemoryTrimResult(before, memoryUsageSnapshot());
+    }
+
+    private static void trimPendingStoreRequestsTo(long targetBytes) {
+        long safeTargetBytes = Math.max(targetBytes, 0L);
+        if (PENDING_STORE_REQUEST_BYTES.get() <= safeTargetBytes) {
+            return;
+        }
+        for (Map.Entry<String, PendingStoreRequest> entry : PENDING_STORE_REQUESTS.entrySet()) {
+            if (PENDING_STORE_REQUEST_BYTES.get() <= safeTargetBytes) {
+                break;
+            }
+            if (PENDING_STORE_REQUESTS.remove(entry.getKey(), entry.getValue())) {
+                PENDING_STORE_REQUEST_COUNT.decrementAndGet();
+                PENDING_STORE_REQUEST_BYTES.addAndGet(-entry.getValue().snapshotBytes().length);
+            }
+        }
+    }
+
+    private static void trimPreparedReadyStatesTo(long targetBytes) {
+        long safeTargetBytes = Math.max(targetBytes, 0L);
+        for (PreparedReadyState state : PREPARED_READY_STATES) {
+            long bytesToRelease = PREPARED_READY_BYTES.get() - safeTargetBytes;
+            if (bytesToRelease <= 0L) {
+                break;
+            }
+            state.trimOldestBytes(bytesToRelease);
+        }
+    }
+
+    private static void trimReadyBlobsTo(long targetBytes) {
+        long safeTargetBytes = Math.max(targetBytes, 0L);
+        synchronized (LOCK) {
+            if (readyBlobBytes <= safeTargetBytes) {
+                return;
+            }
+            var iterator = READY_BLOBS.entrySet().iterator();
+            while (readyBlobBytes > safeTargetBytes && iterator.hasNext()) {
+                Map.Entry<String, byte[]> eldest = iterator.next();
+                readyBlobBytes -= eldest.getValue().length;
+                iterator.remove();
+            }
+            publishLoadedHotPathSnapshotLocked();
+        }
     }
 
     private static void replaceReadyBlobsLocked(Map<String, byte[]> readyBlobs) {
@@ -3073,6 +3152,7 @@ public final class ChunkPersistentClientCache {
         private long bytes;
         private long cleanupGeneration;
         private long cleanupDeadlineNanos = Long.MAX_VALUE;
+        private boolean active = true;
 
         private PreparedReadyState(Channel channel) {
             this.channel = channel;
@@ -3087,7 +3167,8 @@ public final class ChunkPersistentClientCache {
         ) {
             long nowNanos = System.nanoTime();
             removeExpired(nowNanos);
-            if (!isSafeScopeHash(serverScopeHash)
+            if (!active
+                    || !isSafeScopeHash(serverScopeHash)
                     || coordinate == null
                     || !coordinate.present()
                     || !isSafeHash(payloadHash)
@@ -3113,6 +3194,8 @@ public final class ChunkPersistentClientCache {
             byte[] retainedBytes = packetBytes.clone();
             entries.put(key, new PreparedReadyEntry(retainedBytes, nowNanos + Math.max(ttlNanos, 1L)));
             bytes += retainedBytes.length;
+            PREPARED_READY_BYTES.addAndGet(retainedBytes.length
+                    - (previous == null ? 0L : previous.packetBytes().length));
             scheduleCleanup(nowNanos);
             return true;
         }
@@ -3129,6 +3212,7 @@ public final class ChunkPersistentClientCache {
                 return null;
             }
             bytes -= entry.packetBytes().length;
+            PREPARED_READY_BYTES.addAndGet(-entry.packetBytes().length);
             return entry.packetBytes().clone();
         }
 
@@ -3138,6 +3222,7 @@ public final class ChunkPersistentClientCache {
                 PreparedReadyEntry entry = iterator.next().getValue();
                 if (nowNanos >= entry.expiresAtNanos()) {
                     bytes -= entry.packetBytes().length;
+                    PREPARED_READY_BYTES.addAndGet(-entry.packetBytes().length);
                     iterator.remove();
                 }
             }
@@ -3166,6 +3251,51 @@ public final class ChunkPersistentClientCache {
             cleanupDeadlineNanos = Long.MAX_VALUE;
             scheduleCleanup(nowNanos);
         }
+
+        private synchronized long trimOldestBytes(long bytesToRelease) {
+            long releasedBytes = 0L;
+            var iterator = entries.entrySet().iterator();
+            while (releasedBytes < bytesToRelease && iterator.hasNext()) {
+                PreparedReadyEntry entry = iterator.next().getValue();
+                releasedBytes += entry.packetBytes().length;
+                bytes -= entry.packetBytes().length;
+                iterator.remove();
+            }
+            if (releasedBytes > 0L) {
+                PREPARED_READY_BYTES.addAndGet(-releasedBytes);
+            }
+            return releasedBytes;
+        }
+
+        private synchronized void close() {
+            if (!active) {
+                return;
+            }
+            active = false;
+            cleanupGeneration++;
+            cleanupDeadlineNanos = Long.MAX_VALUE;
+            long releasedBytes = bytes;
+            entries.clear();
+            bytes = 0L;
+            if (releasedBytes > 0L) {
+                PREPARED_READY_BYTES.addAndGet(-releasedBytes);
+            }
+            PREPARED_READY_STATES.remove(this);
+        }
+    }
+
+    public record MemoryUsageSnapshot(long readyBytes, long preparedBytes, long pendingStoreBytes) {
+        public long totalBytes() {
+            return saturatedAdd(saturatedAdd(readyBytes, preparedBytes), pendingStoreBytes);
+        }
+    }
+
+    public record MemoryTrimResult(MemoryUsageSnapshot before, MemoryUsageSnapshot after) {}
+
+    private static long saturatedAdd(long left, long right) {
+        long safeLeft = Math.max(left, 0L);
+        long safeRight = Math.max(right, 0L);
+        return Long.MAX_VALUE - safeLeft < safeRight ? Long.MAX_VALUE : safeLeft + safeRight;
     }
 
     private record PreparedReadyKey(

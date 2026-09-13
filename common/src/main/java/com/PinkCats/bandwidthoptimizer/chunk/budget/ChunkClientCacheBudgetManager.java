@@ -7,6 +7,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordina
 import com.PinkCats.bandwidthoptimizer.chunk.debug.ChunkLoadDelayProbe;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceStore;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportControlFrameSender;
+import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.LoaderEnvironmentCompat;
@@ -38,6 +39,7 @@ public final class ChunkClientCacheBudgetManager {
         long recycleTargetFreeBytes = ClientChunkCacheConfig.chunkCacheRecycleTargetFreeBytes();
         long recycleTargetUsedBytes = Math.max(maxCacheBytes - recycleTargetFreeBytes, 0L);
 
+        ChunkPersistentClientCache.MemoryTrimResult persistentTrimResult = recyclePersistentCache(recycleTargetUsedBytes);
         ChunkRuntimeReferenceStore.TrimResult firstRuntimeTrimResult = recycleRuntimeReferenceCache(recycleTargetUsedBytes);
         ChunkShadowSnapshotManager.TrimResult shadowTrimResult = recycleShadowSnapshotCache(recycleTargetUsedBytes);
         invalidateMatchingRuntimeSnapshots(shadowTrimResult.evictedChunks());
@@ -55,7 +57,8 @@ public final class ChunkClientCacheBudgetManager {
                 usageBeforeTrim,
                 usageAfterTrim,
                 shadowTrimResult,
-                countRuntimeEvictedBases(firstRuntimeTrimResult, secondRuntimeTrimResult)
+                countRuntimeEvictedBases(firstRuntimeTrimResult, secondRuntimeTrimResult),
+                persistentTrimResult
         );
     }
 
@@ -69,10 +72,24 @@ public final class ChunkClientCacheBudgetManager {
     private static ChunkClientCacheUsage readCurrentUsage() {
         ChunkShadowSnapshotManager.Snapshot shadowSnapshot = ChunkShadowSnapshotManager.snapshot();
         ChunkRuntimeReferenceStore.Snapshot runtimeSnapshot = ChunkRuntimeReferenceStore.snapshot();
+        ChunkPersistentClientCache.MemoryUsageSnapshot persistentSnapshot =
+                ChunkPersistentClientCache.memoryUsageSnapshot();
         return new ChunkClientCacheUsage(
                 shadowSnapshot.totalEncodedBytes(),
-                runtimeSnapshot.totalBytes()
+                runtimeSnapshot.totalBytes(),
+                persistentSnapshot.readyBytes(),
+                persistentSnapshot.preparedBytes(),
+                persistentSnapshot.pendingStoreBytes()
         );
+    }
+
+    private static ChunkPersistentClientCache.MemoryTrimResult recyclePersistentCache(long totalBudgetTargetBytes) {
+        ChunkClientCacheUsage currentUsage = readCurrentUsage();
+        long persistentTargetBytes = Math.max(
+                totalBudgetTargetBytes - currentUsage.shadowBytes() - currentUsage.runtimeReferenceBytes(),
+                0L
+        );
+        return ChunkPersistentClientCache.trimRetainedMemoryTo(persistentTargetBytes);
     }
 
     private static ChunkRuntimeReferenceStore.TrimResult recycleRuntimeReferenceCache(long totalBudgetTargetBytes) {
@@ -81,7 +98,10 @@ public final class ChunkClientCacheBudgetManager {
             return new ChunkRuntimeReferenceStore.TrimResult(0L, List.of());
         }
 
-        long runtimeTargetBytes = Math.max(totalBudgetTargetBytes - currentUsage.shadowBytes(), 0L);
+        long runtimeTargetBytes = Math.max(
+                totalBudgetTargetBytes - currentUsage.shadowBytes() - currentUsage.persistentBytes(),
+                0L
+        );
         return ChunkRuntimeReferenceStore.trimToTotalBytes(runtimeTargetBytes);
     }
 
@@ -91,7 +111,10 @@ public final class ChunkClientCacheBudgetManager {
             return new ChunkShadowSnapshotManager.TrimResult(0L, List.of());
         }
 
-        long shadowTargetBytes = Math.max(totalBudgetTargetBytes - currentUsage.runtimeReferenceBytes(), 0L);
+        long shadowTargetBytes = Math.max(
+                totalBudgetTargetBytes - currentUsage.runtimeReferenceBytes() - currentUsage.persistentBytes(),
+                0L
+        );
         return ChunkShadowSnapshotManager.trimToTotalBytes(shadowTargetBytes);
     }
 
@@ -296,20 +319,23 @@ public final class ChunkClientCacheBudgetManager {
             ChunkClientCacheUsage usageBeforeTrim,
             ChunkClientCacheUsage usageAfterTrim,
             ChunkShadowSnapshotManager.TrimResult shadowTrimResult,
-            int runtimeEvictedBaseCount
+            int runtimeEvictedBaseCount,
+            ChunkPersistentClientCache.MemoryTrimResult persistentTrimResult
     ) {
         long releasedShadowBytes = shadowTrimResult == null ? 0L : shadowTrimResult.releasedBytes();
         int evictedChunkCount = shadowTrimResult == null ? 0 : shadowTrimResult.evictedChunks().size();
         if (usageBeforeTrim.totalBytes() == usageAfterTrim.totalBytes()
                 && releasedShadowBytes <= 0L
-                && runtimeEvictedBaseCount <= 0) {
+                && runtimeEvictedBaseCount <= 0
+                && (persistentTrimResult == null
+                || persistentTrimResult.before().totalBytes() == persistentTrimResult.after().totalBytes())) {
             return;
         }
         if (!BO_Diag_cacheBudget()) {
             return;
         }
 
-        DiagnosticLog.info(DiagnosticToolRegistry.Tool.CACHE_BUDGET, "event=trim reason={}, beforeTotalBytes={}, afterTotalBytes={}, beforeShadowBytes={}, afterShadowBytes={}, beforeRuntimeBytes={}, afterRuntimeBytes={}, releasedShadowBytes={}, evictedChunks={}, evictedRuntimeFullBases={}",
+        DiagnosticLog.info(DiagnosticToolRegistry.Tool.CACHE_BUDGET, "event=trim reason={}, beforeTotalBytes={}, afterTotalBytes={}, beforeShadowBytes={}, afterShadowBytes={}, beforeRuntimeBytes={}, afterRuntimeBytes={}, beforePersistentBytes={}, afterPersistentBytes={}, releasedShadowBytes={}, evictedChunks={}, evictedRuntimeFullBases={}",
                 reason == null || reason.isBlank() ? "client_cache_budget_trim" : reason,
                 usageBeforeTrim.totalBytes(),
                 usageAfterTrim.totalBytes(),
@@ -317,6 +343,8 @@ public final class ChunkClientCacheBudgetManager {
                 usageAfterTrim.shadowBytes(),
                 usageBeforeTrim.runtimeReferenceBytes(),
                 usageAfterTrim.runtimeReferenceBytes(),
+                usageBeforeTrim.persistentBytes(),
+                usageAfterTrim.persistentBytes(),
                 releasedShadowBytes,
                 evictedChunkCount,
                 Math.max(runtimeEvictedBaseCount, 0)
@@ -325,10 +353,26 @@ public final class ChunkClientCacheBudgetManager {
 
     private record ChunkClientCacheUsage(
             long shadowBytes,
-            long runtimeReferenceBytes
+            long runtimeReferenceBytes,
+            long persistentReadyBytes,
+            long persistentPreparedBytes,
+            long persistentPendingStoreBytes
     ) {
+        private long persistentBytes() {
+            return saturatedAdd(
+                    saturatedAdd(persistentReadyBytes, persistentPreparedBytes),
+                    persistentPendingStoreBytes
+            );
+        }
+
         private long totalBytes() {
-            return Math.max(this.shadowBytes, 0L) + Math.max(this.runtimeReferenceBytes, 0L);
+            return saturatedAdd(saturatedAdd(shadowBytes, runtimeReferenceBytes), persistentBytes());
+        }
+
+        private static long saturatedAdd(long left, long right) {
+            long safeLeft = Math.max(left, 0L);
+            long safeRight = Math.max(right, 0L);
+            return Long.MAX_VALUE - safeLeft < safeRight ? Long.MAX_VALUE : safeLeft + safeRight;
         }
     }
 

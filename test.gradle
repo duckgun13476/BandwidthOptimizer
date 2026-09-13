@@ -343,6 +343,15 @@ tasks.register('runChunkWatchBoundaryPendingStoreSecurityRegression', JavaExec) 
     maxHeapSize = '192m'
 }
 
+tasks.register('runChunkPersistentCacheMemoryBudgetRegression', JavaExec) {
+    configureTestJavaExecTask(
+            it,
+            'verification',
+            'Verifies unified persistent client-cache memory accounting and bounded eviction.',
+            'com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentCacheMemoryBudgetRegressionMain'
+    )
+}
+
 tasks.register('runPacketClassTraceDiagnosticRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,

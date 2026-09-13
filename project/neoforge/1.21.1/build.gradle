@@ -608,6 +608,14 @@ tasks.register('runChunkWatchBoundaryPendingStoreSecurityRegression', JavaExec) 
     maxHeapSize = '192m'
 }
 
+tasks.register('runChunkPersistentCacheMemoryBudgetRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies unified persistent client-cache memory accounting and bounded eviction.'
+    dependsOn testClasses
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentCacheMemoryBudgetRegressionMain'
+}
+
 tasks.register('runConnectionPayloadTaskGuardRegression', JavaExec) {
     group = 'verification'
     description = 'Verifies stale client payload tasks are rejected across protocol generations and disconnects.'
