@@ -654,12 +654,28 @@ final class PersistentChunkCacheDiskStore {
     }
 
     private byte[] decompress(byte[] compressedBytes, int expectedLength) throws IOException {
+        if (expectedLength <= 0 || expectedLength > MAX_BLOB_BYTES) {
+            throw new IOException("Invalid persistent chunk decompressed length");
+        }
         Inflater inflater = new Inflater(true);
-        try (InflaterInputStream inflaterInput = new InflaterInputStream(new ByteArrayInputStream(compressedBytes), inflater, 8192);
-             ByteArrayOutputStream output = new ByteArrayOutputStream(expectedLength)) {
-            inflaterInput.transferTo(output);
-            byte[] packetBytes = output.toByteArray();
-            if (packetBytes.length != expectedLength) {
+        try (InflaterInputStream inflaterInput = new InflaterInputStream(
+                new ByteArrayInputStream(compressedBytes),
+                inflater,
+                8192
+        )) {
+            byte[] packetBytes = new byte[expectedLength];
+            int offset = 0;
+            while (offset < expectedLength) {
+                int read = inflaterInput.read(packetBytes, offset, expectedLength - offset);
+                if (read < 0) {
+                    throw new IOException("Persistent chunk segment length mismatch");
+                }
+                if (read == 0) {
+                    throw new IOException("Persistent chunk decompressor made no progress");
+                }
+                offset += read;
+            }
+            if (inflaterInput.read() != -1) {
                 throw new IOException("Persistent chunk segment length mismatch");
             }
             return packetBytes;
