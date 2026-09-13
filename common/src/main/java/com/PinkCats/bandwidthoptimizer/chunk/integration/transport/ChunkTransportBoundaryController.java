@@ -181,6 +181,7 @@ public final class ChunkTransportBoundaryController {
         if (context == null || context.channel() == null) {
             return;
         }
+        ChunkWatchBoundaryReusePendingStore.clearChannel(context.channel());
         context.channel().attr(CHANNEL_BOUNDARY_STATE_KEY).set(new ChannelBoundaryState());
         if (BO_Diag_chunkTransportFrames()) {
             DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_TRANSPORT_FRAMES, "event=boundary_reset channel={}, reason={}",

@@ -333,6 +333,16 @@ tasks.register('runIdleGateClientPublicationRegression', JavaExec) {
     )
 }
 
+tasks.register('runChunkWatchBoundaryPendingStoreSecurityRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies watch-boundary replay ownership, byte admission, and close cleanup.',
+            'com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkWatchBoundaryPendingStoreSecurityRegressionMain'
+    )
+    maxHeapSize = '192m'
+}
+
 tasks.register('runPacketClassTraceDiagnosticRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,

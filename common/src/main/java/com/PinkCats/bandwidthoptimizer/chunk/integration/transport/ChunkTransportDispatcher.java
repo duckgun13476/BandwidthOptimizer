@@ -776,7 +776,7 @@ public final class ChunkTransportDispatcher {
             }
             ChunkPeerStateManager.acknowledgeOutboundChunk(context, envelope.frame());
             ChunkServerOfflineReuseStats.recordConfirmed(readChannelId(context), envelope.frame());
-            ChunkWatchBoundaryReusePendingStore.clearPendingFull(readChannelId(context), envelope.frame());
+            ChunkWatchBoundaryReusePendingStore.clearPendingFull(context.channel(), envelope.frame());
             logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_ACK_FRAME_COUNT);
             return ChunkInboundDecodeResult.consumeControlFrame();
         }
@@ -818,7 +818,7 @@ public final class ChunkTransportDispatcher {
                 logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_INVALIDATE_FRAME_COUNT);
                 return ChunkInboundDecodeResult.consumeControlFrame();
             }
-            ChunkWatchBoundaryReusePendingStore.clearPendingFull(readChannelId(context), envelope.frame());
+            ChunkWatchBoundaryReusePendingStore.clearPendingFull(context.channel(), envelope.frame());
             ChunkPeerStateManager.invalidateOutboundChunk(context, envelope.frame());
             ChunkRuntimeReferenceStore.invalidateFullSnapshot(readChannelId(context), envelope.frame().epoch(), envelope.frame().coordinate());
             ChunkShadowSnapshotManager.invalidateChunk(readChannelId(context), envelope.frame().epoch(), envelope.frame().coordinate());
@@ -1769,7 +1769,7 @@ public final class ChunkTransportDispatcher {
             return;
         }
         ChunkWatchBoundaryReusePendingStore.rememberProbe(
-                readChannelId(context),
+                context.channel(),
                 runtimeDecision.frame(),
                 originalPacketBytes
         );
@@ -1841,7 +1841,7 @@ public final class ChunkTransportDispatcher {
 
         ChunkPeerStateManager.negativeAcknowledgeOutboundChunk(context, frame);
         ChunkWatchBoundaryReusePendingStore.PendingFullReplay pendingReplay =
-                ChunkWatchBoundaryReusePendingStore.takePendingFull(readChannelId(context), frame);
+                ChunkWatchBoundaryReusePendingStore.takePendingFull(context.channel(), frame);
         if (pendingReplay != null
                 && ChunkTransportControlFrameSender.sendReplayFullFrame(
                 context.channel(),
