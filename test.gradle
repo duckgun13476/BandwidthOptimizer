@@ -324,6 +324,15 @@ tasks.register('runChunkPatchDecodeSecurityRegression', JavaExec) {
     maxHeapSize = '64m'
 }
 
+tasks.register('runIdleGateClientPublicationRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies client idle mode publication and disconnect reset semantics.',
+            'com.PinkCats.bandwidthoptimizer.gate.IdleGateClientPublicationRegressionMain'
+    )
+}
+
 tasks.register('runPacketClassTraceDiagnosticRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,

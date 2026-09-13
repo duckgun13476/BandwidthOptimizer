@@ -18,7 +18,7 @@ public final class IdleGateClientController {
 
     private static Consumer<IdleGateStatePayload> sender;
     private static IdleGateMode lastSentMode = IdleGateMode.ACTIVE;
-    private static IdleGateMode currentMode = IdleGateMode.ACTIVE;
+    private static volatile IdleGateMode currentMode = IdleGateMode.ACTIVE;
     private static boolean lastSentHudVisible = true;
     private static long lastActivityMillis = System.currentTimeMillis();
     private static long lastReportMillis;
