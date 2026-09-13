@@ -6,6 +6,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import net.minecraft.network.FriendlyByteBuf;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -122,7 +123,7 @@ public final class ChannelTransportFragmentSecurityRegressionMain {
                     channel,
                     fragment(400, 0, 2, 2, 0, new byte[]{1})
             );
-            channel.advanceTimeBy(16L, TimeUnit.SECONDS);
+            advanceEmbeddedTime(channel, 16L, TimeUnit.SECONDS);
             channel.runScheduledPendingTasks();
             ChannelTransportFragmentReassembler.ReceiveResult result =
                     ChannelTransportStateManager.acceptInboundFragment(channel, new byte[]{0});
@@ -131,6 +132,22 @@ public final class ChannelTransportFragmentSecurityRegressionMain {
         } finally {
             ChannelTransportStateManager.clearSession(channel, "fragment-security-regression");
             channel.finishAndReleaseAll();
+        }
+    }
+
+    private static void advanceEmbeddedTime(EmbeddedChannel channel, long amount, TimeUnit unit) {
+        try {
+            EmbeddedChannel.class.getMethod("advanceTimeBy", long.class, TimeUnit.class)
+                    .invoke(channel, amount, unit);
+        } catch (NoSuchMethodException ignored) {
+            try {
+                Thread.sleep(unit.toMillis(amount));
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while waiting for the fragment deadline", exception);
+            }
+        } catch (IllegalAccessException | InvocationTargetException exception) {
+            throw new IllegalStateException("Could not advance the embedded Netty clock", exception);
         }
     }
 
