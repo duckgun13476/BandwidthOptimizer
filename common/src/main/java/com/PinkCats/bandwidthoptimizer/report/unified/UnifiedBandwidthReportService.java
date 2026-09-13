@@ -34,6 +34,7 @@ public final class UnifiedBandwidthReportService {
     public static final String DEFAULT_VIEWER_BASE_URL = "https://bostats.torqueflux.com/report/";
     private static final String REPORT_DIRECTORY = "reports";
     private static final int MAX_REPORT_BYTES = 4 * 1024 * 1024;
+    private static final int MAX_UPLOAD_RESPONSE_BYTES = 1024;
     private static final AtomicBoolean BUSY = new AtomicBoolean();
     private static final ExecutorService WORKER = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "bo-report-upload");
@@ -130,7 +131,8 @@ public final class UnifiedBandwidthReportService {
                     .header("User-Agent", "BandwidthOptimizer/" + Bandwidthoptimizer.networkProtocolVersion())
                     .POST(HttpRequest.BodyPublishers.ofByteArray(compressed))
                     .build();
-            HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = HTTP_CLIENT.send(request,
+                    new BoundedUtf8BodyHandler(MAX_UPLOAD_RESPONSE_BYTES));
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 return Result.failure("Upload failed with HTTP " + response.statusCode() + "; local report retained.", localPath);
             }

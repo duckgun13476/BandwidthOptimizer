@@ -657,6 +657,15 @@ tasks.register('runLevelChunkNbtDepthFailureDiagnosticRegression', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.channel.capture.LevelChunkNbtDepthFailureDiagnosticRegressionMain'
 }
 
+tasks.register('runBoundedHttpResponseRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies report upload responses are retained within the protocol safety margin.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.report.unified.BoundedUtf8BodyHandlerRegressionMain'
+    maxHeapSize = '32m'
+}
+
 tasks.register('runChunkBranchCoverageVerify', JavaExec) {
     group = 'verification'
     description = 'Verifies NeoForge 1.21.1 runAll chunk transport branch coverage.'
