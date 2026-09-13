@@ -624,6 +624,14 @@ tasks.register('runCreateContraptionReferenceResolverRegression', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateContraptionReferenceResolverRegressionMain'
 }
 
+tasks.register('runCreateEncoderThreadIsolationRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies Create encoder paths consume prepared state without reading the server world.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateEncoderThreadIsolationRegressionMain'
+}
+
 tasks.register('runLevelChunkNbtDepthFailureDiagnosticRegression', JavaExec) {
     group = 'verification'
     description = 'Verifies safe metadata extraction for level-chunk NBT depth decoder failures.'

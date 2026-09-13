@@ -176,10 +176,8 @@ public final class CreateBlockEntityUpdateGate {
         PendingKey key = PendingKey.of(blockEntityTypeKey, blockEntityDataPacket.getPos());
         boolean soundCritical = state.rememberSoundStateAndShouldFlush(key, blockEntityDataPacket.getTag());
         DynamicTarget dynamicTarget = resolveDynamicTargetForEncoder(
-                player,
                 packet,
-                blockEntityDataPacket.getPos(),
-                blockEntityTypeKey);
+                blockEntityDataPacket.getPos());
         if (dynamicTarget.forceImmediate()
                 || CreateGateViewPolicy.shouldSendImmediately(
                         player,
@@ -242,9 +240,6 @@ public final class CreateBlockEntityUpdateGate {
         if (!shouldGateCreateBlockEntity(blockEntityTypeKey, chunkBootstrapActive)) {
             return false;
         }
-        if (listener != null && !isMovingContraptionController(blockEntityTypeKey)) {
-            return false;
-        }
         DynamicTarget dynamicTarget = resolveDynamicTargetForConnectionSend(
                 player,
                 blockEntityDataPacket.getPos(),
@@ -261,7 +256,7 @@ public final class CreateBlockEntityUpdateGate {
                 packet,
                 estimateBlockEntityDataPacketBytes(blockEntityDataPacket),
                 dynamicTarget);
-        if (!delayed && isMovingContraptionController(blockEntityTypeKey)) {
+        if (!delayed) {
             rememberPreparedDynamicTarget(packet, dynamicTarget);
         }
         return delayed;
@@ -491,10 +486,8 @@ public final class CreateBlockEntityUpdateGate {
             return false;
         }
         DynamicTarget dynamicTarget = resolveDynamicTargetForEncoder(
-                player,
                 packet,
-                blockEntityDataPacket.getPos(),
-                blockEntityTypeKey);
+                blockEntityDataPacket.getPos());
         try {
             return dynamicTarget.forceImmediate() || CreateGateViewPolicy.shouldSendImmediately(player, dynamicTarget.points(), true);
         } finally {
@@ -580,16 +573,11 @@ public final class CreateBlockEntityUpdateGate {
     }
 
     private static DynamicTarget resolveDynamicTargetForEncoder(
-            ServerPlayer player,
             Packet<?> packet,
-            BlockPos pos,
-            String typeKey
+            BlockPos pos
     ) {
-        if (isMovingContraptionController(typeKey)) {
-            DynamicTarget preparedTarget = readPreparedDynamicTarget(packet);
-            return preparedTarget == null ? forceImmediateTarget(pos) : preparedTarget;
-        }
-        return resolveDynamicTargetOnServerThread(player, pos, typeKey);
+        DynamicTarget preparedTarget = readPreparedDynamicTarget(packet);
+        return preparedTarget == null ? forceImmediateTarget(pos) : preparedTarget;
     }
 
     public static boolean shouldTrackContraptions() {
@@ -601,11 +589,9 @@ public final class CreateBlockEntityUpdateGate {
             BlockPos pos,
             String typeKey
     ) {
-        return isMovingContraptionController(typeKey)
-                ? (isServerThread(player)
+        return isServerThread(player)
                 ? resolveDynamicTargetOnServerThread(player, pos, typeKey)
-                : forceImmediateTarget(pos))
-                : resolveDynamicTargetOnServerThread(player, pos, typeKey);
+                : forceImmediateTarget(pos);
     }
 
     private static DynamicTarget resolveDynamicTargetOnServerThread(ServerPlayer player, BlockPos pos, String typeKey) {
