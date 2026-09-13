@@ -16,6 +16,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 public final class LatencyTcpProxyMain {
 
@@ -29,6 +30,18 @@ public final class LatencyTcpProxyMain {
         String targetHost = options.getOrDefault("target-host", "127.0.0.1");
         int targetPort = parsePort(options.getOrDefault("target-port", "25567"), "target-port");
         long delayMillis = parseNonNegativeLong(options.getOrDefault("delay-ms", "300"), "delay-ms");
+        long spikeAfterMillis = parseNonNegativeLong(
+                options.getOrDefault("spike-after-ms", "0"),
+                "spike-after-ms"
+        );
+        long spikeDurationMillis = parseNonNegativeLong(
+                options.getOrDefault("spike-duration-ms", "0"),
+                "spike-duration-ms"
+        );
+        long spikeDelayMillis = parseNonNegativeLong(
+                options.getOrDefault("spike-delay-ms", "0"),
+                "spike-delay-ms"
+        );
         long resetFirstConnectionAfterMillis = parseNonNegativeLong(
                 options.getOrDefault("reset-first-connection-after-ms", "0"),
                 "reset-first-connection-after-ms"
@@ -45,6 +58,9 @@ public final class LatencyTcpProxyMain {
             log("listening " + listenHost + ":" + listenPort
                     + " -> " + targetHost + ":" + targetPort
                     + ", delay=" + delayMillis + "ms"
+                    + ", spikeAfter=" + spikeAfterMillis + "ms"
+                    + ", spikeDuration=" + spikeDurationMillis + "ms"
+                    + ", spikeDelay=" + spikeDelayMillis + "ms"
                     + ", resetConnectionId=" + resetConnectionId
                     + ", resetAfter=" + resetFirstConnectionAfterMillis + "ms");
             while (true) {
@@ -57,6 +73,9 @@ public final class LatencyTcpProxyMain {
                                 targetHost,
                                 targetPort,
                                 delayMillis,
+                                spikeAfterMillis,
+                                spikeDurationMillis,
+                                spikeDelayMillis,
                                 connectionId == resetConnectionId ? resetFirstConnectionAfterMillis : 0L
                         ),
                         "latency-tcp-proxy-connection-" + connectionId
@@ -73,6 +92,9 @@ public final class LatencyTcpProxyMain {
             String targetHost,
             int targetPort,
             long delayMillis,
+            long spikeAfterMillis,
+            long spikeDurationMillis,
+            long spikeDelayMillis,
             long resetAfterMillis
     ) {
         Socket targetSocket = new Socket();
@@ -85,6 +107,7 @@ public final class LatencyTcpProxyMain {
                     + " target=" + targetHost + ":" + targetPort);
 
             AtomicBoolean closed = new AtomicBoolean(false);
+            long acceptedAtNanos = System.nanoTime();
             ScheduledExecutorService resetScheduler = null;
             if (resetAfterMillis > 0L) {
                 resetScheduler = newSingleThreadScheduler("latency-tcp-proxy-reset-" + connectionId);
@@ -104,6 +127,10 @@ public final class LatencyTcpProxyMain {
                             targetSocket,
                             clientToServerDelay,
                             delayMillis,
+                            acceptedAtNanos,
+                            spikeAfterMillis,
+                            spikeDurationMillis,
+                            spikeDelayMillis,
                             closed
                     ),
                     "latency-tcp-proxy-pump-c2s-" + connectionId
@@ -116,6 +143,10 @@ public final class LatencyTcpProxyMain {
                             clientSocket,
                             serverToClientDelay,
                             delayMillis,
+                            acceptedAtNanos,
+                            spikeAfterMillis,
+                            spikeDurationMillis,
+                            spikeDelayMillis,
                             closed
                     ),
                     "latency-tcp-proxy-pump-s2c-" + connectionId
@@ -150,9 +181,14 @@ public final class LatencyTcpProxyMain {
             Socket target,
             ScheduledExecutorService scheduler,
             long delayMillis,
+            long acceptedAtNanos,
+            long spikeAfterMillis,
+            long spikeDurationMillis,
+            long spikeDelayMillis,
             AtomicBoolean closed
     ) {
         byte[] buffer = new byte[16384];
+        AtomicLong lastDeliveryNanos = new AtomicLong();
         try {
             InputStream inputStream = source.getInputStream();
             OutputStream outputStream = target.getOutputStream();
@@ -163,10 +199,21 @@ public final class LatencyTcpProxyMain {
                 }
                 byte[] packetBytes = new byte[read];
                 System.arraycopy(buffer, 0, packetBytes, 0, read);
+                long nowNanos = System.nanoTime();
+                long connectionAgeMillis = TimeUnit.NANOSECONDS.toMillis(nowNanos - acceptedAtNanos);
+                long effectiveDelayMillis = isSpikeActive(
+                        connectionAgeMillis,
+                        spikeAfterMillis,
+                        spikeDurationMillis
+                ) ? spikeDelayMillis : delayMillis;
+                long requestedDeliveryNanos = nowNanos + TimeUnit.MILLISECONDS.toNanos(effectiveDelayMillis);
+                long deliveryNanos = lastDeliveryNanos.updateAndGet(
+                        previous -> Math.max(requestedDeliveryNanos, previous + 1L)
+                );
                 scheduler.schedule(
                         () -> writeDelayed(connectionId, direction, outputStream, packetBytes, closed),
-                        delayMillis,
-                        TimeUnit.MILLISECONDS
+                        Math.max(0L, deliveryNanos - nowNanos),
+                        TimeUnit.NANOSECONDS
                 );
             }
         } catch (SocketException ignored) {
@@ -181,6 +228,16 @@ public final class LatencyTcpProxyMain {
         }
     }
 
+    private static boolean isSpikeActive(
+            long connectionAgeMillis,
+            long spikeAfterMillis,
+            long spikeDurationMillis
+    ) {
+        return spikeDurationMillis > 0L
+                && connectionAgeMillis >= spikeAfterMillis
+                && connectionAgeMillis - spikeAfterMillis < spikeDurationMillis;
+    }
+
     private static void writeDelayed(
             int connectionId,
             String direction,
@@ -188,13 +245,17 @@ public final class LatencyTcpProxyMain {
             byte[] packetBytes,
             AtomicBoolean closed
     ) {
+        if (closed.get()) {
+            return;
+        }
         try {
             outputStream.write(packetBytes);
             outputStream.flush();
         } catch (IOException exception) {
-            closed.set(true);
-            log("write_error id=" + connectionId + " direction=" + direction + " error="
-                    + exception.getClass().getSimpleName() + ": " + exception.getMessage());
+            if (closed.compareAndSet(false, true)) {
+                log("write_error id=" + connectionId + " direction=" + direction + " error="
+                        + exception.getClass().getSimpleName() + ": " + exception.getMessage());
+            }
         }
     }
 
@@ -213,12 +274,17 @@ public final class LatencyTcpProxyMain {
             return;
         }
         log("resetting id=" + connectionId);
-        try {
-            clientSocket.setSoLinger(true, 0);
-        } catch (SocketException ignored) {
-        }
+        enableResetOnClose(clientSocket);
+        enableResetOnClose(targetSocket);
         closeQuietly(clientSocket);
         closeQuietly(targetSocket);
+    }
+
+    private static void enableResetOnClose(Socket socket) {
+        try {
+            socket.setSoLinger(true, 0);
+        } catch (SocketException ignored) {
+        }
     }
 
     private static ScheduledExecutorService newSingleThreadScheduler(String threadName) {

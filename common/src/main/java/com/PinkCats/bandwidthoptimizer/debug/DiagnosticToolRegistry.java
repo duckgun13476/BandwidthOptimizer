@@ -229,6 +229,11 @@ public final class DiagnosticToolRegistry {
                 "Connection close cause and recovery-policy classification",
                 true
         ),
+        KEEP_ALIVE_TIMEOUT(
+                "keepAliveTimeout",
+                Cost.SMALL,
+                "Connection phase and KeepAlive timeout boundary correlation"
+        ),
         OUTBOUND_BURST(
                 "outboundBurst",
                 Cost.SMALL,

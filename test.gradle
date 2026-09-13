@@ -341,6 +341,15 @@ tasks.register('runConnectionDisconnectClassifierRegression', JavaExec) {
     )
 }
 
+tasks.register('runKeepAliveTimeoutDiagnosticRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Runs KeepAlive timeout boundary and connection-phase regression checks.',
+            'com.PinkCats.bandwidthoptimizer.connection.KeepAliveTimeoutDiagnosticRegressionMain'
+    )
+}
+
 tasks.register('runClientReconnectCoordinatorRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,
@@ -512,6 +521,7 @@ def readRunAllLatencyDelayMillis(Project projectRef) {
 def isRunAllLatencyProxyEnabled(Project projectRef) {
 
     return readRunAllLatencyDelayMillis(projectRef) > 0L
+            || project.ext.boReadRunAllLongProperty.call(projectRef, 'boRunAllLatencySpikeDurationMillis', 0L) > 0L
             || project.ext.boReadRunAllLongProperty.call(
                     projectRef,
                     'boRunAllLatencyResetFirstConnectionAfterMillis',
@@ -604,6 +614,24 @@ def startRunAllLatencyProxyProcess(Project projectRef, boolean isWindows, File o
             String.valueOf(readRunAllLatencyTargetPort(projectRef)),
             '--delay-ms',
             String.valueOf(readRunAllLatencyDelayMillis(projectRef)),
+            '--spike-after-ms',
+            String.valueOf(project.ext.boReadRunAllLongProperty.call(
+                    projectRef,
+                    'boRunAllLatencySpikeAfterMillis',
+                    0L
+            )),
+            '--spike-duration-ms',
+            String.valueOf(project.ext.boReadRunAllLongProperty.call(
+                    projectRef,
+                    'boRunAllLatencySpikeDurationMillis',
+                    0L
+            )),
+            '--spike-delay-ms',
+            String.valueOf(project.ext.boReadRunAllLongProperty.call(
+                    projectRef,
+                    'boRunAllLatencySpikeDelayMillis',
+                    0L
+            )),
             '--reset-first-connection-after-ms',
             String.valueOf(project.ext.boReadRunAllLongProperty.call(
                     projectRef,

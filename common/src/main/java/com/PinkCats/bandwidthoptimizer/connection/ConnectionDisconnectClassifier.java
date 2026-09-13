@@ -20,6 +20,7 @@ public final class ConnectionDisconnectClassifier {
 
     public static void observeOutboundPacket(Channel channel, Object packet) {
         observePacketClass(channel, packetClassName(packet), "outbound-packet");
+        KeepAliveTimeoutDiagnostic.observePacket(channel, packet, true);
     }
 
     public static void observeInboundDecodedPackets(
@@ -41,6 +42,7 @@ public final class ConnectionDisconnectClassifier {
             return;
         }
         observePacketClass(channel, packetClass, "inbound-packet");
+        KeepAliveTimeoutDiagnostic.observePacketClass(channel, packetClass, false);
         State existing = channel.attr(STATE_KEY).get();
         if (existing == null && isConnectionSessionPacket(packetClass)) {
             existing = state(channel);
@@ -66,6 +68,9 @@ public final class ConnectionDisconnectClassifier {
         }
         ClassifiedThrowable classified = classifyThrowableChain(throwable);
         Category category = classified.category();
+        if (category == Category.READ_TIMEOUT) {
+            KeepAliveTimeoutDiagnostic.observeReadTimeout(channel);
+        }
         state(channel).record(
                 category,
                 recoveryPolicy(category),
@@ -130,6 +135,7 @@ public final class ConnectionDisconnectClassifier {
                     decision.evidenceAgeMillis()
             );
         }
+        KeepAliveTimeoutDiagnostic.observeClose(channel, decision);
         return decision;
     }
 

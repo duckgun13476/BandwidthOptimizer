@@ -17,7 +17,8 @@
     "minecraft.InternetProbeFrameDecoderMixin",
     "minecraft.PacketOutPipeMixin",
     "minecraft.PacketInPipeMixin",
-    "minecraft.ServerGamePacketListenerImplAccessor"
+    "minecraft.ServerGamePacketListenerImplAccessor",
+    "minecraft.ServerKeepAliveTimeoutBoundaryMixin"
   ],
   "client": [
     "minecraft.PauseScreenDisconnect26Mixin",

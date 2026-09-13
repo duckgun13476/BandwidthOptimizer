@@ -18,7 +18,8 @@
     "minecraft.PacketOutPipeMixin",
     "minecraft.PacketInPipeMixin",
     "minecraft.ServerCommonPacketListenerChunkWatchMixin",
-    "minecraft.ServerGamePacketListenerImplAccessor"
+    "minecraft.ServerGamePacketListenerImplAccessor",
+    "minecraft.ServerKeepAliveTimeoutBoundaryMixin"
   ],
   "client": [
     "minecraft.PauseScreenDisconnectMixin"

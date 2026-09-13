@@ -22,6 +22,7 @@
     "minecraft.PacketInPipeMixin",
     "minecraft.ServerboundCustomPayloadPacketAccessor",
     "minecraft.ServerGamePacketListenerImplAccessor",
+    "minecraft.ServerKeepAliveTimeoutBoundaryMixin",
     "minecraft.ServerGamePacketListenerCommandMixin"
   ],
   "client": [

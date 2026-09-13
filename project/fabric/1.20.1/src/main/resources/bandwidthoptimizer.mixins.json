@@ -19,7 +19,8 @@
     "minecraft.PacketOutPipeMixin",
     "minecraft.PacketInPipeMixin",
     "minecraft.ServerboundCustomPayloadPacketAccessor",
-    "minecraft.ServerGamePacketListenerImplAccessor"
+    "minecraft.ServerGamePacketListenerImplAccessor",
+    "minecraft.ServerKeepAliveTimeoutBoundaryMixin"
   ],
   "client": [
     "minecraft.PauseScreenDisconnectMixin"

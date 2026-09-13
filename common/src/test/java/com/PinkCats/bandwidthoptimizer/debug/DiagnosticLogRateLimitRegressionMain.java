@@ -4,7 +4,8 @@ public final class DiagnosticLogRateLimitRegressionMain {
     private DiagnosticLogRateLimitRegressionMain() {}
 
     public static void main(String[] args) {
-        DiagnosticToolRegistry.Tool tool = DiagnosticToolRegistry.Tool.CONNECTION_CLOSE;
+        DiagnosticToolRegistry.Tool tool = DiagnosticToolRegistry.Tool.KEEP_ALIVE_TIMEOUT;
+        DiagnosticToolRegistry.enable(tool, 5);
         DiagnosticLog.resetLimitersForTest();
 
         int emitted = 0;
@@ -29,6 +30,7 @@ public final class DiagnosticLogRateLimitRegressionMain {
                         "event=disabled_probe",
                         10_000L),
                 "disabled diagnostic tool emitted output");
+        DiagnosticToolRegistry.disable(tool);
         System.out.println("Diagnostic log rate-limit regression passed");
     }
 
