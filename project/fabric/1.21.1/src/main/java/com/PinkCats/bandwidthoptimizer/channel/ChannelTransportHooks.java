@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.debug.PacketClassTraceDiagnostic;
 import com.PinkCats.bandwidthoptimizer.connection.ConnectionDisconnectClassifier;
+import com.PinkCats.bandwidthoptimizer.connection.KeepAliveGraceController;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
@@ -821,6 +822,19 @@ public final class ChannelTransportHooks {
         PacketFlow responseFlow = flow == PacketFlow.CLIENTBOUND
                 ? PacketFlow.SERVERBOUND
                 : PacketFlow.CLIENTBOUND;
+        if (message instanceof ChannelTransportStreamingControlCodec.KeepAliveProbePing ping) {
+            if (flow == PacketFlow.CLIENTBOUND) {
+                writeTransportCarrierPacketToPipeline(context.channel(), responseFlow,
+                        ChannelTransportStreamingControlCodec.encodeKeepAliveProbePong(ping.nonce()));
+            }
+            return true;
+        }
+        if (message instanceof ChannelTransportStreamingControlCodec.KeepAliveProbePong pong) {
+            if (flow == PacketFlow.SERVERBOUND) {
+                KeepAliveGraceController.observeProbePong(context.channel(), pong.nonce());
+            }
+            return true;
+        }
         if (message instanceof ChannelTransportStreamingControlCodec.EpochComplete complete) {
             if (!transportSession.acceptInboundStreamingEpochComplete(complete.epoch(), complete.lastSequence())) {
                 requestInboundStreamingRecovery(

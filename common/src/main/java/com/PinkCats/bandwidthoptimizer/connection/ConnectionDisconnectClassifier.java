@@ -21,6 +21,9 @@ public final class ConnectionDisconnectClassifier {
     public static void observeOutboundPacket(Channel channel, Object packet) {
         observePacketClass(channel, packetClassName(packet), "outbound-packet");
         KeepAliveTimeoutDiagnostic.observePacket(channel, packet, true);
+        if (packet != null) {
+            KeepAliveGraceController.observeVanillaKeepAliveAck(channel, packet.getClass().getName(), true);
+        }
     }
 
     public static void observeInboundDecodedPackets(
@@ -43,6 +46,7 @@ public final class ConnectionDisconnectClassifier {
         }
         observePacketClass(channel, packetClass, "inbound-packet");
         KeepAliveTimeoutDiagnostic.observePacketClass(channel, packetClass, false);
+        KeepAliveGraceController.observeVanillaKeepAliveAck(channel, packetClass, false);
         State existing = channel.attr(STATE_KEY).get();
         if (existing == null && isConnectionSessionPacket(packetClass)) {
             existing = state(channel);

@@ -12,6 +12,8 @@ public final class ChannelTransportStreamingControlCodec {
     private static final int EPOCH_COMPLETE = 2;
     private static final int EPOCH_OK = 3;
     private static final int EPOCH_RESET = 4;
+    private static final int KEEP_ALIVE_PROBE_PING = 5;
+    private static final int KEEP_ALIVE_PROBE_PONG = 6;
 
     private ChannelTransportStreamingControlCodec() {
     }
@@ -52,6 +54,14 @@ public final class ChannelTransportStreamingControlCodec {
         return encodeControl(EPOCH_RESET, epoch, 0);
     }
 
+    public static byte[] encodeKeepAliveProbePing(long nonce) {
+        return encodeProbeControl(KEEP_ALIVE_PROBE_PING, nonce);
+    }
+
+    public static byte[] encodeKeepAliveProbePong(long nonce) {
+        return encodeProbeControl(KEEP_ALIVE_PROBE_PONG, nonce);
+    }
+
     public static ControlMessage tryDecodeControlMessage(byte[] frameBytes) {
         if (frameBytes == null || frameBytes.length == 0) {
             return null;
@@ -62,8 +72,17 @@ public final class ChannelTransportStreamingControlCodec {
                 return null;
             }
             int type = buffer.readVarInt();
-            if (type < RECOVERY_REQUEST || type > EPOCH_RESET) {
+            if (type < RECOVERY_REQUEST || type > KEEP_ALIVE_PROBE_PONG) {
                 throw new IllegalStateException("Unsupported streaming control request");
+            }
+            if (type == KEEP_ALIVE_PROBE_PING || type == KEEP_ALIVE_PROBE_PONG) {
+                long nonce = buffer.readVarLong();
+                if (nonce <= 0L || buffer.isReadable()) {
+                    throw new IllegalStateException("Invalid KeepAlive probe request");
+                }
+                return type == KEEP_ALIVE_PROBE_PING
+                        ? new KeepAliveProbePing(nonce)
+                        : new KeepAliveProbePong(nonce);
             }
             int epoch = buffer.readVarInt();
             int sequence = buffer.readVarInt();
@@ -101,6 +120,24 @@ public final class ChannelTransportStreamingControlCodec {
         }
     }
 
+    private static byte[] encodeProbeControl(int type, long nonce) {
+        if ((type != KEEP_ALIVE_PROBE_PING && type != KEEP_ALIVE_PROBE_PONG) || nonce <= 0L) {
+            throw new IllegalArgumentException("Invalid KeepAlive probe point");
+        }
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            buffer.writeVarInt(MAGIC_PACKET_ID);
+            buffer.writeVarInt(CONTROL_FRAME_VERSION);
+            buffer.writeVarInt(type);
+            buffer.writeVarLong(nonce);
+            byte[] bytes = new byte[buffer.readableBytes()];
+            buffer.getBytes(0, bytes);
+            return bytes;
+        } finally {
+            buffer.release();
+        }
+    }
+
     public interface ControlMessage {
     }
 
@@ -114,5 +151,11 @@ public final class ChannelTransportStreamingControlCodec {
     }
 
     public record EpochReset(int epoch) implements ControlMessage {
+    }
+
+    public record KeepAliveProbePing(long nonce) implements ControlMessage {
+    }
+
+    public record KeepAliveProbePong(long nonce) implements ControlMessage {
     }
 }

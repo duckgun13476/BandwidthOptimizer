@@ -62,11 +62,13 @@ public final class KeepAliveTimeoutDiagnostic {
         }
         long nowMillis = System.currentTimeMillis();
         State state = state(channel);
-        state.markVanillaKeepAliveTimeout(
+        if (!state.markVanillaKeepAliveTimeout(
                 vanillaChallengeAgeMillis,
                 nowMillis,
                 playPhase ? Phase.PLAY : Phase.CONFIGURATION
-        );
+        )) {
+            return;
+        }
         Snapshot snapshot = state.snapshot(nowMillis);
         DiagnosticLog.info(
                 DiagnosticToolRegistry.Tool.KEEP_ALIVE_TIMEOUT,
@@ -281,13 +283,17 @@ public final class KeepAliveTimeoutDiagnostic {
             this.pendingChallenge = false;
             this.lastAckAtMillis = nowMillis;
             this.ackCount++;
+            this.keepAliveTimeoutBoundaryObserved = false;
         }
 
-        synchronized void markVanillaKeepAliveTimeout(
+        synchronized boolean markVanillaKeepAliveTimeout(
                 long vanillaChallengeAgeMillis,
                 long nowMillis,
                 Phase timeoutPhase
         ) {
+            if (this.keepAliveTimeoutBoundaryObserved) {
+                return false;
+            }
             this.phase = timeoutPhase;
             this.endpoint = Endpoint.SERVER;
             this.pendingChallenge = true;
@@ -295,6 +301,7 @@ public final class KeepAliveTimeoutDiagnostic {
                 this.challengeAtMillis = nowMillis - vanillaChallengeAgeMillis;
             }
             this.keepAliveTimeoutBoundaryObserved = true;
+            return true;
         }
 
         synchronized Snapshot snapshot(long nowMillis) {

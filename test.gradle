@@ -350,6 +350,14 @@ tasks.register('runKeepAliveTimeoutDiagnosticRegression', JavaExec) {
     )
 }
 
+tasks.register('runKeepAliveGraceControllerRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies bounded PLAY KeepAlive grace and internal ping/pong control frames.'
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.PinkCats.bandwidthoptimizer.connection.KeepAliveGraceControllerRegressionMain'
+}
+
 tasks.register('runClientReconnectCoordinatorRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,
@@ -790,6 +798,21 @@ def verifyRunAllTransportTelemetry(Project projectRef, File clientDump, File ser
             }
         }
     }
+}
+
+def waitForRunAllTransportTelemetry(Project projectRef, File clientDump, File serverDump, long timeoutMillis) {
+    long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
+    GradleException lastFailure = null
+    while (System.nanoTime() < deadline) {
+        try {
+            verifyRunAllTransportTelemetry(projectRef, clientDump, serverDump)
+            return
+        } catch (GradleException failure) {
+            lastFailure = failure
+            sleep(200L)
+        }
+    }
+    throw lastFailure ?: new GradleException('runAll transport telemetry did not become ready')
 }
 
 def buildWatchBoundaryRefreshPatchRegressionGradleArgs(Project projectRef) {
@@ -1460,7 +1483,7 @@ tasks.register('runAll') {
                 180000L
         )
 
-        verifyRunAllTransportTelemetry(project, clientTransportTelemetryDump, serverTransportTelemetryDump)
+        waitForRunAllTransportTelemetry(project, clientTransportTelemetryDump, serverTransportTelemetryDump, 15000L)
         println 'runAll: 四个方向的 jsonl 都已经开始写入。'
         println "服务端目录 ${serverDir.absolutePath}"
         println "客户端目录 ${clientDir.absolutePath}"
@@ -1675,7 +1698,7 @@ tasks.register('runAllAutoExitCompare') {
                     settleTimeoutMillis
             )
 
-            verifyRunAllTransportTelemetry(project, clientTransportTelemetryDump, serverTransportTelemetryDump)
+            waitForRunAllTransportTelemetry(project, clientTransportTelemetryDump, serverTransportTelemetryDump, 15000L)
             println 'runAllAutoExitCompare: jsonl 已稳定，正在执行 compare。'
             runChannelJsonlCompareNow(project)
         } finally {
