@@ -555,6 +555,15 @@ tasks.register('runPersistentCacheBloomRegression', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentBloomCatalogRegressionMain'
 }
 
+tasks.register('runChunkTransportEnvelopeSecurityRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies hostile chunk envelope lengths are rejected before allocation.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelopeCodecSecurityRegressionMain'
+    maxHeapSize = '48m'
+}
+
 tasks.register('runConnectionPayloadTaskGuardRegression', JavaExec) {
     group = 'verification'
     description = 'Verifies stale client payload tasks are rejected across protocol generations and disconnects.'

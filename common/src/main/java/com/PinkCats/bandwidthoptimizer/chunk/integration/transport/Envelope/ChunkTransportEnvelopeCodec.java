@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope;
 
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameCodec;
 import io.netty.buffer.ByteBuf;
@@ -13,6 +14,7 @@ import java.util.Arrays;
 public final class ChunkTransportEnvelopeCodec {
 
     private static final byte[] MAGIC_PREFIX = "BOCHKENV".getBytes(StandardCharsets.US_ASCII);
+    private static final int MAX_FRAME_BYTES = 1024 * 1024;
 
     private ChunkTransportEnvelopeCodec() {}
 
@@ -46,13 +48,13 @@ public final class ChunkTransportEnvelopeCodec {
         try {
             FriendlyByteBuf friendlyByteBuf = new FriendlyByteBuf(byteBuf);
             verifyMagic(friendlyByteBuf);
-            int frameLength = friendlyByteBuf.readVarInt();
-            byte[] frameBytes = new byte[frameLength];
-            friendlyByteBuf.readBytes(frameBytes);
+            byte[] frameBytes = readBoundedBytes(friendlyByteBuf, MAX_FRAME_BYTES, "frame");
             ChunkHotspotFrame frame = ChunkHotspotFrameCodec.decodeFrame(frameBytes);
-            int payloadLength = friendlyByteBuf.readVarInt();
-            byte[] originalPacketBytes = new byte[payloadLength];
-            friendlyByteBuf.readBytes(originalPacketBytes);
+            byte[] originalPacketBytes = readBoundedBytes(
+                    friendlyByteBuf,
+                    ChannelTransportPayloadLimits.MAX_SINGLE_PACKET_BYTES,
+                    "payload"
+            );
             if (friendlyByteBuf.isReadable()) {
                 throw new IllegalArgumentException("Chunk transport envelope left extra bytes: " + friendlyByteBuf.readableBytes());
             }
@@ -75,10 +77,36 @@ public final class ChunkTransportEnvelopeCodec {
     }
 
     private static void verifyMagic(FriendlyByteBuf friendlyByteBuf) {
+        if (friendlyByteBuf.readableBytes() < MAGIC_PREFIX.length) {
+            throw new IllegalArgumentException("Truncated chunk transport envelope magic");
+        }
         byte[] actualMagic = new byte[MAGIC_PREFIX.length];
         friendlyByteBuf.readBytes(actualMagic);
         if (!Arrays.equals(actualMagic, MAGIC_PREFIX)) {
             throw new IllegalArgumentException("Unknown chunk transport envelope magic");
         }
+    }
+
+    private static byte[] readBoundedBytes(FriendlyByteBuf buffer, int maxLength, String fieldName) {
+        final int length;
+        try {
+            length = buffer.readVarInt();
+        } catch (IndexOutOfBoundsException exception) {
+            throw new IllegalArgumentException("Truncated chunk transport envelope " + fieldName + " length", exception);
+        }
+        if (length < 0 || length > maxLength) {
+            throw new IllegalArgumentException(
+                    "Invalid chunk transport envelope " + fieldName + " length: " + length + " (max " + maxLength + ")"
+            );
+        }
+        if (length > buffer.readableBytes()) {
+            throw new IllegalArgumentException(
+                    "Truncated chunk transport envelope " + fieldName + ": declared " + length
+                            + " bytes, only " + buffer.readableBytes() + " readable"
+            );
+        }
+        byte[] bytes = new byte[length];
+        buffer.readBytes(bytes);
+        return bytes;
     }
 }

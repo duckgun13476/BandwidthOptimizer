@@ -13,6 +13,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkInboundDecodeResul
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceStore;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelope;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelopeCodec;
+import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelopeRejectionReporter;
 import com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatch;
 import com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatchApplier;
 import com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatchBuilder;
@@ -434,7 +435,17 @@ public final class ChunkTransportDispatcher {
         }
 
         long envelopeDecodeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
-        ChunkTransportEnvelope envelope = ChunkTransportEnvelopeCodec.decodeEnvelope(packetBytes);
+        final ChunkTransportEnvelope envelope;
+        try {
+            envelope = ChunkTransportEnvelopeCodec.decodeEnvelope(packetBytes);
+        } catch (RuntimeException failure) {
+            try {
+                ChunkTransportEnvelopeRejectionReporter.report(context, packetBytes, failure);
+            } catch (RuntimeException | LinkageError reportingFailure) {
+                failure.addSuppressed(reportingFailure);
+            }
+            throw failure;
+        }
         ChunkLoadDelayProbe.logStage(
                 context,
                 envelope.frame(),
