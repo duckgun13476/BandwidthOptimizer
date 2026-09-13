@@ -24,9 +24,10 @@ public final class ChunkPersistentOutboundGate {
     public static boolean tryQueueWaitingPacket(
             ChannelHandlerContext context,
             Packet<?> packet,
+            int encodedBytes,
             String traceReason
     ) {
-        return ChunkPersistentManifestGate.tryQueueWaitingPacket(context, packet, traceReason)
+        return ChunkPersistentManifestGate.tryQueueWaitingPacket(context, packet, encodedBytes, traceReason)
                 || ChunkPersistentPrepareGate.tryQueueWaitingPacket(context, packet, traceReason);
     }
 }

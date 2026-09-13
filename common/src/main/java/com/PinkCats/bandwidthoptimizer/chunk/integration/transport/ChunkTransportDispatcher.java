@@ -849,7 +849,7 @@ public final class ChunkTransportDispatcher {
         }
 
         if ((frame.coordinate() == null || !frame.coordinate().present()) && payloadBytes != null && payloadBytes.length > 0) {
-            if (!matchesCurrentPersistentManifestScope(frame)) {
+            if (!matchesCurrentPersistentManifestScope(context, frame)) {
                 logIgnoredPersistentManifestScope(context, frame, payloadBytes.length);
                 return;
             }
@@ -858,12 +858,12 @@ public final class ChunkTransportDispatcher {
         }
 
         if (frame.coordinate() == null || !frame.coordinate().present()) {
-            if (!matchesCurrentPersistentManifestScope(frame)) {
+            if (!matchesCurrentPersistentManifestScope(context, frame)) {
                 logIgnoredPersistentManifestScope(context, frame, 0);
                 return;
             }
             ChunkPeerStateManager.ensureOutboundChannelScope(context, "persistent_manifest_complete_before_release");
-            ChunkPersistentManifestGate.complete(context.channel(), frame.reason());
+            ChunkPersistentManifestGate.complete(context.channel(), frame.epoch(), frame.reason());
             logPersistentManifestComplete(context, frame);
             return;
         }
@@ -871,14 +871,15 @@ public final class ChunkTransportDispatcher {
         applyPersistentClientCacheManifest(context, frame, true);
     }
 
-    private static boolean matchesCurrentPersistentManifestScope(ChunkHotspotFrame frame) {
-        if (frame == null || frame.payloadHash() == null || frame.payloadHash().isBlank()) {
-            return true;
-        }
-        if (!ChunkPersistentServerScope.isSafeScopeHash(frame.payloadHash())) {
-            return true;
-        }
-        return frame.payloadHash().equalsIgnoreCase(ChunkPersistentServerScope.currentScopeHash());
+    private static boolean matchesCurrentPersistentManifestScope(
+            ChannelHandlerContext context,
+            ChunkHotspotFrame frame
+    ) {
+        return context != null
+                && frame != null
+                && ChunkPersistentServerScope.isSafeScopeHash(frame.payloadHash())
+                && frame.payloadHash().equalsIgnoreCase(ChunkPersistentServerScope.currentScopeHash())
+                && ChunkPersistentManifestGate.acceptsGeneration(context.channel(), frame.epoch());
     }
 
     private static void logIgnoredPersistentManifestScope(

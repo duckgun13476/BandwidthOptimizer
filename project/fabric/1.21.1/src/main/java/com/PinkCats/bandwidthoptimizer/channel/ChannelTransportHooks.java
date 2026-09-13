@@ -253,7 +253,12 @@ public final class ChannelTransportHooks {
         );
         HotpathCostProbe.end("hook.chunkDispatcher", hotpathStartNanos);
         hotpathStartNanos = HotpathCostProbe.start();
-        if (ChunkPersistentOutboundGate.tryQueueWaitingPacket(context, packet, chunkEncodeResult.traceReason())) {
+        if (ChunkPersistentOutboundGate.tryQueueWaitingPacket(
+                context,
+                packet,
+                originalPacketBytes.length,
+                chunkEncodeResult.traceReason()
+        )) {
             HotpathCostProbe.end("hook.manifestQueue", hotpathStartNanos);
             out.writerIndex(startIndexInclusive);
             return;

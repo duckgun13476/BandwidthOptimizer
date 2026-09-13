@@ -115,6 +115,8 @@ public final class ChunkPersistentClientCache {
     private static final AtomicBoolean STORE_DRAIN_QUEUED = new AtomicBoolean();
     private static final AttributeKey<PreparedReadyState> PREPARED_READY_STATE_KEY =
             AttributeKey.valueOf("bandwidthoptimizer:persistent_prepared_ready");
+    private static final AttributeKey<Long> MANIFEST_GATE_GENERATION_KEY =
+            AttributeKey.valueOf("bandwidthoptimizer:persistent_manifest_generation");
     private static final int MAX_PREPARED_READY_ENTRIES = 576;
     private static final long MAX_PREPARED_READY_EXTRA_BYTES = 32L * 1024L * 1024L;
     private static final long PREPARED_READY_TTL_NANOS = TimeUnit.SECONDS.toNanos(5L);
@@ -771,6 +773,9 @@ public final class ChunkPersistentClientCache {
                 || !isSafeScopeHash(frame.payloadHash())) {
             return;
         }
+        if (channel != null) {
+            channel.attr(MANIFEST_GATE_GENERATION_KEY).set(Math.max(frame.epoch(), 0L));
+        }
         setActiveServerScopeHash(channel, frame.payloadHash().toLowerCase(Locale.ROOT), frame.reason());
     }
 
@@ -888,6 +893,7 @@ public final class ChunkPersistentClientCache {
 
         String channelId = com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel);
         String serverScopeHash = currentServerScopeHash();
+        long manifestGeneration = currentManifestGateGeneration(channel);
         if (!isSafeScopeHash(serverScopeHash)) {
             return 0;
         }
@@ -896,12 +902,13 @@ public final class ChunkPersistentClientCache {
             ChunkTransportControlFrameSender.sendPersistentClientCacheManifestComplete(
                     channel,
                     serverScopeHash,
+                    manifestGeneration,
                     safeText(reason, "persistent_client_cache_manifest") + "_disabled_complete"
             );
             return 0;
         }
 
-        String manifestKey = channelId + "|" + serverScopeHash;
+        String manifestKey = channelId + "|" + serverScopeHash + "|" + manifestGeneration;
         if (!MANIFEST_SENT_CHANNELS.add(manifestKey)) {
             return 0;
         }
@@ -931,6 +938,7 @@ public final class ChunkPersistentClientCache {
                     batchPayloadBytes,
                     batch.size(),
                     serverScopeHash,
+                    manifestGeneration,
                     safeText(reason, "persistent_client_cache_manifest") + "_batch"
             )) {
                 sentCount += batch.size();
@@ -939,6 +947,7 @@ public final class ChunkPersistentClientCache {
         ChunkTransportControlFrameSender.sendPersistentClientCacheManifestComplete(
                 channel,
                 serverScopeHash,
+                manifestGeneration,
                 safeText(reason, "persistent_client_cache_manifest") + "_complete"
         );
         if (shouldLogCacheDiagnose()) {
@@ -971,6 +980,7 @@ public final class ChunkPersistentClientCache {
 
         String channelId = com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel);
         String serverScopeHash = currentServerScopeHash();
+        long manifestGeneration = currentManifestGateGeneration(channel);
         if (!isSafeScopeHash(serverScopeHash)) {
             return;
         }
@@ -979,17 +989,19 @@ public final class ChunkPersistentClientCache {
             channel.eventLoop().execute(() -> ChunkTransportControlFrameSender.sendPersistentClientCacheManifestComplete(
                     channel,
                     serverScopeHash,
+                    manifestGeneration,
                     safeText(reason, "persistent_client_cache_manifest") + "_disabled_complete"
             ));
             return;
         }
 
-        String manifestKey = channelId + "|" + serverScopeHash;
+        String manifestKey = channelId + "|" + serverScopeHash + "|" + manifestGeneration;
         if (!MANIFEST_SENT_CHANNELS.add(manifestKey)) {
             return;
         }
 
-        executeIo("initial-manifest", () -> sendManifestOnceFromWorker(channel, reason, manifestKey, serverScopeHash));
+        executeIo("initial-manifest", () -> sendManifestOnceFromWorker(
+                channel, reason, manifestKey, serverScopeHash, manifestGeneration));
     }
 
     // Sends cache changes after the first chunk wave has already continued.
@@ -1004,6 +1016,7 @@ public final class ChunkPersistentClientCache {
             clearManifestRefreshInFlight(generation);
             return;
         }
+        long manifestGeneration = currentManifestGateGeneration(channel);
 
         List<ManifestEntry> entries = loadManifestEntries(serverScopeHash);
         List<PreparedReadySeed> advertisedEntries = capturePreparedReadySeeds(serverScopeHash, entries);
@@ -1019,7 +1032,9 @@ public final class ChunkPersistentClientCache {
         }
 
         channel.eventLoop().execute(() -> {
-            if (!serverScopeHash.equals(currentServerScopeHash()) || !channel.isOpen()) {
+            if (!serverScopeHash.equals(currentServerScopeHash())
+                    || manifestGeneration != currentManifestGateGeneration(channel)
+                    || !channel.isOpen()) {
                 if (shouldLogCacheDiagnose()) {
                     Bandwidthoptimizer.LOGGER.info(
                             "[ChunkPersistentCache][Manifest][RefreshSkipStale] channel={}, scope={}, currentScope={}, reason={}",
@@ -1040,6 +1055,7 @@ public final class ChunkPersistentClientCache {
                         batchPayload.payloadBytes,
                         batchPayload.entryCount,
                         serverScopeHash,
+                        manifestGeneration,
                         safeText(reason, "persistent_client_cache_manifest_refresh") + "_batch"
                 )) {
                     sentCount += batchPayload.entryCount;
@@ -1048,6 +1064,7 @@ public final class ChunkPersistentClientCache {
             ChunkTransportControlFrameSender.sendPersistentClientCacheManifestComplete(
                     channel,
                     serverScopeHash,
+                    manifestGeneration,
                     safeText(reason, "persistent_client_cache_manifest_refresh") + "_complete"
             );
             synchronized (LOCK) {
@@ -1083,7 +1100,8 @@ public final class ChunkPersistentClientCache {
             Channel channel,
             String reason,
             String manifestKey,
-            String serverScopeHash
+            String serverScopeHash,
+            long manifestGeneration
     ) {
         if (channel == null || !channel.isOpen()) {
             return;
@@ -1126,7 +1144,8 @@ public final class ChunkPersistentClientCache {
 
         long sendStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         channel.eventLoop().execute(() -> {
-            if (!serverScopeHash.equals(currentServerScopeHash())) {
+            if (!serverScopeHash.equals(currentServerScopeHash())
+                    || manifestGeneration != currentManifestGateGeneration(channel)) {
                 if (shouldLogCacheDiagnose()) {
                     Bandwidthoptimizer.LOGGER.info(
                             "[ChunkPersistentCache][Manifest][SkipStale] channel={}, scope={}, currentScope={}, reason={}",
@@ -1154,6 +1173,7 @@ public final class ChunkPersistentClientCache {
                         batchPayload.payloadBytes,
                         batchPayload.entryCount,
                         serverScopeHash,
+                        manifestGeneration,
                         safeText(reason, "persistent_client_cache_manifest") + "_batch"
                 )) {
                     sentCount += batchPayload.entryCount;
@@ -1162,6 +1182,7 @@ public final class ChunkPersistentClientCache {
             ChunkTransportControlFrameSender.sendPersistentClientCacheManifestComplete(
                     channel,
                     serverScopeHash,
+                    manifestGeneration,
                     safeText(reason, "persistent_client_cache_manifest") + "_complete"
             );
             if (shouldLogCacheDiagnose()) {
@@ -2632,6 +2653,14 @@ public final class ChunkPersistentClientCache {
         }
     }
 
+    private static long currentManifestGateGeneration(Channel channel) {
+        if (channel == null) {
+            return 0L;
+        }
+        Long generation = channel.attr(MANIFEST_GATE_GENERATION_KEY).get();
+        return generation == null ? 0L : Math.max(generation, 0L);
+    }
+
     private static boolean clearActiveServerScope(Channel channel, boolean claimConnection) {
         String channelId = channel == null
                 ? ""
@@ -2653,6 +2682,9 @@ public final class ChunkPersistentClientCache {
             }
         }
         removeManifestState(channel, channelId);
+        if (channel != null) {
+            channel.attr(MANIFEST_GATE_GENERATION_KEY).set(0L);
+        }
         return owned;
     }
 

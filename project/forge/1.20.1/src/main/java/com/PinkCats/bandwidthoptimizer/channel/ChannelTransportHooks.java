@@ -257,7 +257,12 @@ public final class ChannelTransportHooks {
                     packetClassName(packet) + ", rawBytes=" + originalPacketBytes.length
             );
         }
-        if (ChunkPersistentOutboundGate.tryQueueWaitingPacket(context, packet, chunkEncodeResult.traceReason())) {
+        if (ChunkPersistentOutboundGate.tryQueueWaitingPacket(
+                context,
+                packet,
+                originalPacketBytes.length,
+                chunkEncodeResult.traceReason()
+        )) {
             out.writerIndex(startIndexInclusive);
             return;
         }

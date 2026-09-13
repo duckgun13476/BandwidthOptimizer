@@ -1,9 +1,8 @@
 package com.PinkCats.bandwidthoptimizer.chunk.persistent;
 
-import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
-
-import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
+import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -18,15 +17,15 @@ import java.util.concurrent.TimeUnit;
 public final class ChunkPersistentManifestGate {
 
     public static final String WAIT_REASON = "await_persistent_client_cache_manifest";
-    private static final AttributeKey<ManifestGateState> GATE_STATE_KEY =
+    private static final AttributeKey<ManifestGateState<Packet<?>>> GATE_STATE_KEY =
             AttributeKey.valueOf("bandwidthoptimizer:persistent_manifest_gate");
-    private static final String ENABLED_PROPERTY =
-            "bandwidthoptimizer.chunk.persistentManifestGateEnabled";
-    private static final String TIMEOUT_MILLIS_PROPERTY =
-            "bandwidthoptimizer.chunk.persistentManifestGateTimeoutMillis";
+    private static final String ENABLED_PROPERTY = "bandwidthoptimizer.chunk.persistentManifestGateEnabled";
+    private static final String TIMEOUT_MILLIS_PROPERTY = "bandwidthoptimizer.chunk.persistentManifestGateTimeoutMillis";
+    private static final String MAX_QUEUED_BYTES_PROPERTY = "bandwidthoptimizer.chunk.persistentManifestGateMaxQueuedBytes";
     private static final boolean DEFAULT_ENABLED = false;
     private static final long DEFAULT_TIMEOUT_MILLIS = 1_000L;
     private static final int MAX_QUEUED_CHUNK_PACKETS = 2048;
+    private static final long DEFAULT_MAX_QUEUED_BYTES = 64L * 1024L * 1024L;
 
     private ChunkPersistentManifestGate() {}
 
@@ -34,143 +33,167 @@ public final class ChunkPersistentManifestGate {
         if (!isEnabled() || channel == null || !channel.isOpen()) {
             return;
         }
-
-        ManifestGateState gateState = getOrCreateState(channel);
+        ManifestGateState<Packet<?>> state = getOrCreateState(channel);
         long timeoutMillis = timeoutMillis();
-        gateState.arm(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis));
+        long generation = state.arm(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis));
         channel.eventLoop().schedule(
-                () -> releaseExpired(channel, "persistent_manifest_gate_timeout"),
+                () -> releaseExpired(channel, generation, "persistent_manifest_gate_timeout"),
                 timeoutMillis,
                 TimeUnit.MILLISECONDS
         );
         if (BO_Diag_cacheManifestGate()) {
-            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CACHE_MANIFEST_GATE, "event=arm channel={}, timeoutMillis={}, reason={}",
-                    com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
-                    timeoutMillis,
-                    safeText(reason, "server_login")
-            );
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CACHE_MANIFEST_GATE,
+                    "event=arm channel={}, generation={}, timeoutMillis={}, reason={}",
+                    ChannelIdentity.longText(channel), generation, timeoutMillis, safeText(reason, "server_login"));
         }
     }
 
-    public static boolean shouldWaitForManifest(ChannelHandlerContext context, ChunkPacketDescriptor descriptor) {
-        if (!isEnabled()
-                || context == null
-                || context.channel() == null
-                || descriptor == null
-                || descriptor.coordinate() == null
-                || !descriptor.coordinate().present()) {
-            return false;
+    public static long currentGeneration(Channel channel) {
+        if (!isEnabled() || channel == null) {
+            return 0L;
         }
+        ManifestGateState<Packet<?>> state = channel.attr(GATE_STATE_KEY).get();
+        return state == null ? 0L : state.generation();
+    }
 
-        ManifestGateState gateState = context.channel().attr(GATE_STATE_KEY).get();
-        if (gateState == null) {
+    public static boolean acceptsGeneration(Channel channel, long generation) {
+        if (!isEnabled()) {
+            return true;
+        }
+        ManifestGateState<Packet<?>> state = channel == null ? null : channel.attr(GATE_STATE_KEY).get();
+        return generation > 0L && state != null && state.generation() == generation;
+    }
+
+    public static boolean shouldWaitForManifest(ChannelHandlerContext context, ChunkPacketDescriptor descriptor) {
+        if (!isEnabled() || context == null || context.channel() == null || descriptor == null
+                || descriptor.coordinate() == null || !descriptor.coordinate().present()) {
             return false;
         }
-        if (gateState.expired(System.nanoTime())) {
-            releaseExpired(context.channel(), "persistent_manifest_gate_expired_before_chunk");
+        ManifestGateState<Packet<?>> state = context.channel().attr(GATE_STATE_KEY).get();
+        if (state == null) {
             return false;
         }
-        return gateState.pending();
+        long generation = state.generation();
+        if (state.expired(System.nanoTime(), generation)) {
+            releaseExpired(context.channel(), generation, "persistent_manifest_gate_expired_before_chunk");
+            return false;
+        }
+        return state.pending();
     }
 
     public static boolean tryQueueWaitingPacket(
             ChannelHandlerContext context,
             Packet<?> packet,
+            int encodedBytes,
             String traceReason
     ) {
-        if (!isEnabled()
-                || !WAIT_REASON.equals(traceReason)
-                || context == null
-                || context.channel() == null
-                || packet == null) {
+        if (!isEnabled() || !WAIT_REASON.equals(traceReason) || context == null || context.channel() == null || packet == null) {
             return false;
         }
-
         Channel channel = context.channel();
-        ManifestGateState gateState = channel.attr(GATE_STATE_KEY).get();
-        if (gateState == null) {
+        ManifestGateState<Packet<?>> state = channel.attr(GATE_STATE_KEY).get();
+        if (state == null) {
             return false;
         }
-        if (gateState.expired(System.nanoTime())) {
-            releaseExpired(channel, "persistent_manifest_gate_expired_before_queue");
+        long generation = state.generation();
+        if (state.expired(System.nanoTime(), generation)) {
+            releaseExpired(channel, generation, "persistent_manifest_gate_expired_before_queue");
             return false;
         }
-
-        boolean queued = gateState.queue(packet);
-        if (queued && BO_Diag_cacheManifestGate()) {
-            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CACHE_MANIFEST_GATE, "event=queue channel={}, queued={}, packetClass={}",
-                    com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
-                    gateState.queuedCount(),
-                    packet.getClass().getName()
-            );
+        QueueResult<Packet<?>> result = state.queue(packet, Math.max(encodedBytes, 0), MAX_QUEUED_CHUNK_PACKETS, maxQueuedBytes());
+        if (!result.consumed()) {
+            return false;
         }
-        return queued;
+        if (!result.releasedItems().isEmpty()) {
+            flush(channel, result.releasedItems(), "persistent_manifest_gate_budget_release");
+        }
+        if (BO_Diag_cacheManifestGate()) {
+            DiagnosticLog.info(DiagnosticToolRegistry.Tool.CACHE_MANIFEST_GATE,
+                    "event=queue channel={}, generation={}, queued={}, queuedBytes={}, budgetRelease={}, packetClass={}",
+                    ChannelIdentity.longText(channel), generation, state.queuedCount(), state.queuedBytes(),
+                    !result.releasedItems().isEmpty(), packet.getClass().getName());
+        }
+        return true;
     }
 
-    public static void complete(Channel channel, String reason) {
-        if (!isEnabled() || channel == null) {
-            return;
+    public static void complete(Channel channel, long generation, String reason) {
+        if (isEnabled() && channel != null) {
+            release(channel, generation, safeText(reason, "persistent_manifest_complete"));
         }
-        release(channel, reason == null || reason.isBlank() ? "persistent_manifest_complete" : reason);
     }
 
-    private static void releaseExpired(Channel channel, String reason) {
-        if (channel == null) {
-            return;
+    private static void releaseExpired(Channel channel, long generation, String reason) {
+        ManifestGateState<Packet<?>> state = channel == null ? null : channel.attr(GATE_STATE_KEY).get();
+        if (state != null && state.expired(System.nanoTime(), generation)) {
+            release(channel, generation, reason);
         }
-        ManifestGateState gateState = channel.attr(GATE_STATE_KEY).get();
-        if (gateState == null || !gateState.expired(System.nanoTime())) {
-            return;
-        }
-        release(channel, reason);
     }
 
-    private static void release(Channel channel, String reason) {
-        ManifestGateState gateState = channel.attr(GATE_STATE_KEY).get();
-        if (gateState == null) {
+    private static void release(Channel channel, long generation, String reason) {
+        ManifestGateState<Packet<?>> state = channel.attr(GATE_STATE_KEY).get();
+        if (state == null) {
             return;
         }
-        List<Packet<?>> queuedPackets = gateState.release();
-        if (queuedPackets.isEmpty()) {
-            return;
+        ReleaseResult<Packet<?>> result = state.release(generation);
+        if (result.released()) {
+            flush(channel, result.items(), reason);
         }
+    }
 
-        Runnable flushTask = () -> {
-            for (Packet<?> queuedPacket : queuedPackets) {
-                channel.write(queuedPacket);
+    private static void flush(Channel channel, List<Packet<?>> packets, String reason) {
+        if (packets.isEmpty()) {
+            return;
+        }
+        Runnable task = () -> {
+            if (!channel.isOpen()) {
+                return;
+            }
+            for (Packet<?> packet : packets) {
+                channel.write(packet);
             }
             channel.flush();
             if (BO_Diag_cacheManifestGate()) {
-                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CACHE_MANIFEST_GATE, "event=flush channel={}, packets={}, reason={}",
-                        com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel),
-                        queuedPackets.size(),
-                        safeText(reason, "manifest_gate_release")
-                );
+                DiagnosticLog.info(DiagnosticToolRegistry.Tool.CACHE_MANIFEST_GATE,
+                        "event=flush channel={}, packets={}, reason={}",
+                        ChannelIdentity.longText(channel), packets.size(), safeText(reason, "manifest_gate_release"));
             }
         };
         if (channel.eventLoop().inEventLoop()) {
-            flushTask.run();
+            task.run();
         } else {
-            channel.eventLoop().execute(flushTask);
+            channel.eventLoop().execute(task);
         }
     }
 
-    private static ManifestGateState getOrCreateState(Channel channel) {
-        ManifestGateState existingState = channel.attr(GATE_STATE_KEY).get();
-        if (existingState != null) {
-            return existingState;
+    private static ManifestGateState<Packet<?>> getOrCreateState(Channel channel) {
+        ManifestGateState<Packet<?>> existing = channel.attr(GATE_STATE_KEY).get();
+        if (existing != null) {
+            return existing;
         }
-        ManifestGateState newState = new ManifestGateState();
-        ManifestGateState racedState = channel.attr(GATE_STATE_KEY).setIfAbsent(newState);
-        return racedState == null ? newState : racedState;
+        ManifestGateState<Packet<?>> created = new ManifestGateState<>();
+        ManifestGateState<Packet<?>> raced = channel.attr(GATE_STATE_KEY).setIfAbsent(created);
+        ManifestGateState<Packet<?>> selected = raced == null ? created : raced;
+        if (raced == null) {
+            channel.closeFuture().addListener(ignored -> selected.close());
+        }
+        return selected;
     }
 
     private static long timeoutMillis() {
-        String configuredValue = System.getProperty(TIMEOUT_MILLIS_PROPERTY, Long.toString(DEFAULT_TIMEOUT_MILLIS));
         try {
-            return Math.max(50L, Math.min(Long.parseLong(configuredValue), 5_000L));
+            return Math.max(50L, Math.min(Long.parseLong(System.getProperty(
+                    TIMEOUT_MILLIS_PROPERTY, Long.toString(DEFAULT_TIMEOUT_MILLIS))), 5_000L));
         } catch (NumberFormatException ignored) {
             return DEFAULT_TIMEOUT_MILLIS;
+        }
+    }
+
+    private static long maxQueuedBytes() {
+        try {
+            return Math.max(1024L * 1024L, Math.min(Long.parseLong(System.getProperty(
+                    MAX_QUEUED_BYTES_PROPERTY, Long.toString(DEFAULT_MAX_QUEUED_BYTES))), 256L * 1024L * 1024L));
+        } catch (NumberFormatException ignored) {
+            return DEFAULT_MAX_QUEUED_BYTES;
         }
     }
 
@@ -186,47 +209,93 @@ public final class ChunkPersistentManifestGate {
         return text == null || text.isBlank() ? fallback : text;
     }
 
-    private static final class ManifestGateState {
-
-        private final ArrayDeque<Packet<?>> queuedPackets = new ArrayDeque<>();
+    static final class ManifestGateState<T> {
+        private final ArrayDeque<QueuedItem<T>> queuedItems = new ArrayDeque<>();
         private boolean pending;
+        private long generation;
         private long deadlineNanos;
+        private long queuedBytes;
 
-        private synchronized void arm(long deadlineNanos) {
-            this.queuedPackets.clear();
+        synchronized long arm(long deadlineNanos) {
+            this.generation = this.generation == Long.MAX_VALUE ? 1L : this.generation + 1L;
             this.pending = true;
-            this.deadlineNanos = Math.max(deadlineNanos, System.nanoTime());
+            this.deadlineNanos = deadlineNanos;
+            return this.generation;
         }
 
-        private synchronized boolean pending() {
-            return this.pending;
+        synchronized long generation() { return this.generation; }
+        synchronized boolean pending() { return this.pending; }
+        synchronized int queuedCount() { return this.queuedItems.size(); }
+        synchronized long queuedBytes() { return this.queuedBytes; }
+
+        synchronized boolean expired(long nowNanos, long expectedGeneration) {
+            return this.pending && this.generation == expectedGeneration && nowNanos >= this.deadlineNanos;
         }
 
-        private synchronized boolean expired(long nowNanos) {
-            return this.pending && nowNanos >= this.deadlineNanos;
-        }
-
-        private synchronized boolean queue(Packet<?> packet) {
-            if (!this.pending || packet == null || this.queuedPackets.size() >= MAX_QUEUED_CHUNK_PACKETS) {
-                return false;
+        synchronized QueueResult<T> queue(T item, int encodedBytes, int maxItems, long maxBytes) {
+            if (!this.pending || item == null) {
+                return QueueResult.notConsumed();
             }
-            this.queuedPackets.add(packet);
-            return true;
+            long safeBytes = Math.max(encodedBytes, 0);
+            boolean exceedsBudget = this.queuedItems.size() >= Math.max(maxItems, 1)
+                    || safeAdd(this.queuedBytes, safeBytes) > Math.max(maxBytes, 1L);
+            if (exceedsBudget) {
+                ArrayList<T> released = copyItems();
+                released.add(item);
+                resetPending();
+                return QueueResult.released(released);
+            }
+            this.queuedItems.addLast(new QueuedItem<>(item, safeBytes));
+            this.queuedBytes = safeAdd(this.queuedBytes, safeBytes);
+            return QueueResult.queued();
         }
 
-        private synchronized int queuedCount() {
-            return this.queuedPackets.size();
+        synchronized ReleaseResult<T> release(long expectedGeneration) {
+            if (!this.pending || this.generation != expectedGeneration) {
+                return ReleaseResult.ignored();
+            }
+            ArrayList<T> released = copyItems();
+            resetPending();
+            return ReleaseResult.released(released);
         }
 
-        private synchronized List<Packet<?>> release() {
+        synchronized void close() {
+            this.queuedItems.clear();
+            this.queuedBytes = 0L;
             this.pending = false;
             this.deadlineNanos = 0L;
-            if (this.queuedPackets.isEmpty()) {
-                return List.of();
-            }
-            ArrayList<Packet<?>> releasedPackets = new ArrayList<>(this.queuedPackets);
-            this.queuedPackets.clear();
-            return releasedPackets;
         }
+
+        private ArrayList<T> copyItems() {
+            ArrayList<T> items = new ArrayList<>(this.queuedItems.size());
+            for (QueuedItem<T> queuedItem : this.queuedItems) {
+                items.add(queuedItem.item());
+            }
+            return items;
+        }
+
+        private void resetPending() {
+            this.queuedItems.clear();
+            this.queuedBytes = 0L;
+            this.pending = false;
+            this.deadlineNanos = 0L;
+        }
+
+        private static long safeAdd(long left, long right) {
+            return right > 0L && left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
+        }
+    }
+
+    record QueuedItem<T>(T item, long encodedBytes) {}
+
+    record QueueResult<T>(boolean consumed, List<T> releasedItems) {
+        static <T> QueueResult<T> notConsumed() { return new QueueResult<>(false, List.of()); }
+        static <T> QueueResult<T> queued() { return new QueueResult<>(true, List.of()); }
+        static <T> QueueResult<T> released(List<T> items) { return new QueueResult<>(true, List.copyOf(items)); }
+    }
+
+    record ReleaseResult<T>(boolean released, List<T> items) {
+        static <T> ReleaseResult<T> ignored() { return new ReleaseResult<>(false, List.of()); }
+        static <T> ReleaseResult<T> released(List<T> items) { return new ReleaseResult<>(true, List.copyOf(items)); }
     }
 }

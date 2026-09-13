@@ -20,6 +20,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.debug.ChunkLoadDelayProbe;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelope;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelopeCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentServerScope;
+import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentManifestGate;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
@@ -175,39 +176,67 @@ public final class ChunkTransportControlFrameSender {
             byte[] batchPayloadBytes,
             int entryCount,
             String serverScopeHash,
+            long manifestGeneration,
             String reason
     ) {
         if (batchPayloadBytes == null || batchPayloadBytes.length == 0 || entryCount <= 0) {
             return false;
         }
+        return sendEnvelopeFrame(channel, buildPersistentManifestBatchFrame(
+                batchPayloadBytes.length, entryCount, serverScopeHash, manifestGeneration, reason
+        ), batchPayloadBytes, batchPayloadBytes.length);
+    }
+
+    static ChunkHotspotFrame buildPersistentManifestBatchFrame(
+            int payloadBytes,
+            int entryCount,
+            String serverScopeHash,
+            long manifestGeneration,
+            String reason
+    ) {
         String safeServerScopeHash = ChunkPersistentServerScope.isSafeScopeHash(serverScopeHash) ? serverScopeHash : "";
-        return sendEnvelopeFrame(channel, new ChunkHotspotFrame(
+        return new ChunkHotspotFrame(
                 ChunkHotspotFrameCodec.PROTOCOL_VERSION,
                 ChunkHotspotFrameOp.CLIENT_CACHE_MANIFEST,
-                0L,
+                Math.max(manifestGeneration, 0L),
                 0L,
                 "PLAY",
                 "bandwidthoptimizer.chunk.transport.ClientCacheManifestBatch",
                 ChunkHotspotKind.FULL_CHUNK,
                 ChunkLaneKind.FULL,
                 ChunkPacketCoordinate.unknown(),
-                batchPayloadBytes.length,
+                Math.max(payloadBytes, 0),
                 Math.max(entryCount, 1),
                 0L,
                 safeServerScopeHash,
                 safeServerScopeHash,
                 0L,
                 reason == null || reason.isBlank() ? "persistent_client_cache_manifest_batch" : reason
-        ), batchPayloadBytes, batchPayloadBytes.length);
+        );
     }
 
     // ensure server know is complete
-    public static boolean sendPersistentClientCacheManifestComplete(Channel channel, String serverScopeHash, String reason) {
+    public static boolean sendPersistentClientCacheManifestComplete(
+            Channel channel,
+            String serverScopeHash,
+            long manifestGeneration,
+            String reason
+    ) {
+        return sendControlFrame(channel, buildPersistentManifestCompleteFrame(
+                serverScopeHash, manifestGeneration, reason
+        ));
+    }
+
+    static ChunkHotspotFrame buildPersistentManifestCompleteFrame(
+            String serverScopeHash,
+            long manifestGeneration,
+            String reason
+    ) {
         String safeServerScopeHash = ChunkPersistentServerScope.isSafeScopeHash(serverScopeHash) ? serverScopeHash : "";
-        return sendControlFrame(channel, new ChunkHotspotFrame(
+        return new ChunkHotspotFrame(
                 ChunkHotspotFrameCodec.PROTOCOL_VERSION,
                 ChunkHotspotFrameOp.CLIENT_CACHE_MANIFEST,
-                0L,
+                Math.max(manifestGeneration, 0L),
                 0L,
                 "PLAY",
                 "bandwidthoptimizer.chunk.transport.ClientCacheManifestComplete",
@@ -221,7 +250,7 @@ public final class ChunkTransportControlFrameSender {
                 safeServerScopeHash,
                 0L,
                 reason == null || reason.isBlank() ? "persistent_client_cache_manifest_complete" : reason
-        ));
+        );
     }
 
     public static boolean sendPersistentClientCacheBloom(
@@ -356,10 +385,17 @@ public final class ChunkTransportControlFrameSender {
         if (!ChunkPersistentServerScope.isSafeScopeHash(scopeHash)) {
             return false;
         }
-        return sendControlFrame(channel, new ChunkHotspotFrame(
+        return sendControlFrame(channel, buildServerCacheScopeFrame(
+                scopeHash, ChunkPersistentManifestGate.currentGeneration(channel), reason
+        ));
+    }
+
+    static ChunkHotspotFrame buildServerCacheScopeFrame(String scopeHash, long manifestGeneration, String reason) {
+        String safeScopeHash = ChunkPersistentServerScope.isSafeScopeHash(scopeHash) ? scopeHash : "";
+        return new ChunkHotspotFrame(
                 ChunkHotspotFrameCodec.PROTOCOL_VERSION,
                 ChunkHotspotFrameOp.SERVER_CACHE_SCOPE,
-                0L,
+                Math.max(manifestGeneration, 0L),
                 0L,
                 "PLAY",
                 "bandwidthoptimizer.chunk.transport.ServerCacheScope",
@@ -369,11 +405,11 @@ public final class ChunkTransportControlFrameSender {
                 0,
                 0L,
                 0L,
-                scopeHash,
-                scopeHash,
+                safeScopeHash,
+                safeScopeHash,
                 0L,
                 reason == null || reason.isBlank() ? "server_cache_scope" : reason
-        ));
+        );
     }
 
     public static boolean sendReplayFullFrame(
