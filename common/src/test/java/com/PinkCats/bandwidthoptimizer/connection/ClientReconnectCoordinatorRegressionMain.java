@@ -5,6 +5,17 @@ public final class ClientReconnectCoordinatorRegressionMain {
     private ClientReconnectCoordinatorRegressionMain() {}
 
     public static void main(String[] args) {
+        verifyOrdinaryRetryAndPolicyBoundaries();
+        verifyBudgetSurvivesShortPlaySessions();
+        verifyBudgetSurvivesReconnectBeforeClientTick();
+        verifyStablePlayResetsBudget();
+        verifyLocalDisconnectCancelsReconnect();
+        verifyTargetSwitchDoesNotInheritBudget();
+        ClientReconnectCoordinator.resetForTesting();
+        System.out.println("Client reconnect coordinator regression passed");
+    }
+
+    private static void verifyOrdinaryRetryAndPolicyBoundaries() {
         FakePlatform platform = new FakePlatform();
         ClientReconnectCoordinator.install(platform);
 
@@ -44,7 +55,116 @@ public final class ClientReconnectCoordinatorRegressionMain {
         check(platform.attempts == 3, "failed platform start was retried after cancellation");
 
         ClientReconnectCoordinator.resetForTesting();
-        System.out.println("Client reconnect coordinator regression passed");
+    }
+
+    private static void verifyBudgetSurvivesShortPlaySessions() {
+        FakePlatform platform = connectedPlatform("test", "127.0.0.1:25565", 1_000L);
+
+        reconnectAfter(platform, ConnectionDisconnectClassifier.Category.CONNECTION_RESET, 2_000L);
+        markPlayActive(platform, 3_000L);
+        reconnectAfter(platform, ConnectionDisconnectClassifier.Category.READ_TIMEOUT, 4_000L);
+        markPlayActive(platform, 5_000L);
+        reconnectAfter(platform, ConnectionDisconnectClassifier.Category.CONNECTION_RESET, 6_000L);
+        markPlayActive(platform, 7_000L);
+
+        platform.active = false;
+        platform.disconnectedScreen = true;
+        ClientReconnectCoordinator.onReconnectCandidate(decision(ConnectionDisconnectClassifier.Category.READ_TIMEOUT));
+        ClientReconnectCoordinator.onClientTickAt(Long.MAX_VALUE);
+        check(platform.attempts == ClientReconnectCoordinator.MAX_ATTEMPTS,
+                "short PLAY sessions reset the reconnect attempt budget");
+        ClientReconnectCoordinator.onReconnectCandidateAt(
+                decision(ConnectionDisconnectClassifier.Category.CONNECTION_RESET),
+                9_000L
+        );
+        ClientReconnectCoordinator.onClientTickAt(9_500L);
+        check(platform.attempts == ClientReconnectCoordinator.MAX_ATTEMPTS,
+                "an exhausted reconnect episode was reopened by a repeated close callback");
+
+        ClientReconnectCoordinator.resetForTesting();
+    }
+
+    private static void verifyBudgetSurvivesReconnectBeforeClientTick() {
+        FakePlatform platform = connectedPlatform("test", "127.0.0.1:25565", 1_000L);
+        reconnectAfter(platform, ConnectionDisconnectClassifier.Category.CONNECTION_RESET, 2_000L);
+
+        ClientReconnectCoordinator.onReconnectCandidateAt(
+                decision(ConnectionDisconnectClassifier.Category.READ_TIMEOUT),
+                3_000L
+        );
+        ClientReconnectCoordinator.onClientTickAt(3_500L);
+        check(platform.attempts == 2,
+                "disconnect before the first PLAY client tick reset the reconnect budget");
+
+        ClientReconnectCoordinator.resetForTesting();
+    }
+
+    private static void verifyStablePlayResetsBudget() {
+        FakePlatform platform = connectedPlatform("test", "127.0.0.1:25565", 1_000L);
+
+        reconnectAfter(platform, ConnectionDisconnectClassifier.Category.CONNECTION_RESET, 2_000L);
+        markPlayActive(platform, 3_000L);
+        ClientReconnectCoordinator.onClientTickAt(3_000L + ClientReconnectCoordinator.STABLE_PLAY_RESET_MILLIS);
+
+        reconnectAfter(platform, ConnectionDisconnectClassifier.Category.READ_TIMEOUT, 40_000L);
+        check(platform.attempts == 2, "stable PLAY did not reset the reconnect budget");
+
+        ClientReconnectCoordinator.resetForTesting();
+    }
+
+    private static void verifyLocalDisconnectCancelsReconnect() {
+        FakePlatform platform = connectedPlatform("test", "127.0.0.1:25565", 1_000L);
+        platform.active = false;
+        platform.disconnectedScreen = true;
+        ClientReconnectCoordinator.onReconnectCandidate(decision(ConnectionDisconnectClassifier.Category.CONNECTION_RESET));
+        ClientReconnectCoordinator.onLocalDisconnect();
+        ClientReconnectCoordinator.onClientTickAt(Long.MAX_VALUE);
+        check(platform.attempts == 0, "local disconnect retained an automatic reconnect");
+
+        ClientReconnectCoordinator.resetForTesting();
+    }
+
+    private static void verifyTargetSwitchDoesNotInheritBudget() {
+        FakePlatform platform = connectedPlatform("first", "127.0.0.1:25565", 1_000L);
+        reconnectAfter(platform, ConnectionDisconnectClassifier.Category.CONNECTION_RESET, 2_000L);
+        markPlayActive(platform, 3_000L);
+        reconnectAfter(platform, ConnectionDisconnectClassifier.Category.READ_TIMEOUT, 4_000L);
+        markPlayActive(platform, 5_000L);
+        reconnectAfter(platform, ConnectionDisconnectClassifier.Category.CONNECTION_RESET, 6_000L);
+
+        platform.target = new ClientReconnectCoordinator.Target("second", "127.0.0.1:25566");
+        markPlayActive(platform, 7_000L);
+
+        reconnectAfter(platform, ConnectionDisconnectClassifier.Category.READ_TIMEOUT, 8_000L);
+        check(platform.attempts == 4, "new target inherited the previous target reconnect budget");
+
+        ClientReconnectCoordinator.resetForTesting();
+    }
+
+    private static FakePlatform connectedPlatform(String name, String address, long nowMillis) {
+        FakePlatform platform = new FakePlatform();
+        ClientReconnectCoordinator.install(platform);
+        platform.active = true;
+        platform.target = new ClientReconnectCoordinator.Target(name, address);
+        ClientReconnectCoordinator.onClientTickAt(nowMillis);
+        return platform;
+    }
+
+    private static void reconnectAfter(
+            FakePlatform platform,
+            ConnectionDisconnectClassifier.Category category,
+            long nowMillis
+    ) {
+        platform.active = false;
+        platform.disconnectedScreen = true;
+        ClientReconnectCoordinator.onReconnectCandidateAt(decision(category), nowMillis);
+        ClientReconnectCoordinator.onClientTickAt(nowMillis + ClientReconnectCoordinator.INITIAL_DELAY_MILLIS);
+    }
+
+    private static void markPlayActive(FakePlatform platform, long nowMillis) {
+        platform.active = true;
+        platform.disconnectedScreen = false;
+        ClientReconnectCoordinator.onClientTickAt(nowMillis);
     }
 
     private static ConnectionDisconnectClassifier.Decision decision(

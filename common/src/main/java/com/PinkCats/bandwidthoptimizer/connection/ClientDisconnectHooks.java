@@ -9,6 +9,7 @@ public final class ClientDisconnectHooks {
     private ClientDisconnectHooks() {}
 
     public static void markCurrentConnectionLocal() {
+        ClientReconnectCoordinator.onLocalDisconnect();
         Minecraft minecraft = Minecraft.getInstance();
         ClientPacketListener packetListener = minecraft == null ? null : minecraft.getConnection();
         if (packetListener == null || packetListener.getConnection() == null) {
