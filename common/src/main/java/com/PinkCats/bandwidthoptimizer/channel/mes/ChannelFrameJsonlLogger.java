@@ -2,15 +2,12 @@ package com.PinkCats.bandwidthoptimizer.channel.mes;
 
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
+import com.PinkCats.bandwidthoptimizer.debug.BoundedDiagnosticFileWriter;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.LoaderEnvironmentCompat;
 import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 
-import java.io.BufferedWriter;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
@@ -22,10 +19,10 @@ public final class ChannelFrameJsonlLogger {
     private static final Path PACKET_STREAM_SEND_OUTPUT_PATH = BandwidthOptimizerOutputPaths.resolve("packet-stream-send.jsonl");
     private static final Path PACKET_STREAM_RECEIVE_OUTPUT_PATH = BandwidthOptimizerOutputPaths.resolve("packet-stream-receive.jsonl");
 
-    private static BufferedWriter sendWriter;
-    private static BufferedWriter receiveWriter;
-    private static BufferedWriter packetStreamSendWriter;
-    private static BufferedWriter packetStreamReceiveWriter;
+    private static BoundedDiagnosticFileWriter sendWriter;
+    private static BoundedDiagnosticFileWriter receiveWriter;
+    private static BoundedDiagnosticFileWriter packetStreamSendWriter;
+    private static BoundedDiagnosticFileWriter packetStreamReceiveWriter;
     private static boolean initialized;
     private static boolean shutdownHookInstalled;
     private static boolean shutdownInProgress;
@@ -47,10 +44,10 @@ public final class ChannelFrameJsonlLogger {
         synchronized (LOCK) {
             shutdownInProgress = false;
             closeWritersUnsafe();
-            sendWriter = openFreshWriter(SEND_OUTPUT_PATH);
-            receiveWriter = openFreshWriter(RECEIVE_OUTPUT_PATH);
-            packetStreamSendWriter = openFreshWriter(PACKET_STREAM_SEND_OUTPUT_PATH);
-            packetStreamReceiveWriter = openFreshWriter(PACKET_STREAM_RECEIVE_OUTPUT_PATH);
+            sendWriter = new BoundedDiagnosticFileWriter(SEND_OUTPUT_PATH, "channel-send");
+            receiveWriter = new BoundedDiagnosticFileWriter(RECEIVE_OUTPUT_PATH, "channel-receive");
+            packetStreamSendWriter = new BoundedDiagnosticFileWriter(PACKET_STREAM_SEND_OUTPUT_PATH, "packet-stream-send");
+            packetStreamReceiveWriter = new BoundedDiagnosticFileWriter(PACKET_STREAM_RECEIVE_OUTPUT_PATH, "packet-stream-receive");
             initialized = true;
             installShutdownHookIfNeeded();
         }
@@ -91,7 +88,7 @@ public final class ChannelFrameJsonlLogger {
             }
             ensureInitialized();
 
-            BufferedWriter writer;
+            BoundedDiagnosticFileWriter writer;
             if (packetStream) {
                 writer = outbound ? packetStreamSendWriter : packetStreamReceiveWriter;
             } else {
@@ -102,11 +99,7 @@ public final class ChannelFrameJsonlLogger {
             }
 
             FrameSerializedFields serializedFields = serializeFields(frame);
-            try {
-                writeLine(writer, toJsonLine(frame, serializedFields));
-            } catch (IOException exception) {
-                throw new IllegalStateException("Failed to write channel frame jsonl", exception);
-            }
+            writer.offer(toJsonLine(frame, serializedFields));
         }
     }
 
@@ -115,30 +108,6 @@ public final class ChannelFrameJsonlLogger {
             return;
         }
         initializeOutputFiles();
-    }
-
-    private static BufferedWriter openFreshWriter(Path outputPath) {
-        try {
-            Path parent = outputPath.getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
-            return Files.newBufferedWriter(
-                    outputPath,
-                    StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE
-            );
-        } catch (IOException exception) {
-            throw new IllegalStateException("Failed to open channel jsonl output: " + outputPath, exception);
-        }
-    }
-
-    private static void writeLine(BufferedWriter writer, String line) throws IOException {
-        writer.write(line);
-        writer.newLine();
-        writer.flush();
     }
 
     private static String toJsonLine(ChannelCapturedFrame frame, FrameSerializedFields fields) {
@@ -244,14 +213,11 @@ public final class ChannelFrameJsonlLogger {
         initialized = false;
     }
 
-    private static void closeWriter(BufferedWriter writer) {
+    private static void closeWriter(BoundedDiagnosticFileWriter writer) {
         if (writer == null) {
             return;
         }
-        try {
-            writer.close();
-        } catch (IOException ignored) {
-        }
+        writer.close();
     }
 
     private record FrameSerializedFields(

@@ -416,6 +416,15 @@ tasks.register('runDiagnosticLogRateLimitRegression', JavaExec) {
     )
 }
 
+tasks.register('runBoundedDiagnosticFileWriterRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies diagnostic file writes are asynchronous, bounded, ordered, and fail closed.',
+            'com.PinkCats.bandwidthoptimizer.debug.BoundedDiagnosticFileWriterRegressionMain'
+    )
+}
+
 tasks.register('runConnectionDisconnectClassifierRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,

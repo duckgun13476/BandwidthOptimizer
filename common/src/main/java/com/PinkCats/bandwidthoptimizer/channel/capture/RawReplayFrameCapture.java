@@ -1,26 +1,23 @@
 package com.PinkCats.bandwidthoptimizer.channel.capture;
 
 import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
+import com.PinkCats.bandwidthoptimizer.debug.BoundedDiagnosticFileWriter;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.ConnectionProtocolNameCompat;
 import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;
 
-import java.io.BufferedWriter;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 
 /** Test-only raw frame export for deterministic transport replay. */
 public final class RawReplayFrameCapture {
 
     private static final String ENABLED_PROPERTY = "bandwidthoptimizer.replayRawCaptureEnabled";
-    private static final Object LOCK = new Object();
     private static final char[] HEX = "0123456789abcdef".toCharArray();
-    private static BufferedWriter writer;
+    private static final Path OUTPUT_PATH = BandwidthOptimizerOutputPaths.resolve("replay-raw-outbound.jsonl");
+    private static final BoundedDiagnosticFileWriter WRITER =
+            new BoundedDiagnosticFileWriter(OUTPUT_PATH, "raw-replay");
 
     private RawReplayFrameCapture() {
     }
@@ -51,26 +48,7 @@ public final class RawReplayFrameCapture {
                 + "\"byte_length\":" + bytes.length + ","
                 + "\"payload_hex\":\"" + hex(bytes) + "\""
                 + "}";
-        synchronized (LOCK) {
-            try {
-                if (writer == null) {
-                    Path output = BandwidthOptimizerOutputPaths.resolve("replay-raw-outbound.jsonl");
-                    Files.createDirectories(output.getParent());
-                    writer = Files.newBufferedWriter(
-                            output,
-                            StandardCharsets.UTF_8,
-                            StandardOpenOption.CREATE,
-                            StandardOpenOption.TRUNCATE_EXISTING,
-                            StandardOpenOption.WRITE
-                    );
-                }
-                writer.write(line);
-                writer.newLine();
-                writer.flush();
-            } catch (IOException exception) {
-                throw new IllegalStateException("Failed to write raw replay frame", exception);
-            }
-        }
+        WRITER.offer(line);
     }
 
     private static int readLeadingVarInt(byte[] bytes) {
