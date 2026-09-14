@@ -5,6 +5,8 @@ import com.PinkCats.bandwidthoptimizer.integration.minecraft.CustomPayloadPacket
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
 
+import java.util.ArrayDeque;
+import java.util.Iterator;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -14,8 +16,13 @@ public final class ChannelTransportAdaptiveBypass {
 
     private static final int UNPROFITABLE_THRESHOLD = 16;
     private static final int MAX_ENTRIES = 4096;
+    private static final int EXPENSIVE_SCAN_THRESHOLD = 64;
     private static final long BYPASS_TTL_NANOS = TimeUnit.SECONDS.toNanos(60L);
+    private static final long SATURATED_SCAN_RETRY_NANOS = TimeUnit.SECONDS.toNanos(1L);
     private static final ConcurrentHashMap<Key, Entry> ENTRIES = new ConcurrentHashMap<>();
+    private static final Object ADMISSION_LOCK = new Object();
+    private static final ArrayDeque<Key> ADMISSION_ORDER = new ArrayDeque<>(MAX_ENTRIES);
+    private static long nextSaturatedScanNanos;
 
     private ChannelTransportAdaptiveBypass() {}
 
@@ -30,7 +37,6 @@ public final class ChannelTransportAdaptiveBypass {
             return false;
         }
         if (entry.bypassUntilNanos > now) {
-            entry.lastSeenNanos = now;
             return true;
         }
         return false;
@@ -50,9 +56,11 @@ public final class ChannelTransportAdaptiveBypass {
         if (key.payloadChannel().isEmpty()) {
             return;
         }
-        Entry entry = ENTRIES.computeIfAbsent(key, ignored -> new Entry());
         long now = System.nanoTime();
-        entry.lastSeenNanos = now;
+        Entry entry = getOrAdmitEntry(key, now);
+        if (entry == null) {
+            return;
+        }
         if (isUnprofitableStableCarrier(packetBytes.length, wrappedFrame)) {
             int nextCount = Math.min(entry.unprofitableCount + 1, UNPROFITABLE_THRESHOLD);
             entry.unprofitableCount = nextCount;
@@ -63,7 +71,6 @@ public final class ChannelTransportAdaptiveBypass {
             entry.unprofitableCount = 0;
             entry.bypassUntilNanos = 0L;
         }
-        cleanupIfNeeded(now);
     }
 
     private static boolean isUnprofitableStableCarrier(int packetBytes, ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame) {
@@ -78,12 +85,61 @@ public final class ChannelTransportAdaptiveBypass {
                 && telemetry.templateRemovalCount() == 0;
     }
 
-    private static void cleanupIfNeeded(long now) {
-        if (ENTRIES.size() <= MAX_ENTRIES) {
-            return;
+    private static Entry getOrAdmitEntry(Key key, long now) {
+        Entry existing = ENTRIES.get(key);
+        if (existing != null) {
+            return existing;
         }
-        long staleBefore = now - BYPASS_TTL_NANOS * 4L;
-        ENTRIES.entrySet().removeIf(entry -> entry.getValue().lastSeenNanos < staleBefore);
+        synchronized (ADMISSION_LOCK) {
+            existing = ENTRIES.get(key);
+            if (existing != null) {
+                return existing;
+            }
+            if (ENTRIES.size() >= MAX_ENTRIES && !makeAdmissionRoom(now)) {
+                return null;
+            }
+            Entry admitted = new Entry();
+            ENTRIES.put(key, admitted);
+            ADMISSION_ORDER.addLast(key);
+            return admitted;
+        }
+    }
+
+    private static boolean makeAdmissionRoom(long now) {
+        if (now < nextSaturatedScanNanos) {
+            return false;
+        }
+        int scanned = removeOldestInactive(now);
+        if (scanned > 0) {
+            nextSaturatedScanNanos = scanned >= EXPENSIVE_SCAN_THRESHOLD
+                    ? now + SATURATED_SCAN_RETRY_NANOS
+                    : 0L;
+            return true;
+        }
+        nextSaturatedScanNanos = now + SATURATED_SCAN_RETRY_NANOS;
+        return false;
+    }
+
+    private static int removeOldestInactive(long now) {
+        Iterator<Key> iterator = ADMISSION_ORDER.iterator();
+        int scanned = 0;
+        while (iterator.hasNext()) {
+            scanned++;
+            Key candidateKey = iterator.next();
+            Entry candidate = ENTRIES.get(candidateKey);
+            if (candidate == null) {
+                iterator.remove();
+                continue;
+            }
+            if (candidate.bypassUntilNanos > now) {
+                continue;
+            }
+            if (ENTRIES.remove(candidateKey, candidate)) {
+                iterator.remove();
+                return scanned;
+            }
+        }
+        return 0;
     }
 
     private static Key keyOf(String protocolName, PacketFlow packetFlow, Packet<?> packet, byte[] packetBytes) {
@@ -145,6 +201,5 @@ public final class ChannelTransportAdaptiveBypass {
     private static final class Entry {
         private volatile int unprofitableCount;
         private volatile long bypassUntilNanos;
-        private volatile long lastSeenNanos;
     }
 }

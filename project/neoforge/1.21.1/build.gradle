@@ -567,6 +567,15 @@ tasks.register('runKineticTemplateDictionarySecurityRegression', JavaExec) {
     maxHeapSize = '64m'
 }
 
+tasks.register('runChannelTransportAdaptiveBypassSecurityRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies adaptive bypass learning remains hard bounded under hostile key churn.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.channel.ChannelTransportAdaptiveBypassSecurityRegressionMain'
+    maxHeapSize = '64m'
+}
+
 tasks.register('runChannelTransportFragmentSecurityRegression', JavaExec) {
     group = 'verification'
     description = 'Verifies fragmented transport retention is lazy, bounded, expiring, and byte exact.'
