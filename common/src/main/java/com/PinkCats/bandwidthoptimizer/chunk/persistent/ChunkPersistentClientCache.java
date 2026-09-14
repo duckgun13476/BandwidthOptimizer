@@ -550,6 +550,11 @@ public final class ChunkPersistentClientCache {
             String baseHash = "";
             String deltaHash = "";
             if (!store.containsBlob(fingerprint.hashHex())) {
+                PersistentChunkCacheDiskStore.OnlineAdmission admission =
+                        new PersistentChunkCacheDiskStore.OnlineAdmission(
+                                persistentCacheMaxDiskBytes(),
+                                isSafeHash(previousHash) && previousTemperature <= 4
+                        );
                 String candidateBaseHash = STORAGE_KIND_DELTA.equals(previousStorageKind)
                         ? previousBaseHash
                         : previousHash;
@@ -576,9 +581,19 @@ public final class ChunkPersistentClientCache {
                 if (deltaEvaluation != null && deltaEvaluation.useDelta()) {
                     storageKind = STORAGE_KIND_DELTA;
                     baseHash = candidateBaseHash;
-                    deltaHash = store.writeDeltaBlob(deltaEvaluation);
+                    deltaHash = store.writeDeltaBlobIfAdmitted(deltaEvaluation, admission);
+                    if (deltaHash.isBlank()) {
+                        return null;
+                    }
                 } else {
-                    store.writeEvaluatedFullBlob(fingerprint.hashHex(), restoredPacketBytes, deltaEvaluation);
+                    if (!store.writeEvaluatedFullBlobIfAdmitted(
+                            fingerprint.hashHex(),
+                            restoredPacketBytes,
+                            deltaEvaluation,
+                            admission
+                    )) {
+                        return null;
+                    }
                 }
             }
 

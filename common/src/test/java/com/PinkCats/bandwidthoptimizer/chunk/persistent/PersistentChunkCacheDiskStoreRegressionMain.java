@@ -35,6 +35,7 @@ public final class PersistentChunkCacheDiskStoreRegressionMain {
             verifyRetentionPolicy();
             verifySealedSegmentCompaction(root.resolve("compaction"));
             verifyCapacityCompactionBelowNormalThreshold(root.resolve("capacity-compaction"));
+            verifyOnlineAdmissionWatermarks(root.resolve("online-admission"));
             verifyMaintenanceCoordinator();
             System.out.println("Persistent chunk cache disk store regression passed");
         } finally {
@@ -373,6 +374,48 @@ public final class PersistentChunkCacheDiskStoreRegressionMain {
         require(capacity.compacted(), "capacity compaction ignored reclaimable segment bytes");
         require(store.totalSegmentBytes() < before, "capacity compaction did not reclaim bytes");
         require(Arrays.equals(payloads[0], store.readBlob(hashes[0])), "capacity compaction changed a live blob");
+    }
+
+    private static void verifyOnlineAdmissionWatermarks(Path root) throws Exception {
+        long segmentReserveBytes = 96L * 1024L;
+        PersistentChunkCacheDiskStore store = PersistentChunkCacheDiskStore.openForTesting(root, 1, segmentReserveBytes);
+        byte[] first = randomPayload(32 * 1024, 401);
+        byte[] second = randomPayload(32 * 1024, 402);
+        byte[] third = randomPayload(32 * 1024, 403);
+        String firstHash = sha256(first);
+        String secondHash = sha256(second);
+        String thirdHash = sha256(third);
+
+        store.writeBlob(firstHash, first);
+        long targetBytes = store.totalSegmentBytes();
+        PersistentChunkCacheDiskStore.OnlineAdmission cold =
+                new PersistentChunkCacheDiskStore.OnlineAdmission(targetBytes, false);
+        require(!store.writeEvaluatedFullBlobIfAdmitted(secondHash, second, null, cold),
+                "cold online admission exceeded the target");
+        require(!store.containsBlob(secondHash), "rejected cold blob was retained");
+        require(store.totalSegmentBytes() == targetBytes, "rejected cold blob changed physical bytes");
+
+        PersistentChunkCacheDiskStore.OnlineAdmission hot =
+                new PersistentChunkCacheDiskStore.OnlineAdmission(targetBytes, true);
+        require(store.writeEvaluatedFullBlobIfAdmitted(thirdHash, third, null, hot),
+                "hot replacement did not use the bounded reserve");
+        require(store.containsBlob(thirdHash), "accepted hot replacement was not retained");
+        require(store.totalSegmentBytes() <= targetBytes + segmentReserveBytes,
+                "hot replacement exceeded the hard online limit");
+
+        int seed = 404;
+        while (true) {
+            byte[] candidate = randomPayload(32 * 1024, seed++);
+            if (!store.writeEvaluatedFullBlobIfAdmitted(sha256(candidate), candidate, null, hot)) {
+                break;
+            }
+        }
+        require(store.totalSegmentBytes() <= targetBytes + segmentReserveBytes,
+                "online admission did not stop at the hard limit");
+        long bytesAtLimit = store.totalSegmentBytes();
+        require(store.writeEvaluatedFullBlobIfAdmitted(firstHash, first, null, cold),
+                "existing blob was rejected above the online limit");
+        require(store.totalSegmentBytes() == bytesAtLimit, "existing blob changed physical bytes");
     }
 
     private static Properties indexForHashes(String... hashes) {

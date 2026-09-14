@@ -80,6 +80,7 @@ final class PersistentChunkCacheDiskStore {
     private final Map<String, BlobLocation> blobs = new HashMap<>();
     private int activeSegmentId;
     private long lastForceNanos;
+    private long segmentBytes;
 
     private PersistentChunkCacheDiskStore(Path root, int compressionLevel, long maxSegmentBytes) {
         this.root = root;
@@ -179,10 +180,15 @@ final class PersistentChunkCacheDiskStore {
     }
 
     void writeBlob(String hash, byte[] packetBytes) throws IOException {
-        writeBlob(hash, packetBytes, null);
+        writeBlob(hash, packetBytes, null, null);
     }
 
-    private void writeBlob(String hash, byte[] packetBytes, byte[] preparedCompressedBytes) throws IOException {
+    private boolean writeBlob(
+            String hash,
+            byte[] packetBytes,
+            byte[] preparedCompressedBytes,
+            OnlineAdmission admission
+    ) throws IOException {
         String normalizedHash = normalizeHash(hash);
         if (normalizedHash.isBlank()
                 || packetBytes == null
@@ -192,13 +198,19 @@ final class PersistentChunkCacheDiskStore {
             throw new IOException("Invalid persistent chunk blob");
         }
         if (blobs.containsKey(normalizedHash)) {
-            return;
+            return true;
+        }
+        if (admission != null && !admission.canAttempt(segmentBytes, maxSegmentBytes)) {
+            return false;
         }
 
         byte[] compressedBytes = preparedCompressedBytes == null ? compress(packetBytes) : preparedCompressedBytes;
         CRC32 crc32 = new CRC32();
         crc32.update(packetBytes);
         int recordBytes = SEGMENT_HEADER_BYTES + compressedBytes.length;
+        if (admission != null && !admission.allows(segmentBytes, recordBytes, maxSegmentBytes)) {
+            return false;
+        }
         Path segment = selectActiveSegment(recordBytes);
         try (FileChannel channel = FileChannel.open(
                 segment,
@@ -220,7 +232,9 @@ final class PersistentChunkCacheDiskStore {
             writeFully(channel, ByteBuffer.wrap(compressedBytes));
             maybeForce(channel);
             blobs.put(normalizedHash, new BlobLocation(segment, offset, packetBytes.length, compressedBytes.length, crc32.getValue()));
+            segmentBytes = saturatedAdd(segmentBytes, recordBytes);
         }
+        return true;
     }
 
     byte[] readBlob(String hash) throws IOException {
@@ -291,12 +305,29 @@ final class PersistentChunkCacheDiskStore {
             throw new IOException("Invalid persistent chunk delta evaluation");
         }
         String hash = sha256(evaluation.encodedBytes());
-        writeBlob(hash, evaluation.encodedBytes(), evaluation.compressedDeltaBytes());
+        writeBlob(hash, evaluation.encodedBytes(), evaluation.compressedDeltaBytes(), null);
         return hash;
     }
 
+    String writeDeltaBlobIfAdmitted(DeltaEvaluation evaluation, OnlineAdmission admission) throws IOException {
+        if (evaluation == null || !evaluation.useDelta()) {
+            throw new IOException("Invalid persistent chunk delta evaluation");
+        }
+        String hash = sha256(evaluation.encodedBytes());
+        return writeBlob(hash, evaluation.encodedBytes(), evaluation.compressedDeltaBytes(), admission) ? hash : "";
+    }
+
     void writeEvaluatedFullBlob(String hash, byte[] packetBytes, DeltaEvaluation evaluation) throws IOException {
-        writeBlob(hash, packetBytes, evaluation == null ? null : evaluation.compressedFullBytes());
+        writeBlob(hash, packetBytes, evaluation == null ? null : evaluation.compressedFullBytes(), null);
+    }
+
+    boolean writeEvaluatedFullBlobIfAdmitted(
+            String hash,
+            byte[] packetBytes,
+            DeltaEvaluation evaluation,
+            OnlineAdmission admission
+    ) throws IOException {
+        return writeBlob(hash, packetBytes, evaluation == null ? null : evaluation.compressedFullBytes(), admission);
     }
 
     long storedBytes(String hash) {
@@ -334,15 +365,7 @@ final class PersistentChunkCacheDiskStore {
     }
 
     long totalSegmentBytes() throws IOException {
-        long bytes = 0L;
-        try (DirectoryStream<Path> paths = Files.newDirectoryStream(segmentsRoot, "segment-*.dat")) {
-            for (Path path : paths) {
-                if (Files.isRegularFile(path)) {
-                    bytes += Files.size(path);
-                }
-            }
-        }
-        return bytes;
+        return segmentBytes;
     }
 
     CompactionResult compactOneSealedSegment(
@@ -552,6 +575,7 @@ final class PersistentChunkCacheDiskStore {
 
     private void scanSegments() throws IOException {
         blobs.clear();
+        segmentBytes = 0L;
         List<Path> segments = new ArrayList<>();
         try (DirectoryStream<Path> paths = Files.newDirectoryStream(segmentsRoot, "segment-*.dat")) {
             for (Path path : paths) {
@@ -565,6 +589,7 @@ final class PersistentChunkCacheDiskStore {
             Path segment = segments.get(index);
             activeSegmentId = Math.max(activeSegmentId, parseSegmentId(segment));
             scanSegment(segment, index == segments.size() - 1);
+            segmentBytes = saturatedAdd(segmentBytes, Files.size(segment));
         }
         if (activeSegmentId == 0) {
             activeSegmentId = 1;
@@ -780,7 +805,7 @@ final class PersistentChunkCacheDiskStore {
         String normalizedHash = normalizeHash(hash);
         BlobLocation previous = blobs.remove(normalizedHash);
         try {
-            writeBlob(normalizedHash, packetBytes);
+            writeBlob(normalizedHash, packetBytes, null, null);
             BlobLocation replacement = blobs.get(normalizedHash);
             if (replacement == null) {
                 throw new IOException("Persistent chunk blob rewrite produced no location");
@@ -816,6 +841,40 @@ final class PersistentChunkCacheDiskStore {
         }
         for (String suffix : ENTRY_SUFFIXES) {
             index.remove(keyPrefix + suffix);
+        }
+    }
+
+    private static long saturatedAdd(long left, long right) {
+        if (right > 0L && left > Long.MAX_VALUE - right) {
+            return Long.MAX_VALUE;
+        }
+        return Math.max(left + right, 0L);
+    }
+
+    record OnlineAdmission(long targetBytes, boolean hotReplacement) {
+        OnlineAdmission {
+            targetBytes = Math.max(targetBytes, 1L);
+        }
+
+        boolean allows(long currentBytes, long recordBytes, long segmentReserveBytes) {
+            long projectedBytes = saturatedAdd(Math.max(currentBytes, 0L), Math.max(recordBytes, 0L));
+            if (projectedBytes <= targetBytes) {
+                return true;
+            }
+            if (!hotReplacement) {
+                return false;
+            }
+            long hardLimit = saturatedAdd(targetBytes, Math.max(segmentReserveBytes, 0L));
+            return projectedBytes <= hardLimit;
+        }
+
+        boolean canAttempt(long currentBytes, long segmentReserveBytes) {
+            long safeCurrentBytes = Math.max(currentBytes, 0L);
+            if (safeCurrentBytes < targetBytes) {
+                return true;
+            }
+            return hotReplacement
+                    && safeCurrentBytes < saturatedAdd(targetBytes, Math.max(segmentReserveBytes, 0L));
         }
     }
 
