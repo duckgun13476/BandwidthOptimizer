@@ -5,14 +5,23 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescript
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalStoreObservation;
 
-import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 
 final class ChunkPeerState {
 
+    private static final int DEFAULT_MAX_CHUNK_STATES = 16_384;
+    private static final long DEFAULT_CHUNK_STATE_TTL_NANOS = TimeUnit.MINUTES.toNanos(30L);
+    private static final long MAX_EXPIRY_SCAN_INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(1L);
     private final String channelId;
-    private final Map<String, ChunkPeerChunkState> chunkStates = new HashMap<>();
+    private final int maxChunkStates;
+    private final long chunkStateTtlNanos;
+    private final LongSupplier nanoTime;
+    private final LinkedHashMap<String, TrackedChunkState> chunkStates = new LinkedHashMap<>(256, 0.75F, true);
     private long epoch;
     private long observedPacketCount;
     private long lastObservedAtMillis;
@@ -21,9 +30,18 @@ final class ChunkPeerState {
     private String lastObservedLaneKind = "";
     private String lastObservedChunkText = ChunkPacketCoordinate.unknown().logText();
     private int lastObservedEncodedBytes;
+    private long nextExpiryScanNanos;
+    private long expiryScanCount;
 
     ChunkPeerState(String channelId) {
+        this(channelId, DEFAULT_MAX_CHUNK_STATES, DEFAULT_CHUNK_STATE_TTL_NANOS, System::nanoTime);
+    }
+
+    ChunkPeerState(String channelId, int maxChunkStates, long chunkStateTtlNanos, LongSupplier nanoTime) {
         this.channelId = channelId;
+        this.maxChunkStates = Math.max(maxChunkStates, 1);
+        this.chunkStateTtlNanos = Math.max(chunkStateTtlNanos, 1L);
+        this.nanoTime = Objects.requireNonNull(nanoTime);
     }
 
     synchronized ChunkPeerObservationSnapshot recordObservation(
@@ -81,7 +99,7 @@ final class ChunkPeerState {
             return null;
         }
 
-        ChunkPeerChunkState chunkState = this.chunkStates.get(scopedChunkKeyText(scopeId, coordinate));
+        ChunkPeerChunkState chunkState = getChunkState(scopedChunkKeyText(scopeId, coordinate));
         return chunkState == null ? null : chunkState.snapshotForQuery();
     }
 
@@ -90,8 +108,11 @@ final class ChunkPeerState {
             return null;
         }
 
+        pruneExpiredChunkStates();
         ChunkPeerChunkStateSnapshot latestSnapshot = null;
-        for (ChunkPeerChunkState chunkState : this.chunkStates.values()) {
+        String latestKey = null;
+        for (Map.Entry<String, TrackedChunkState> entry : this.chunkStates.entrySet()) {
+            ChunkPeerChunkState chunkState = entry.getValue().state();
             if (chunkState == null) {
                 continue;
             }
@@ -106,9 +127,11 @@ final class ChunkPeerState {
             if (latestSnapshot == null
                     || candidateSnapshot.lastObservedAtMillis() > latestSnapshot.lastObservedAtMillis()) {
                 latestSnapshot = candidateSnapshot;
+                latestKey = entry.getKey();
             }
         }
-        return latestSnapshot;
+        ChunkPeerChunkState selected = latestKey == null ? null : getChunkState(latestKey);
+        return selected == null ? latestSnapshot : selected.snapshotForQuery();
     }
 
     synchronized ChunkPeerChunkStateSnapshot acknowledgeChunk(
@@ -132,7 +155,8 @@ final class ChunkPeerState {
             return null;
         }
 
-        ChunkPeerChunkState chunkState = this.chunkStates.remove(scopedChunkKeyText(scopeId, coordinate));
+        TrackedChunkState tracked = this.chunkStates.remove(scopedChunkKeyText(scopeId, coordinate));
+        ChunkPeerChunkState chunkState = tracked == null ? null : tracked.state();
         return chunkState == null ? null : chunkState.recordInvalidate();
     }
 
@@ -142,10 +166,11 @@ final class ChunkPeerState {
         }
 
         int removedCount = 0;
-        Iterator<Map.Entry<String, ChunkPeerChunkState>> iterator = this.chunkStates.entrySet().iterator();
+        pruneExpiredChunkStates();
+        Iterator<Map.Entry<String, TrackedChunkState>> iterator = this.chunkStates.entrySet().iterator();
         while (iterator.hasNext()) {
-            Map.Entry<String, ChunkPeerChunkState> entry = iterator.next();
-            ChunkPeerChunkState chunkState = entry.getValue();
+            Map.Entry<String, TrackedChunkState> entry = iterator.next();
+            ChunkPeerChunkState chunkState = entry.getValue().state();
             ChunkPeerChunkStateSnapshot snapshot = chunkState == null ? null : chunkState.snapshotForQuery();
             if (snapshot == null
                     || snapshot.chunkKey() == null
@@ -173,9 +198,9 @@ final class ChunkPeerState {
 
         long resolvedScopeId = Math.max(scopeId, 0L);
         ChunkPeerChunkKey chunkKey = ChunkPeerChunkKey.fromCoordinate(coordinate);
-        ChunkPeerChunkState chunkState = this.chunkStates.computeIfAbsent(
+        ChunkPeerChunkState chunkState = getOrCreateChunkState(
                 scopedChunkKeyText(resolvedScopeId, coordinate),
-                ignored -> new ChunkPeerChunkState(chunkKey)
+                chunkKey
         );
         return chunkState.recordPersistentClientManifest(
                 resolvedScopeId,
@@ -199,9 +224,9 @@ final class ChunkPeerState {
             return null;
 
         ChunkPeerChunkKey chunkKey = ChunkPeerChunkKey.fromCoordinate(descriptor.coordinate());
-        ChunkPeerChunkState chunkState = this.chunkStates.computeIfAbsent(
+        ChunkPeerChunkState chunkState = getOrCreateChunkState(
                 scopedChunkKeyText(this.epoch, descriptor.coordinate()),
-                ignored -> new ChunkPeerChunkState(chunkKey)
+                chunkKey
         );
         return chunkState.recordObservation(descriptor, snapshotFingerprint, this.epoch, this.observedPacketCount);
     }
@@ -210,11 +235,98 @@ final class ChunkPeerState {
         if (coordinate == null || !coordinate.present()) {
             return null;
         }
-        return this.chunkStates.get(scopedChunkKeyText(scopeId, coordinate));
+        return getChunkState(scopedChunkKeyText(scopeId, coordinate));
+    }
+
+    synchronized int chunkStateCountForTesting() {
+        pruneExpiredChunkStates();
+        return this.chunkStates.size();
+    }
+
+    synchronized long expiryScanCountForTesting() {
+        return this.expiryScanCount;
+    }
+
+    private ChunkPeerChunkState getChunkState(String key) {
+        long now = this.nanoTime.getAsLong();
+        pruneExpiredChunkStates(now);
+        TrackedChunkState tracked = this.chunkStates.get(key);
+        if (tracked == null) {
+            return null;
+        }
+        tracked.touch(now);
+        return tracked.state();
+    }
+
+    private ChunkPeerChunkState getOrCreateChunkState(String key, ChunkPeerChunkKey chunkKey) {
+        long now = this.nanoTime.getAsLong();
+        pruneExpiredChunkStates(now);
+        TrackedChunkState tracked = this.chunkStates.get(key);
+        if (tracked != null) {
+            tracked.touch(now);
+            return tracked.state();
+        }
+        trimForNewChunkState();
+        ChunkPeerChunkState state = new ChunkPeerChunkState(chunkKey);
+        this.chunkStates.put(key, new TrackedChunkState(state, now));
+        return state;
+    }
+
+    private void pruneExpiredChunkStates() {
+        pruneExpiredChunkStates(this.nanoTime.getAsLong());
+    }
+
+    private void pruneExpiredChunkStates(long now) {
+        if (this.nextExpiryScanNanos != 0L && now - this.nextExpiryScanNanos < 0L) {
+            return;
+        }
+        this.nextExpiryScanNanos = now + Math.min(this.chunkStateTtlNanos, MAX_EXPIRY_SCAN_INTERVAL_NANOS);
+        this.expiryScanCount++;
+        Iterator<Map.Entry<String, TrackedChunkState>> iterator = this.chunkStates.entrySet().iterator();
+        while (iterator.hasNext()) {
+            TrackedChunkState tracked = iterator.next().getValue();
+            long elapsed = now - tracked.lastAccessNanos();
+            if (elapsed < 0L || elapsed >= this.chunkStateTtlNanos) {
+                iterator.remove();
+            } else {
+                break;
+            }
+        }
+    }
+
+    private void trimForNewChunkState() {
+        Iterator<String> iterator = this.chunkStates.keySet().iterator();
+        while (this.chunkStates.size() >= this.maxChunkStates && iterator.hasNext()) {
+            iterator.next();
+            iterator.remove();
+        }
     }
 
     private static String scopedChunkKeyText(long scopeId, ChunkPacketCoordinate coordinate) {
         ChunkPeerChunkKey chunkKey = ChunkPeerChunkKey.fromCoordinate(coordinate);
         return Math.max(scopeId, 0L) + ":" + chunkKey.chunkX() + "," + chunkKey.chunkZ();
+    }
+
+    private static final class TrackedChunkState {
+
+        private final ChunkPeerChunkState state;
+        private long lastAccessNanos;
+
+        private TrackedChunkState(ChunkPeerChunkState state, long lastAccessNanos) {
+            this.state = state;
+            this.lastAccessNanos = lastAccessNanos;
+        }
+
+        private ChunkPeerChunkState state() {
+            return this.state;
+        }
+
+        private long lastAccessNanos() {
+            return this.lastAccessNanos;
+        }
+
+        private void touch(long now) {
+            this.lastAccessNanos = now;
+        }
     }
 }

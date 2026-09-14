@@ -267,6 +267,15 @@ tasks.register('runPersistentChunkCacheDiskStoreRegression', JavaExec) {
     )
 }
 
+tasks.register('runChunkPeerStateRetentionRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies bounded player-scope and per-channel chunk-state retention.',
+            'com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateRetentionRegressionMain'
+    )
+}
+
 tasks.register('runPersistentChunkCacheBoundaryRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,

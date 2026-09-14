@@ -26,13 +26,21 @@ import net.minecraft.world.level.Level;
 
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 public final class ChunkPeerStateManager {
 
     private static final long FIRST_SCOPE_ID = 1L;
+    private static final int MAX_RETAINED_PLAYER_SCOPES = 4_096;
+    private static final long RETAINED_PLAYER_SCOPE_TTL_NANOS = TimeUnit.MINUTES.toNanos(30L);
     private static final ConcurrentHashMap<String, ChunkPeerState> CHANNEL_STATES = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<UUID, PlayerScopeState> PLAYER_SCOPE_STATES = new ConcurrentHashMap<>();
+    private static final RetainedStateRegistry<UUID, PlayerScopeState> PLAYER_SCOPE_STATES =
+            new RetainedStateRegistry<>(
+                    MAX_RETAINED_PLAYER_SCOPES,
+                    RETAINED_PLAYER_SCOPE_TTL_NANOS,
+                    System::nanoTime
+            );
 
     private ChunkPeerStateManager() {}
 
@@ -122,9 +130,7 @@ public final class ChunkPeerStateManager {
             return;
 
         boolean retainedPlayerScope = shouldRetainPlayerScope(reason);
-        PlayerScopeState playerScopeState = retainedPlayerScope
-                ? PLAYER_SCOPE_STATES.get(player.getUUID())
-                : PLAYER_SCOPE_STATES.remove(player.getUUID());
+        PlayerScopeState playerScopeState = PLAYER_SCOPE_STATES.release(player.getUUID(), retainedPlayerScope);
         Channel playerChannel = readPlayerChannel(player);
         String channelId = readPlayerChannelId(player);
         if (channelId != null && !channelId.isBlank()) {
@@ -407,7 +413,7 @@ public final class ChunkPeerStateManager {
             return 0L;
         }
 
-        PlayerScopeState scopeState = PLAYER_SCOPE_STATES.computeIfAbsent(playerId, ignored -> new PlayerScopeState());
+        PlayerScopeState scopeState = PLAYER_SCOPE_STATES.activate(playerId, PlayerScopeState::new);
         return scopeState.bindScope(dimensionKey, reason);
     }
 
