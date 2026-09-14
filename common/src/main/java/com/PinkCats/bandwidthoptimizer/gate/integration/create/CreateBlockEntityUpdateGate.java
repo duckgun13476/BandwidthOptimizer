@@ -12,6 +12,7 @@ import com.PinkCats.bandwidthoptimizer.integration.valkyrienskies.ValkyrienSkies
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.gate.recovery.IdleGateRecoveryRegistry;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.NbtCompoundCompat;
+import com.PinkCats.bandwidthoptimizer.util.WeakIdentitySet;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.core.BlockPos;
@@ -32,7 +33,6 @@ import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -48,8 +48,7 @@ public final class CreateBlockEntityUpdateGate {
 
     private static final ConcurrentHashMap<UUID, PlayerState> PLAYER_STATES = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, UUID> CHANNEL_PLAYERS = new ConcurrentHashMap<>();
-    private static final java.util.Set<Packet<?>> FORCED_PACKETS =
-            Collections.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
+    private static final WeakIdentitySet<Packet<?>> FORCED_PACKETS = new WeakIdentitySet<>();
     private static final Map<Packet<?>, PreparedDynamicTarget> PREPARED_DYNAMIC_TARGETS = new IdentityHashMap<>();
     private static final int MAX_PREPARED_DYNAMIC_TARGETS = 1024;
     private static final long PREPARED_DYNAMIC_TARGET_TTL_NANOS = TimeUnit.SECONDS.toNanos(2L);
@@ -540,7 +539,12 @@ public final class CreateBlockEntityUpdateGate {
             return;
         }
         FORCED_PACKETS.add(packet);
-        player.connection.send(packet);
+        try {
+            player.connection.send(packet);
+        } catch (RuntimeException | Error failure) {
+            FORCED_PACKETS.remove(packet);
+            throw failure;
+        }
     }
 
     public static void sendRecoveryPacket(ServerPlayer player, Packet<?> packet) {

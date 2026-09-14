@@ -343,6 +343,33 @@ tasks.register('runIdleGateClientPublicationRegression', JavaExec) {
     )
 }
 
+tasks.register('runAttributeRecoveryPolicyRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies bounded idle attribute recovery and overflow pass-through.',
+            'com.PinkCats.bandwidthoptimizer.gate.recovery.AttributeRecoveryPolicyRegressionMain'
+    )
+}
+
+tasks.register('runIdleGateServerStateRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies idle-gate channel and resume-window lifecycle cleanup.',
+            'com.PinkCats.bandwidthoptimizer.gate.IdleGateServerStateRegressionMain'
+    )
+}
+
+tasks.register('runWeakIdentitySetRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies forced packet markers use weak identity ownership.',
+            'com.PinkCats.bandwidthoptimizer.util.WeakIdentitySetRegressionMain'
+    )
+}
+
 tasks.register('runChunkWatchBoundaryPendingStoreSecurityRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,

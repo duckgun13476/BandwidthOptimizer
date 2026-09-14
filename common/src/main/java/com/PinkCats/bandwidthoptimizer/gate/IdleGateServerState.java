@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
 import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.gate.recovery.IdleGateRecoveryRegistry;
 import io.netty.channel.Channel;
+import io.netty.util.AttributeKey;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
@@ -21,6 +22,8 @@ public final class IdleGateServerState {
     private static final ConcurrentHashMap<String, UUID> CHANNEL_PLAYERS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<UUID, ServerPlayer> CONNECTED_PLAYERS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Long> RESUME_DIRECT_UNTIL = new ConcurrentHashMap<>();
+    private static final AttributeKey<Boolean> CLOSE_CLEANUP_REGISTERED =
+            AttributeKey.valueOf("bandwidthoptimizer:idle_gate_close_cleanup");
 
     private IdleGateServerState() {}
 
@@ -33,6 +36,7 @@ public final class IdleGateServerState {
         Channel channel = ChunkPeerStateManager.findPlayerChannel(player);
         String channelId = channel == null ? "" : ChannelIdentity.longText(channel);
         if (!channelId.isBlank()) {
+            registerCloseCleanup(channel, channelId);
             UUID previousPlayerId = CHANNEL_PLAYERS.put(channelId, player.getUUID());
             if (!player.getUUID().equals(previousPlayerId)) {
                 RESUME_DIRECT_UNTIL.put(channelId, System.currentTimeMillis() + JOIN_DIRECT_MILLIS);
@@ -96,8 +100,26 @@ public final class IdleGateServerState {
             IdleGateRecoveryRegistry.discard(player);
             PLAYER_STATES.remove(player.getUUID());
             CONNECTED_PLAYERS.remove(player.getUUID(), player);
-            CHANNEL_PLAYERS.entrySet().removeIf(entry -> player.getUUID().equals(entry.getValue()));
+            for (var entry : CHANNEL_PLAYERS.entrySet()) {
+                if (player.getUUID().equals(entry.getValue())) {
+                    clearChannelState(entry.getKey());
+                }
+            }
         }
+    }
+
+    private static void registerCloseCleanup(Channel channel, String channelId) {
+        if (channel.attr(CLOSE_CLEANUP_REGISTERED).setIfAbsent(Boolean.TRUE) == null) {
+            channel.closeFuture().addListener(ignored -> clearChannelState(channelId));
+        }
+    }
+
+    static void clearChannelState(String channelId) {
+        if (channelId == null || channelId.isBlank()) {
+            return;
+        }
+        CHANNEL_PLAYERS.remove(channelId);
+        RESUME_DIRECT_UNTIL.remove(channelId);
     }
 
     public static ServerPlayer resolvePlayer(Channel channel) {

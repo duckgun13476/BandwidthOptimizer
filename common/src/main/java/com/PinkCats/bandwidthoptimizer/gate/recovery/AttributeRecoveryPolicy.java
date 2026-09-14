@@ -21,6 +21,8 @@ import java.util.concurrent.atomic.AtomicLong;
 /** Rebuilds complete living-entity attribute snapshots after background idle. */
 public final class AttributeRecoveryPolicy extends IdleGateRecoveryPolicy {
 
+    static final int MAX_PENDING_ENTITY_IDS = 4096;
+
     private final ConcurrentHashMap<UUID, PlayerState> states = new ConcurrentHashMap<>();
     private final AtomicLong capturedPackets = new AtomicLong();
     private final AtomicLong restoredEntities = new AtomicLong();
@@ -35,7 +37,9 @@ public final class AttributeRecoveryPolicy extends IdleGateRecoveryPolicy {
             return false;
         }
         PlayerState state = states.computeIfAbsent(player.getUUID(), ignored -> new PlayerState());
-        state.bind(player).remember(packet.getEntityId());
+        if (!state.bind(player).remember(packet.getEntityId())) {
+            return false;
+        }
         capturedPackets.incrementAndGet();
         return true;
     }
@@ -106,9 +110,10 @@ public final class AttributeRecoveryPolicy extends IdleGateRecoveryPolicy {
         }
     }
 
-    private static final class PlayerState {
+    static final class PlayerState {
         private final IntOpenHashSet entityIds = new IntOpenHashSet();
         private volatile ServerPlayer player;
+        private boolean passThrough;
 
         private PlayerState bind(ServerPlayer player) {
             this.player = player;
@@ -119,14 +124,34 @@ public final class AttributeRecoveryPolicy extends IdleGateRecoveryPolicy {
             return player;
         }
 
-        private synchronized void remember(int entityId) {
+        synchronized boolean remember(int entityId) {
+            if (passThrough) {
+                return false;
+            }
+            if (entityIds.contains(entityId)) {
+                return true;
+            }
+            if (entityIds.size() >= MAX_PENDING_ENTITY_IDS) {
+                passThrough = true;
+                return false;
+            }
             entityIds.add(entityId);
+            return true;
         }
 
-        private synchronized IntArrayList drain() {
+        synchronized IntArrayList drain() {
             IntArrayList drained = new IntArrayList(entityIds);
             entityIds.clear();
+            passThrough = false;
             return drained;
+        }
+
+        synchronized int pendingCount() {
+            return entityIds.size();
+        }
+
+        synchronized boolean isPassThrough() {
+            return passThrough;
         }
     }
 }

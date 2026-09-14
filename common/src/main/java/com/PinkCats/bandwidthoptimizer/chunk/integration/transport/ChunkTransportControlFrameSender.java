@@ -37,6 +37,7 @@ import net.minecraft.network.protocol.PacketFlow;
 
 import java.io.IOException;
 import java.nio.channels.ClosedChannelException;
+import java.util.List;
 import java.util.Locale;
 
 public final class ChunkTransportControlFrameSender {
@@ -541,8 +542,13 @@ public final class ChunkTransportControlFrameSender {
             );
             ChannelTransportSession transportSession = ChannelTransportStateManager.getOrCreateSession(channel);
             long wrapStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
+            boolean independentFrame = transportSession.isOutboundStreamingEpochClosed();
             ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame =
-                    KineticChannel.processOutboundPacket(transportSession, encodedEnvelopeBytes);
+                    independentFrame
+                            ? ChannelTransportPacketCodec.wrapIndependentBatchPackets(
+                                    transportSession,
+                                    List.of(encodedEnvelopeBytes))
+                            : KineticChannel.processOutboundPacket(transportSession, encodedEnvelopeBytes);
             ChunkLoadDelayProbe.logStage(
                     channel,
                     frame,
@@ -562,7 +568,7 @@ public final class ChunkTransportControlFrameSender {
             }
 
             ChannelTransportSession.StreamingEpochBoundary epochBoundary =
-                    transportSession.outboundStreamingEpochBoundary();
+                    independentFrame ? null : transportSession.outboundStreamingEpochBoundary();
             if (epochBoundary != null) {
                 ChannelTransportStreamingEpochGate.closeForEpoch(
                         channel,
