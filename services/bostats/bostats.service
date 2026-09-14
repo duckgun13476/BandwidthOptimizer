@@ -11,6 +11,8 @@ WorkingDirectory=/srv/bostats/app
 Environment=BOSTATS_DATA_DIR=/srv/bostats/data
 Environment=BOSTATS_HOST=127.0.0.1
 Environment=BOSTATS_PORT=8824
+Environment=BOSTATS_MAX_ACTIVE_REQUESTS=16
+Environment=BOSTATS_SOCKET_TIMEOUT_SECONDS=15
 ExecStart=/usr/bin/python3 /srv/bostats/app/app.py
 Restart=on-failure
 RestartSec=3

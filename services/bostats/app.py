@@ -5,9 +5,12 @@ import io
 import json
 import os
 import secrets
+import shutil
 import sqlite3
 import tempfile
+import threading
 import time
+from contextlib import closing
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -21,24 +24,28 @@ REPORT_DIR = DATA_DIR / "reports"
 DATABASE = DATA_DIR / "metadata.db"
 MAX_REPORT_BYTES = 4 * 1024 * 1024
 MAX_COMPRESSED_BYTES = 4 * 1024 * 1024
+MAX_ACTIVE_REQUESTS = int(os.environ.get("BOSTATS_MAX_ACTIVE_REQUESTS", "16"))
+SOCKET_TIMEOUT_SECONDS = float(os.environ.get("BOSTATS_SOCKET_TIMEOUT_SECONDS", "15"))
 REPORT_MEDIA = "application/vnd.bandwidthoptimizer.report-bundle+json"
+FILE_CHUNK_BYTES = 64 * 1024
 
 
 def initialize() -> None:
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(DATABASE) as connection:
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS reports (
-                report_key TEXT PRIMARY KEY,
-                report_id TEXT NOT NULL,
-                created_at INTEGER NOT NULL,
-                byte_length INTEGER NOT NULL,
-                sha256 TEXT NOT NULL
+    with closing(sqlite3.connect(DATABASE)) as connection:
+        with connection:
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS reports (
+                    report_key TEXT PRIMARY KEY,
+                    report_id TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    byte_length INTEGER NOT NULL,
+                    sha256 TEXT NOT NULL
+                )
+                """
             )
-            """
-        )
 
 
 def decode_body(handler: BaseHTTPRequestHandler) -> bytes:
@@ -94,11 +101,12 @@ def store_report(raw: bytes, payload: dict) -> str:
             pass
         raise
     try:
-        with sqlite3.connect(DATABASE) as connection:
-            connection.execute(
-                "INSERT INTO reports VALUES (?, ?, ?, ?, ?)",
-                (report_key, payload["reportId"], int(time.time()), len(raw), hashlib.sha256(raw).hexdigest()),
-            )
+        with closing(sqlite3.connect(DATABASE)) as connection:
+            with connection:
+                connection.execute(
+                    "INSERT INTO reports VALUES (?, ?, ?, ?, ?)",
+                    (report_key, payload["reportId"], int(time.time()), len(raw), hashlib.sha256(raw).hexdigest()),
+                )
     except BaseException:
         target.unlink(missing_ok=True)
         raise
@@ -144,7 +152,7 @@ class Handler(BaseHTTPRequestHandler):
             if not report.is_file():
                 self.send_error_json(HTTPStatus.NOT_FOUND, "report not found")
                 return
-            self.send_bytes(HTTPStatus.OK, report.read_bytes(), "application/json; charset=utf-8", cache="private, max-age=60")
+            self.send_file(HTTPStatus.OK, report, "application/json; charset=utf-8", cache="private, max-age=60")
             return
         self.send_error_json(HTTPStatus.NOT_FOUND, "not found")
 
@@ -194,9 +202,18 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json({"error": message}, status=status)
 
     def send_bytes(self, status: HTTPStatus, body: bytes, content_type: str, cache: str) -> None:
+        self.send_content_headers(status, len(body), content_type, cache)
+        self.wfile.write(body)
+
+    def send_file(self, status: HTTPStatus, path: Path, content_type: str, cache: str) -> None:
+        with path.open("rb") as source:
+            self.send_content_headers(status, os.fstat(source.fileno()).st_size, content_type, cache)
+            shutil.copyfileobj(source, self.wfile, length=FILE_CHUNK_BYTES)
+
+    def send_content_headers(self, status: HTTPStatus, length: int, content_type: str, cache: str) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Length", str(length))
         self.send_header("Cache-Control", cache)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
@@ -206,15 +223,52 @@ class Handler(BaseHTTPRequestHandler):
             "object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
         )
         self.end_headers()
-        self.wfile.write(body)
 
     def log_message(self, message: str, *args: object) -> None:
         print(f"{self.address_string()} {message % args}", flush=True)
 
 
+class BoundedThreadingHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+    request_queue_size = 32
+
+    def __init__(
+        self,
+        server_address: tuple[str, int],
+        handler_class: type[BaseHTTPRequestHandler],
+        max_active_requests: int = MAX_ACTIVE_REQUESTS,
+        socket_timeout_seconds: float = SOCKET_TIMEOUT_SECONDS,
+    ) -> None:
+        if max_active_requests <= 0 or socket_timeout_seconds <= 0:
+            raise ValueError("request limit and socket timeout must be positive")
+        self.socket_timeout_seconds = socket_timeout_seconds
+        self.request_slots = threading.BoundedSemaphore(max_active_requests)
+        super().__init__(server_address, handler_class)
+
+    def get_request(self):
+        request, client_address = super().get_request()
+        request.settimeout(self.socket_timeout_seconds)
+        return request, client_address
+
+    def process_request(self, request, client_address) -> None:
+        if not self.request_slots.acquire(blocking=False):
+            self.close_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self.request_slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.request_slots.release()
+
+
 if __name__ == "__main__":
     initialize()
-    server = ThreadingHTTPServer((HOST, PORT), Handler)
-    server.daemon_threads = True
+    server = BoundedThreadingHTTPServer((HOST, PORT), Handler)
     print(f"BO Stats listening on {HOST}:{PORT}", flush=True)
     server.serve_forever()
