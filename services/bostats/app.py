@@ -23,8 +23,12 @@ DATA_DIR = Path(os.environ.get("BOSTATS_DATA_DIR", "/srv/bostats/data"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 REPORT_DIR = DATA_DIR / "reports"
 DATABASE = DATA_DIR / "metadata.db"
-MAX_REPORT_BYTES = 4 * 1024 * 1024
-MAX_COMPRESSED_BYTES = 4 * 1024 * 1024
+MAX_REPORT_BYTES = 16 * 1024 * 1024
+MAX_COMPRESSED_BYTES = 16 * 1024 * 1024
+MAX_STORED_REPORTS = int(os.environ.get("BOSTATS_MAX_STORED_REPORTS", "10000"))
+MAX_STORED_BYTES = int(os.environ.get("BOSTATS_MAX_STORED_BYTES", str(16 * 1024 * 1024 * 1024)))
+MAX_REPORT_AGE_DAYS = int(os.environ.get("BOSTATS_MAX_REPORT_AGE_DAYS", "400"))
+MAX_ACTIVE_UPLOADS = int(os.environ.get("BOSTATS_MAX_ACTIVE_UPLOADS", "2"))
 MAX_ACTIVE_REQUESTS = int(os.environ.get("BOSTATS_MAX_ACTIVE_REQUESTS", "16"))
 MAX_WAITING_REQUESTS = int(os.environ.get("BOSTATS_MAX_WAITING_REQUESTS", "64"))
 SOCKET_TIMEOUT_SECONDS = float(os.environ.get("BOSTATS_SOCKET_TIMEOUT_SECONDS", "15"))
@@ -54,6 +58,34 @@ def initialize() -> None:
                 )
                 """
             )
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(reports)")}
+            if "source_fingerprint" not in columns:
+                connection.execute("ALTER TABLE reports ADD COLUMN source_fingerprint TEXT")
+            if "updated_at" not in columns:
+                connection.execute("ALTER TABLE reports ADD COLUMN updated_at INTEGER")
+                connection.execute("UPDATE reports SET updated_at = created_at WHERE updated_at IS NULL")
+            connection.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS reports_source_fingerprint "
+                "ON reports(source_fingerprint) WHERE source_fingerprint IS NOT NULL"
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS report_submissions (
+                    report_id TEXT PRIMARY KEY,
+                    report_key TEXT NOT NULL,
+                    source_fingerprint TEXT,
+                    created_at INTEGER NOT NULL,
+                    sha256 TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO report_submissions
+                    (report_id, report_key, source_fingerprint, created_at, sha256)
+                SELECT report_id, report_key, source_fingerprint, created_at, sha256 FROM reports
+                """
+            )
 
 
 def decode_body(handler: BaseHTTPRequestHandler) -> bytes:
@@ -62,18 +94,18 @@ def decode_body(handler: BaseHTTPRequestHandler) -> bytes:
     except ValueError as exception:
         raise ValueError("invalid Content-Length") from exception
     if length <= 0 or length > MAX_COMPRESSED_BYTES:
-        raise ValueError("compressed request exceeds 4 MiB")
+        raise ValueError("compressed request exceeds 16 MiB")
     encoded = handler.rfile.read(length)
     if len(encoded) != length:
         raise ValueError("incomplete request body")
     if handler.headers.get("Content-Encoding", "").lower() != "gzip":
         if len(encoded) > MAX_REPORT_BYTES:
-            raise ValueError("report exceeds 4 MiB")
+            raise ValueError("report exceeds 16 MiB")
         return encoded
     with gzip.GzipFile(fileobj=io.BytesIO(encoded)) as stream:
         decoded = stream.read(MAX_REPORT_BYTES + 1)
     if len(decoded) > MAX_REPORT_BYTES:
-        raise ValueError("decompressed report exceeds 4 MiB")
+        raise ValueError("decompressed report exceeds 16 MiB")
     return decoded
 
 
@@ -89,6 +121,13 @@ def validate_report(payload: object) -> dict:
         raise ValueError("missing summary report")
     if not isinstance(payload.get("playerTraffic"), dict):
         raise ValueError("missing player traffic report")
+    source_fingerprint = payload.get("sourceFingerprint")
+    if source_fingerprint is not None and (
+            not isinstance(source_fingerprint, str)
+            or len(source_fingerprint) != 64
+            or any(character not in "0123456789abcdef" for character in source_fingerprint)
+    ):
+        raise ValueError("invalid sourceFingerprint")
     return payload
 
 
@@ -97,7 +136,7 @@ def store_report(raw: bytes, payload: dict) -> tuple[str, bool]:
     with closing(sqlite3.connect(DATABASE)) as connection:
         connection.execute("BEGIN IMMEDIATE")
         existing = connection.execute(
-            "SELECT report_key, sha256 FROM reports WHERE report_id = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT report_key, sha256 FROM report_submissions WHERE report_id = ?",
             (payload["reportId"],),
         ).fetchone()
         if existing is not None:
@@ -106,21 +145,71 @@ def store_report(raw: bytes, payload: dict) -> tuple[str, bool]:
                 raise ReportConflictError("reportId already exists with different content")
             return existing[0], False
 
+        source_fingerprint = payload.get("sourceFingerprint")
+        source_row = None
+        if source_fingerprint is not None:
+            source_row = connection.execute(
+                "SELECT report_key FROM reports WHERE source_fingerprint = ?",
+                (source_fingerprint,),
+            ).fetchone()
+        previous_key = source_row[0] if source_row is not None else None
         report_key = secrets.token_urlsafe(18)
         target = REPORT_DIR / f"{report_key}.json"
+        stored_payload = payload
+        previous_target = REPORT_DIR / f"{previous_key}.json" if previous_key is not None else None
+        if previous_target is not None and previous_target.is_file():
+            try:
+                existing_payload = validate_report(json.loads(previous_target.read_text(encoding="utf-8")))
+                stored_payload = merge_report_history(existing_payload, payload)
+            except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError):
+                stored_payload = payload
+        stored_raw = raw if source_row is None else encode_bounded_report(stored_payload)
+        stored_digest = hashlib.sha256(stored_raw).hexdigest()
         fd, temporary_name = tempfile.mkstemp(prefix=".upload-", suffix=".tmp", dir=REPORT_DIR)
         try:
             with os.fdopen(fd, "wb") as output:
-                output.write(raw)
+                output.write(stored_raw)
                 output.flush()
                 os.fsync(output.fileno())
             os.replace(temporary_name, target)
             try:
+                now = int(time.time())
+                if source_row is None:
+                    connection.execute(
+                        """
+                        INSERT INTO reports
+                            (report_key, report_id, created_at, byte_length, sha256, source_fingerprint, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (report_key, payload["reportId"], now, len(stored_raw), stored_digest,
+                         source_fingerprint, now),
+                    )
+                else:
+                    connection.execute(
+                        """
+                        UPDATE reports SET report_key = ?, report_id = ?, byte_length = ?, sha256 = ?, updated_at = ?
+                        WHERE report_key = ?
+                        """,
+                        (report_key, payload["reportId"], len(stored_raw), stored_digest, now, previous_key),
+                    )
+                    connection.execute(
+                        "UPDATE report_submissions SET report_key = ? WHERE report_key = ?",
+                        (report_key, previous_key),
+                    )
                 connection.execute(
-                    "INSERT INTO reports VALUES (?, ?, ?, ?, ?)",
-                    (report_key, payload["reportId"], int(time.time()), len(raw), digest),
+                    """
+                    INSERT INTO report_submissions
+                        (report_id, report_key, source_fingerprint, created_at, sha256)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (payload["reportId"], report_key, source_fingerprint, now, digest),
                 )
+                removed_keys = prune_reports(connection, report_key, payload["reportId"], now)
                 connection.commit()
+                if previous_target is not None:
+                    previous_target.unlink(missing_ok=True)
+                for removed_key in removed_keys:
+                    (REPORT_DIR / f"{removed_key}.json").unlink(missing_ok=True)
             except BaseException:
                 target.unlink(missing_ok=True)
                 raise
@@ -132,6 +221,115 @@ def store_report(raw: bytes, payload: dict) -> tuple[str, bool]:
                 pass
             raise
     return report_key, True
+
+
+def encode_bounded_report(payload: dict) -> bytes:
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    history = payload.get("trafficHistory")
+    hours = history.get("hours") if isinstance(history, dict) else None
+    while len(encoded) > MAX_REPORT_BYTES and isinstance(hours, list) and hours:
+        del hours[:max(1, len(hours) // 8)]
+        rebuild_history_aggregates(history)
+        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(encoded) > MAX_REPORT_BYTES:
+        raise ValueError("merged report exceeds 16 MiB")
+    return encoded
+
+
+def merge_report_history(previous: dict, current: dict) -> dict:
+    merged = dict(current)
+    prior_history = previous.get("trafficHistory")
+    current_history = current.get("trafficHistory")
+    if not isinstance(prior_history, dict) or not isinstance(current_history, dict):
+        return merged
+    by_start = {}
+    for history in (prior_history, current_history):
+        for hour in history.get("hours", []):
+            if isinstance(hour, dict) and isinstance(hour.get("periodStartMillis"), int):
+                by_start[hour["periodStartMillis"]] = hour
+    history = dict(current_history)
+    history["hours"] = [by_start[key] for key in sorted(by_start)]
+    rebuild_history_aggregates(history)
+    merged["trafficHistory"] = history
+    return merged
+
+
+def rebuild_history_aggregates(history: dict) -> None:
+    hours = history.get("hours", [])
+    if not hours:
+        history["totals"] = {}
+        history["players"] = []
+        return
+    totals = {}
+    players = {}
+    for hour in hours:
+        add_numeric_fields(totals, hour.get("totals"))
+        for player in hour.get("players", []):
+            if not isinstance(player, dict) or not isinstance(player.get("playerUuid"), str):
+                continue
+            entry = players.setdefault(player["playerUuid"], {
+                "playerUuid": player["playerUuid"],
+                "playerName": player.get("playerName", "<unknown-player>"),
+                "traffic": {},
+            })
+            if isinstance(player.get("playerName"), str) and player["playerName"]:
+                entry["playerName"] = player["playerName"]
+            traffic = entry["traffic"]
+            for field in ("outboundRawBytes", "outboundWireBytes", "inboundRawBytes", "inboundWireBytes"):
+                value = player.get(field)
+                if isinstance(value, int) and value >= 0:
+                    traffic[field] = traffic.get(field, 0) + value
+    history["periodStartMillis"] = min(hour.get("periodStartMillis", 0) for hour in hours)
+    history["periodEndMillis"] = max(hour.get("periodEndMillis", 0) for hour in hours)
+    history["complete"] = all(bool(hour.get("complete")) for hour in hours)
+    history["totals"] = totals
+    history["players"] = list(players.values())
+
+
+def add_numeric_fields(target: dict, source: object) -> None:
+    if not isinstance(source, dict):
+        return
+    for name, value in source.items():
+        if isinstance(value, int) and value >= 0:
+            target[name] = target.get(name, 0) + value
+
+
+def prune_reports(connection: sqlite3.Connection, protected_key: str, protected_report_id: str, now: int) -> list[str]:
+    cutoff = now - max(1, MAX_REPORT_AGE_DAYS) * 86400
+    rows = connection.execute(
+        "SELECT report_key, byte_length, COALESCE(updated_at, created_at) FROM reports "
+        "ORDER BY (report_key = ?) DESC, COALESCE(updated_at, created_at) DESC, report_key DESC",
+        (protected_key,),
+    ).fetchall()
+    retained_count = 0
+    retained_bytes = 0
+    removed = []
+    for report_key, byte_length, updated_at in rows:
+        keep = report_key == protected_key or (
+            updated_at >= cutoff
+            and retained_count < max(1, MAX_STORED_REPORTS)
+            and retained_bytes + byte_length <= max(MAX_REPORT_BYTES, MAX_STORED_BYTES)
+        )
+        if keep:
+            retained_count += 1
+            retained_bytes += byte_length
+        else:
+            removed.append(report_key)
+    for report_key in removed:
+        connection.execute("DELETE FROM reports WHERE report_key = ?", (report_key,))
+        connection.execute("DELETE FROM report_submissions WHERE report_key = ?", (report_key,))
+    connection.execute("DELETE FROM report_submissions WHERE created_at < ?", (cutoff,))
+    connection.execute(
+        """
+        DELETE FROM report_submissions WHERE report_id IN (
+            SELECT report_id FROM report_submissions
+            ORDER BY (report_id = ?) DESC, created_at DESC, report_id DESC
+            LIMIT -1 OFFSET ?
+        )
+        """,
+        (protected_report_id, max(1, MAX_STORED_REPORTS * 16)),
+    )
+    return removed
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -191,6 +389,9 @@ class Handler(BaseHTTPRequestHandler):
         if media_type != REPORT_MEDIA:
             self.send_error_json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "unsupported report media type")
             return
+        if not self.server.upload_slots.acquire(timeout=self.server.wait_timeout_seconds):
+            self.reject_upload_busy()
+            return
         try:
             raw = decode_body(self)
             payload = validate_report(json.loads(raw.decode("utf-8")))
@@ -205,11 +406,40 @@ class Handler(BaseHTTPRequestHandler):
             self.log_error("report storage failed")
             self.send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, "report storage failed")
             return
+        finally:
+            self.server.upload_slots.release()
         proto = self.headers.get("X-Forwarded-Proto", "http")
         host = self.headers.get("X-Forwarded-Host", self.headers.get("Host", "bostats.torqueflux.com"))
         url = f"{proto}://{host}/report/{key}"
         status = HTTPStatus.CREATED if created else HTTPStatus.OK
         self.send_json({"key": key, "url": url}, status=status, location=url)
+
+    def reject_upload_busy(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = 0
+        if 0 < length <= MAX_COMPRESSED_BYTES:
+            remaining = length
+            while remaining > 0:
+                chunk = self.rfile.read(min(FILE_CHUNK_BYTES, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+        body = {
+            "error": "report processing capacity is full",
+            "retryable": True,
+            "retryAfterSeconds": self.server.busy_retry_after_seconds,
+        }
+        encoded = json.dumps(body, separators=(",", ":")).encode("utf-8")
+        self.send_response(HTTPStatus.SERVICE_UNAVAILABLE)
+        self.send_header("Retry-After", str(self.server.busy_retry_after_seconds))
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(encoded)
 
     def reject_if_busy(self) -> bool:
         snapshot = self.server.busy_snapshot()
@@ -318,6 +548,7 @@ class BoundedThreadingHTTPServer(HTTPServer):
         self.max_waiting_requests = max_waiting_requests
         self.busy_retry_after_seconds = busy_retry_after_seconds
         self.wait_timeout_seconds = wait_timeout_seconds
+        self.upload_slots = threading.BoundedSemaphore(MAX_ACTIVE_UPLOADS)
         self.request_slots = threading.BoundedSemaphore(max_active_requests + max_waiting_requests)
         self.processing_slots = threading.BoundedSemaphore(max_active_requests)
         self.state_lock = threading.Lock()

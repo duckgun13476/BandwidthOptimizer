@@ -35,7 +35,7 @@ public final class UnifiedBandwidthReportService {
     public static final String DEFAULT_UPLOAD_ENDPOINT = "https://bostats.torqueflux.com/api/v1/reports";
     public static final String DEFAULT_VIEWER_BASE_URL = "https://bostats.torqueflux.com/report/";
     private static final String REPORT_DIRECTORY = "reports";
-    private static final int MAX_REPORT_BYTES = 4 * 1024 * 1024;
+    private static final int MAX_REPORT_BYTES = 16 * 1024 * 1024;
     private static final int MAX_UPLOAD_RESPONSE_BYTES = 1024;
     private static final int MAX_UPLOAD_ATTEMPTS = 4;
     private static final int MAX_RETRY_DELAY_SECONDS = 15;
@@ -70,7 +70,10 @@ public final class UnifiedBandwidthReportService {
     }
 
     public static CompletableFuture<Result> upload(BandwidthReportBundle report) {
-        return submit(bundlePayload(report), true);
+        if (report == null) {
+            return CompletableFuture.completedFuture(Result.failure("Report snapshot is unavailable.", null));
+        }
+        return submit(() -> bundlePayload(withSourceFingerprint(report, report.trafficHistory())), true);
     }
 
     public static CompletableFuture<Result> uploadWithTrafficHistory(BandwidthReportBundle report) {
@@ -79,16 +82,28 @@ public final class UnifiedBandwidthReportService {
         }
         return submit(() -> {
             TrafficHistoryReport history = TrafficPeriodReportStore.loadCurrentMonth(report.playerTraffic());
-            return bundlePayload(new BandwidthReportBundle(
-                    report.schemaVersion(),
-                    report.reportId(),
-                    report.generatedAtMillis(),
-                    report.privacyLevel(),
-                    report.summary(),
-                    report.playerTraffic(),
-                    history
-            ));
+            return bundlePayload(withSourceFingerprint(report, history));
         }, true);
+    }
+
+    private static BandwidthReportBundle withSourceFingerprint(
+            BandwidthReportBundle report,
+            TrafficHistoryReport history
+    ) {
+        String sourceFingerprint = report.sourceFingerprint();
+        if (sourceFingerprint == null || sourceFingerprint.isBlank()) {
+            sourceFingerprint = ReportSourceIdentity.loadOrCreateUnchecked();
+        }
+        return new BandwidthReportBundle(
+                report.schemaVersion(),
+                report.reportId(),
+                sourceFingerprint,
+                report.generatedAtMillis(),
+                report.privacyLevel(),
+                report.summary(),
+                report.playerTraffic(),
+                history
+        );
     }
 
     private static CompletableFuture<Result> submit(ReportPayload payload, boolean upload) {
@@ -113,7 +128,7 @@ public final class UnifiedBandwidthReportService {
         try {
             byte[] json = payload.json();
             if (json.length > MAX_REPORT_BYTES) {
-                return Result.failure("Report exceeds the 4 MiB safety limit.", null);
+                return Result.failure("Report exceeds the 16 MiB safety limit.", null);
             }
             localPath = writeLocal(payload.directory(), payload.reportId(), json);
             if (!upload) {

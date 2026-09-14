@@ -20,6 +20,7 @@ public final class BandwidthReportCommand {
         BandwidthReportBundle report = new BandwidthReportBundle(
                 1,
                 UUID.randomUUID().toString(),
+                null,
                 now,
                 "server-admin-player-identifiable",
                 UnifiedBandwidthReportCollector.collect("server"),

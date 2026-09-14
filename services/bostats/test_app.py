@@ -224,6 +224,178 @@ class BostatsServerRegression(unittest.TestCase):
                     thread.join(2)
                 app.DATA_DIR, app.REPORT_DIR, app.DATABASE = old_data_dir, old_report_dir, old_database
 
+    def test_source_reports_merge_hours_and_rotate_link(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with self.temporary_storage(directory):
+                first = self.report_payload("merge-0001", "a" * 64, 1000, 11, "Alice")
+                second = self.report_payload("merge-0002", "a" * 64, 2000, 17, "Alice2")
+                first_raw = self.encode(first)
+                second_raw = self.encode(second)
+
+                first_key, first_created = app.store_report(first_raw, first)
+                second_key, second_created = app.store_report(second_raw, second)
+                duplicate_key, duplicate_created = app.store_report(second_raw, second)
+
+                self.assertTrue(first_created)
+                self.assertTrue(second_created)
+                self.assertFalse(duplicate_created)
+                self.assertNotEqual(first_key, second_key)
+                self.assertEqual(second_key, duplicate_key)
+                self.assertFalse((app.REPORT_DIR / f"{first_key}.json").exists())
+                stored = json.loads((app.REPORT_DIR / f"{second_key}.json").read_text(encoding="utf-8"))
+                self.assertEqual([1000, 2000], [hour["periodStartMillis"] for hour in stored["trafficHistory"]["hours"]])
+                self.assertEqual(28, stored["trafficHistory"]["totals"]["outboundWireBytes"])
+                self.assertEqual("Alice2", stored["trafficHistory"]["players"][0]["playerName"])
+                database = app.sqlite3.connect(app.DATABASE)
+                try:
+                    self.assertEqual(1, database.execute("SELECT COUNT(*) FROM reports").fetchone()[0])
+                    self.assertEqual(2, database.execute("SELECT COUNT(*) FROM report_submissions").fetchone()[0])
+                finally:
+                    database.close()
+
+    def test_merged_history_drops_oldest_hours_at_size_limit(self) -> None:
+        old_limit = app.MAX_REPORT_BYTES
+        try:
+            payload = self.report_payload("trim-history", "b" * 64, 1000, 1, "Player")
+            template = payload["trafficHistory"]["hours"][0]
+            payload["trafficHistory"]["hours"] = []
+            for index in range(8):
+                hour = json.loads(json.dumps(template))
+                hour["periodStartMillis"] = 1000 + index * 1000
+                hour["periodEndMillis"] = 2000 + index * 1000
+                hour["padding"] = "x" * 300
+                payload["trafficHistory"]["hours"].append(hour)
+            app.MAX_REPORT_BYTES = 1400
+            encoded = app.encode_bounded_report(payload)
+            retained = json.loads(encoded)["trafficHistory"]["hours"]
+            self.assertLessEqual(len(encoded), 1400)
+            self.assertGreater(retained[0]["periodStartMillis"], 1000)
+            self.assertEqual(8000, retained[-1]["periodStartMillis"])
+        finally:
+            app.MAX_REPORT_BYTES = old_limit
+
+    def test_initialize_migrates_legacy_report_table(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            database = root / "metadata.db"
+            connection = app.sqlite3.connect(database)
+            try:
+                connection.execute(
+                    "CREATE TABLE reports (report_key TEXT PRIMARY KEY, report_id TEXT NOT NULL, "
+                    "created_at INTEGER NOT NULL, byte_length INTEGER NOT NULL, sha256 TEXT NOT NULL)"
+                )
+                connection.execute(
+                    "INSERT INTO reports VALUES (?, ?, ?, ?, ?)",
+                    ("legacy-key", "legacy-report", 1, 2, "a" * 64),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+            with self.temporary_storage(directory):
+                connection = app.sqlite3.connect(app.DATABASE)
+                try:
+                    columns = {row[1] for row in connection.execute("PRAGMA table_info(reports)")}
+                    self.assertIn("source_fingerprint", columns)
+                    self.assertIn("updated_at", columns)
+                    self.assertEqual(1, connection.execute("SELECT COUNT(*) FROM report_submissions").fetchone()[0])
+                finally:
+                    connection.close()
+
+    def test_report_retention_bounds_count_and_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with self.temporary_storage(directory):
+                old_count = app.MAX_STORED_REPORTS
+                app.MAX_STORED_REPORTS = 2
+                try:
+                    keys = []
+                    for index in range(3):
+                        payload = self.report_payload(f"retention-{index:04d}", None, index * 1000, index + 1, "Player")
+                        key, _ = app.store_report(self.encode(payload), payload)
+                        keys.append(key)
+                    database = app.sqlite3.connect(app.DATABASE)
+                    try:
+                        self.assertEqual(2, database.execute("SELECT COUNT(*) FROM reports").fetchone()[0])
+                    finally:
+                        database.close()
+                    self.assertTrue((app.REPORT_DIR / f"{keys[2]}.json").exists())
+                    self.assertEqual(2, sum((app.REPORT_DIR / f"{key}.json").exists() for key in keys))
+                finally:
+                    app.MAX_STORED_REPORTS = old_count
+
+    def test_upload_parser_capacity_returns_retryable_response(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with self.temporary_storage(directory):
+                server = QuietServer(("127.0.0.1", 0), app.Handler, 4, 0.2, 1, 3, 0.05)
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                acquired = 0
+                try:
+                    for _ in range(app.MAX_ACTIVE_UPLOADS):
+                        self.assertTrue(server.upload_slots.acquire(blocking=False))
+                        acquired += 1
+                    payload = self.report_payload("upload-capacity", None, 1000, 1, "Player")
+                    compressed = gzip.compress(self.encode(payload))
+                    connection = http.client.HTTPConnection(*server.server_address, timeout=2)
+                    connection.request("POST", "/api/v1/reports", compressed, {
+                        "Content-Type": app.REPORT_MEDIA,
+                        "Content-Encoding": "gzip",
+                    })
+                    response = connection.getresponse()
+                    self.assertEqual(503, response.status)
+                    self.assertEqual("3", response.getheader("Retry-After"))
+                    self.assertTrue(json.loads(response.read())["retryable"])
+                    connection.close()
+                finally:
+                    for _ in range(acquired):
+                        server.upload_slots.release()
+                    server.shutdown()
+                    server.server_close()
+                    thread.join(2)
+
+    @staticmethod
+    def report_payload(report_id: str, source: str | None, start: int, wire_bytes: int, name: str) -> dict:
+        payload = {
+            "schemaVersion": 1,
+            "reportId": report_id,
+            "summary": {},
+            "playerTraffic": {},
+            "trafficHistory": {
+                "schemaVersion": 1,
+                "periodStartMillis": start,
+                "periodEndMillis": start + 1000,
+                "generatedAtMillis": start + 1000,
+                "zoneId": "UTC",
+                "complete": True,
+                "totals": {"outboundWireBytes": wire_bytes},
+                "players": [],
+                "hours": [{
+                    "periodStartMillis": start,
+                    "periodEndMillis": start + 1000,
+                    "complete": True,
+                    "totals": {"outboundWireBytes": wire_bytes},
+                    "players": [{
+                        "playerUuid": "00000000-0000-0000-0000-000000000001",
+                        "playerName": name,
+                        "outboundRawBytes": wire_bytes * 2,
+                        "outboundWireBytes": wire_bytes,
+                        "inboundRawBytes": 0,
+                        "inboundWireBytes": 0,
+                    }],
+                }],
+            },
+        }
+        if source is not None:
+            payload["sourceFingerprint"] = source
+        return payload
+
+    @staticmethod
+    def encode(payload: dict) -> bytes:
+        return json.dumps(payload, separators=(",", ":")).encode("utf-8")
+
+    @staticmethod
+    def temporary_storage(directory: str):
+        return TemporaryStorage(Path(directory))
+
     def request_socket(self) -> socket.socket:
         return self.request_socket_for(self.server)
 
@@ -313,6 +485,22 @@ class RecordingOutput:
         separator = b"\r\n\r\n"
         joined = b"".join(self.writes)
         return joined.split(separator, 1)[1]
+
+
+class TemporaryStorage:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def __enter__(self):
+        self.previous = app.DATA_DIR, app.REPORT_DIR, app.DATABASE
+        app.DATA_DIR = self.root
+        app.REPORT_DIR = self.root / "reports"
+        app.DATABASE = self.root / "metadata.db"
+        app.initialize()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        app.DATA_DIR, app.REPORT_DIR, app.DATABASE = self.previous
 
 
 if __name__ == "__main__":

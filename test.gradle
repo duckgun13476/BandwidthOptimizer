@@ -370,6 +370,15 @@ tasks.register('runWeakIdentitySetRegression', JavaExec) {
     )
 }
 
+tasks.register('runReportSourceIdentityRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies stable pseudonymous report source identity persistence.',
+            'com.PinkCats.bandwidthoptimizer.report.unified.ReportSourceIdentityRegressionMain'
+    )
+}
+
 tasks.register('runChunkWatchBoundaryPendingStoreSecurityRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,

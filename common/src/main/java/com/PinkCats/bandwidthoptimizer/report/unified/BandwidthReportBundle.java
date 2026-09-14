@@ -6,6 +6,7 @@ import com.PinkCats.bandwidthoptimizer.report.traffic.TrafficHistoryReport;
 public record BandwidthReportBundle(
         int schemaVersion,
         String reportId,
+        String sourceFingerprint,
         long generatedAtMillis,
         String privacyLevel,
         UnifiedBandwidthReport summary,
