@@ -666,6 +666,15 @@ tasks.register('runBoundedHttpResponseRegression', JavaExec) {
     maxHeapSize = '32m'
 }
 
+tasks.register('runReportUploadRetryRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies bounded report retries and non-retryable response handling.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.report.unified.ReportUploadRetryRegressionMain'
+    maxHeapSize = '32m'
+}
+
 tasks.register('runChunkBranchCoverageVerify', JavaExec) {
     group = 'verification'
     description = 'Verifies NeoForge 1.21.1 runAll chunk transport branch coverage.'

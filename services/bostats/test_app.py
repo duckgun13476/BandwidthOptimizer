@@ -19,11 +19,18 @@ class BlockingHandler(BaseHTTPRequestHandler):
     lock = threading.Lock()
 
     def do_GET(self) -> None:
+        if app.Handler.reject_if_busy(self):
+            return
         with self.lock:
             type(self).entered += 1
         self.release.wait(2)
         self.send_response(204)
         self.end_headers()
+
+    def do_POST(self) -> None:
+        if app.Handler.reject_if_busy(self):
+            return
+        self.do_GET()
 
     def log_message(self, message: str, *args: object) -> None:
         pass
@@ -38,7 +45,7 @@ class BostatsServerRegression(unittest.TestCase):
     def setUp(self) -> None:
         BlockingHandler.release.clear()
         BlockingHandler.entered = 0
-        self.server = QuietServer(("127.0.0.1", 0), BlockingHandler, 2, 0.2)
+        self.server = QuietServer(("127.0.0.1", 0), BlockingHandler, 2, 0.2, 1, 1, 0.1)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
 
@@ -54,7 +61,10 @@ class BostatsServerRegression(unittest.TestCase):
         self.wait_for_entered(2)
 
         rejected = self.request_socket()
-        self.assertEqual(b"", self.read_rejection(rejected))
+        response = self.read_response(rejected)
+        self.assertIn(b" 503 ", response.split(b"\r\n", 1)[0])
+        self.assertIn(b'"waiting":1', response)
+        self.assertIn(b'"queuePosition":1', response)
         self.assertEqual(2, BlockingHandler.entered)
 
         BlockingHandler.release.set()
@@ -72,7 +82,7 @@ class BostatsServerRegression(unittest.TestCase):
         self.wait_for_entered(1)
 
         rejected = self.request_socket()
-        self.assertEqual(b"", self.read_rejection(rejected))
+        self.assertIn(b" 503 ", self.read_response(rejected).split(b"\r\n", 1)[0])
         self.assertEqual(1, BlockingHandler.entered)
 
         time.sleep(0.35)
@@ -103,6 +113,53 @@ class BostatsServerRegression(unittest.TestCase):
             self.assertGreater(len(output.writes), 2)
             self.assertLessEqual(max(map(len, output.writes[1:])), app.FILE_CHUNK_BYTES)
 
+    def test_waiting_pool_is_bounded_and_drains(self) -> None:
+        server = QuietServer(("127.0.0.1", 0), BlockingHandler, 1, 1, 1, 1, 1)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        first = second = None
+        try:
+            first = self.request_socket_for(server)
+            self.wait_for_entered(1)
+            second = self.request_socket_for(server)
+            self.wait_for_waiting(server, 1)
+
+            BlockingHandler.release.set()
+            self.assertIn(b" 204 ", self.read_response(first).split(b"\r\n", 1)[0])
+            self.assertIn(b" 204 ", self.read_response(second).split(b"\r\n", 1)[0])
+        finally:
+            BlockingHandler.release.set()
+            for connection in (first, second):
+                if connection is not None:
+                    connection.close()
+            server.shutdown()
+            server.server_close()
+            thread.join(2)
+
+    def test_busy_upload_response_drains_request_body(self) -> None:
+        server = QuietServer(("127.0.0.1", 0), BlockingHandler, 1, 1, 1, 1, 0.1)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        active = overloaded = None
+        try:
+            active = self.request_socket_for(server)
+            self.wait_for_entered(1)
+            overloaded = self.post_socket_for(server, bytes(range(256)) * 512)
+            response = self.read_response(overloaded)
+            self.assertIn(b" 503 ", response.split(b"\r\n", 1)[0])
+            self.assertIn(b"Retry-After: 1", response)
+            self.assertIn(b'"active":1', response)
+            self.assertIn(b'"waiting":1', response)
+            self.assertIn(b'"queuePosition":1', response)
+        finally:
+            BlockingHandler.release.set()
+            for connection in (active, overloaded):
+                if connection is not None:
+                    connection.close()
+            server.shutdown()
+            server.server_close()
+            thread.join(2)
+
     def test_real_handler_upload_and_download_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             old_data_dir, old_report_dir, old_database = app.DATA_DIR, app.REPORT_DIR, app.DATABASE
@@ -113,7 +170,7 @@ class BostatsServerRegression(unittest.TestCase):
             thread = None
             try:
                 app.initialize()
-                server = QuietServer(("127.0.0.1", 0), app.Handler, 4, 1)
+                server = QuietServer(("127.0.0.1", 0), app.Handler, 4, 1, 0)
                 thread = threading.Thread(target=server.serve_forever, daemon=True)
                 thread.start()
                 report = json.dumps({
@@ -140,6 +197,24 @@ class BostatsServerRegression(unittest.TestCase):
                 self.assertEqual(200, download.status)
                 self.assertEqual(report, download.read())
                 connection.close()
+
+                connection = http.client.HTTPConnection(*server.server_address, timeout=2)
+                connection.request("POST", "/api/v1/reports", compressed, {
+                    "Content-Type": app.REPORT_MEDIA,
+                    "Content-Encoding": "gzip",
+                })
+                duplicate = connection.getresponse()
+                duplicate_response = json.loads(duplicate.read())
+                self.assertEqual(200, duplicate.status)
+                self.assertEqual(response["key"], duplicate_response["key"])
+                connection.close()
+
+                database = app.sqlite3.connect(app.DATABASE)
+                try:
+                    self.assertEqual(1, database.execute("SELECT COUNT(*) FROM reports").fetchone()[0])
+                finally:
+                    database.close()
+                self.assertEqual(1, len(list(app.REPORT_DIR.glob("*.json"))))
             finally:
                 if server is not None:
                     server.shutdown()
@@ -150,8 +225,24 @@ class BostatsServerRegression(unittest.TestCase):
                 app.DATA_DIR, app.REPORT_DIR, app.DATABASE = old_data_dir, old_report_dir, old_database
 
     def request_socket(self) -> socket.socket:
-        connection = socket.create_connection(self.server.server_address, timeout=1)
+        return self.request_socket_for(self.server)
+
+    @staticmethod
+    def request_socket_for(server: app.BoundedThreadingHTTPServer) -> socket.socket:
+        connection = socket.create_connection(server.server_address, timeout=1)
         connection.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        return connection
+
+    @staticmethod
+    def post_socket_for(server: app.BoundedThreadingHTTPServer, body: bytes) -> socket.socket:
+        connection = socket.create_connection(server.server_address, timeout=2)
+        headers = (
+            "POST /api/v1/reports HTTP/1.1\r\n"
+            "Host: localhost\r\n"
+            f"Content-Length: {len(body)}\r\n"
+            "Connection: close\r\n\r\n"
+        ).encode("ascii")
+        connection.sendall(headers + body)
         return connection
 
     @staticmethod
@@ -195,6 +286,16 @@ class BostatsServerRegression(unittest.TestCase):
         finally:
             for _ in range(acquired):
                 server.request_slots.release()
+
+    @staticmethod
+    def wait_for_waiting(server: app.BoundedThreadingHTTPServer, count: int) -> None:
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            with server.state_lock:
+                if server.waiting_requests == count:
+                    return
+            time.sleep(0.01)
+        raise AssertionError(f"server did not reach {count} waiting requests")
 
 
 class RecordingOutput:

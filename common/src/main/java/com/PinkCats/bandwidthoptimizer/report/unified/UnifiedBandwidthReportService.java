@@ -12,6 +12,7 @@ import com.google.gson.JsonParser;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
+import java.net.http.HttpTimeoutException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -20,6 +21,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -35,6 +37,8 @@ public final class UnifiedBandwidthReportService {
     private static final String REPORT_DIRECTORY = "reports";
     private static final int MAX_REPORT_BYTES = 4 * 1024 * 1024;
     private static final int MAX_UPLOAD_RESPONSE_BYTES = 1024;
+    private static final int MAX_UPLOAD_ATTEMPTS = 4;
+    private static final int MAX_RETRY_DELAY_SECONDS = 15;
     private static final AtomicBoolean BUSY = new AtomicBoolean();
     private static final ExecutorService WORKER = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "bo-report-upload");
@@ -131,19 +135,118 @@ public final class UnifiedBandwidthReportService {
                     .header("User-Agent", "BandwidthOptimizer/" + Bandwidthoptimizer.networkProtocolVersion())
                     .POST(HttpRequest.BodyPublishers.ofByteArray(compressed))
                     .build();
-            HttpResponse<String> response = HTTP_CLIENT.send(request,
-                    new BoundedUtf8BodyHandler(MAX_UPLOAD_RESPONSE_BYTES));
+            UploadResponse uploadResponse = sendWithRetry(HTTP_CLIENT, request, TimeUnit.SECONDS::sleep);
+            HttpResponse<String> response = uploadResponse.response();
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                return Result.failure("Upload failed with HTTP " + response.statusCode() + "; local report retained.", localPath);
+                return Result.failure(uploadFailureMessage(response, uploadResponse.attempts()), localPath);
             }
             String url = resolveViewerUrl(response);
             if (url.isBlank()) {
                 return Result.failure("Upload succeeded but the server returned no report URL or key; local report retained.", localPath);
             }
-            return Result.uploaded(localPath, url);
+            String message = uploadResponse.attempts() == 1
+                    ? "Report uploaded."
+                    : "Report uploaded after " + uploadResponse.attempts() + " attempts.";
+            return Result.uploaded(localPath, url, message);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return Result.failure("Report upload interrupted; local report retained.", localPath);
         } catch (Exception exception) {
             Bandwidthoptimizer.LOGGER.warn("[Report] Failed to save or upload unified report", exception);
             return Result.failure("Report failed: " + safeMessage(exception), localPath);
+        }
+    }
+
+    static UploadResponse sendWithRetry(HttpClient client, HttpRequest request, RetrySleeper sleeper)
+            throws IOException, InterruptedException {
+        IOException lastFailure = null;
+        for (int attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt++) {
+            try {
+                HttpResponse<String> response = client.send(request,
+                        new BoundedUtf8BodyHandler(MAX_UPLOAD_RESPONSE_BYTES));
+                if (!isRetryableStatus(response.statusCode()) || attempt == MAX_UPLOAD_ATTEMPTS) {
+                    return new UploadResponse(response, attempt);
+                }
+                int delaySeconds = retryDelaySeconds(response, attempt);
+                logRetry(response, attempt, delaySeconds);
+                sleeper.sleep(delaySeconds);
+            } catch (HttpTimeoutException exception) {
+                lastFailure = exception;
+                if (attempt == MAX_UPLOAD_ATTEMPTS) {
+                    throw exception;
+                }
+                int delaySeconds = retryDelaySeconds(null, attempt);
+                Bandwidthoptimizer.LOGGER.warn(
+                        "[Report] Upload timed out; local report retained for retry. attempt={}/{} retryInSeconds={}",
+                        attempt, MAX_UPLOAD_ATTEMPTS, delaySeconds
+                );
+                sleeper.sleep(delaySeconds);
+            } catch (IOException exception) {
+                lastFailure = exception;
+                if (attempt == MAX_UPLOAD_ATTEMPTS) {
+                    throw exception;
+                }
+                int delaySeconds = retryDelaySeconds(null, attempt);
+                Bandwidthoptimizer.LOGGER.warn(
+                        "[Report] Upload connection failed; local report retained for retry. attempt={}/{} retryInSeconds={} reason={}",
+                        attempt, MAX_UPLOAD_ATTEMPTS, delaySeconds, safeMessage(exception)
+                );
+                sleeper.sleep(delaySeconds);
+            }
+        }
+        throw lastFailure == null ? new IOException("upload retry loop ended without a response") : lastFailure;
+    }
+
+    private static boolean isRetryableStatus(int statusCode) {
+        return statusCode == 429 || statusCode >= 500 && statusCode <= 599;
+    }
+
+    private static int retryDelaySeconds(HttpResponse<String> response, int attempt) {
+        if (response != null) {
+            Optional<String> value = response.headers().firstValue("Retry-After");
+            if (value.isPresent()) {
+                try {
+                    return Math.max(1, Math.min(MAX_RETRY_DELAY_SECONDS, Integer.parseInt(value.get().trim())));
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
+        return Math.min(MAX_RETRY_DELAY_SECONDS, 1 << Math.min(attempt, 3));
+    }
+
+    private static void logRetry(HttpResponse<String> response, int attempt, int delaySeconds) {
+        JsonObject details = parseObject(response.body());
+        int active = integer(details, "active", -1);
+        int waiting = integer(details, "waiting", -1);
+        String reason = waiting >= 0 ? "remote processing queue full" : "HTTP " + response.statusCode();
+        Bandwidthoptimizer.LOGGER.warn(
+                "[Report] Upload deferred; local report retained for retry. "
+                        + "reason={} attempt={}/{} active={} waiting={} retryInSeconds={}",
+                reason, attempt, MAX_UPLOAD_ATTEMPTS, active, waiting, delaySeconds
+        );
+    }
+
+    private static String uploadFailureMessage(HttpResponse<String> response, int attempts) {
+        JsonObject details = parseObject(response.body());
+        int waiting = integer(details, "waiting", -1);
+        String queue = waiting < 0 ? "" : " Queue depth: " + waiting + '.';
+        return "Upload failed with HTTP " + response.statusCode() + " after " + attempts
+                + " attempts; local report retained." + queue;
+    }
+
+    private static JsonObject parseObject(String value) {
+        try {
+            return JsonParser.parseString(value == null ? "" : value).getAsJsonObject();
+        } catch (RuntimeException ignored) {
+            return new JsonObject();
+        }
+    }
+
+    private static int integer(JsonObject object, String name, int fallback) {
+        try {
+            return object.has(name) ? object.get(name).getAsInt() : fallback;
+        } catch (RuntimeException ignored) {
+            return fallback;
         }
     }
 
@@ -244,12 +347,20 @@ public final class UnifiedBandwidthReportService {
             return new Result(true, path, "", "Report saved locally.");
         }
 
-        private static Result uploaded(Path path, String viewerUrl) {
-            return new Result(true, path, viewerUrl, "Report uploaded.");
+        private static Result uploaded(Path path, String viewerUrl, String message) {
+            return new Result(true, path, viewerUrl, message);
         }
 
         private static Result failure(String message, Path path) {
             return new Result(false, path, "", message);
         }
+    }
+
+    @FunctionalInterface
+    interface RetrySleeper {
+        void sleep(long seconds) throws InterruptedException;
+    }
+
+    record UploadResponse(HttpResponse<String> response, int attempts) {
     }
 }

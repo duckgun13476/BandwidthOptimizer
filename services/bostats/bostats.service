@@ -12,7 +12,10 @@ Environment=BOSTATS_DATA_DIR=/srv/bostats/data
 Environment=BOSTATS_HOST=127.0.0.1
 Environment=BOSTATS_PORT=8824
 Environment=BOSTATS_MAX_ACTIVE_REQUESTS=16
+Environment=BOSTATS_MAX_WAITING_REQUESTS=64
 Environment=BOSTATS_SOCKET_TIMEOUT_SECONDS=15
+Environment=BOSTATS_BUSY_RETRY_AFTER_SECONDS=5
+Environment=BOSTATS_WAIT_TIMEOUT_SECONDS=2
 ExecStart=/usr/bin/python3 /srv/bostats/app/app.py
 Restart=on-failure
 RestartSec=3
@@ -22,7 +25,7 @@ ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/srv/bostats/data
 MemoryMax=192M
-TasksMax=64
+TasksMax=96
 
 [Install]
 WantedBy=multi-user.target
