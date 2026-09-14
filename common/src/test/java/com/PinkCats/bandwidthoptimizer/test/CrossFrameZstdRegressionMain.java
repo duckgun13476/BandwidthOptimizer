@@ -24,6 +24,8 @@ public final class CrossFrameZstdRegressionMain {
         verifyEpochFirstFrameSelfSynchronizes();
         verifyNewEpochGapRecoversFromFirstFrame();
         verifyClosedEpochIndependentSpillover();
+        verifySoftRetentionLimitKeepsItsClosingFrame();
+        verifyHardRetentionLimitRejectsBeforeMutation();
         System.out.println("Cross-frame Zstd regression passed.");
     }
 
@@ -371,6 +373,57 @@ public final class CrossFrameZstdRegressionMain {
             ));
         }
         System.out.println("epoch-spillover: closed epoch continued with an independent batch");
+    }
+
+    private static void verifySoftRetentionLimitKeepsItsClosingFrame() {
+        byte[] firstPacket = new byte[4 * 1024 * 1024];
+        byte[] secondPacket = new byte[4 * 1024 * 1024];
+        new java.util.Random(0xB0A7L).nextBytes(firstPacket);
+        new java.util.Random(0x57EAFL).nextBytes(secondPacket);
+        List<byte[]> packets = List.of(firstPacket, secondPacket);
+
+        try (ChannelTransportSession sender = new ChannelTransportSession();
+             ChannelTransportSession receiver = new ChannelTransportSession();
+             ChannelTransportSession recoveryReceiver = new ChannelTransportSession()) {
+            sender.setCrossFrameZstdEnabled(true);
+            receiver.setCrossFrameZstdEnabled(true);
+            var closingFrame = ChannelTransportPacketCodec.wrapBatchPackets(sender, packets);
+            var restored = ChannelTransportPacketCodec.tryUnwrapPacket(receiver, closingFrame.transportFrameBytes());
+            assertRestored(packets, restored);
+            if (!restored.streamingEpochComplete()) {
+                throw new IllegalStateException("A soft-limit closing frame omitted its epoch boundary");
+            }
+
+            ChannelTransportSession.StreamingEpochBoundary boundary = sender.outboundStreamingEpochBoundary();
+            if (boundary == null || boundary.lastSequence() != 1) {
+                throw new IllegalStateException("A soft-limit closing frame did not close sequence one");
+            }
+            List<ChannelTransportSession.StreamingFallbackBatch> fallback =
+                    sender.fallbackOutboundStreamingBatches(boundary.epoch(), 1);
+            if (fallback.size() != 1) {
+                throw new IllegalStateException("A soft-limit closing frame was not retained for recovery");
+            }
+            assertRestored(packets, ChannelTransportPacketCodec.tryUnwrapPacket(
+                    recoveryReceiver,
+                    ChannelTransportPacketCodec.wrapStreamingFallbackBatch(sender, fallback.get(0)).transportFrameBytes()
+            ));
+        }
+        System.out.println("retention-soft-limit: closing frame retained and recovered byte-for-byte");
+    }
+
+    private static void verifyHardRetentionLimitRejectsBeforeMutation() {
+        try (ChannelTransportSession sender = new ChannelTransportSession()) {
+            byte[] oversizedFallback = new byte[17 * 1024 * 1024 + 1];
+            try {
+                sender.retainOutboundStreamingFrame(71, 1, new byte[1], 0, oversizedFallback, 0, 0);
+                throw new IllegalStateException("An oversized retained fallback was accepted");
+            } catch (IllegalArgumentException expected) {
+                if (sender.outboundStreamingEpochBoundary() != null) {
+                    throw new IllegalStateException("Rejected retention mutated the outbound epoch", expected);
+                }
+            }
+        }
+        System.out.println("retention-hard-limit: oversized frame rejected before state mutation");
     }
 
     private static ChannelTransportPacketCodec.WrappedTransportFrame wrapStreaming(

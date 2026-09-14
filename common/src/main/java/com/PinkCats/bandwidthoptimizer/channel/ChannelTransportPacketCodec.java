@@ -274,16 +274,18 @@ public final class ChannelTransportPacketCodec {
             int epochCompleteIndex = buffer.writerIndex();
             buffer.writeBoolean(false);
             buffer.writeBytes(safeTransportBodyBytes);
-            boolean epochComplete = transportSession.willCloseOutboundStreamingEpoch(
-                    epoch,
-                    buffer.readableBytes() + (fallbackBatchPayloadBytes == null ? 0 : fallbackBatchPayloadBytes.length)
-            );
-            if (epochComplete) {
-                buffer.setBoolean(epochCompleteIndex, true);
-            }
             byte[] wrappedBytes = new byte[buffer.readableBytes()];
             buffer.getBytes(0, wrappedBytes);
-            WrappedTransportFrame wrappedFrame = new WrappedTransportFrame(
+            transportSession.retainOutboundStreamingFrame(
+                    epoch,
+                    sequence,
+                    wrappedBytes,
+                    epochCompleteIndex,
+                    fallbackBatchPayloadBytes,
+                    originalPacketBytes,
+                    originalPacketCount
+            );
+            return new WrappedTransportFrame(
                     FrameKind.STREAM_BATCH,
                     wrappedBytes,
                     Math.max(originalPacketBytes, 0),
@@ -291,18 +293,6 @@ public final class ChannelTransportPacketCodec {
                     safeTransportBodyBytes.length,
                     telemetry
             );
-            boolean epochClosed = transportSession.retainOutboundStreamingFrame(
-                    epoch,
-                    sequence,
-                    wrappedFrame.transportFrameBytes(),
-                    fallbackBatchPayloadBytes,
-                    originalPacketBytes,
-                    originalPacketCount
-            );
-            if (epochClosed != epochComplete) {
-                throw new IllegalStateException("Streaming epoch boundary prediction changed during frame retention");
-            }
-            return wrappedFrame;
         } finally {
             buffer.release();
         }

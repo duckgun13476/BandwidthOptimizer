@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel;
 
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -10,6 +12,10 @@ final class ChannelTransportStreamingRecoveryState {
 
     private static final int MAX_RETAINED_FRAMES = 64;
     private static final int MAX_RETAINED_BYTES = 8 * 1024 * 1024;
+    private static final int MAX_RETAINED_FRAME_BYTES =
+            ChannelTransportPayloadLimits.MAX_FRAGMENTED_TRANSPORT_FRAME_BYTES
+                    + ChannelTransportPayloadLimits.MAX_STREAMING_FRAME_PAYLOAD_BYTES;
+    private static final int MAX_HARD_RETAINED_BYTES = MAX_RETAINED_BYTES + MAX_RETAINED_FRAME_BYTES;
 
     private final Map<Integer, RetainedOutboundFrame> retainedOutboundFrames = new LinkedHashMap<>();
     private int retainedOutboundBytes;
@@ -141,19 +147,11 @@ final class ChannelTransportStreamingRecoveryState {
         return new ChannelTransportStreamingControlCodec.RecoveryRequest(this.inboundEpoch, this.nextInboundSequence);
     }
 
-    boolean willCloseOutboundEpoch(int epoch, int additionalRetainedBytes) {
-        int retainedFrames = this.retainedOutboundEpoch == 0 || this.retainedOutboundEpoch == epoch
-                ? this.retainedOutboundFrames.size()
-                : 0;
-        int retainedBytes = retainedFrames == 0 ? 0 : this.retainedOutboundBytes;
-        return retainedFrames + 1 >= retainedFrameLimit()
-                || retainedBytes + Math.max(additionalRetainedBytes, 0) >= MAX_RETAINED_BYTES;
-    }
-
     boolean retainOutboundFrame(
             int epoch,
             int sequence,
             byte[] transportFrameBytes,
+            int epochCompleteIndex,
             byte[] fallbackBatchPayloadBytes,
             int originalPacketBytes,
             int originalPacketCount
@@ -161,29 +159,48 @@ final class ChannelTransportStreamingRecoveryState {
         if (epoch <= 0
                 || sequence <= 0
                 || transportFrameBytes == null
-                || fallbackBatchPayloadBytes == null) {
-            return false;
+                || fallbackBatchPayloadBytes == null
+                || epochCompleteIndex < 0
+                || epochCompleteIndex >= transportFrameBytes.length) {
+            throw new IllegalArgumentException("Invalid outbound streaming retention frame");
         }
-        if (this.retainedOutboundEpoch != epoch) {
+        boolean sameEpoch = this.retainedOutboundEpoch == epoch;
+        RetainedOutboundFrame previous = sameEpoch ? this.retainedOutboundFrames.get(sequence) : null;
+        int previousBytes = previous == null ? 0 : previous.retainedBytes();
+        int retainedFrameCount = sameEpoch ? this.retainedOutboundFrames.size() : 0;
+        int retainedBytes = sameEpoch ? this.retainedOutboundBytes : 0;
+        int nextFrameCount = retainedFrameCount + (previous == null ? 1 : 0);
+        long frameBytes = (long) transportFrameBytes.length + fallbackBatchPayloadBytes.length;
+        long nextRetainedBytes = (long) retainedBytes - previousBytes + frameBytes;
+        if (transportFrameBytes.length > ChannelTransportPayloadLimits.MAX_FRAGMENTED_TRANSPORT_FRAME_BYTES
+                || fallbackBatchPayloadBytes.length > ChannelTransportPayloadLimits.MAX_STREAMING_FRAME_PAYLOAD_BYTES
+                || frameBytes > MAX_RETAINED_FRAME_BYTES
+                || nextRetainedBytes > MAX_HARD_RETAINED_BYTES) {
+            throw new IllegalArgumentException("Outbound streaming retention exceeds its hard limit");
+        }
+
+        if (!sameEpoch) {
             resetOutbound();
             this.retainedOutboundEpoch = epoch;
         }
+
+        boolean closesEpoch = this.outboundEpochClosed
+                || nextFrameCount >= retainedFrameLimit()
+                || nextRetainedBytes >= MAX_RETAINED_BYTES;
+        transportFrameBytes[epochCompleteIndex] = closesEpoch ? (byte) 1 : (byte) 0;
         RetainedOutboundFrame copiedFrame = new RetainedOutboundFrame(
                 Arrays.copyOf(transportFrameBytes, transportFrameBytes.length),
                 Arrays.copyOf(fallbackBatchPayloadBytes, fallbackBatchPayloadBytes.length),
                 Math.max(originalPacketBytes, 0),
                 Math.max(originalPacketCount, 0)
         );
-        RetainedOutboundFrame previous = this.retainedOutboundFrames.put(sequence, copiedFrame);
+        previous = this.retainedOutboundFrames.put(sequence, copiedFrame);
         if (previous != null) {
             this.retainedOutboundBytes -= previous.retainedBytes();
         }
         this.retainedOutboundBytes += copiedFrame.retainedBytes();
         this.retainedOutboundLastSequence = Math.max(this.retainedOutboundLastSequence, sequence);
-        if (this.retainedOutboundFrames.size() >= retainedFrameLimit()
-                || this.retainedOutboundBytes >= MAX_RETAINED_BYTES) {
-            this.outboundEpochClosed = true;
-        }
+        this.outboundEpochClosed = closesEpoch;
         return this.outboundEpochClosed;
     }
 
