@@ -521,6 +521,8 @@ tasks.register('runBandwidthOptimizerCommandTreeRegression', JavaExec) {
             'Verifies the compact public command tree and debug-only internal statistics.',
             'com.PinkCats.bandwidthoptimizer.command.BandwidthOptimizerCommandTreeRegressionMain'
     )
+    systemProperty 'bandwidthoptimizer.proxyControlConfigPath',
+            new File(project.layout.buildDirectory.get().asFile, 'tmp/command-tree/bandwidthoptimizer-common.toml').absolutePath
 }
 
 tasks.register('runZstdReplayComparison', JavaExec) {
@@ -567,7 +569,7 @@ tasks.register('runBungeeCordPluginMessageCompatRegression', JavaExec) {
             delegate,
             'verification',
             'Verifies BungeeCord plugin messages stay visible to proxy-side login/session plugins.',
-            'com.PinkCats.bandwidthoptimizer.test.BungeeCordPluginMessageCompatRegressionMain'
+            'com.PinkCats.bandwidthoptimizer.integration.bungeecord.BungeeCordPluginMessageCompatRegressionMain'
     )
 }
 

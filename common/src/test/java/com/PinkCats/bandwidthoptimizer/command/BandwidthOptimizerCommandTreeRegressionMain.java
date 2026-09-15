@@ -17,12 +17,18 @@ public final class BandwidthOptimizerCommandTreeRegressionMain {
         BandwidthOptimizerCommand.register(dispatcher);
 
         CommandNode<CommandSourceStack> root = requireChild(dispatcher.getRoot(), "bandwidthoptimizer");
-        check(childNames(root).equals(Set.of("stats", "debug")),
-                "server command root must contain only stats and debug; hud is client-side");
+        check(childNames(root).equals(Set.of("stats", "reload", "debug")),
+                "server command root must contain only stats, reload, and debug; hud is client-side");
+
+        CommandNode<CommandSourceStack> alias = requireChild(dispatcher.getRoot(), "bo");
+        check(alias.getRedirect() == root, "bo must redirect to the full bandwidthoptimizer command tree");
 
         CommandNode<CommandSourceStack> stats = requireChild(root, "stats");
         check(stats.getCommand() != null, "stats must directly upload the report");
         check(stats.getChildren().isEmpty(), "stats must not expose internal subcommands");
+
+        CommandNode<CommandSourceStack> reload = requireChild(root, "reload");
+        check(reload.getCommand() != null, "reload must directly refresh server configuration");
 
         CommandNode<CommandSourceStack> debug = requireChild(root, "debug");
         CommandNode<CommandSourceStack> debugStats = requireChild(debug, "stats");

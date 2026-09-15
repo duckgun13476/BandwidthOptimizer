@@ -6,6 +6,8 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.event.config.ModConfigEvent;
 
+import java.util.List;
+
 @EventBusSubscriber(modid = Bandwidthoptimizer.MODID)
 public class Config {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
@@ -14,6 +16,7 @@ public class Config {
     public static final ModConfigSpec.BooleanValue ENABLE_TEST_MODE;
     public static final ModConfigSpec.IntValue STATS_LOG_INTERVAL_MINUTES;
     public static final ModConfigSpec.BooleanValue DEBUG_ANALYSIS;
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> ADDITIONAL_PROXY_CONTROL_CHANNELS;
     private static final int TEST_MODE_STATS_LOG_INTERVAL_MINUTES = 3;
 
     public static final ModConfigSpec.BooleanValue ENABLE_BATCH_REFERENCE_DEDUP;
@@ -89,6 +92,14 @@ public class Config {
                 .comment("--------------------------------------------------------------------------")
                 .comment("Enable lightweight analysis outputs, such as packet rank, transport report, bypass rank, and telemetry dumps.")
                 .define("debug_analysis", false);
+
+        BUILDER.pop();
+
+        BUILDER.comment("Proxy Compatibility").push("proxy");
+
+        ADDITIONAL_PROXY_CONTROL_CHANNELS = BUILDER
+                .comment("Additional exact proxy plugin-message channels that bypass BO transport wrapping.")
+                .defineListAllowEmpty(List.of("additional_control_channels"), List::of, value -> value instanceof String);
 
         BUILDER.pop();
 
