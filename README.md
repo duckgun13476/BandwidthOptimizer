@@ -138,9 +138,35 @@ and after a controlled test.
 
 ## Compatibility
 
-BandwidthOptimizer has been tested with large Create-based modpacks, Aeronautics,
-Mechanomania, Velocity proxy switching, Voxy, AutoFish, and other network-heavy
-environments. These tests do not guarantee every possible mod combination.
+Tested modpacks:
+
+- Create Delight
+- Brass Concerto
+- Mechanomania
+
+Individually verified mods:
+
+- Create
+- Aeronautics
+- Cobblemon
+- Voxy
+- AutoFish
+
+Verified proxy integration:
+
+- Velocity
+
+Incompatible network optimization mods:
+
+- Not Enough Bandwidth (NEB)
+- Not Enough Bandwidth Legacy (NEBL)
+- Krypton Reno
+
+These mods inject into the same network transport or compression chain as BO.
+Their overlapping functionality conflicts and they must not be installed together.
+
+These results apply to the tested versions and paths. They do not guarantee every
+possible mod combination.
 
 When BO cannot safely preserve an optimization path, it uses a verified fallback
 or recovery path. Compatibility reports should include the Minecraft version,

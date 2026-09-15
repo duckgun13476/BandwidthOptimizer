@@ -96,7 +96,33 @@ BandwidthOptimizer 在 Minecraft 或加载器完成数据包编码后观察完�
 
 ## 兼容性
 
-BandwidthOptimizer 已在大型机械动力整合包、航空学、重度机械症、Velocity 跨服、Voxy、AutoFish 等网络负载较高的环境中进行测试，但这不代表覆盖了所有可能的模组组合。
+已测试整合包：
+
+- Create Delight
+- Brass Concerto
+- Mechanomania
+
+已单独验证兼容的模组：
+
+- Create
+- Aeronautics
+- Cobblemon
+- Voxy
+- AutoFish
+
+已验证的代理链路：
+
+- Velocity
+
+不兼容的网络优化模组：
+
+- Not Enough Bandwidth（NEB）
+- Not Enough Bandwidth Legacy（NEBL）
+- Krypton Reno
+
+这些模组与 BO 注入了相同的网络传输或压缩链路，功能相互重叠并产生冲突，不能同时安装。
+
+这些结果适用于实际测试过的版本和链路，不代表覆盖所有可能的模组组合。
 
 当某条优化路径无法安全维持原始语义时，BO 会使用经过校验的回退或恢复路径。提交兼容性报告时，请附上 Minecraft 版本、加载器、BO 版本、相关客户端/服务端/代理日志，以及可用的 BO Stats 报告链接。
 

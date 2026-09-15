@@ -122,11 +122,39 @@ locate its source.
 
 ## Tested Environments
 
-Compatibility and measurement work has included Create Delight, Brass Concerto,
-Aeronautics, and Mechanomania. Mechanomania's available historical snapshot
-contained bypass and packet-rank evidence but no source raw/actual summary, so it
-is listed as a tested environment rather than used for a compression-ratio claim.
-These tests do not guarantee every mod combination or proxy topology.
+Tested modpacks:
+
+- Create Delight
+- Brass Concerto
+- Mechanomania
+
+Mechanomania's available historical snapshot contained bypass and packet-rank
+evidence but no source raw/actual summary, so it is listed as a tested modpack
+rather than used for a compression-ratio claim.
+
+Individually verified mods:
+
+- Create
+- Aeronautics
+- Cobblemon
+- Voxy
+- AutoFish
+
+Verified proxy integration:
+
+- Velocity
+
+Incompatible network optimization mods:
+
+- Not Enough Bandwidth (NEB)
+- Not Enough Bandwidth Legacy (NEBL)
+- Krypton Reno
+
+These mods inject into the same network transport or compression chain as BO.
+Their overlapping functionality conflicts and they must not be installed together.
+
+These results apply to the tested versions and paths; they do not guarantee every
+mod combination or proxy topology.
 
 ## Supported Versions
 

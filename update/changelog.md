@@ -1,3 +1,16 @@
+#### v5.10.30.130-release
+
+1. Hardened transport envelope, template dictionary, fragment reassembly, and chunk patch decoding against malformed or oversized input.
+2. Added bounded decoder evidence for diagnosing recursive chunk NBT failures without recording full player payloads.
+3. Added recoverable KeepAlive stall handling while preserving normal login and disconnect semantics.
+4. Bounded replay retention and unified client chunk-cache memory accounting to prevent long-session memory growth.
+5. Published idle-gate state safely across network threads.
+6. Removed Create world and entity reads from Netty encoding paths.
+7. Made persistent-manifest gating generation-safe, preserving FIFO order across re-entry, stale completion, timeout, overflow, and connection close.
+8. Hardened release dependency verification and retained shared regression compatibility across all supported Netty versions.
+9. Added OP-only commands to list, add, and remove persistent proxy control channels without restarting the server.
+10. Separated tested modpacks, individually verified mods, and proxy integrations, and documented incompatible network optimization mods that inject into the same transport or compression chain.
+
 #### v5.10.30.112-release
 
 1. Added stable NeoForge 26.2.0.75 runtime compatibility.
