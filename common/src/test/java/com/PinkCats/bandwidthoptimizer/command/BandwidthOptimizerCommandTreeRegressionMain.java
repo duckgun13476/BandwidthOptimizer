@@ -1,7 +1,9 @@
 package com.PinkCats.bandwidthoptimizer.command;
 
 import com.PinkCats.bandwidthoptimizer.report.unified.BandwidthReportCommandLinkRegression;
+import com.mojang.brigadier.StringReader;
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.tree.ArgumentCommandNode;
 import com.mojang.brigadier.tree.CommandNode;
 import net.minecraft.commands.CommandSourceStack;
 
@@ -17,8 +19,8 @@ public final class BandwidthOptimizerCommandTreeRegressionMain {
         BandwidthOptimizerCommand.register(dispatcher);
 
         CommandNode<CommandSourceStack> root = requireChild(dispatcher.getRoot(), "bandwidthoptimizer");
-        check(childNames(root).equals(Set.of("stats", "reload", "debug")),
-                "server command root must contain only stats, reload, and debug; hud is client-side");
+        check(childNames(root).equals(Set.of("stats", "reload", "proxy", "debug")),
+                "server command root must contain only stats, reload, proxy, and debug; hud is client-side");
 
         CommandNode<CommandSourceStack> alias = requireChild(dispatcher.getRoot(), "bo");
         check(alias.getRedirect() == root, "bo must redirect to the full bandwidthoptimizer command tree");
@@ -29,6 +31,16 @@ public final class BandwidthOptimizerCommandTreeRegressionMain {
 
         CommandNode<CommandSourceStack> reload = requireChild(root, "reload");
         check(reload.getCommand() != null, "reload must directly refresh server configuration");
+
+        CommandNode<CommandSourceStack> proxy = requireChild(root, "proxy");
+        check(proxy.getCommand() != null, "proxy must directly list active channels");
+        check(childNames(proxy).equals(Set.of("add", "remove")), "proxy must expose only add and remove mutations");
+        CommandNode<CommandSourceStack> addChannel = requireChild(proxy, "add").getChild("channel");
+        CommandNode<CommandSourceStack> removeChannel = requireChild(proxy, "remove").getChild("channel");
+        check(addChannel != null, "proxy add must require an exact channel id");
+        check(removeChannel != null, "proxy remove must require an exact channel id");
+        check(argumentConsumesChannelId(addChannel), "proxy add must accept an unquoted namespace:path id");
+        check(argumentConsumesChannelId(removeChannel), "proxy remove must accept an unquoted namespace:path id");
 
         CommandNode<CommandSourceStack> debug = requireChild(root, "debug");
         CommandNode<CommandSourceStack> debugStats = requireChild(debug, "stats");
@@ -50,6 +62,19 @@ public final class BandwidthOptimizerCommandTreeRegressionMain {
 
     private static Set<String> childNames(CommandNode<CommandSourceStack> node) {
         return node.getChildren().stream().map(CommandNode::getName).collect(Collectors.toUnmodifiableSet());
+    }
+
+    private static boolean argumentConsumesChannelId(CommandNode<CommandSourceStack> node) {
+        if (!(node instanceof ArgumentCommandNode<?, ?> argument)) {
+            return false;
+        }
+        StringReader reader = new StringReader("example:channel");
+        try {
+            argument.getType().parse(reader);
+            return !reader.canRead();
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private static void check(boolean condition, String message) {
