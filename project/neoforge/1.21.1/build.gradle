@@ -295,6 +295,39 @@ tasks.named('jar', Jar).configure {
 
 }
 
+tasks.register('verifyNeoForgePublishJarContents') {
+    group = 'verification'
+    description = 'Verify every refmap declared by a packaged NeoForge mixin config exists in the release jar.'
+    dependsOn tasks.named('jar')
+
+    doLast {
+        File artifactFile = tasks.named('jar', Jar).get().archiveFile.get().asFile
+        def zipFile = new java.util.zip.ZipFile(artifactFile)
+        try {
+            Set<String> entries = zipFile.entries().collect { entry -> entry.name } as Set
+            Set<String> declaredRefmaps = []
+            entries.findAll { it.endsWith('.mixins.json') }.each { mixinConfig ->
+                def entry = zipFile.getEntry(mixinConfig)
+                def json = new JsonSlurper().parse(zipFile.getInputStream(entry))
+                if (json.refmap instanceof String && !json.refmap.isBlank()) {
+                    declaredRefmaps.add(json.refmap)
+                }
+            }
+            List<String> missing = declaredRefmaps.findAll { !entries.contains(it) }.sort()
+            if (!missing.isEmpty()) {
+                throw new GradleException("NeoForge publish artifact is missing declared refmaps: ${missing.join(', ')}")
+            }
+            println "Verified NeoForge mixin refmaps for ${project.path}: ${declaredRefmaps.sort()}"
+        } finally {
+            zipFile.close()
+        }
+    }
+}
+
+tasks.named('build').configure {
+    dependsOn tasks.named('verifyNeoForgePublishJarContents')
+}
+
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
@@ -625,6 +658,18 @@ tasks.register('runConnectionPayloadTaskGuardRegression', JavaExec) {
     dependsOn(tasks.named('testClasses'))
     classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
     mainClass = 'com.PinkCats.bandwidthoptimizer.connection.ConnectionPayloadTaskGuardRegressionMain'
+}
+
+tasks.register('runKeepAliveGraceControllerRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies keepalive grace phase, probe, expiry, acknowledgement, and absolute-limit behavior.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.connection.KeepAliveGraceControllerRegressionMain'
+}
+
+tasks.named('check').configure {
+    dependsOn(tasks.named('runKeepAliveGraceControllerRegression'))
 }
 
 tasks.register('runCreateContraptionReferenceResolverRegression', JavaExec) {
