@@ -154,6 +154,10 @@ public final class ChannelTransportControlPlane {
 
     private static ImmediateTransportProfile classifyImmediateTransport(Packet<?> packet) {
         String packetClassName = packetClassName(packet);
+        if (packetClassName.endsWith("ClientboundUpdateRecipesPacket")
+                || packetClassName.endsWith("ClientboundRecipePacket")) {
+            return new ImmediateTransportProfile("recipe_sync_immediate_transport:" + packetClassName);
+        }
         return ImmediateTransportProfile.NONE;
     }
 
