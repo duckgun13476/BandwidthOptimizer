@@ -97,11 +97,9 @@ public final class WatutDynamicGuiCompat {
     }
 
     public static void afterSendScreenRenderData(Object manager, Object status) {
-        Object screenData = screenData(status);
-        Object texturePixelData = objectValue(screenData, "getTexturePixelData");
+        Object texturePixelData = objectValue(screenData(status), "getTexturePixelData");
         if (texturePixelData instanceof ByteBuffer buffer) {
-            state(manager).lastObservedFrameBytes = Math.max(buffer.limit(), 0);
-            buffer.flip();
+            state(manager).lastObservedFrameBytes = Math.max(buffer.remaining(), 0);
         }
     }
 
@@ -164,13 +162,9 @@ public final class WatutDynamicGuiCompat {
             return Math.max(5, intStaticValue(
                     "com.corosus.watut.config.ConfigServerControlledSyncedToClient",
                     "dynamicGuiTickSendRateOfGUIUpdates",
-                    10
-            ));
+                    10));
         }
-        if (visibilityState == VISIBILITY_DISTANT) {
-            return DISTANT_TICK_RATE;
-        }
-        return UNSEEN_TICK_RATE;
+        return visibilityState == VISIBILITY_DISTANT ? DISTANT_TICK_RATE : UNSEEN_TICK_RATE;
     }
 
     private static int resolveVisibilityState(Player sourcePlayer) {
@@ -179,14 +173,12 @@ public final class WatutDynamicGuiCompat {
             return VISIBILITY_UNSEEN;
         }
 
-        double distantDistance = DISTANT_VIEW_DISTANCE;
-        double maxDistance = Math.max(distantDistance, intStaticValue(
+        double maxDistance = Math.max(DISTANT_VIEW_DISTANCE, intStaticValue(
                 "com.corosus.watut.config.ConfigServerControlledSyncedToClient",
                 "distanceRequiredToShowGUIInfo",
-                10
-        ));
+                10));
         double maxDistanceSqr = maxDistance * maxDistance;
-        double distantDistanceSqr = distantDistance * distantDistance;
+        double distantDistanceSqr = DISTANT_VIEW_DISTANCE * DISTANT_VIEW_DISTANCE;
         AABB playerBox = sourcePlayer.getBoundingBox();
         AABB guiBox = createDynamicGuiViewBox(sourcePlayer);
         int bestState = VISIBILITY_UNSEEN;
@@ -196,7 +188,7 @@ public final class WatutDynamicGuiCompat {
                 continue;
             }
             double distanceSqr = observer.distanceToSqr(sourcePlayer);
-            if (maxDistance > 0 && distanceSqr > maxDistanceSqr) {
+            if (distanceSqr > maxDistanceSqr) {
                 continue;
             }
             if (!canObserverSeeBox(observer, playerBox) && !canObserverSeeBox(observer, guiBox)) {
@@ -207,7 +199,6 @@ public final class WatutDynamicGuiCompat {
             }
             bestState = VISIBILITY_DISTANT;
         }
-
         return bestState;
     }
 
@@ -223,17 +214,13 @@ public final class WatutDynamicGuiCompat {
         double maxDistance = Math.max(DISTANT_VIEW_DISTANCE, intStaticValue(
                 "com.corosus.watut.config.ConfigServerControlledSyncedToClient",
                 "distanceRequiredToShowGUIInfo",
-                10
-        ));
+                10));
         double maxDistanceSqr = maxDistance * maxDistance;
         AABB playerBox = sourcePlayer.getBoundingBox();
         AABB guiBox = createDynamicGuiViewBox(sourcePlayer);
 
         for (Player observer : mc.level.players()) {
-            if (observer == sourcePlayer || observer.isSpectator()) {
-                continue;
-            }
-            if (maxDistance > 0 && observer.distanceToSqr(sourcePlayer) > maxDistanceSqr) {
+            if (observer == sourcePlayer || observer.isSpectator() || observer.distanceToSqr(sourcePlayer) > maxDistanceSqr) {
                 continue;
             }
             if (!canObserverSeeBox(observer, playerBox) && !canObserverSeeBox(observer, guiBox)) {
@@ -245,7 +232,6 @@ public final class WatutDynamicGuiCompat {
                 newViewer = true;
             }
         }
-
         state.visibleViewers = visibleViewers;
         return newViewer;
     }
@@ -271,7 +257,6 @@ public final class WatutDynamicGuiCompat {
         if (box.contains(eyePos)) {
             return true;
         }
-
         return canObserverSeePoint(observer, eyePos, box.minX, box.minY, box.minZ)
                 || canObserverSeePoint(observer, eyePos, box.minX, box.minY, box.maxZ)
                 || canObserverSeePoint(observer, eyePos, box.minX, box.maxY, box.minZ)
@@ -285,10 +270,7 @@ public final class WatutDynamicGuiCompat {
     private static boolean canObserverSeePoint(Player observer, Vec3 eyePos, double x, double y, double z) {
         Vec3 toPoint = new Vec3(x - eyePos.x, y - eyePos.y, z - eyePos.z);
         double distanceSqr = toPoint.lengthSqr();
-        if (distanceSqr < 0.25D) {
-            return true;
-        }
-        return observer.getViewVector(1F).dot(toPoint.normalize()) >= VIEW_DOT_THRESHOLD;
+        return distanceSqr < 0.25D || observer.getViewVector(1F).dot(toPoint.normalize()) >= VIEW_DOT_THRESHOLD;
     }
 
     private static boolean isValidGui(Screen screen, Object selfStatus) {
@@ -347,13 +329,7 @@ public final class WatutDynamicGuiCompat {
         if (manager == null || status == null) {
             return;
         }
-        try {
-            Optional<Method> method = method(manager.getClass(), "sendScreenRenderData", status.getClass());
-            if (method.isPresent()) {
-                method.get().invoke(manager, status);
-            }
-        } catch (ReflectiveOperationException | RuntimeException ignored) {
-        }
+        invoke(manager, "sendScreenRenderData", new Class<?>[]{status.getClass()}, status);
     }
 
     private static Object objectValue(Object target, String methodName) {

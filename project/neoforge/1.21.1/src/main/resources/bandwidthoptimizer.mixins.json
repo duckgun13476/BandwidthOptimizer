@@ -20,7 +20,8 @@
   ],
   "client": [
     "minecraft.PauseScreenDisconnectMixin",
-    "neoforge.ClientPayloadContextMixin"
+    "neoforge.ClientPayloadContextMixin",
+    "watut.WatutPlayerStatusManagerClientMixin"
   ],
   "injectors": {
     "defaultRequire": 1

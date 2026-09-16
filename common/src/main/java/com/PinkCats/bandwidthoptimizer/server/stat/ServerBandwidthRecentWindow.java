@@ -18,7 +18,11 @@ public final class ServerBandwidthRecentWindow {
         long nowMillis = System.currentTimeMillis();
         Sample current = new Sample(
                 nowMillis,
-                Math.max(totals.outboundRawEncodedBytes() + totals.serverIdleGateSavedBytes(), 0L),
+                Math.max(
+                        totals.outboundRawEncodedBytes()
+                                + totals.serverIdleGateSavedBytes()
+                                + totals.serverSourceGateEstimatedOutboundSavedBytes(),
+                        0L),
                 Math.max(totals.outboundWireBytes(), 0L)
         );
         synchronized (LOCK) {

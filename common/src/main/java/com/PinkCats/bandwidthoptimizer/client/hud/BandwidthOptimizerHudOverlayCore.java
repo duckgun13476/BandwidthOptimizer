@@ -221,6 +221,10 @@ final class BandwidthOptimizerHudOverlayCore {
                 + formatSavedShare(serverBaselineBytes, snapshot.serverIdleGateSavedBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.pkt") + " "
                 + formatCount(snapshot.serverIdleGateSavedPackets()));
+        lines.add("  " + text("hud.bandwidthoptimizer.metric.source_gate_estimate") + " "
+                + formatSavedShare(serverBaselineBytes, snapshot.serverSourceGateEstimatedOutboundSavedBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.pkt") + " "
+                + formatCount(snapshot.serverSourceGateSuppressedFrames()));
         for (IdleGateServerState.IdlePlayerSnapshot idlePlayer : snapshot.idlePlayers()) {
             String modeKey = idlePlayer.mode() == IdleGateMode.BACKGROUND_IDLE
                     ? "hud.bandwidthoptimizer.idle_player.deep"
@@ -410,7 +414,8 @@ final class BandwidthOptimizerHudOverlayCore {
             return 0L;
         }
         long preEncodeSavedBytes = Math.max(snapshot.serverCreateGateSavedBytes(), 0L)
-                + Math.max(snapshot.serverIdleGateSavedBytes(), 0L);
+                + Math.max(snapshot.serverIdleGateSavedBytes(), 0L)
+                + Math.max(snapshot.serverSourceGateEstimatedOutboundSavedBytes(), 0L);
         long baselineBytes = snapshot.serverOutboundVanillaCompressedEstimateBytes() + preEncodeSavedBytes;
         return baselineBytes > preEncodeSavedBytes ? baselineBytes : serverEffectiveRawBytes(snapshot);
     }
@@ -421,7 +426,8 @@ final class BandwidthOptimizerHudOverlayCore {
         }
         return Math.max(snapshot.serverOutboundRawEncodedBytes()
                 + Math.max(snapshot.serverCreateGateSavedBytes(), 0L)
-                + Math.max(snapshot.serverIdleGateSavedBytes(), 0L), 0L);
+                + Math.max(snapshot.serverIdleGateSavedBytes(), 0L)
+                + Math.max(snapshot.serverSourceGateEstimatedOutboundSavedBytes(), 0L), 0L);
     }
 
     private static String formatDirectionalRate(long inboundBytesPerSecond, long outboundBytesPerSecond) {

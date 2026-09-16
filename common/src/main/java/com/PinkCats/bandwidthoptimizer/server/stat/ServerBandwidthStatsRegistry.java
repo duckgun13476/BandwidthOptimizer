@@ -9,6 +9,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkServerOfflineReuseStats;
 import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateBlockEntityUpdateGate;
 import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.IdleGateBackgroundPacketGate;
+import com.PinkCats.bandwidthoptimizer.gate.source.ServerSourceGateStats;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportSourceRankCore;
 import com.PinkCats.bandwidthoptimizer.report.traffic.PlayerTrafficPeriodArchive;
 import io.netty.channel.Channel;
@@ -115,6 +116,7 @@ public final class ServerBandwidthStatsRegistry {
         ChunkServerOfflineReuseStats.reset();
         CreateBlockEntityUpdateGate.resetStats();
         IdleGateBackgroundPacketGate.reset();
+        ServerSourceGateStats.reset();
         ChannelTransportSourceRankCore.resetCreateBlockEntityTransportStats();
         ServerBandwidthRecentWindow.reset();
         PlayerTrafficPeriodArchive.afterCountersReset(snapshotChannels());
@@ -160,6 +162,7 @@ public final class ServerBandwidthStatsRegistry {
         ServerCacheReuseSnapshot serverCacheReuseSnapshot = snapshotServerCacheReuse();
         CreateBlockEntityUpdateGate.Snapshot createGateSnapshot = CreateBlockEntityUpdateGate.snapshotStats();
         IdleGateBackgroundPacketGate.Snapshot idleGateSnapshot = IdleGateBackgroundPacketGate.snapshot();
+        ServerSourceGateStats.Snapshot sourceGateSnapshot = ServerSourceGateStats.snapshot();
 
         for (ChannelBandwidthStats.Snapshot snapshot : channelSnapshots) {
             outboundRawPackets += snapshot.outboundRawEncodedPackets();
@@ -211,7 +214,10 @@ public final class ServerBandwidthStatsRegistry {
                 createGateSnapshot.savedPackets(),
                 createGateSnapshot.releasedPackets(),
                 idleGateSnapshot.savedBytes(),
-                idleGateSnapshot.savedPackets()
+                idleGateSnapshot.savedPackets(),
+                sourceGateSnapshot.estimatedSavedBytes(),
+                sourceGateSnapshot.estimatedOutboundSavedBytes(),
+                sourceGateSnapshot.suppressedFrames()
         );
     }
 
@@ -360,7 +366,10 @@ public final class ServerBandwidthStatsRegistry {
             long serverCreateGateSavedPackets,
             long serverCreateGateReleasedPackets,
             long serverIdleGateSavedBytes,
-            long serverIdleGateSavedPackets
+            long serverIdleGateSavedPackets,
+            long serverSourceGateEstimatedSavedBytes,
+            long serverSourceGateEstimatedOutboundSavedBytes,
+            long serverSourceGateSuppressedFrames
     ) {
         public TotalsSnapshot(
                 int activeChannels,
@@ -461,6 +470,9 @@ public final class ServerBandwidthStatsRegistry {
                     0L,
                     0L,
                     0L,
+                    0L,
+                    0L,
+                    0L,
                     0L);
         }
 
@@ -520,14 +532,22 @@ public final class ServerBandwidthStatsRegistry {
                     serverCreateGateSavedPackets,
                     serverCreateGateReleasedPackets,
                     0L,
+                    0L,
+                    0L,
+                    0L,
                     0L);
         }
 
         public long outboundSavedBytes() {
             if (outboundTransportFrameBytes <= 0L && outboundBypassBytes <= 0L) {
-                return Math.max(serverIdleGateSavedBytes, 0L);
+                return Math.max(serverIdleGateSavedBytes + serverSourceGateEstimatedOutboundSavedBytes, 0L);
             }
-            return Math.max(outboundVanillaCompressedEstimateBytes + serverIdleGateSavedBytes - outboundWireBytes, 0L);
+            return Math.max(
+                    outboundVanillaCompressedEstimateBytes
+                            + serverIdleGateSavedBytes
+                            + serverSourceGateEstimatedOutboundSavedBytes
+                            - outboundWireBytes,
+                    0L);
         }
 
         public long outboundVanillaEstimateSavedBytes() {

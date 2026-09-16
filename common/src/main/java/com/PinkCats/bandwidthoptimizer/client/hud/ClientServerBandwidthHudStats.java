@@ -64,7 +64,10 @@ public final class ClientServerBandwidthHudStats {
                 payload.serverIdleGateSavedBytes(),
                 payload.serverIdleGateSavedPackets(),
                 payload.idlePlayers(),
-                payload.serverChunkReuseLogicalBytes()
+                payload.serverChunkReuseLogicalBytes(),
+                payload.serverSourceGateEstimatedSavedBytes(),
+                payload.serverSourceGateEstimatedOutboundSavedBytes(),
+                payload.serverSourceGateSuppressedFrames()
         );
     }
 
@@ -121,7 +124,10 @@ public final class ClientServerBandwidthHudStats {
             long serverIdleGateSavedBytes,
             long serverIdleGateSavedPackets,
             List<IdleGateServerState.IdlePlayerSnapshot> idlePlayers,
-            long serverChunkReuseLogicalBytes
+            long serverChunkReuseLogicalBytes,
+            long serverSourceGateEstimatedSavedBytes,
+            long serverSourceGateEstimatedOutboundSavedBytes,
+            long serverSourceGateSuppressedFrames
     ) {
 
         public Snapshot {
@@ -129,7 +135,7 @@ public final class ClientServerBandwidthHudStats {
         }
 
         private static Snapshot empty() {
-            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false, 0L, 0L, 0L, 0L, 0L, 0L, List.of(), 0L);
+            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false, 0L, 0L, 0L, 0L, 0L, 0L, List.of(), 0L, 0L, 0L, 0L);
         }
 
         public boolean fresh() {

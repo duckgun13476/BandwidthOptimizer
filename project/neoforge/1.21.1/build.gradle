@@ -88,9 +88,15 @@ def applySharedBandwidthOptimizerNeoForgeRunProperties = { Project projectRef, d
 }
 
 def configureBandwidthOptimizerNeoForgeClientRun = { Project projectRef, def runConfig ->
+    String clientRunDirectory = (projectRef.findProperty('boClientRunDirectory') ?: 'run/client').toString().trim()
+    File clientRunDirectoryFile = projectRef.file(clientRunDirectory)
     runConfig.systemProperty('neoforge.enabledGameTestNamespaces', mod_id)
-    runConfig.systemProperty('bandwidthoptimizer.outputDirectory', project.ext.boClientOutputRoot.call(projectRef).absolutePath)
+    runConfig.systemProperty('bandwidthoptimizer.outputDirectory', new File(clientRunDirectoryFile, 'bandwidthoptimizer-native').absolutePath)
     runConfig.systemProperty('bandwidthoptimizer.sharedOutputDirectory', project.ext.boServerOutputRoot.call(projectRef).absolutePath)
+    String clientUsername = (projectRef.findProperty('boClientUsername') ?: '').toString().trim()
+    if (!clientUsername.isEmpty()) {
+        runConfig.programArguments.addAll('--username', clientUsername)
+    }
     String mcpAgentClientJarProperty = (projectRef.findProperty('boMcpAgentClientJar') ?: '').toString().trim()
     if (!mcpAgentClientJarProperty.isEmpty()) {
         File mcpAgentClientJar = projectRef.file(mcpAgentClientJarProperty)
@@ -106,7 +112,7 @@ def configureBandwidthOptimizerNeoForgeClientRun = { Project projectRef, def run
                 Copy
         ) {
             from(mcpAgentClientJar)
-            into(projectRef.file('run/client/mods'))
+            into(new File(clientRunDirectoryFile, 'mods'))
         }
         runConfig.taskBefore(prepareMcpAgentClientRunMod)
         runConfig.systemProperty('mcp_tool_for_agent_client.bridge.enabled', 'true')
@@ -151,7 +157,7 @@ neoForge {
     runs {
         client {
             client()
-            gameDirectory.set(project.layout.projectDirectory.dir('run/client'))
+            gameDirectory.set(project.layout.projectDirectory.dir((project.findProperty('boClientRunDirectory') ?: 'run/client').toString()))
             configureBandwidthOptimizerNeoForgeClientRun(project, delegate)
         }
 
@@ -633,6 +639,14 @@ tasks.register('runIdleGateClientPublicationRegression', JavaExec) {
     dependsOn(tasks.named('testClasses'))
     classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
     mainClass = 'com.PinkCats.bandwidthoptimizer.gate.IdleGateClientPublicationRegressionMain'
+}
+
+tasks.register('runSourceGateAccountingRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies source-gate accounting deltas and IdleGate wire compatibility.'
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.PinkCats.bandwidthoptimizer.gate.source.SourceGateAccountingRegressionMain'
 }
 
 tasks.register('runChunkWatchBoundaryPendingStoreSecurityRegression', JavaExec) {

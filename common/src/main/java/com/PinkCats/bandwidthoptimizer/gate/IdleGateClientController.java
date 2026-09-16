@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.gate;
 
 import com.PinkCats.bandwidthoptimizer.client.hud.BandwidthOptimizerHudOverlay;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.ClientWindowCompat;
+import com.PinkCats.bandwidthoptimizer.gate.source.ClientSourceGateStats;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 
@@ -98,7 +99,15 @@ public final class IdleGateClientController {
         lastSentMode = mode;
         lastSentHudVisible = hudVisible;
         lastReportMillis = nowMillis;
-        currentSender.accept(new IdleGateStatePayload(++sequence, mode, hudVisible, nowMillis));
+        ClientSourceGateStats.Snapshot sourceGateStats = ClientSourceGateStats.snapshot();
+        currentSender.accept(new IdleGateStatePayload(
+                ++sequence,
+                mode,
+                hudVisible,
+                nowMillis,
+                sourceGateStats.estimatedSavedBytes(),
+                sourceGateStats.estimatedOutboundSavedBytes(),
+                sourceGateStats.suppressedFrames()));
     }
 
     private static long reportIntervalMillis(IdleGateMode mode) {
@@ -208,6 +217,7 @@ public final class IdleGateClientController {
         lastZ = Double.NaN;
         lastYaw = Float.NaN;
         lastPitch = Float.NaN;
+        ClientSourceGateStats.reset();
         clearWorldReadyState();
     }
 

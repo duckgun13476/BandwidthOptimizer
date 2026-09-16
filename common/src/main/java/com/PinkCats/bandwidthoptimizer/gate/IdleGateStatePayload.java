@@ -10,9 +10,12 @@ public record IdleGateStatePayload(
         int sequence,
         IdleGateMode mode,
         boolean hudVisible,
-        long clientTimeMillis
+        long clientTimeMillis,
+        long sourceGateEstimatedSavedBytes,
+        long sourceGateEstimatedOutboundSavedBytes,
+        long sourceGateSuppressedFrames
 ) {
-    private static final int WIRE_VERSION = 1;
+    private static final int WIRE_VERSION = 2;
     private static final int MAX_BYTES = 64;
 
     public IdleGateStatePayload {
@@ -28,6 +31,9 @@ public record IdleGateStatePayload(
             output.writeByte(mode.id());
             output.writeBoolean(hudVisible);
             output.writeLong(clientTimeMillis);
+            output.writeLong(Math.max(sourceGateEstimatedSavedBytes, 0L));
+            output.writeLong(Math.max(sourceGateEstimatedOutboundSavedBytes, 0L));
+            output.writeLong(Math.max(sourceGateSuppressedFrames, 0L));
             output.flush();
             return bytes.toByteArray();
         } catch (IOException exception) {
@@ -42,20 +48,27 @@ public record IdleGateStatePayload(
         try {
             DataInputStream input = new DataInputStream(new ByteArrayInputStream(bytes));
             int version = input.readUnsignedByte();
-            if (version != WIRE_VERSION) {
+            if (version != 1 && version != WIRE_VERSION) {
                 return active();
             }
+            int sequence = input.readInt();
+            IdleGateMode mode = IdleGateMode.byId(input.readUnsignedByte());
+            boolean hudVisible = input.readBoolean();
+            long clientTimeMillis = input.readLong();
             return new IdleGateStatePayload(
-                    input.readInt(),
-                    IdleGateMode.byId(input.readUnsignedByte()),
-                    input.readBoolean(),
-                    input.readLong());
+                    sequence,
+                    mode,
+                    hudVisible,
+                    clientTimeMillis,
+                    version >= 2 ? input.readLong() : 0L,
+                    version >= 2 ? input.readLong() : 0L,
+                    version >= 2 ? input.readLong() : 0L);
         } catch (IOException exception) {
             return active();
         }
     }
 
     public static IdleGateStatePayload active() {
-        return new IdleGateStatePayload(0, IdleGateMode.ACTIVE, true, System.currentTimeMillis());
+        return new IdleGateStatePayload(0, IdleGateMode.ACTIVE, true, System.currentTimeMillis(), 0L, 0L, 0L);
     }
 }

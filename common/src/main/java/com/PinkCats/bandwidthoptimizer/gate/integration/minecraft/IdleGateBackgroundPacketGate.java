@@ -24,7 +24,8 @@ public final class IdleGateBackgroundPacketGate {
             "neoforge:custom_time_packet",
             "powerful_dummy:damage_data",
             "synaxis:cimulink_view_snapshot",
-            "watut:main"
+            "watut:main",
+            "watut:nbt_client"
     );
     private static final Set<String> BACKGROUND_DROP_PACKET_TYPES = Set.of(
             "ClientboundLevelEventPacket",

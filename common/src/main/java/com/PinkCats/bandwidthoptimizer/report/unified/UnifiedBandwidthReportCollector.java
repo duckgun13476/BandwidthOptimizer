@@ -93,12 +93,15 @@ public final class UnifiedBandwidthReportCollector {
         add(metrics, "outbound_vanilla_estimate_bytes", "Outbound vanilla estimate", snapshot.outboundVanillaCompressedEstimateBytes(), "bytes", "minecraft_compression_estimate", "server_session", "Estimated native compression baseline.");
         add(metrics, "outbound_wire_bytes", "Outbound measured wire", snapshot.outboundWireBytes(), "bytes", "socket_wire", "server_session", "Measured outbound bytes at the server wire accounting point.");
         add(metrics, "inbound_wire_bytes", "Inbound measured wire", snapshot.inboundWireBytes(), "bytes", "socket_wire", "server_session", "Measured inbound bytes at the server wire accounting point.");
-        add(metrics, "outbound_saved_bytes", "Outbound saved", snapshot.outboundSavedBytes(), "bytes", "derived", "server_session", "Derived against the vanilla estimate and includes idle-gate suppression.");
+        add(metrics, "outbound_saved_bytes", "Outbound saved", snapshot.outboundSavedBytes(), "bytes", "derived", "server_session", "Derived against the vanilla estimate and includes idle-gate and source-gate suppression.");
         add(metrics, "offline_reuse_saved_bytes", "Offline cache saved", snapshot.serverOfflineReuseConfirmedSavedBytes(), "bytes", "chunk_reuse", "server_session", "Confirmed persistent-cache reuse savings.");
         add(metrics, "temporary_reuse_saved_bytes", "Temporary cache saved", snapshot.serverTemporaryReuseSavedBytes(), "bytes", "chunk_reuse", "server_session", "Runtime chunk reuse savings excluding confirmed offline reuse.");
         add(metrics, "create_gate_observed_bytes", "Create gate observed", snapshot.serverCreateGateObservedBytes(), "bytes", "gate_input", "server_session", "Create block-entity bytes observed by the gate.");
         add(metrics, "create_gate_saved_bytes", "Create gate saved", snapshot.serverCreateGateSavedBytes(), "bytes", "gate_suppressed", "server_session", "Create update bytes superseded or suppressed by the gate.");
         add(metrics, "idle_gate_saved_bytes", "Idle gate saved", snapshot.serverIdleGateSavedBytes(), "bytes", "gate_suppressed", "server_session", "Clientbound bytes intentionally not sent during idle gating.");
+        add(metrics, "source_gate_estimated_saved_bytes", "Source gate estimated saved", snapshot.serverSourceGateEstimatedSavedBytes(), "bytes", "estimated_gate_suppressed", "server_session", "Conservative estimate derived from previously observed WATUT compressed frames that BO prevented at capture time.");
+        add(metrics, "source_gate_estimated_outbound_saved_bytes", "Source gate estimated outbound saved", snapshot.serverSourceGateEstimatedOutboundSavedBytes(), "bytes", "estimated_gate_suppressed", "server_session", "Estimated clientbound WATUT fanout prevented at capture time; this is the source-gate amount included in outbound savings.");
+        add(metrics, "source_gate_suppressed_frames", "Source gate suppressed frames", snapshot.serverSourceGateSuppressedFrames(), "frames", "gate_suppressed", "server_session", "WATUT GUI frames prevented before payload construction.");
         return section("server", "Server session", "Aggregate server counters without player names, UUIDs, addresses, or channel identifiers.", metrics);
     }
 

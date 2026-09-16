@@ -21,7 +21,7 @@ public abstract class WatutPlayerStatusManagerClientMixin {
 
     @Dynamic("Optional WATUT compat")
     @Inject(method = "sendScreenRenderData", at = @At("TAIL"), require = 0, remap = false)
-    private void bandwidthoptimizer$restoreWatutTextureBuffer(@Coerce Object status, CallbackInfo ci) {
+    private void bandwidthoptimizer$observeWatutFrame(@Coerce Object status, CallbackInfo ci) {
         WatutDynamicGuiCompat.afterSendScreenRenderData(this, status);
     }
 }
