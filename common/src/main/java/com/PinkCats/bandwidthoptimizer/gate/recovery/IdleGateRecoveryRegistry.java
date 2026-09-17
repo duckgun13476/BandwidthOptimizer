@@ -9,6 +9,7 @@ import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateWorkerBlock
 import com.PinkCats.bandwidthoptimizer.gate.integration.farm_and_charm.FarmAndCharmSaturationRecoveryPolicy;
 import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.IdleGateForegroundEntityViewPolicy;
 import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.IdleGateForegroundViewPolicy;
+import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.ActiveEntityViewGate;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.BlockEntityTypeKeyCompat;
 import io.netty.channel.Channel;
 import net.minecraft.network.protocol.Packet;
@@ -50,6 +51,9 @@ public final class IdleGateRecoveryRegistry {
             return false;
         }
         IdleGateServerState.PlayerIdleState state = IdleGateServerState.snapshot(channel);
+        if (!state.mode().isIdle()) {
+            return ActiveEntityViewGate.tryCapture(channel, packet);
+        }
         if (state.mode() == IdleGateMode.FOREGROUND_STILL) {
             return tryCaptureForegroundEntityOnServerThread(channel, packet);
         }
@@ -171,6 +175,7 @@ public final class IdleGateRecoveryRegistry {
     }
 
     public static void onServerTick() {
+        ActiveEntityViewGate.onServerTick();
         for (ServerPlayer player : PENDING_RESTORES.values()) {
             if (player == null || !PENDING_RESTORES.remove(player.getUUID(), player)) {
                 continue;
@@ -189,6 +194,7 @@ public final class IdleGateRecoveryRegistry {
             return;
         }
         PENDING_RESTORES.remove(player.getUUID());
+        ActiveEntityViewGate.discard(player);
         IdleGateForegroundEntityViewPolicy.discard(player);
         for (IdleGateRecoveryPolicy policy : POLICIES) {
             policy.discard(player);
