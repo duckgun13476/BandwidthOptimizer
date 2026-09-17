@@ -126,6 +126,22 @@ tasks.register('prepareEmbeddedRuntimeLibs', Copy) {
 
 sourceSets.main.resources.srcDir embeddedRuntimeLibsOutputDir
 
+tasks.register('runRecipeSyncPersistentDeltaRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies exact recipe delta reconstruction and persistent full-rebuild recovery.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.recipe.RecipeSyncPersistentDeltaRegressionMain'
+}
+
+tasks.register('runRecipeSyncTransportLifecycleRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies full rebuild, durable promotion, and exact recipe delta transport.'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.recipe.RecipeSyncTransportLifecycleRegressionMain'
+}
+
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
 

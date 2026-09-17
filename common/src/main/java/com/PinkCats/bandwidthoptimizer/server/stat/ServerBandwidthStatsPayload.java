@@ -5,6 +5,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshot
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateMode;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateServerState;
 import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateBlockEntityUpdateGate;
+import com.PinkCats.bandwidthoptimizer.recipe.RecipeSyncTrafficStats;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportSourceRankCore;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
@@ -56,7 +57,14 @@ public record ServerBandwidthStatsPayload(
         long serverChunkReuseLogicalBytes,
         long serverSourceGateEstimatedSavedBytes,
         long serverSourceGateEstimatedOutboundSavedBytes,
-        long serverSourceGateSuppressedFrames
+        long serverSourceGateSuppressedFrames,
+        long serverRecipeLogicalBytes,
+        long serverRecipeFrameBytes,
+        long serverRecipeSavedBytes,
+        long serverRecipeFullFrames,
+        long serverRecipeIdentityFrames,
+        long serverRecipeStructuralDeltaFrames,
+        long serverRecipeByteDeltaFrames
 ) {
 
     private static final int MAX_IDLE_PLAYERS = 128;
@@ -86,6 +94,7 @@ public record ServerBandwidthStatsPayload(
         long serverJvmMaxBytes = Math.max(runtime.maxMemory(), 0L);
         ServerBandwidthRecentWindow.Snapshot safeRecentWindow =
                 recentWindow == null ? ServerBandwidthRecentWindow.Snapshot.empty() : recentWindow;
+        RecipeSyncTrafficStats.Snapshot recipeSnapshot = RecipeSyncTrafficStats.snapshot();
         long createGateObservedBytes = totals.serverCreateGateObservedBytes() > 0L
                 ? totals.serverCreateGateObservedBytes()
                 : createGateSnapshot.observedBytes();
@@ -142,13 +151,20 @@ public record ServerBandwidthStatsPayload(
                 ServerBandwidthStatsRegistry.snapshotServerChunkReuseLogicalBytes(),
                 totals.serverSourceGateEstimatedSavedBytes(),
                 totals.serverSourceGateEstimatedOutboundSavedBytes(),
-                totals.serverSourceGateSuppressedFrames()
+                totals.serverSourceGateSuppressedFrames(),
+                recipeSnapshot.logicalBytes(),
+                recipeSnapshot.frameBytes(),
+                recipeSnapshot.savedBytes(),
+                recipeSnapshot.fullFrames(),
+                recipeSnapshot.identityFrames(),
+                recipeSnapshot.structuralDeltaFrames(),
+                recipeSnapshot.byteDeltaFrames()
         );
     }
 
 
     public static ServerBandwidthStatsPayload empty() {
-        return new ServerBandwidthStatsPayload(System.currentTimeMillis(), 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false, 0L, 0L, 0L, 0L, 0L, 0L, List.of(), 0L, 0L, 0L, 0L);
+        return new ServerBandwidthStatsPayload(System.currentTimeMillis(), 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false, 0L, 0L, 0L, 0L, 0L, 0L, List.of(), 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
     }
 
     public static void encode(ServerBandwidthStatsPayload payload, FriendlyByteBuf buffer) {
@@ -208,6 +224,13 @@ public record ServerBandwidthStatsPayload(
         buffer.writeVarLong(Math.max(safePayload.serverSourceGateEstimatedSavedBytes(), 0L));
         buffer.writeVarLong(Math.max(safePayload.serverSourceGateEstimatedOutboundSavedBytes(), 0L));
         buffer.writeVarLong(Math.max(safePayload.serverSourceGateSuppressedFrames(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.serverRecipeLogicalBytes(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.serverRecipeFrameBytes(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.serverRecipeSavedBytes(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.serverRecipeFullFrames(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.serverRecipeIdentityFrames(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.serverRecipeStructuralDeltaFrames(), 0L));
+        buffer.writeVarLong(Math.max(safePayload.serverRecipeByteDeltaFrames(), 0L));
     }
 
     public static ServerBandwidthStatsPayload decode(FriendlyByteBuf buffer) {
@@ -255,6 +278,13 @@ public record ServerBandwidthStatsPayload(
         long serverSourceGateEstimatedSavedBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         long serverSourceGateEstimatedOutboundSavedBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         long serverSourceGateSuppressedFrames = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long serverRecipeLogicalBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long serverRecipeFrameBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long serverRecipeSavedBytes = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long serverRecipeFullFrames = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long serverRecipeIdentityFrames = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long serverRecipeStructuralDeltaFrames = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
+        long serverRecipeByteDeltaFrames = buffer.readableBytes() > 0 ? buffer.readVarLong() : 0L;
         return new ServerBandwidthStatsPayload(
                 capturedAtMillis,
                 activeChannels,
@@ -299,7 +329,14 @@ public record ServerBandwidthStatsPayload(
                 serverChunkReuseLogicalBytes,
                 serverSourceGateEstimatedSavedBytes,
                 serverSourceGateEstimatedOutboundSavedBytes,
-                serverSourceGateSuppressedFrames
+                serverSourceGateSuppressedFrames,
+                serverRecipeLogicalBytes,
+                serverRecipeFrameBytes,
+                serverRecipeSavedBytes,
+                serverRecipeFullFrames,
+                serverRecipeIdentityFrames,
+                serverRecipeStructuralDeltaFrames,
+                serverRecipeByteDeltaFrames
         );
     }
 

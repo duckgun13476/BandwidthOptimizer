@@ -21,6 +21,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.Chun
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelopeCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentServerScope;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentManifestGate;
+import com.PinkCats.bandwidthoptimizer.recipe.RecipeSyncNegotiationGate;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
@@ -387,17 +388,25 @@ public final class ChunkTransportControlFrameSender {
             return false;
         }
         return sendControlFrame(channel, buildServerCacheScopeFrame(
-                scopeHash, ChunkPersistentManifestGate.currentGeneration(channel), reason
+                scopeHash,
+                ChunkPersistentManifestGate.currentGeneration(channel),
+                RecipeSyncNegotiationGate.currentGeneration(channel),
+                reason
         ));
     }
 
-    static ChunkHotspotFrame buildServerCacheScopeFrame(String scopeHash, long manifestGeneration, String reason) {
+    static ChunkHotspotFrame buildServerCacheScopeFrame(
+            String scopeHash,
+            long manifestGeneration,
+            long recipeGeneration,
+            String reason
+    ) {
         String safeScopeHash = ChunkPersistentServerScope.isSafeScopeHash(scopeHash) ? scopeHash : "";
         return new ChunkHotspotFrame(
                 ChunkHotspotFrameCodec.PROTOCOL_VERSION,
                 ChunkHotspotFrameOp.SERVER_CACHE_SCOPE,
                 Math.max(manifestGeneration, 0L),
-                0L,
+                Math.max(recipeGeneration, 0L),
                 "PLAY",
                 "bandwidthoptimizer.chunk.transport.ServerCacheScope",
                 ChunkHotspotKind.FULL_CHUNK,
@@ -411,6 +420,57 @@ public final class ChunkTransportControlFrameSender {
                 0L,
                 reason == null || reason.isBlank() ? "server_cache_scope" : reason
         );
+    }
+
+    static ChunkHotspotFrame buildServerCacheScopeFrame(String scopeHash, long manifestGeneration, String reason) {
+        return buildServerCacheScopeFrame(scopeHash, manifestGeneration, 0L, reason);
+    }
+
+    public static boolean sendClientRecipeBase(
+            Channel channel,
+            String scopeHash,
+            long generation,
+            String recipeHash
+    ) {
+        return sendControlFrame(channel, new ChunkHotspotFrame(
+                ChunkHotspotFrameCodec.PROTOCOL_VERSION,
+                ChunkHotspotFrameOp.CLIENT_RECIPE_BASE,
+                0L,
+                0L,
+                "PLAY",
+                "bandwidthoptimizer.recipe.ClientRecipeBase",
+                ChunkHotspotKind.FULL_CHUNK,
+                ChunkLaneKind.FULL,
+                ChunkPacketCoordinate.unknown(),
+                0,
+                Math.max(generation, 0L),
+                0L,
+                scopeHash == null ? "" : scopeHash,
+                recipeHash == null ? "" : recipeHash,
+                0L,
+                "recipe_base_advertisement"
+        ), false);
+    }
+
+    public static boolean sendRecipeBaseReady(Channel channel, String scopeHash, String recipeHash) {
+        return sendControlFrame(channel, new ChunkHotspotFrame(
+                ChunkHotspotFrameCodec.PROTOCOL_VERSION,
+                ChunkHotspotFrameOp.RECIPE_BASE_READY,
+                0L,
+                0L,
+                "PLAY",
+                "bandwidthoptimizer.recipe.RecipeBaseReady",
+                ChunkHotspotKind.FULL_CHUNK,
+                ChunkLaneKind.FULL,
+                ChunkPacketCoordinate.unknown(),
+                0,
+                0L,
+                0L,
+                scopeHash == null ? "" : scopeHash,
+                recipeHash == null ? "" : recipeHash,
+                0L,
+                "recipe_base_ready"
+        ), false);
     }
 
     public static boolean sendReplayFullFrame(

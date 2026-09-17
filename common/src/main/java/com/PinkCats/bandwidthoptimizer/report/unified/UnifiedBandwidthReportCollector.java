@@ -5,10 +5,12 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportBypassRankCore;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceStore;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkLocalCacheReuseStats;
+import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotReport;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
+import com.PinkCats.bandwidthoptimizer.recipe.RecipeSyncTrafficStats;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
 
 import java.util.ArrayList;
@@ -26,6 +28,7 @@ public final class UnifiedBandwidthReportCollector {
         List<UnifiedBandwidthReport.Section> sections = new ArrayList<>();
         sections.add(transportSection());
         sections.add(serverSection());
+        sections.add(recipeSection());
         sections.add(chunkSection());
         sections.add(diagnosticsSection());
         return new UnifiedBandwidthReport(
@@ -116,16 +119,57 @@ public final class UnifiedBandwidthReportCollector {
         ChunkShadowSnapshotManager.Snapshot shadow = ChunkShadowSnapshotManager.snapshot();
         ChunkRuntimeReferenceStore.Snapshot runtime = ChunkRuntimeReferenceStore.snapshot();
         ChunkLocalCacheReuseStats.Snapshot reuse = ChunkLocalCacheReuseStats.snapshot();
+        OperationSum outboundChunk = sumOperations(outbound,
+                ChunkHotspotFrameOp.PUBLISH_FULL,
+                ChunkHotspotFrameOp.PUBLISH_REF,
+                ChunkHotspotFrameOp.PUBLISH_PATCH);
+        OperationSum inboundChunk = sumOperations(inbound,
+                ChunkHotspotFrameOp.PUBLISH_FULL,
+                ChunkHotspotFrameOp.PUBLISH_REF,
+                ChunkHotspotFrameOp.PUBLISH_PATCH);
         List<UnifiedBandwidthReport.Metric> metrics = new ArrayList<>();
-        add(metrics, "hotspot.outbound.logical_bytes", "Hotspot outbound logical", outbound.totalLogicalPacketBytes(), "bytes", "logical_packet", "session", "Chunk hotspot logical bytes.");
-        add(metrics, "hotspot.outbound.frame_bytes", "Hotspot outbound frames", outbound.totalWireFrameBytes(), "bytes", "chunk_frame", "session", "Chunk protocol frames, not socket wire bytes.");
-        add(metrics, "hotspot.inbound.logical_bytes", "Hotspot inbound logical", inbound.totalLogicalPacketBytes(), "bytes", "logical_packet", "session", "Restored chunk logical bytes.");
+        add(metrics, "hotspot.outbound.logical_bytes", "Hotspot outbound logical", outboundChunk.logicalBytes(), "bytes", "logical_packet", "session", "Logical bytes for chunk full, reference, and patch operations only.");
+        add(metrics, "hotspot.outbound.frame_bytes", "Hotspot outbound frames", outboundChunk.frameBytes(), "bytes", "chunk_frame", "session", "Chunk data frames only, excluding recipe and control frames; not socket wire bytes.");
+        add(metrics, "hotspot.inbound.logical_bytes", "Hotspot inbound logical", inboundChunk.logicalBytes(), "bytes", "logical_packet", "session", "Restored logical bytes for chunk full, reference, and patch operations only.");
         add(metrics, "shadow.total_bytes", "Shadow snapshot bytes", shadow.totalEncodedBytes(), "bytes", "memory", "current", "Encoded snapshot payload retained in memory.");
         add(metrics, "shadow.retained_original_bytes", "Shadow original bytes", shadow.retainedOriginalBytes(), "bytes", "memory", "current", "Original packet bytes retained for recovery.");
         add(metrics, "runtime.total_bytes", "Runtime reference bytes", runtime.totalBytes(), "bytes", "memory", "current", "Runtime reference cache memory.");
         add(metrics, "reuse.temporary_saved_bytes", "Client temporary reuse saved", reuse.temporaryReuseSavedBytes(), "bytes", "chunk_reuse", "session", "Client-confirmed temporary cache reuse savings.");
         add(metrics, "reuse.offline_saved_bytes", "Client offline reuse saved", reuse.offlineReuseSavedBytes(), "bytes", "chunk_reuse", "session", "Client-confirmed persistent cache reuse savings.");
         return section("chunk", "Chunk transport and cache", "Chunk protocol traffic, reuse, and current retained-memory counters.", metrics);
+    }
+
+    private static OperationSum sumOperations(
+            ChunkHotspotReport.DirectionTotals totals,
+            ChunkHotspotFrameOp... operations
+    ) {
+        long logicalBytes = 0L;
+        long frameBytes = 0L;
+        for (ChunkHotspotFrameOp operation : operations) {
+            ChunkHotspotReport.OperationTotals operationTotals = totals.operationTotals()
+                    .getOrDefault(operation, ChunkHotspotReport.OperationTotals.empty());
+            logicalBytes += operationTotals.logicalPacketBytes();
+            frameBytes += operationTotals.wireFrameBytes();
+        }
+        return new OperationSum(logicalBytes, frameBytes);
+    }
+
+    private record OperationSum(long logicalBytes, long frameBytes) {
+    }
+
+    private static UnifiedBandwidthReport.Section recipeSection() {
+        RecipeSyncTrafficStats.Snapshot snapshot = RecipeSyncTrafficStats.snapshot();
+        List<UnifiedBandwidthReport.Metric> metrics = new ArrayList<>();
+        add(metrics, "frames", "Recipe sync frames", snapshot.totalFrames(), "frames", "recipe_sync", "session", "Completed recipe synchronization frames.");
+        add(metrics, "full_frames", "Full frames", snapshot.fullFrames(), "frames", "recipe_sync", "session", "Recipe trees sent without a reusable base.");
+        add(metrics, "identity_frames", "Identity frames", snapshot.identityFrames(), "frames", "recipe_sync", "session", "Semantically identical recipe trees restored from a persistent base.");
+        add(metrics, "structural_delta_frames", "Structural delta frames", snapshot.structuralDeltaFrames(), "frames", "recipe_sync", "session", "Changed recipe trees encoded by record-aware structural delta.");
+        add(metrics, "byte_delta_frames", "Byte delta frames", snapshot.byteDeltaFrames(), "frames", "recipe_sync", "session", "Changed recipe trees encoded by the exact byte-delta fallback.");
+        add(metrics, "logical_bytes", "Recipe logical bytes", snapshot.logicalBytes(), "bytes", "logical_packet", "session", "Original recipe packet bytes before BO recipe transport.");
+        add(metrics, "payload_bytes", "Recipe payload bytes", snapshot.payloadBytes(), "bytes", "recipe_payload", "session", "Recipe full, reference, or delta payload before BO envelope overhead.");
+        add(metrics, "frame_bytes", "Recipe frame bytes", snapshot.frameBytes(), "bytes", "bo_frame", "session", "Final BO recipe envelope bytes before Minecraft native compression and socket framing.");
+        add(metrics, "saved_bytes", "Recipe saved bytes", snapshot.savedBytes(), "bytes", "derived", "session", "Logical recipe bytes minus BO recipe envelope bytes.");
+        return section("recipe", "Recipe synchronization", "Persistent recipe reuse and exact structural-delta traffic.", metrics);
     }
 
     private static UnifiedBandwidthReport.Section diagnosticsSection() {

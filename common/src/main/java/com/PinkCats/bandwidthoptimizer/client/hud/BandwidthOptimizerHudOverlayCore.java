@@ -196,6 +196,16 @@ final class BandwidthOptimizerHudOverlayCore {
                 + formatSavedShare(serverChunkReuseLogicalBytes, snapshot.serverOfflineReuseConfirmedSavedBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.temporary_cache") + " "
                 + formatSavedShare(serverChunkReuseLogicalBytes, snapshot.serverTemporaryReuseSavedBytes()));
+        lines.add("  " + text("hud.bandwidthoptimizer.metric.recipe_sync") + " "
+                + formatSavedShare(snapshot.serverRecipeLogicalBytes(), snapshot.serverRecipeSavedBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.compression_ratio") + " "
+                + formatTrafficRatioPercent(snapshot.serverRecipeLogicalBytes(), snapshot.serverRecipeFrameBytes())
+                + " | " + text("hud.bandwidthoptimizer.metric.full") + " "
+                + formatCount(snapshot.serverRecipeFullFrames())
+                + " | " + text("hud.bandwidthoptimizer.metric.identity") + " "
+                + formatCount(snapshot.serverRecipeIdentityFrames())
+                + " | " + text("hud.bandwidthoptimizer.metric.delta") + " "
+                + formatCount(snapshot.serverRecipeStructuralDeltaFrames() + snapshot.serverRecipeByteDeltaFrames()));
         long createObservedBytes = Math.max(
                 snapshot.serverCreateTransportRawBytes() + snapshot.serverCreateGateSavedBytes(),
                 0L);

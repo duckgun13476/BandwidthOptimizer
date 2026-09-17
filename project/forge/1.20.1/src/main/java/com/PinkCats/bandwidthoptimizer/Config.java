@@ -24,6 +24,7 @@ public class Config {
     public static final ForgeConfigSpec.BooleanValue ENABLE_BATCH_ZSTD;
     public static final ForgeConfigSpec.BooleanValue ENABLE_BATCH_STREAMING_ZSTD;
     public static final ForgeConfigSpec.BooleanValue ENABLE_ASYNC_PLAY_BATCH_ENCODING;
+    public static final ForgeConfigSpec.BooleanValue ENABLE_PERSISTENT_RECIPE_DELTA;
 
     public static final ForgeConfigSpec.IntValue BATCH_ZSTD_LEVEL;
     public static final ForgeConfigSpec.IntValue BATCH_STREAMING_ZSTD_LEVEL;
@@ -46,6 +47,7 @@ public class Config {
     public static boolean enableBatchZstd = false;
     public static boolean enableBatchStreamingZstd = false;
     public static boolean enableAsyncPlayBatchEncoding = true;
+    public static boolean enablePersistentRecipeDelta = true;
     public static int batchZstdLevel = 3;
     public static int batchStreamingZstdLevel = 4;
     public static int batchSha256DictionaryMaxPacketBytes = 3000;
@@ -140,6 +142,10 @@ public class Config {
                 .comment("Move stateful PLAY batch dictionary/zstd encoding to a background worker. Packet snapshotting and final send still run on the server thread.")
                 .define("enable_async_play_batch_encoding", true);
 
+        ENABLE_PERSISTENT_RECIPE_DELTA = BUILDER
+                .comment("Persist exact recipe packet bases and transfer verified byte deltas after negotiation.")
+                .define("persistent_recipe_delta_enabled", true);
+
         BUILDER.pop();
 
         BUILDER.comment("Streaming Zstd Settings").push("streaming-zstd");
@@ -232,6 +238,7 @@ public class Config {
                 ENABLE_BATCH_ZSTD.get(),
                 ENABLE_BATCH_STREAMING_ZSTD.get(),
                 ENABLE_ASYNC_PLAY_BATCH_ENCODING.get(),
+                ENABLE_PERSISTENT_RECIPE_DELTA.get(),
                 BATCH_ZSTD_LEVEL.get(),
                 BATCH_STREAMING_ZSTD_LEVEL.get(),
                 BATCH_SHA256_DICTIONARY_MAX_PACKET_BYTES.get(),
@@ -256,6 +263,7 @@ public class Config {
         enableBatchZstd = runtimeConfig.enableBatchZstd();
         enableBatchStreamingZstd = runtimeConfig.enableBatchStreamingZstd();
         enableAsyncPlayBatchEncoding = runtimeConfig.enableAsyncPlayBatchEncoding();
+        enablePersistentRecipeDelta = runtimeConfig.enablePersistentRecipeDelta();
         batchZstdLevel = runtimeConfig.batchZstdLevel();
         batchStreamingZstdLevel = runtimeConfig.batchStreamingZstdLevel();
         batchSha256DictionaryMaxPacketBytes = runtimeConfig.batchSha256DictionaryMaxPacketBytes();
@@ -527,6 +535,7 @@ public class Config {
             boolean enableBatchZstd,
             boolean enableBatchStreamingZstd,
             boolean enableAsyncPlayBatchEncoding,
+            boolean enablePersistentRecipeDelta,
             int batchZstdLevel,
             int batchStreamingZstdLevel,
             int batchSha256DictionaryMaxPacketBytes,

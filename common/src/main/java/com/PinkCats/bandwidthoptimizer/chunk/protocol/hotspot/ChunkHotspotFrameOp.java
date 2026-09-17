@@ -14,6 +14,10 @@ public enum ChunkHotspotFrameOp {
     CACHE_PREPARE("cache_prepare"),
     CACHE_READY("cache_ready"),
     CACHE_MISS("cache_miss"),
+    CLIENT_RECIPE_BASE("client_recipe_base"),
+    RECIPE_BASE_READY("recipe_base_ready"),
+    RECIPE_FULL("recipe_full"),
+    RECIPE_DELTA("recipe_delta"),
     BARRIER("barrier"),
     BARRIER_ACK("barrier_ack");
 

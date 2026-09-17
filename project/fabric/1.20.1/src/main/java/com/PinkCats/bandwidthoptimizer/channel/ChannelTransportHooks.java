@@ -229,6 +229,11 @@ public final class ChannelTransportHooks {
             }
         }
 
+        if (com.PinkCats.bandwidthoptimizer.recipe.RecipeSyncNegotiationGate.tryQueue(
+                context, packet, originalPacketBytes.length)) {
+            out.writerIndex(startIndexInclusive);
+            return;
+        }
         OutboundChunkEncodeResult chunkEncodeResult = ChunkTransportDispatcher.tryEncodeOutboundPacketWithTrace(
                 context,
                 protocolName,
@@ -522,6 +527,7 @@ public final class ChannelTransportHooks {
             return;
         }
         //  ensure server scope after login barrier
+        com.PinkCats.bandwidthoptimizer.recipe.RecipeSyncNegotiationGate.arm(context.channel());
         context.channel().eventLoop().execute(
                 () -> sendServerCacheScopeWithRetry(context, "server_cache_scope_after_login_boundary", 0)
         );

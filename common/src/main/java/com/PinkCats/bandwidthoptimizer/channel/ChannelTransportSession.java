@@ -9,9 +9,13 @@ import com.PinkCats.bandwidthoptimizer.channel.algorithm.TransportAlgorithm;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.KineticStreaming;
 
 import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.List;
 
 // Log and manage session
 public final class ChannelTransportSession implements AutoCloseable {
+
+    private static final int MAX_RECIPE_BASE_HASHES = 5;
 
     private final TransportAlgorithm algorithm = ChannelTransportAlgorithms.defaultAlgorithm();
     private final ChannelTransportAlgorithmSession outboundSession = this.algorithm.createSession();
@@ -24,6 +28,12 @@ public final class ChannelTransportSession implements AutoCloseable {
     private final ChannelTransportStreamingRecoveryState streamingRecoveryState = new ChannelTransportStreamingRecoveryState();
     private int outboundStreamingEpoch = 1;
     private int outboundStreamingSequence;
+    private RecipeBase outboundRecipeBase;
+    private String outboundRecipeScopeHash = "";
+    private final List<RecipeBaseReference> outboundRecipeReferences = new ArrayList<>();
+    private RecipeBase outboundRecipeCandidate;
+    private final List<RecipeBase> inboundRecipeBases = new ArrayList<>();
+    private boolean outboundRecipeNegotiated;
 
     public ChannelTransportSession() {
         if (this.algorithm instanceof KineticStreaming streamingAlgorithm) {
@@ -50,6 +60,7 @@ public final class ChannelTransportSession implements AutoCloseable {
         this.outboundRecoverySession.reset();
         this.inboundRecoverySession.reset();
         resetStreamingSessions();
+        clearRecipeBases();
     }
 
     @Override
@@ -73,6 +84,7 @@ public final class ChannelTransportSession implements AutoCloseable {
         failure = closeStreamingSession(this.inboundRecoverySession, failure);
         failure = closeStreamingSession(this.outboundStreamingSession, failure);
         failure = closeStreamingSession(this.inboundStreamingSession, failure);
+        clearRecipeBases();
         if (failure != null) {
             throw failure;
         }
@@ -373,6 +385,131 @@ public final class ChannelTransportSession implements AutoCloseable {
         return sourceBytes == null ? new byte[0] : Arrays.copyOf(sourceBytes, sourceBytes.length);
     }
 
+    public synchronized void setOutboundRecipeBase(
+            String scopeHash, String recipeHash, String semanticHash, byte[] packetBytes) {
+        this.outboundRecipeBase = RecipeBase.create(scopeHash, recipeHash, semanticHash, packetBytes);
+    }
+
+    public synchronized void clearOutboundRecipeBase() {
+        this.outboundRecipeBase = null;
+        this.outboundRecipeScopeHash = "";
+        this.outboundRecipeReferences.clear();
+    }
+
+    public synchronized void setOutboundRecipeNegotiated(boolean negotiated) {
+        this.outboundRecipeNegotiated = negotiated;
+        if (!negotiated) {
+            clearOutboundRecipeBase();
+            this.outboundRecipeCandidate = null;
+        }
+    }
+
+    public synchronized boolean isOutboundRecipeNegotiated() {
+        return this.outboundRecipeNegotiated;
+    }
+
+    public synchronized RecipeBase outboundRecipeBase() {
+        return this.outboundRecipeBase == null ? null : this.outboundRecipeBase.copy();
+    }
+
+    public synchronized void setOutboundRecipeReferences(
+            String scopeHash, List<RecipeBaseReference> references) {
+        this.outboundRecipeScopeHash = scopeHash == null ? "" : scopeHash;
+        this.outboundRecipeReferences.clear();
+        if (references == null) {
+            return;
+        }
+        for (RecipeBaseReference reference : references) {
+            if (reference != null && this.outboundRecipeReferences.stream()
+                    .noneMatch(existing -> existing.semanticHash().equals(reference.semanticHash()))
+                    && this.outboundRecipeReferences.size() < MAX_RECIPE_BASE_HASHES) {
+                this.outboundRecipeReferences.add(reference);
+            }
+        }
+    }
+
+    public synchronized RecipeBaseReference outboundRecipeReference(String scopeHash, String semanticHash) {
+        if (!this.outboundRecipeScopeHash.equals(scopeHash)) {
+            return null;
+        }
+        for (RecipeBaseReference reference : this.outboundRecipeReferences) {
+            if (reference.semanticHash().equals(semanticHash)) {
+                return reference;
+            }
+        }
+        return null;
+    }
+
+    public synchronized void setOutboundRecipeCandidate(
+            String scopeHash, String recipeHash, String semanticHash, byte[] packetBytes) {
+        this.outboundRecipeCandidate = RecipeBase.create(scopeHash, recipeHash, semanticHash, packetBytes);
+    }
+
+    public synchronized boolean promoteOutboundRecipeCandidate(String scopeHash, String recipeHash) {
+        if (this.outboundRecipeCandidate == null
+                || !this.outboundRecipeCandidate.scopeHash().equals(scopeHash)
+                || !this.outboundRecipeCandidate.recipeHash().equals(recipeHash)) {
+            return false;
+        }
+        this.outboundRecipeBase = this.outboundRecipeCandidate;
+        if (!this.outboundRecipeScopeHash.equals(scopeHash)) {
+            this.outboundRecipeReferences.clear();
+            this.outboundRecipeScopeHash = scopeHash;
+        }
+        this.outboundRecipeReferences.removeIf(reference ->
+                reference.semanticHash().equals(this.outboundRecipeCandidate.semanticHash()));
+        this.outboundRecipeReferences.add(0, this.outboundRecipeCandidate.reference());
+        while (this.outboundRecipeReferences.size() > MAX_RECIPE_BASE_HASHES) {
+            this.outboundRecipeReferences.remove(this.outboundRecipeReferences.size() - 1);
+        }
+        this.outboundRecipeCandidate = null;
+        return true;
+    }
+
+    public synchronized void setInboundRecipeBase(
+            String scopeHash, String recipeHash, String semanticHash, byte[] packetBytes) {
+        addRecipeBase(this.inboundRecipeBases, RecipeBase.create(scopeHash, recipeHash, semanticHash, packetBytes));
+    }
+
+    public synchronized void clearInboundRecipeBase() {
+        this.inboundRecipeBases.clear();
+    }
+
+    public synchronized RecipeBase inboundRecipeBase() {
+        return this.inboundRecipeBases.isEmpty() ? null : this.inboundRecipeBases.get(0).copy();
+    }
+
+    public synchronized RecipeBase inboundRecipeBase(String scopeHash, String recipeHash) {
+        return findRecipeBase(this.inboundRecipeBases, scopeHash, recipeHash);
+    }
+
+    private void clearRecipeBases() {
+        this.outboundRecipeBase = null;
+        this.outboundRecipeScopeHash = "";
+        this.outboundRecipeReferences.clear();
+        this.outboundRecipeCandidate = null;
+        this.inboundRecipeBases.clear();
+        this.outboundRecipeNegotiated = false;
+    }
+
+    private static void addRecipeBase(List<RecipeBase> bases, RecipeBase base) {
+        bases.removeIf(existing -> existing.scopeHash().equals(base.scopeHash())
+                && existing.recipeHash().equals(base.recipeHash()));
+        bases.add(0, base);
+        while (bases.size() > MAX_RECIPE_BASE_HASHES) {
+            bases.remove(bases.size() - 1);
+        }
+    }
+
+    private static RecipeBase findRecipeBase(List<RecipeBase> bases, String scopeHash, String recipeHash) {
+        for (RecipeBase base : bases) {
+            if (base.scopeHash().equals(scopeHash) && base.recipeHash().equals(recipeHash)) {
+                return base.copy();
+            }
+        }
+        return null;
+    }
+
     public record PacketResult(byte[] bytes, ChannelTransportOperationTelemetry telemetry) {
     }
 
@@ -388,6 +525,41 @@ public final class ChannelTransportSession implements AutoCloseable {
     }
 
     public record StreamingEpochBoundary(int epoch, int lastSequence) {
+    }
+
+    public record RecipeBase(String scopeHash, String recipeHash, String semanticHash, byte[] packetBytes) {
+        public RecipeBase {
+            scopeHash = scopeHash == null ? "" : scopeHash;
+            recipeHash = recipeHash == null ? "" : recipeHash;
+            semanticHash = semanticHash == null ? recipeHash : semanticHash;
+            packetBytes = copyBytesOrEmpty(packetBytes);
+        }
+
+        private static RecipeBase create(
+                String scopeHash, String recipeHash, String semanticHash, byte[] packetBytes) {
+            return new RecipeBase(scopeHash, recipeHash, semanticHash, packetBytes);
+        }
+
+        public byte[] copyPacketBytes() {
+            return copyBytesOrEmpty(this.packetBytes);
+        }
+
+        private RecipeBase copy() {
+            return new RecipeBase(this.scopeHash, this.recipeHash, this.semanticHash, this.packetBytes);
+        }
+
+        private RecipeBaseReference reference() {
+            return new RecipeBaseReference(
+                    this.semanticHash, this.recipeHash, this.packetBytes.length);
+        }
+    }
+
+    public record RecipeBaseReference(String semanticHash, String recipeHash, int packetBytes) {
+        public RecipeBaseReference {
+            semanticHash = semanticHash == null ? "" : semanticHash;
+            recipeHash = recipeHash == null ? "" : recipeHash;
+            packetBytes = Math.max(packetBytes, 0);
+        }
     }
 
 

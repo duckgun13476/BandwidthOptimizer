@@ -67,7 +67,14 @@ public final class ClientServerBandwidthHudStats {
                 payload.serverChunkReuseLogicalBytes(),
                 payload.serverSourceGateEstimatedSavedBytes(),
                 payload.serverSourceGateEstimatedOutboundSavedBytes(),
-                payload.serverSourceGateSuppressedFrames()
+                payload.serverSourceGateSuppressedFrames(),
+                payload.serverRecipeLogicalBytes(),
+                payload.serverRecipeFrameBytes(),
+                payload.serverRecipeSavedBytes(),
+                payload.serverRecipeFullFrames(),
+                payload.serverRecipeIdentityFrames(),
+                payload.serverRecipeStructuralDeltaFrames(),
+                payload.serverRecipeByteDeltaFrames()
         );
     }
 
@@ -127,7 +134,14 @@ public final class ClientServerBandwidthHudStats {
             long serverChunkReuseLogicalBytes,
             long serverSourceGateEstimatedSavedBytes,
             long serverSourceGateEstimatedOutboundSavedBytes,
-            long serverSourceGateSuppressedFrames
+            long serverSourceGateSuppressedFrames,
+            long serverRecipeLogicalBytes,
+            long serverRecipeFrameBytes,
+            long serverRecipeSavedBytes,
+            long serverRecipeFullFrames,
+            long serverRecipeIdentityFrames,
+            long serverRecipeStructuralDeltaFrames,
+            long serverRecipeByteDeltaFrames
     ) {
 
         public Snapshot {
@@ -135,7 +149,7 @@ public final class ClientServerBandwidthHudStats {
         }
 
         private static Snapshot empty() {
-            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false, 0L, 0L, 0L, 0L, 0L, 0L, List.of(), 0L, 0L, 0L, 0L);
+            return new Snapshot(0L, 0L, 0, 0, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, false, 0L, 0L, 0L, 0L, 0L, 0L, List.of(), 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
         }
 
         public boolean fresh() {

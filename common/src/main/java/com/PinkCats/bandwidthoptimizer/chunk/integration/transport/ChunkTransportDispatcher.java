@@ -46,6 +46,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkServerOfflineReuseStats;
 import com.PinkCats.bandwidthoptimizer.integration.sable.SableChunkSyncCompat;
+import com.PinkCats.bandwidthoptimizer.recipe.RecipeSyncTransport;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.debug.HotpathCostProbe;
 import io.netty.channel.ChannelHandlerContext;
@@ -206,6 +207,17 @@ public final class ChunkTransportDispatcher {
             Packet<?> packet,
             byte[] originalPacketBytes
     ) {
+        RecipeSyncTransport.EncodeResult recipeResult =
+                RecipeSyncTransport.tryEncode(context, protocolName, packet, originalPacketBytes);
+        if (recipeResult.applied()) {
+            return new OutboundChunkEncodeResult(
+                    false,
+                    false,
+                    recipeResult.operation(),
+                    recipeResult.operation().logName(),
+                    recipeResult.copyEncodedBytes()
+            );
+        }
         if (!ChunkTransportRuntimeConfig.isEnabled())
             return OutboundChunkEncodeResult.bypass(false, "runtime_chunk_transport_disabled");
 
@@ -456,6 +468,18 @@ public final class ChunkTransportDispatcher {
                 ""
         );
         ChunkLoadDelayProbe.logClientEnvelopeDecode(context, envelope.frame(), packetBytes.length);
+        if (envelope.frame().operation() == ChunkHotspotFrameOp.RECIPE_FULL
+                || envelope.frame().operation() == ChunkHotspotFrameOp.RECIPE_DELTA) {
+            try {
+                return ChunkInboundDecodeResult.passthrough(RecipeSyncTransport.decodeDataFrame(
+                        context,
+                        envelope.frame(),
+                        envelope.copyOriginalPacketBytes()
+                ));
+            } catch (java.io.IOException exception) {
+                throw new IllegalStateException("Persistent recipe sync decode failed", exception);
+            }
+        }
         if (isRuntimeChunkDataFrame(envelope.frame())) {
             ChunkTransportBoundaryController.InboundRuntimeFrameDecision inboundFrameDecision =
                     ChunkTransportBoundaryController.beginInboundRuntimeFrame(context, envelope.frame().epoch());
@@ -732,12 +756,23 @@ public final class ChunkTransportDispatcher {
         }
 
         if (envelope.frame().operation() == ChunkHotspotFrameOp.SERVER_CACHE_SCOPE) {
+            RecipeSyncTransport.onServerScope(context, envelope.frame());
             ChunkPersistentClientCache.applyServerCacheScope(context == null ? null : context.channel(), envelope.frame());
             ChunkPersistentClientCache.sendManifestOnceAsync(
                     context == null ? null : context.channel(),
                     "persistent_client_cache_after_server_scope"
             );
             logInboundControlFrame(context, packetBytes, envelope.frame(), INBOUND_SERVER_CACHE_SCOPE_FRAME_COUNT);
+            return ChunkInboundDecodeResult.consumeControlFrame();
+        }
+
+        if (envelope.frame().operation() == ChunkHotspotFrameOp.CLIENT_RECIPE_BASE) {
+            RecipeSyncTransport.onClientBaseAdvertisement(context, envelope.frame());
+            return ChunkInboundDecodeResult.consumeControlFrame();
+        }
+
+        if (envelope.frame().operation() == ChunkHotspotFrameOp.RECIPE_BASE_READY) {
+            RecipeSyncTransport.onRecipeBaseReady(context, envelope.frame());
             return ChunkInboundDecodeResult.consumeControlFrame();
         }
 
