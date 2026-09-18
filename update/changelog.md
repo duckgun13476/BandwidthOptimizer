@@ -1,3 +1,7 @@
+#### v5.10.30.133-release
+
+1. Added a configurable persistent chunk-cache disk limit with a 256 MiB default and safe offline cleanup.
+
 #### v5.10.30.132-release
 
 1. Added persistent recipe synchronization deltas so unchanged recipe sets can be reused across reconnects and small recipe changes send only compact differences.
