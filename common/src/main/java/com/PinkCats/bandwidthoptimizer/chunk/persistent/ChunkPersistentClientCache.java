@@ -87,7 +87,8 @@ public final class ChunkPersistentClientCache {
     private static final int DEFAULT_MAX_PENDING_STORE_TASKS = 2048;
     private static final long DEFAULT_MAX_PENDING_STORE_BYTES = 64L * 1024L * 1024L;
     private static final long DEFAULT_READY_CACHE_BYTES = 96L * 1024L * 1024L;
-    private static final long DEFAULT_MAX_DISK_BYTES = 512L * 1024L * 1024L;
+    private static final long MIN_MAX_DISK_BYTES = 128L * 1024L * 1024L;
+    private static final long DEFAULT_MAX_DISK_BYTES = 256L * 1024L * 1024L;
     private static final int DEFAULT_MAX_DISK_ENTRIES = 100_000;
     private static final int DEFAULT_MIN_SCOPE_ENTRIES = 1_024;
     private static final long DEFAULT_COMPACTION_BYTES_PER_SECOND = 8L * 1024L * 1024L;
@@ -157,6 +158,7 @@ public final class ChunkPersistentClientCache {
     private static int dirtyBlobWrites;
     private static long dirtyBytes;
     private static final AtomicLong LAST_SUCCESSFUL_FLUSH_MILLIS = new AtomicLong(System.currentTimeMillis());
+    private static volatile long configuredMaxDiskBytes = DEFAULT_MAX_DISK_BYTES;
     private static Channel activeManifestRefreshChannel;
     private static String activeManifestRefreshChannelId = "";
     private static long manifestRefreshDirtyGeneration;
@@ -2521,8 +2523,19 @@ public final class ChunkPersistentClientCache {
         return Math.max(readLongProperty(READY_CACHE_BYTES_PROPERTY, DEFAULT_READY_CACHE_BYTES), 8L * 1024L * 1024L);
     }
 
+    public static void configurePersistentCacheMaxDiskBytes(long maxDiskBytes) {
+        configuredMaxDiskBytes = Math.max(maxDiskBytes, MIN_MAX_DISK_BYTES);
+    }
+
     private static long persistentCacheMaxDiskBytes() {
-        return Math.max(readLongProperty(MAX_DISK_BYTES_PROPERTY, DEFAULT_MAX_DISK_BYTES), 128L * 1024L * 1024L);
+        return Math.max(
+                readLongProperty(MAX_DISK_BYTES_PROPERTY, configuredMaxDiskBytes),
+                MIN_MAX_DISK_BYTES
+        );
+    }
+
+    static long persistentCacheMaxDiskBytesForTesting() {
+        return persistentCacheMaxDiskBytes();
     }
 
     private static int persistentCacheMaxEntries() {

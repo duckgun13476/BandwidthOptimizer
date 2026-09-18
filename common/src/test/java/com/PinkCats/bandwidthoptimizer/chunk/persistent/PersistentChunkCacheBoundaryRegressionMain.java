@@ -35,6 +35,7 @@ import java.util.zip.ZipOutputStream;
 public final class PersistentChunkCacheBoundaryRegressionMain {
 
     private static final String OUTPUT_DIRECTORY_PROPERTY = "bandwidthoptimizer.outputDirectory";
+    private static final String MAX_DISK_BYTES_PROPERTY = "bandwidthoptimizer.clientPersistentChunkCacheMaxDiskBytes";
     private static final String SCOPE_A = "a".repeat(64);
     private static final String SCOPE_B = "b".repeat(64);
     private static final int SEGMENT_HEADER_BYTES = 56;
@@ -44,7 +45,9 @@ public final class PersistentChunkCacheBoundaryRegressionMain {
     public static void main(String[] args) throws Exception {
         Path root = Files.createTempDirectory("bo-persistent-cache-boundary-");
         String previousOutputDirectory = System.getProperty(OUTPUT_DIRECTORY_PROPERTY);
+        String previousMaxDiskBytes = System.getProperty(MAX_DISK_BYTES_PROPERTY);
         try {
+            verifyConfigurableDiskLimit();
             verifyScopeIsolation(root.resolve("scope"));
             verifyPrepareDisconnectIsolation();
             verifyPrepareCoordinateOrdering();
@@ -57,8 +60,36 @@ public final class PersistentChunkCacheBoundaryRegressionMain {
             } else {
                 System.setProperty(OUTPUT_DIRECTORY_PROPERTY, previousOutputDirectory);
             }
+            if (previousMaxDiskBytes == null) {
+                System.clearProperty(MAX_DISK_BYTES_PROPERTY);
+            } else {
+                System.setProperty(MAX_DISK_BYTES_PROPERTY, previousMaxDiskBytes);
+            }
+            ChunkPersistentClientCache.configurePersistentCacheMaxDiskBytes(256L * 1024L * 1024L);
             deleteTree(root);
         }
+    }
+
+    private static void verifyConfigurableDiskLimit() {
+        System.clearProperty(MAX_DISK_BYTES_PROPERTY);
+        ChunkPersistentClientCache.configurePersistentCacheMaxDiskBytes(384L * 1024L * 1024L);
+        require(
+                ChunkPersistentClientCache.persistentCacheMaxDiskBytesForTesting() == 384L * 1024L * 1024L,
+                "configured persistent cache disk limit was ignored"
+        );
+
+        ChunkPersistentClientCache.configurePersistentCacheMaxDiskBytes(32L * 1024L * 1024L);
+        require(
+                ChunkPersistentClientCache.persistentCacheMaxDiskBytesForTesting() == 128L * 1024L * 1024L,
+                "persistent cache disk safety floor was ignored"
+        );
+
+        System.setProperty(MAX_DISK_BYTES_PROPERTY, Long.toString(640L * 1024L * 1024L));
+        require(
+                ChunkPersistentClientCache.persistentCacheMaxDiskBytesForTesting() == 640L * 1024L * 1024L,
+                "persistent cache JVM override was ignored"
+        );
+        System.clearProperty(MAX_DISK_BYTES_PROPERTY);
     }
 
     private static void verifyScopeIsolation(Path root) throws Exception {

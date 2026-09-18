@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.client.config;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
+import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.neoforge.common.ModConfigSpec;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -25,6 +26,7 @@ public final class ClientChunkCacheConfig {
 
     public static final ModConfigSpec.IntValue CHUNK_CACHE_MAX_MEMORY_MB;
     public static final ModConfigSpec.IntValue CHUNK_CACHE_RECYCLE_TRIGGER_FREE_MB;
+    public static final ModConfigSpec.IntValue PERSISTENT_CACHE_MAX_DISK_MB;
     public static final ModConfigSpec.BooleanValue PERSISTENT_CACHE_BACKUP_ENABLED;
     public static final ModConfigSpec.IntValue PERSISTENT_CACHE_BACKUP_INTERVAL_SECONDS;
     public static final ModConfigSpec SPEC;
@@ -32,6 +34,7 @@ public final class ClientChunkCacheConfig {
     private static volatile int chunkCacheMaxMemoryMb = Config.RuntimeProperty.Client.DEFAULT_CHUNK_CACHE_MAX_MEMORY_MB;
     private static volatile int chunkCacheRecycleTriggerFreeMb =
             Config.RuntimeProperty.Client.DEFAULT_CHUNK_CACHE_RECYCLE_TRIGGER_FREE_MB;
+    private static volatile int persistentCacheMaxDiskMb = 256;
     private static volatile boolean persistentCacheBackupEnabled = true;
     private static volatile int persistentCacheBackupIntervalSeconds = 600;
 
@@ -49,6 +52,12 @@ public final class ClientChunkCacheConfig {
                 .comment("--------------------------------------------------------------------------")
                 .comment("Start recycling old chunk cache entries when the remaining cache budget drops below this MiB threshold.")
                 .defineInRange("chunk_cache_recycle_trigger_free_mb", 10, 1, 128);
+
+        PERSISTENT_CACHE_MAX_DISK_MB = BUILDER
+                .comment("")
+                .comment("--------------------------------------------------------------------------")
+                .comment("Maximum persistent chunk cache size on disk in MiB. Excess data is removed during offline maintenance.")
+                .defineInRange("persistent_cache_max_disk_mb", 256, 128, 4096);
 
         PERSISTENT_CACHE_BACKUP_ENABLED = BUILDER
                 .comment("")
@@ -82,6 +91,7 @@ public final class ClientChunkCacheConfig {
         return new RuntimeConfig(
                 readIntOverride(MAX_MEMORY_OVERRIDE_PROPERTY, CHUNK_CACHE_MAX_MEMORY_MB.get()),
                 readIntOverride(RECYCLE_TRIGGER_OVERRIDE_PROPERTY, CHUNK_CACHE_RECYCLE_TRIGGER_FREE_MB.get()),
+                PERSISTENT_CACHE_MAX_DISK_MB.get(),
                 PERSISTENT_CACHE_BACKUP_ENABLED.get(),
                 PERSISTENT_CACHE_BACKUP_INTERVAL_SECONDS.get()
         );
@@ -99,14 +109,19 @@ public final class ClientChunkCacheConfig {
         int safeRecycleTriggerFreeMb = runtimeConfig == null ? 10 : runtimeConfig.chunkCacheRecycleTriggerFreeMb();
         safeRecycleTriggerFreeMb = Math.max(1, Math.min(safeMaxMemoryMb - 1, safeRecycleTriggerFreeMb));
 
+        int safePersistentCacheMaxDiskMb = runtimeConfig == null ? 256 : runtimeConfig.persistentCacheMaxDiskMb();
+        safePersistentCacheMaxDiskMb = Math.max(128, Math.min(4096, safePersistentCacheMaxDiskMb));
+
         boolean safePersistentBackupEnabled = runtimeConfig == null || runtimeConfig.persistentCacheBackupEnabled();
         int safePersistentBackupIntervalSeconds = runtimeConfig == null ? 600 : runtimeConfig.persistentCacheBackupIntervalSeconds();
         safePersistentBackupIntervalSeconds = Math.max(1, Math.min(3600, safePersistentBackupIntervalSeconds));
 
         chunkCacheMaxMemoryMb = safeMaxMemoryMb;
         chunkCacheRecycleTriggerFreeMb = safeRecycleTriggerFreeMb;
+        persistentCacheMaxDiskMb = safePersistentCacheMaxDiskMb;
         persistentCacheBackupEnabled = safePersistentBackupEnabled;
         persistentCacheBackupIntervalSeconds = safePersistentBackupIntervalSeconds;
+        ChunkPersistentClientCache.configurePersistentCacheMaxDiskBytes((long) persistentCacheMaxDiskMb * BYTES_PER_MB);
         System.setProperty(PERSISTENT_CACHE_BACKUP_ENABLED_PROPERTY, Boolean.toString(persistentCacheBackupEnabled));
         System.setProperty(
                 PERSISTENT_CACHE_BACKUP_INTERVAL_MILLIS_PROPERTY,
@@ -145,6 +160,7 @@ public final class ClientChunkCacheConfig {
     public record RuntimeConfig(
             int chunkCacheMaxMemoryMb,
             int chunkCacheRecycleTriggerFreeMb,
+            int persistentCacheMaxDiskMb,
             boolean persistentCacheBackupEnabled,
             int persistentCacheBackupIntervalSeconds
     ) {
