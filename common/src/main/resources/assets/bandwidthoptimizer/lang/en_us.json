@@ -42,6 +42,7 @@
   "hud.bandwidthoptimizer.metric.optimize_ratio": "opt ratio",
   "hud.bandwidthoptimizer.metric.total_ratio": "total ratio",
   "hud.bandwidthoptimizer.metric.compression_ratio": "ratio",
+  "hud.bandwidthoptimizer.metric.other_savings": "other savings",
   "hud.bandwidthoptimizer.metric.disabled": "off",
   "hud.bandwidthoptimizer.metric.collecting": "collecting",
   "hud.bandwidthoptimizer.metric.players": "players",

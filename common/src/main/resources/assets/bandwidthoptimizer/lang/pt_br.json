@@ -42,6 +42,7 @@
   "hud.bandwidthoptimizer.metric.optimize_ratio": "taxa otim.",
   "hud.bandwidthoptimizer.metric.total_ratio": "taxa total",
   "hud.bandwidthoptimizer.metric.compression_ratio": "taxa",
+  "hud.bandwidthoptimizer.metric.other_savings": "outra economia",
   "hud.bandwidthoptimizer.metric.disabled": "off",
   "hud.bandwidthoptimizer.metric.collecting": "coletando",
   "hud.bandwidthoptimizer.metric.players": "jogadores",

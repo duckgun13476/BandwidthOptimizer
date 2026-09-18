@@ -116,6 +116,28 @@ public final class ChannelBandwidthStats {
         this.inboundWireBytes.reset();
     }
 
+    void accumulate(Snapshot snapshot) {
+        if (snapshot == null) {
+            return;
+        }
+        this.outboundRawEncodedPackets.add(Math.max(snapshot.outboundRawEncodedPackets(), 0L));
+        this.outboundRawEncodedBytes.add(Math.max(snapshot.outboundRawEncodedBytes(), 0L));
+        this.outboundVanillaCompressedEstimateBytes.add(Math.max(snapshot.outboundVanillaCompressedEstimateBytes(), 0L));
+        this.outboundVanillaEstimateWireBytes.add(Math.max(snapshot.outboundVanillaEstimateWireBytes(), 0L));
+        this.inboundRawEncodedPackets.add(Math.max(snapshot.inboundRawEncodedPackets(), 0L));
+        this.inboundRawEncodedBytes.add(Math.max(snapshot.inboundRawEncodedBytes(), 0L));
+        this.outboundTransportFrames.add(Math.max(snapshot.outboundTransportFrames(), 0L));
+        this.outboundTransportFrameBytes.add(Math.max(snapshot.outboundTransportFrameBytes(), 0L));
+        this.inboundTransportFrames.add(Math.max(snapshot.inboundTransportFrames(), 0L));
+        this.inboundTransportFrameBytes.add(Math.max(snapshot.inboundTransportFrameBytes(), 0L));
+        this.outboundBypassPackets.add(Math.max(snapshot.outboundBypassPackets(), 0L));
+        this.outboundBypassBytes.add(Math.max(snapshot.outboundBypassBytes(), 0L));
+        this.inboundBypassPackets.add(Math.max(snapshot.inboundBypassPackets(), 0L));
+        this.inboundBypassBytes.add(Math.max(snapshot.inboundBypassBytes(), 0L));
+        this.outboundWireBytes.add(Math.max(snapshot.outboundWireBytes(), 0L));
+        this.inboundWireBytes.add(Math.max(snapshot.inboundWireBytes(), 0L));
+    }
+
     public Snapshot snapshot() {
         return new Snapshot(
                 this.channelId,

@@ -1,3 +1,11 @@
+#### v5.10.30.132-release
+
+1. Added persistent recipe synchronization deltas so unchanged recipe sets can be reused across reconnects and small recipe changes send only compact differences.
+2. Reduced foreground traffic from off-screen entity updates while preserving timely state recovery when entities return to view.
+3. Reduced WATUT dynamic GUI traffic without bypassing BO transport compression.
+4. Stabilized KeepAlive grace compatibility across supported loaders and game versions.
+5. Preserved server-session traffic totals across player reconnects and clarified HUD traffic composition percentages.
+
 #### v5.10.30.130-release
 
 1. Hardened transport envelope, template dictionary, fragment reassembly, and chunk patch decoding against malformed or oversized input.

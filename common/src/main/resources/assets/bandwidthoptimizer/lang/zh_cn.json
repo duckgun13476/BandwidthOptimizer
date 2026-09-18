@@ -42,6 +42,7 @@
   "hud.bandwidthoptimizer.metric.optimize_ratio": "优化占比",
   "hud.bandwidthoptimizer.metric.total_ratio": "全局压缩总占比",
   "hud.bandwidthoptimizer.metric.compression_ratio": "压缩率",
+  "hud.bandwidthoptimizer.metric.other_savings": "其他减免",
   "hud.bandwidthoptimizer.metric.disabled": "未开启",
   "hud.bandwidthoptimizer.metric.collecting": "采集中",
   "hud.bandwidthoptimizer.metric.players": "玩家",

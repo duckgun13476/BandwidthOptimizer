@@ -11,6 +11,7 @@ import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateBlockEntity
 import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.IdleGateBackgroundPacketGate;
 import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.ActiveEntityViewGate;
 import com.PinkCats.bandwidthoptimizer.gate.source.ServerSourceGateStats;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportSourceRankCore;
 import com.PinkCats.bandwidthoptimizer.report.traffic.PlayerTrafficPeriodArchive;
 import io.netty.channel.Channel;
@@ -35,6 +36,10 @@ public final class ServerBandwidthStatsRegistry {
 
     private static final ConcurrentHashMap<String, ChannelBandwidthStats> ACTIVE_CHANNELS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<UUID, String> PLAYER_CHANNELS = new ConcurrentHashMap<>();
+    private static final Object SESSION_TOTALS_LOCK = new Object();
+    private static final ChannelBandwidthStats CLOSED_SESSION_TOTALS =
+            new ChannelBandwidthStats("<closed-session>");
+    private static Object sessionOwner;
 
     private ServerBandwidthStatsRegistry() {}
 
@@ -68,6 +73,8 @@ public final class ServerBandwidthStatsRegistry {
         if (player == null || channel == null) {
             return;
         }
+
+        ensureSessionOwner(ServerPlayerLevelCompat.serverLevel(player).getServer());
 
         ChannelBandwidthStats stats = getOrCreate(channel);
         if (stats == null)
@@ -107,11 +114,14 @@ public final class ServerBandwidthStatsRegistry {
 
 
     public static void resetAll() {
-        PlayerTrafficPeriodArchive.beforeCountersReset(snapshotChannels());
-        for (ChannelBandwidthStats stats : ACTIVE_CHANNELS.values()) {
-            if (stats != null) {
-                stats.resetCounters();
+        synchronized (SESSION_TOTALS_LOCK) {
+            PlayerTrafficPeriodArchive.beforeCountersReset(snapshotChannels());
+            for (ChannelBandwidthStats stats : ACTIVE_CHANNELS.values()) {
+                if (stats != null) {
+                    stats.resetCounters();
+                }
             }
+            CLOSED_SESSION_TOTALS.resetCounters();
         }
         ChunkHotspotStats.reset();
         ChunkServerOfflineReuseStats.reset();
@@ -143,23 +153,28 @@ public final class ServerBandwidthStatsRegistry {
     }
 
     public static TotalsSnapshot snapshotSessionTotals() {
-        List<ChannelBandwidthStats.Snapshot> channelSnapshots = snapshotChannels();
-        long outboundRawPackets = 0L;
-        long outboundRawBytes = 0L;
-        long outboundVanillaCompressedEstimateBytes = 0L;
-        long outboundVanillaEstimateWireBytes = 0L;
-        long inboundRawPackets = 0L;
-        long inboundRawBytes = 0L;
-        long outboundTransportFrames = 0L;
-        long outboundTransportBytes = 0L;
-        long inboundTransportFrames = 0L;
-        long inboundTransportBytes = 0L;
-        long outboundBypassPackets = 0L;
-        long outboundBypassBytes = 0L;
-        long inboundBypassPackets = 0L;
-        long inboundBypassBytes = 0L;
-        long outboundWireBytes = 0L;
-        long inboundWireBytes = 0L;
+        List<ChannelBandwidthStats.Snapshot> channelSnapshots;
+        ChannelBandwidthStats.Snapshot closedSnapshot;
+        synchronized (SESSION_TOTALS_LOCK) {
+            channelSnapshots = snapshotChannels();
+            closedSnapshot = CLOSED_SESSION_TOTALS.snapshot();
+        }
+        long outboundRawPackets = closedSnapshot.outboundRawEncodedPackets();
+        long outboundRawBytes = closedSnapshot.outboundRawEncodedBytes();
+        long outboundVanillaCompressedEstimateBytes = closedSnapshot.outboundVanillaCompressedEstimateBytes();
+        long outboundVanillaEstimateWireBytes = closedSnapshot.outboundVanillaEstimateWireBytes();
+        long inboundRawPackets = closedSnapshot.inboundRawEncodedPackets();
+        long inboundRawBytes = closedSnapshot.inboundRawEncodedBytes();
+        long outboundTransportFrames = closedSnapshot.outboundTransportFrames();
+        long outboundTransportBytes = closedSnapshot.outboundTransportFrameBytes();
+        long inboundTransportFrames = closedSnapshot.inboundTransportFrames();
+        long inboundTransportBytes = closedSnapshot.inboundTransportFrameBytes();
+        long outboundBypassPackets = closedSnapshot.outboundBypassPackets();
+        long outboundBypassBytes = closedSnapshot.outboundBypassBytes();
+        long inboundBypassPackets = closedSnapshot.inboundBypassPackets();
+        long inboundBypassBytes = closedSnapshot.inboundBypassBytes();
+        long outboundWireBytes = closedSnapshot.outboundWireBytes();
+        long inboundWireBytes = closedSnapshot.inboundWireBytes();
         int boundPlayers = 0;
         ServerCacheReuseSnapshot serverCacheReuseSnapshot = snapshotServerCacheReuse();
         CreateBlockEntityUpdateGate.Snapshot createGateSnapshot = CreateBlockEntityUpdateGate.snapshotStats();
@@ -248,18 +263,36 @@ public final class ServerBandwidthStatsRegistry {
 
     private static void removeChannel(Channel channel, String channelId) {
         ChannelBandwidthStats stats = channel == null ? null : channel.attr(CHANNEL_STATS_KEY).get();
+        ChannelBandwidthStats.Snapshot finalSnapshot = stats == null ? null : stats.snapshot();
         if (stats != null) {
-            PlayerTrafficPeriodArchive.onChannelClosed(stats.snapshot());
-            ServerBandwidthStatsPersistence.flushOnChannelClose(stats.snapshot());
+            PlayerTrafficPeriodArchive.onChannelClosed(finalSnapshot);
+            ServerBandwidthStatsPersistence.flushOnChannelClose(finalSnapshot);
         }
 
         if (channelId != null) {
-            ACTIVE_CHANNELS.remove(channelId);
-            PLAYER_CHANNELS.entrySet().removeIf(entry -> channelId.equals(entry.getValue()));
+            synchronized (SESSION_TOTALS_LOCK) {
+                ChannelBandwidthStats removed = ACTIVE_CHANNELS.remove(channelId);
+                if (removed != null) {
+                    CLOSED_SESSION_TOTALS.accumulate(finalSnapshot);
+                }
+                PLAYER_CHANNELS.entrySet().removeIf(entry -> channelId.equals(entry.getValue()));
+            }
         }
         if (channel != null) {
             channel.attr(CHANNEL_STATS_KEY).set(null);
             channel.attr(CHANNEL_CLOSE_CLEANUP_ATTACHED_KEY).set(null);
+        }
+    }
+
+    private static void ensureSessionOwner(Object owner) {
+        if (owner == null || owner == sessionOwner) {
+            return;
+        }
+        synchronized (SESSION_TOTALS_LOCK) {
+            if (owner != sessionOwner) {
+                CLOSED_SESSION_TOTALS.resetCounters();
+                sessionOwner = owner;
+            }
         }
     }
 
