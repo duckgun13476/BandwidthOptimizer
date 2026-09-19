@@ -53,12 +53,13 @@ public final class TrafficPeriodReportStore {
         return root().resolve("daily").resolve(day + ".json");
     }
 
-    public static TrafficPeriodReport loadHour(long startMillis, ZoneId zone) {
+    public static TrafficPeriodReport loadHour(long startMillis, ZoneId zone, String modVersion) {
         LocalDate day = Instant.ofEpochMilli(startMillis).atZone(zone).toLocalDate();
         synchronized (IO_LOCK) {
             return readHourlyDay(day).hours().stream()
                     .filter(report -> report.periodStartMillis() == startMillis)
-                    .findFirst()
+                    .filter(report -> versionKey(report.modVersion()).equals(versionKey(modVersion)))
+                    .max(Comparator.comparingLong(TrafficPeriodReport::generatedAtMillis))
                     .orElse(null);
         }
     }
@@ -73,7 +74,7 @@ public final class TrafficPeriodReportStore {
         long monthStart = month.atDay(1).atStartOfDay(zone).toInstant().toEpochMilli();
         long monthEnd = month.plusMonths(1L).atDay(1).atStartOfDay(zone).toInstant().toEpochMilli();
         LocalDate currentDay = currentStart.toLocalDate();
-        Map<Long, TrafficPeriodReport> byHour = new LinkedHashMap<>();
+        Map<HourKey, TrafficPeriodReport> byHour = new LinkedHashMap<>();
         List<TrafficPeriodReport> monthSources = new ArrayList<>();
         synchronized (IO_LOCK) {
             for (int day = 1; day <= month.lengthOfMonth(); day++) {
@@ -90,13 +91,11 @@ public final class TrafficPeriodReportStore {
                 readHourlyDay(date).hours().stream()
                         .filter(report -> report.periodStartMillis() >= monthStart
                                 && report.periodStartMillis() < monthEnd)
-                        .forEach(report -> byHour.put(report.periodStartMillis(), report));
+                        .forEach(report -> byHour.put(hourKey(report), report));
             }
         }
-        byHour.put(currentHour.periodStartMillis(), currentHour);
-        List<TrafficPeriodReport> hours = byHour.values().stream()
-                .sorted(Comparator.comparingLong(TrafficPeriodReport::periodStartMillis))
-                .toList();
+        byHour.put(hourKey(currentHour), currentHour);
+        List<TrafficPeriodReport> hours = sortedHours(byHour);
         List<TrafficPeriodReport> currentDayHours = hours.stream()
                 .filter(report -> Instant.ofEpochMilli(report.periodStartMillis()).atZone(zone).toLocalDate().equals(currentDay))
                 .toList();
@@ -206,7 +205,7 @@ public final class TrafficPeriodReportStore {
     }
 
     private static HourlyDayLoad readHourlyDay(LocalDate day) {
-        Map<Long, TrafficPeriodReport> byStart = new LinkedHashMap<>();
+        Map<HourKey, TrafficPeriodReport> byStart = new LinkedHashMap<>();
         Path archive = hourlyDayPath(day);
         if (Files.isRegularFile(archive)) {
             try {
@@ -239,7 +238,7 @@ public final class TrafficPeriodReportStore {
     }
 
     private static boolean mergeHour(
-            Map<Long, TrafficPeriodReport> byStart,
+            Map<HourKey, TrafficPeriodReport> byStart,
             TrafficPeriodReport report,
             LocalDate day
     ) {
@@ -248,7 +247,7 @@ public final class TrafficPeriodReportStore {
                 .atZone(zone(report.zoneId())).toLocalDate().equals(day)) {
             return false;
         }
-        byStart.merge(report.periodStartMillis(), report,
+        byStart.merge(hourKey(report), report,
                 (current, replacement) -> current.generatedAtMillis() < replacement.generatedAtMillis()
                         ? replacement
                         : current);
@@ -259,21 +258,31 @@ public final class TrafficPeriodReportStore {
             List<TrafficPeriodReport> existing,
             TrafficPeriodReport replacement
     ) {
-        Map<Long, TrafficPeriodReport> byStart = new LinkedHashMap<>();
+        Map<HourKey, TrafficPeriodReport> byStart = new LinkedHashMap<>();
         for (TrafficPeriodReport report : existing) {
-            byStart.put(report.periodStartMillis(), report);
+            byStart.put(hourKey(report), report);
         }
-        byStart.merge(replacement.periodStartMillis(), replacement,
+        byStart.merge(hourKey(replacement), replacement,
                 (current, candidate) -> current.generatedAtMillis() <= candidate.generatedAtMillis()
                         ? candidate
                         : current);
         return sortedHours(byStart);
     }
 
-    private static List<TrafficPeriodReport> sortedHours(Map<Long, TrafficPeriodReport> byStart) {
+    private static List<TrafficPeriodReport> sortedHours(Map<HourKey, TrafficPeriodReport> byStart) {
         return byStart.values().stream()
-                .sorted(Comparator.comparingLong(TrafficPeriodReport::periodStartMillis))
+                .sorted(Comparator.comparingLong(TrafficPeriodReport::periodStartMillis)
+                        .thenComparingInt(report -> versionKey(report.modVersion()).equals("<133") ? 0 : 1)
+                        .thenComparing(report -> versionKey(report.modVersion())))
                 .toList();
+    }
+
+    private static HourKey hourKey(TrafficPeriodReport report) {
+        return new HourKey(report.periodStartMillis(), versionKey(report.modVersion()));
+    }
+
+    private static String versionKey(String modVersion) {
+        return modVersion == null || modVersion.isBlank() ? "<133" : modVersion;
     }
 
     private static void compactLegacyHourlyDirectories() {
@@ -352,6 +361,7 @@ public final class TrafficPeriodReportStore {
         return new TrafficHistoryReport.HourlyTraffic(
                 report.periodStartMillis(),
                 report.periodEndMillis(),
+                report.modVersion(),
                 report.complete(),
                 report.totals(),
                 players
@@ -379,6 +389,7 @@ public final class TrafficPeriodReportStore {
         return new TrafficPeriodReport(
                 1,
                 UUID.randomUUID().toString(),
+                Bandwidthoptimizer.networkProtocolVersion(),
                 type,
                 start,
                 end,
@@ -389,6 +400,9 @@ public final class TrafficPeriodReportStore {
                 totals,
                 List.copyOf(entries)
         );
+    }
+
+    private record HourKey(long periodStartMillis, String modVersion) {
     }
 
     private static TrafficPeriodReport read(Path path) {

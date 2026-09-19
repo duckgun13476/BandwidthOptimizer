@@ -16,6 +16,7 @@ public record TrafficHistoryReport(
     public record HourlyTraffic(
             long periodStartMillis,
             long periodEndMillis,
+            String modVersion,
             boolean complete,
             TrafficPeriodReport.TrafficCounters totals,
             List<PlayerWireTraffic> players

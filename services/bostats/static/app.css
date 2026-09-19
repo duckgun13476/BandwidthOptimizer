@@ -27,6 +27,7 @@ header { min-height: 58px; padding: 8px 22px; display: grid; grid-template-colum
 .brand { min-width: 0; display: flex; align-items: baseline; gap: 12px; }
 .brand strong { color: var(--text); font-size: 18px; font-weight: 650; }
 .brand span { color: var(--subtle); font: 11px ui-monospace, "Cascadia Mono", monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brand .report-version { flex: none; padding: 2px 6px; border: 1px solid var(--border-strong); border-radius: 4px; color: var(--accent); background: var(--surface); }
 .header-tools { display: flex; align-items: center; gap: 9px; flex: none; }
 .header-tools { justify-self: end; }
 .header-tools time, .header-tools label { color: var(--muted); font-size: 12px; }
@@ -72,7 +73,8 @@ h2 { font-size: 16px; line-height: 1.2; margin: 0; font-weight: 650; }
 .trend-heading { align-items: center; }
 .trend-controls { display: flex; align-items: center; gap: 9px; }
 .trend-controls label { color: var(--muted); font-size: 12px; }
-.trend-controls select { min-width: 220px; }
+.trend-controls select { min-width: 150px; }
+#trend-player { min-width: 220px; }
 .trend-panel { border: 1px solid var(--border); border-radius: 5px; background: var(--surface); overflow: hidden; }
 .legend { min-height: 43px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
 .legend button { padding: 4px 10px; display: inline-flex; align-items: center; gap: 7px; }

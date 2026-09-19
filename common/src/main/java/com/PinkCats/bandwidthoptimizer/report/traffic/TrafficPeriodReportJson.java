@@ -61,6 +61,7 @@ public final class TrafficPeriodReportJson {
         JsonObject encoded = new JsonObject();
         encoded.addProperty("schemaVersion", report.schemaVersion());
         encoded.addProperty("reportId", report.reportId());
+        encoded.addProperty("modVersion", report.modVersion());
         encoded.addProperty("periodType", report.periodType());
         encoded.addProperty("periodStartMillis", report.periodStartMillis());
         encoded.addProperty("periodEndMillis", report.periodEndMillis());
@@ -100,6 +101,7 @@ public final class TrafficPeriodReportJson {
         return new TrafficPeriodReport(
                 readInt(encoded, "schemaVersion"),
                 readString(encoded, "reportId"),
+                readOptionalString(encoded, "modVersion"),
                 readString(encoded, "periodType"),
                 readLong(encoded, "periodStartMillis"),
                 readLong(encoded, "periodEndMillis"),
@@ -190,6 +192,13 @@ public final class TrafficPeriodReportJson {
             throw new IllegalArgumentException("Missing traffic report string: " + name);
         }
         return value.getAsString();
+    }
+
+    private static String readOptionalString(JsonObject source, String name) {
+        JsonElement value = source.get(name);
+        return value == null || value.isJsonNull() || !value.isJsonPrimitive()
+                ? ""
+                : value.getAsString();
     }
 
     private static int readInt(JsonObject source, String name) {

@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.report.traffic;
 
 import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,13 +30,16 @@ public final class TrafficPeriodReportStoreRegressionMain {
             TrafficPeriodReport live = report(currentHour, zone, false, 25L);
 
             Gson legacyGson = new Gson();
-            check(TrafficPeriodReportJson.decode(legacyGson.toJson(archived)).equals(archived),
-                    "legacy Gson direct report JSON was not readable");
+            JsonObject legacyEncoded = legacyGson.toJsonTree(archived).getAsJsonObject();
+            legacyEncoded.remove("modVersion");
+            TrafficPeriodReport decodedLegacy = TrafficPeriodReportJson.decode(legacyEncoded.toString());
+            check(decodedLegacy.modVersion().isEmpty() && decodedLegacy.totals().equals(archived.totals()),
+                    "legacy report without a mod version was not readable");
             check(TrafficPeriodReportJson.decodeHourlyDay(legacyGson.toJson(Map.of(
                     "schemaVersion", 1,
                     "day", previousHour.toLocalDate().toString(),
-                    "hours", List.of(archived)
-            ))).equals(List.of(archived)), "legacy Gson hourly archive was not readable");
+                    "hours", List.of(legacyEncoded)
+            ))).get(0).modVersion().isEmpty(), "legacy hourly archive did not retain its unknown version");
 
             Path legacyPath = TrafficPeriodReportStore.legacyHourlyPath(legacy);
             Files.createDirectories(legacyPath.getParent());
@@ -55,14 +59,24 @@ public final class TrafficPeriodReportStoreRegressionMain {
             }
 
             TrafficPeriodReportStore.saveBlocking(report(previousHour, zone, true, 900L));
+            TrafficPeriodReportStore.saveBlocking(report(previousHour, zone, true, 40L, "5_10_30_132"));
             TrafficHistoryReport history = TrafficPeriodReportStore.loadCurrentMonth(live);
 
             check(history != null, "month history was not produced");
-            check(history.totals().outboundWireBytes() == 975L,
+            check(history.totals().outboundWireBytes() == 1_015L,
                     "month totals did not use the daily archive plus the live day");
-            check(history.hours().size() == 3, "hourly detail was not retained");
-            check(history.hours().get(1).totals().outboundWireBytes() == 900L,
+            check(history.hours().size() == 4, "versioned hourly detail was not retained");
+            check(history.hours().get(2).totals().outboundWireBytes() == 900L,
                     "hourly detail did not remain independent from month aggregation");
+            check("5_10_30_132".equals(history.hours().get(1).modVersion())
+                            && "5_10_30_133".equals(history.hours().get(2).modVersion()),
+                    "same-hour version segments were not preserved independently");
+            check(TrafficPeriodReportStore.loadHour(
+                            previousHour.toInstant().toEpochMilli(), zone, "5_10_30_133").totals().outboundWireBytes() == 900L,
+                    "current-version resume selected the wrong hour segment");
+            check(TrafficPeriodReportStore.loadHour(
+                            previousHour.toInstant().toEpochMilli(), zone, "5_10_30_132").totals().outboundWireBytes() == 40L,
+                    "previous-version hour segment was not addressable");
             check(history.players().size() == 1 && "TestPlayer".equals(history.players().get(0).playerName()),
                     "player identity was not aggregated by UUID");
             System.out.println("Traffic period report store regression passed.");
@@ -90,6 +104,16 @@ public final class TrafficPeriodReportStoreRegressionMain {
             boolean complete,
             long outboundWireBytes
     ) {
+        return report(start, zone, complete, outboundWireBytes, "5_10_30_133");
+    }
+
+    private static TrafficPeriodReport report(
+            ZonedDateTime start,
+            ZoneId zone,
+            boolean complete,
+            long outboundWireBytes,
+            String modVersion
+    ) {
         TrafficPeriodReport.TrafficCounters counters = new TrafficPeriodReport.TrafficCounters(
                 1L, outboundWireBytes * 2L, outboundWireBytes * 2L, outboundWireBytes * 2L,
                 1L, outboundWireBytes, 0L, 0L, outboundWireBytes,
@@ -99,6 +123,7 @@ public final class TrafficPeriodReportStoreRegressionMain {
         return new TrafficPeriodReport(
                 1,
                 "report-" + startMillis,
+                modVersion,
                 "hour",
                 startMillis,
                 start.plusHours(1L).toInstant().toEpochMilli(),

@@ -5,6 +5,7 @@ import java.util.List;
 public record TrafficPeriodReport(
         int schemaVersion,
         String reportId,
+        String modVersion,
         String periodType,
         long periodStartMillis,
         long periodEndMillis,

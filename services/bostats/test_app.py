@@ -274,6 +274,30 @@ class BostatsServerRegression(unittest.TestCase):
         finally:
             app.MAX_REPORT_BYTES = old_limit
 
+    def test_history_keeps_same_hour_version_segments_and_legacy_data(self) -> None:
+        legacy = self.report_payload("legacy-version", "c" * 64, 1000, 3, "Legacy")
+        previous = self.report_payload("version-132", "c" * 64, 1000, 5, "Previous", "5_10_30_132")
+        current = self.report_payload("version-133", "c" * 64, 1000, 7, "Current", "5_10_30_133")
+
+        merged = app.merge_report_history(legacy, previous)
+        merged = app.merge_report_history(merged, current)
+        hours = merged["trafficHistory"]["hours"]
+
+        self.assertEqual(3, len(hours))
+        self.assertEqual([None, "5_10_30_132", "5_10_30_133"], [hour.get("modVersion") for hour in hours])
+        self.assertEqual(15, merged["trafficHistory"]["totals"]["outboundWireBytes"])
+
+    def test_static_report_ui_exposes_version_history_controls(self) -> None:
+        index = (app.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        javascript = (app.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="report-version"', index)
+        self.assertIn('id="trend-version"', index)
+        self.assertIn('app.js?v=16', index)
+        self.assertIn("legacyVersion: '< 133版本'", javascript)
+        self.assertIn("const hourVersion", javascript)
+        self.assertIn("point.version", javascript)
+
     def test_initialize_migrates_legacy_report_table(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -353,7 +377,14 @@ class BostatsServerRegression(unittest.TestCase):
                     thread.join(2)
 
     @staticmethod
-    def report_payload(report_id: str, source: str | None, start: int, wire_bytes: int, name: str) -> dict:
+    def report_payload(
+            report_id: str,
+            source: str | None,
+            start: int,
+            wire_bytes: int,
+            name: str,
+            mod_version: str | None = None,
+    ) -> dict:
         payload = {
             "schemaVersion": 1,
             "reportId": report_id,
@@ -384,6 +415,8 @@ class BostatsServerRegression(unittest.TestCase):
                 }],
             },
         }
+        if mod_version is not None:
+            payload["trafficHistory"]["hours"][0]["modVersion"] = mod_version
         if source is not None:
             payload["sourceFingerprint"] = source
         return payload

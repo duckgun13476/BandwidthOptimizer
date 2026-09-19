@@ -116,7 +116,10 @@ public final class PlayerTrafficPeriodArchive {
             return;
         }
         setCurrentHour(nowMillis);
-        TrafficPeriodReport existing = TrafficPeriodReportStore.loadHour(currentHourStartMillis, ZONE);
+        TrafficPeriodReport existing = TrafficPeriodReportStore.loadHour(
+                currentHourStartMillis,
+                ZONE,
+                com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer.networkProtocolVersion());
         if (existing != null) {
             for (TrafficPeriodReport.PlayerTraffic player : existing.players()) {
                 CURRENT_PLAYERS.computeIfAbsent(
@@ -136,7 +139,10 @@ public final class PlayerTrafficPeriodArchive {
         TrafficPeriodReportStore.saveAsync(buildCurrent(true, currentHourEndMillis));
         CURRENT_PLAYERS.clear();
         setCurrentHour(nowMillis);
-        TrafficPeriodReport existing = TrafficPeriodReportStore.loadHour(currentHourStartMillis, ZONE);
+        TrafficPeriodReport existing = TrafficPeriodReportStore.loadHour(
+                currentHourStartMillis,
+                ZONE,
+                com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer.networkProtocolVersion());
         if (existing != null) {
             for (TrafficPeriodReport.PlayerTraffic player : existing.players()) {
                 CURRENT_PLAYERS.computeIfAbsent(

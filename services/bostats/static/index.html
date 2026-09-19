@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>BO Stats</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="/static/app.css?v=15">
+  <link rel="stylesheet" href="/static/app.css?v=16">
 </head>
 <body>
   <header>
-    <div class="brand"><strong>BO Stats</strong><span id="report-id"></span></div>
+    <div class="brand"><strong>BO Stats</strong><span id="report-version" class="report-version"></span><span id="report-id"></span></div>
     <nav id="view-tabs" aria-label="报告页面">
       <button type="button" data-view="overview" aria-pressed="true">总览</button>
       <button type="button" data-view="details" aria-pressed="false">传输详情</button>
@@ -56,6 +56,8 @@
         <div class="section-heading trend-heading">
           <div><h2 id="trend-title">小时流量趋势</h2><span id="trend-period"></span></div>
           <div class="trend-controls">
+            <label for="trend-version" id="trend-version-label">版本</label>
+            <select id="trend-version"></select>
             <label for="trend-player" id="trend-player-label">数据范围</label>
             <select id="trend-player"></select>
           </div>
@@ -84,6 +86,6 @@
     </div>
   </main>
   <div id="ranking-tooltip" class="ranking-tooltip" role="tooltip" hidden></div>
-  <script src="/static/app.js?v=15" defer></script>
+  <script src="/static/app.js?v=16" defer></script>
 </body>
 </html>

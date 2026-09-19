@@ -246,9 +246,12 @@ def merge_report_history(previous: dict, current: dict) -> dict:
     for history in (prior_history, current_history):
         for hour in history.get("hours", []):
             if isinstance(hour, dict) and isinstance(hour.get("periodStartMillis"), int):
-                by_start[hour["periodStartMillis"]] = hour
+                version = hour.get("modVersion")
+                version_key = version if isinstance(version, str) and version.strip() else "<133"
+                by_start[(hour["periodStartMillis"], version_key)] = hour
     history = dict(current_history)
-    history["hours"] = [by_start[key] for key in sorted(by_start)]
+    ordered_keys = sorted(by_start, key=lambda key: (key[0], 0 if key[1] == "<133" else 1, key[1]))
+    history["hours"] = [by_start[key] for key in ordered_keys]
     rebuild_history_aggregates(history)
     merged["trafficHistory"] = history
     return merged

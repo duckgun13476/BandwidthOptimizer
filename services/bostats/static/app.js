@@ -2,7 +2,7 @@ const translations = {
   'zh-CN': {
     language: '语言', loading: '正在读取报告...', invalidLink: '请打开一条完整的报告链接。', retry: '重试',
     missing: '报告不存在或已过期。', failed: '读取报告失败。', timedOut: '读取报告超时。', title: '带宽报告',
-    subtitle: '服务器带宽使用与优化结果', trend: '小时流量趋势', dataRange: '数据范围', serverTotal: '全服总量',
+    subtitle: '服务器带宽使用与优化结果', trend: '小时流量趋势', dataRange: '数据范围', serverTotal: '全服总量', version: '版本', allVersions: '全部版本', legacyVersion: '< 133版本',
     tabOverview: '总览', tabPlayers: '玩家', tabDetails: '传输详情', tabPackets: '包分析', pageNavigation: '报告页面', detailsSubtitle: '各压缩阶段与运行状态', packetsSubtitle: '旁路来源与包级流量明细', transportFlow: '传输管线', nativeReference: '原版估算参考', packetStructure: '包与映射构成', wireEfficiency: '线路效率', measuredWire: '实际线路构成', avoidedTraffic: '缓存与门控节省', hotspotEfficiency: '热点区块效率', memoryFootprint: '重用模型与实际保留', cacheReuse: '区块缓存复用', diagnosticsEnabled: '项诊断已开启', shadowCoverageNote: '逻辑覆盖规模是重用算法按完整快照计算的假设内存，仅表示可复用数据规模，不是 JVM 实际占用。',
     month: '月度玩家排行', current: '当前小时排行', details: '传输详情', player: '玩家', hour: '小时',
     totalWire: '实际总流量', outboundWire: '出站实际', inboundWire: '入站实际', rawOutbound: '原始出站', boFrame: 'BO 帧',
@@ -26,7 +26,7 @@ const translations = {
   'en-US': {
     language: 'Language', loading: 'Loading report...', invalidLink: 'Open a complete report link.', retry: 'Retry',
     missing: 'The report does not exist or has expired.', failed: 'Failed to load the report.', timedOut: 'Report request timed out.', title: 'Bandwidth report',
-    subtitle: 'Server bandwidth use and optimization results', trend: 'Hourly traffic trend', dataRange: 'Data range', serverTotal: 'All players',
+    subtitle: 'Server bandwidth use and optimization results', trend: 'Hourly traffic trend', dataRange: 'Data range', serverTotal: 'All players', version: 'Version', allVersions: 'All versions', legacyVersion: '< v133',
     tabOverview: 'Overview', tabPlayers: 'Players', tabDetails: 'Transport details', tabPackets: 'Packet analysis', pageNavigation: 'Report pages', detailsSubtitle: 'Compression stages and runtime state', packetsSubtitle: 'Bypass sources and packet-level traffic details', transportFlow: 'Transport pipeline', nativeReference: 'Vanilla estimate reference', packetStructure: 'Packet and mapping composition', wireEfficiency: 'Wire efficiency', measuredWire: 'Measured wire composition', avoidedTraffic: 'Cache and gate savings', hotspotEfficiency: 'Hotspot chunk efficiency', memoryFootprint: 'Reuse model and actual retention', cacheReuse: 'Chunk cache reuse', diagnosticsEnabled: 'diagnostics enabled', shadowCoverageNote: 'Logical coverage is the reuse algorithm\'s assumed memory for complete snapshots. It describes reusable data scale, not actual JVM memory usage.',
     month: 'Monthly player ranking', current: 'Current-hour ranking', details: 'Transport details', player: 'Player', hour: 'Hour',
     totalWire: 'Measured total', outboundWire: 'Outbound measured', inboundWire: 'Inbound measured', rawOutbound: 'Outbound raw', boFrame: 'BO frames',
@@ -50,7 +50,7 @@ const translations = {
   'pt-BR': {
     language: 'Idioma', loading: 'Carregando relatório...', invalidLink: 'Abra um link completo de relatório.', retry: 'Tentar novamente',
     missing: 'O relatório não existe ou expirou.', failed: 'Falha ao carregar o relatório.', timedOut: 'A leitura do relatório expirou.', title: 'Relatório de largura de banda',
-    subtitle: 'Uso de largura de banda e resultados da otimização', trend: 'Tendência de tráfego por hora', dataRange: 'Intervalo de dados', serverTotal: 'Todos os jogadores',
+    subtitle: 'Uso de largura de banda e resultados da otimização', trend: 'Tendência de tráfego por hora', dataRange: 'Intervalo de dados', serverTotal: 'Todos os jogadores', version: 'Versão', allVersions: 'Todas as versões', legacyVersion: '< versão 133',
     tabOverview: 'Visão geral', tabPlayers: 'Jogadores', tabDetails: 'Detalhes do transporte', tabPackets: 'Análise de pacotes', pageNavigation: 'Páginas do relatório', detailsSubtitle: 'Etapas de compressão e estado de execução', packetsSubtitle: 'Origens de desvio e detalhes de tráfego por pacote', transportFlow: 'Pipeline de transporte', nativeReference: 'Referência da estimativa vanilla', packetStructure: 'Composição de pacotes e mapeamento', wireEfficiency: 'Eficiência da rede', measuredWire: 'Composição do tráfego medido', avoidedTraffic: 'Economia de cache e gates', hotspotEfficiency: 'Eficiência dos chunks hotspot', memoryFootprint: 'Modelo de reuso e retenção real', cacheReuse: 'Reuso do cache de chunks', diagnosticsEnabled: 'diagnósticos ativos', shadowCoverageNote: 'A cobertura lógica é a memória presumida pelo algoritmo de reuso para snapshots completos. Ela representa a escala reutilizável, não o uso real de memória da JVM.',
     month: 'Ranking mensal de jogadores', current: 'Ranking da hora atual', details: 'Detalhes do transporte', player: 'Jogador', hour: 'Hora',
     totalWire: 'Total medido', outboundWire: 'Saída medida', inboundWire: 'Entrada medida', rawOutbound: 'Saída original', boFrame: 'Quadros BO',
@@ -89,6 +89,7 @@ const pages = { bypassSources: { page: 1, size: 10 }, bypassEntries: { page: 1, 
 let activeView = ['details', 'packets'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
 if (location.hash === '#players') history.replaceState(null, '', '#overview');
 let chartHoverIndex = -1;
+const LEGACY_VERSION = '__legacy_pre_133';
 const t = key => translations[language][key] || translations['en-US'][key] || key;
 const template = (key, values) => Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, value), t(key));
 const statusNode = document.querySelector('#status');
@@ -114,6 +115,8 @@ const bytes = value => {
   return `${number.toFixed(unit === 0 ? 0 : 2)} ${units[unit]}`;
 };
 const metric = (label, value) => `<div class="metric"><small>${escapeText(label)}</small><strong>${escapeText(value)}</strong></div>`;
+const hourVersion = hour => typeof hour?.modVersion === 'string' && hour.modVersion.trim() ? hour.modVersion.trim() : LEGACY_VERSION;
+const versionLabel = value => value === LEGACY_VERSION || !value ? t('legacyVersion') : value.replaceAll('_', '.');
 
 async function load() {
   if (location.pathname === '/' || location.pathname === '/report' || location.pathname === '/report/') { renderUpload(); return; }
@@ -137,6 +140,7 @@ function renderUpload() {
   languageNode.setAttribute('aria-label', t('language'));
   document.querySelector('#view-tabs').hidden = true;
   document.querySelector('#generated').hidden = true;
+  document.querySelector('#report-version').textContent = '';
   document.querySelector('#report-id').textContent = '';
   document.querySelector('#status').hidden = true;
   document.querySelectorAll('.view-page').forEach(node => { node.hidden = true; });
@@ -219,6 +223,7 @@ function render() {
   document.querySelector('[data-view="details"]').textContent = t('tabDetails');
   document.querySelector('[data-view="packets"]').textContent = t('tabPackets');
   document.querySelector('#trend-title').textContent = t('trend');
+  document.querySelector('#trend-version-label').textContent = t('version');
   document.querySelector('#trend-player-label').textContent = t('dataRange');
   document.querySelector('#month-title').textContent = t('month');
   document.querySelector('#current-title').textContent = t('current');
@@ -228,6 +233,7 @@ function render() {
   document.querySelector('#packets-subtitle').textContent = t('packetsSubtitle');
   document.querySelectorAll('[data-i18n]').forEach(node => { node.textContent = t(node.dataset.i18n); });
   document.querySelector('#report-id').textContent = bundle.reportId;
+  document.querySelector('#report-version').textContent = versionLabel(summary?.modVersion || bundle.modVersion);
   document.querySelector('#generated').textContent = formatDateTime(bundle.generatedAtMillis);
 
   const server = summary.sections.find(section => section.id === 'server');
@@ -241,6 +247,7 @@ function render() {
   ].join('');
 
   populatePlayerSelectors(monthPlayers);
+  populateVersionSelector(history);
   renderTrend(history);
   renderMonth(monthPlayers, history);
   renderCurrent(traffic?.players || [], traffic);
@@ -250,6 +257,14 @@ function render() {
   statusNode.hidden = true;
   document.querySelector('#trend-section').hidden = !history;
   setActiveView(activeView, false);
+}
+
+function populateVersionSelector(history) {
+  const select = document.querySelector('#trend-version');
+  const previous = select.value || '__all';
+  const versions = [...new Set((history?.hours || []).map(hourVersion))];
+  select.innerHTML = `<option value="__all">${escapeText(t('allVersions'))}</option>${versions.map(version => `<option value="${escapeAttribute(version)}">${escapeText(versionLabel(version))}</option>`).join('')}`;
+  select.value = previous === '__all' || versions.includes(previous) ? previous : '__all';
 }
 
 function populatePlayerSelectors(players) {
@@ -281,11 +296,12 @@ function renderTrend(history) {
 
 function chartPoints(history) {
   const uuid = document.querySelector('#trend-player').value;
-  return (history?.hours || []).map(hour => {
+  const selectedVersion = document.querySelector('#trend-version').value;
+  return (history?.hours || []).filter(hour => selectedVersion === '__all' || hourVersion(hour) === selectedVersion).map(hour => {
     const traffic = uuid === '__server' ? hour.totals : (hour.players || []).find(player => player.playerUuid === uuid);
     const outbound = Number(traffic?.outboundWireBytes || 0);
     const inbound = Number(traffic?.inboundWireBytes || 0);
-    return { time: hour.periodStartMillis, outbound, inbound, total: outbound + inbound };
+    return { time: hour.periodStartMillis, version: hourVersion(hour), outbound, inbound, total: outbound + inbound };
   });
 }
 
@@ -323,6 +339,25 @@ function drawChart(history) {
   }
   const x = index => pad.left + (points.length <= 1 ? 0 : innerWidth * index / (points.length - 1));
   const y = value => pad.top + innerHeight - innerHeight * value / maximum;
+  if (document.querySelector('#trend-version').value === '__all') {
+    let previousLabelX = Number.NEGATIVE_INFINITY;
+    let labelRow = 0;
+    points.forEach((point, index) => {
+      if (index === 0 || point.version === points[index - 1].version) return;
+      const transitionX = (x(index - 1) + x(index)) / 2;
+      labelRow = transitionX - previousLabelX < 92 ? (labelRow + 1) % 3 : 0;
+      previousLabelX = transitionX;
+      context.save();
+      context.setLineDash([4, 4]);
+      context.strokeStyle = text;
+      context.lineWidth = 1;
+      context.beginPath(); context.moveTo(transitionX, pad.top); context.lineTo(transitionX, pad.top + innerHeight); context.stroke();
+      context.restore();
+      context.fillStyle = text;
+      context.textAlign = 'left';
+      context.fillText(versionLabel(point.version), Math.min(transitionX + 5, width - pad.right - 72), pad.top + 8 + labelRow * 14);
+    });
+  }
   const tickCount = Math.min(5, points.length);
   for (let i = 0; i < tickCount; i++) {
     const index = Math.round((points.length - 1) * i / Math.max(1, tickCount - 1));
@@ -339,14 +374,14 @@ function drawChart(history) {
     const hoverX = x(chartHoverIndex);
     context.strokeStyle = text; context.lineWidth = 1; context.beginPath(); context.moveTo(hoverX, pad.top); context.lineTo(hoverX, pad.top + innerHeight); context.stroke();
     active.forEach(series => { context.fillStyle = colors[series]; context.beginPath(); context.arc(hoverX, y(point[series]), 3.5, 0, Math.PI * 2); context.fill(); });
-    const lines = [formatHour(point.time), ...active.map(series => `${t(series)}  ${bytes(point[series])}`)];
+    const lines = [formatHour(point.time), `${t('version')}  ${versionLabel(point.version)}`, ...active.map(series => `${t(series)}  ${bytes(point[series])}`)];
     const boxWidth = Math.max(...lines.map(line => context.measureText(line).width)) + 24;
     const boxHeight = lines.length * 20 + 10;
     const boxX = hoverX + boxWidth + 16 > width ? hoverX - boxWidth - 10 : hoverX + 10;
     const boxY = pad.top + 6;
     context.fillStyle = surface; context.fillRect(boxX, boxY, boxWidth, boxHeight);
     context.strokeStyle = grid; context.strokeRect(boxX, boxY, boxWidth, boxHeight);
-    lines.forEach((line, index) => { context.fillStyle = index === 0 ? foreground : colors[active[index - 1]]; context.textAlign = 'left'; context.fillText(line, boxX + 12, boxY + 15 + index * 20); });
+    lines.forEach((line, index) => { context.fillStyle = index < 2 ? foreground : colors[active[index - 2]]; context.textAlign = 'left'; context.fillText(line, boxX + 12, boxY + 15 + index * 20); });
   }
 }
 
@@ -666,6 +701,7 @@ document.addEventListener('focusout', event => { if (rankingSegment(event.target
 window.addEventListener('scroll', hideRankingTooltip, true);
 window.addEventListener('hashchange', () => setActiveView(location.hash.slice(1), false));
 document.querySelector('#trend-player').addEventListener('change', () => { chartHoverIndex = -1; renderTrend(reportBundle?.trafficHistory); });
+document.querySelector('#trend-version').addEventListener('change', () => { chartHoverIndex = -1; renderTrend(reportBundle?.trafficHistory); });
 chartNode.addEventListener('pointermove', event => {
   const points = chartPoints(reportBundle?.trafficHistory);
   const rect = chartNode.getBoundingClientRect();
