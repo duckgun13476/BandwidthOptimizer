@@ -116,6 +116,35 @@ public final class ConnectionDisconnectClassifierRegressionMain {
                 ConnectionDisconnectClassifier.RecoveryPolicy.DO_NOT_AUTO_RECONNECT
         );
 
+        EmbeddedChannel serverModFailure = new EmbeddedChannel();
+        ConnectionDisconnectClassifier.observeInboundPacketEvidence(
+                serverModFailure,
+                "net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket",
+                "example:broken_action"
+        );
+        ConnectionDisconnectClassifier.observePacketClass(
+                serverModFailure,
+                "net.minecraft.network.protocol.game.ClientboundDisconnectPacket",
+                "outbound-packet"
+        );
+        ConnectionDisconnectClassifier.Decision serverModFailureDecision =
+                ConnectionDisconnectClassifier.snapshot(serverModFailure);
+        assertDecision(
+                serverModFailureDecision,
+                ConnectionDisconnectClassifier.Category.EXPLICIT_DISCONNECT,
+                ConnectionDisconnectClassifier.RecoveryPolicy.DO_NOT_AUTO_RECONNECT
+        );
+        ConnectionDisconnectClassifier.InboundEvidence serverModFailureEvidence =
+                ConnectionDisconnectClassifier.recentInboundEvidence(serverModFailure);
+        check(serverModFailureEvidence.sequence() == 1L,
+                "explicit disconnect must preserve inbound sequence evidence");
+        check("net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket".equals(
+                        serverModFailureEvidence.packetClass()),
+                "explicit disconnect must preserve the triggering inbound packet class");
+        check("example:broken_action".equals(serverModFailureEvidence.payloadChannel()),
+                "explicit disconnect must preserve the triggering payload channel");
+        serverModFailure.finishAndReleaseAll();
+
         ConnectionDisconnectClassifier.markBoInitiatedClose(channel, "test-stage", new IllegalStateException("test"));
         ConnectionDisconnectClassifier.Decision decision = ConnectionDisconnectClassifier.onChannelInactive(channel);
         assertDecision(

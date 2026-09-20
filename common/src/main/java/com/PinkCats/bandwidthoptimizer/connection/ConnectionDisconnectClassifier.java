@@ -3,9 +3,11 @@ package com.PinkCats.bandwidthoptimizer.connection;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.CustomPayloadPacketCompat;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
+import net.minecraft.network.protocol.Packet;
 
 import java.util.List;
 import java.util.Locale;
@@ -36,11 +38,17 @@ public final class ConnectionDisconnectClassifier {
         }
         int startIndex = Math.max(outputSizeBeforeDecode, 0);
         for (int index = startIndex; index < decodedPackets.size(); index++) {
-            observeInboundPacketClass(context.channel(), packetClassName(decodedPackets.get(index)));
+            Object packet = decodedPackets.get(index);
+            String packetClass = packetClassName(packet);
+            observeInboundPacketEvidence(context.channel(), packetClass, payloadChannel(packet, packetClass));
         }
     }
 
     static void observeInboundPacketClass(Channel channel, String packetClass) {
+        observeInboundPacketEvidence(channel, packetClass, "");
+    }
+
+    static void observeInboundPacketEvidence(Channel channel, String packetClass, String payloadChannel) {
         if (channel == null) {
             return;
         }
@@ -52,7 +60,7 @@ public final class ConnectionDisconnectClassifier {
             existing = state(channel);
         }
         if (existing != null) {
-            existing.markInboundPacket(packetClass);
+            existing.markInboundPacket(packetClass, payloadChannel);
         }
     }
 
@@ -120,6 +128,9 @@ public final class ConnectionDisconnectClassifier {
     public static Decision onChannelInactive(Channel channel) {
         State existing = channel == null ? null : channel.attr(STATE_KEY).get();
         Decision decision = existing == null ? unknownDecision() : existing.decision();
+        InboundEvidence inboundEvidence = existing == null
+                ? InboundEvidence.EMPTY
+                : existing.inboundEvidence();
         ReconnectCandidateListener listener = reconnectCandidateListener;
         if (listener != null && existing != null && existing.isClientPlayEndpoint()
                 && isFirstPriorityReconnectCandidate(decision)) {
@@ -128,7 +139,7 @@ public final class ConnectionDisconnectClassifier {
         if (existing != null && DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CONNECTION_CLOSE)) {
             DiagnosticLog.info(
                     DiagnosticToolRegistry.Tool.CONNECTION_CLOSE,
-                    "channel={} category={} recovery={} trigger={} packetClass={} throwable={} boStage={} evidenceAgeMs={}",
+                    "v=1 domain=connection event=connection_close channel={} category={} recovery={} trigger={} packetClass={} throwable={} boStage={} evidenceAgeMs={} recentInboundSequence={} recentInboundPacketClass={} recentInboundPayload={} recentInboundAgeMs={}",
                     channel == null ? "<no-channel>" : ChannelIdentity.shortText(channel),
                     decision.category(),
                     decision.recoveryPolicy(),
@@ -136,7 +147,11 @@ public final class ConnectionDisconnectClassifier {
                     emptyAsDash(decision.packetClass()),
                     emptyAsDash(decision.throwableClass()),
                     emptyAsDash(decision.boStage()),
-                    decision.evidenceAgeMillis()
+                    decision.evidenceAgeMillis(),
+                    inboundEvidence.sequence(),
+                    emptyAsDash(inboundEvidence.packetClass()),
+                    emptyAsDash(inboundEvidence.payloadChannel()),
+                    inboundEvidence.ageMillis()
             );
         }
         KeepAliveTimeoutDiagnostic.observeClose(channel, decision);
@@ -146,6 +161,11 @@ public final class ConnectionDisconnectClassifier {
     public static Decision snapshot(Channel channel) {
         State existing = channel == null ? null : channel.attr(STATE_KEY).get();
         return existing == null ? unknownDecision() : existing.decision();
+    }
+
+    static InboundEvidence recentInboundEvidence(Channel channel) {
+        State existing = channel == null ? null : channel.attr(STATE_KEY).get();
+        return existing == null ? InboundEvidence.EMPTY : existing.inboundEvidence();
     }
 
     static void observePacketClass(Channel channel, String packetClass, String trigger) {
@@ -296,6 +316,19 @@ public final class ConnectionDisconnectClassifier {
         return packet == null ? "" : packet.getClass().getName();
     }
 
+    private static String payloadChannel(Object packet, String packetClass) {
+        if (!(packet instanceof Packet<?> typedPacket)
+                || packetClass == null
+                || !packetClass.endsWith("CustomPayloadPacket")) {
+            return "";
+        }
+        try {
+            return safe(CustomPayloadPacketCompat.payloadChannel(typedPacket));
+        } catch (RuntimeException | LinkageError ignored) {
+            return "<unavailable>";
+        }
+    }
+
     private static Decision unknownDecision() {
         return new Decision(
                 Category.UNKNOWN,
@@ -347,6 +380,10 @@ public final class ConnectionDisconnectClassifier {
             long evidenceAgeMillis
     ) { }
 
+    record InboundEvidence(long sequence, String packetClass, String payloadChannel, long ageMillis) {
+        private static final InboundEvidence EMPTY = new InboundEvidence(0L, "", "", 0L);
+    }
+
     @FunctionalInterface
     public interface ReconnectCandidateListener {
         void onReconnectCandidate(Decision decision);
@@ -367,8 +404,16 @@ public final class ConnectionDisconnectClassifier {
         private boolean clientEndpoint;
         private boolean localDisconnect;
         private long localDisconnectAtMillis;
+        private long recentInboundSequence;
+        private String recentInboundPacketClass = "";
+        private String recentInboundPayload = "";
+        private long recentInboundAtMillis;
 
-        synchronized void markInboundPacket(String packetClass) {
+        synchronized void markInboundPacket(String packetClass, String payloadChannel) {
+            this.recentInboundSequence++;
+            this.recentInboundPacketClass = safe(packetClass);
+            this.recentInboundPayload = safe(payloadChannel);
+            this.recentInboundAtMillis = System.currentTimeMillis();
             if (isClientboundPacket(packetClass)) {
                 this.clientEndpoint = true;
             }
@@ -379,6 +424,15 @@ public final class ConnectionDisconnectClassifier {
 
         synchronized boolean isClientPlayEndpoint() {
             return this.clientEndpoint && this.playObserved;
+        }
+
+        synchronized InboundEvidence inboundEvidence() {
+            return new InboundEvidence(
+                    this.recentInboundSequence,
+                    this.recentInboundPacketClass,
+                    this.recentInboundPayload,
+                    ageMillis(this.recentInboundAtMillis)
+            );
         }
 
         synchronized void markLocalDisconnect() {
