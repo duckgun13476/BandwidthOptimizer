@@ -1,27 +1,28 @@
-#### v5.10.30.133-release
+#### v5.10.30.134-release
 
-1. Added a configurable persistent chunk-cache disk limit with a 256 MiB default and safe offline cleanup.
-
-#### v5.10.30.132-release
-
-1. Added persistent recipe synchronization deltas so unchanged recipe sets can be reused across reconnects and small recipe changes send only compact differences.
-2. Reduced foreground traffic from off-screen entity updates while preserving timely state recovery when entities return to view.
-3. Reduced WATUT dynamic GUI traffic without bypassing BO transport compression.
-4. Stabilized KeepAlive grace compatibility across supported loaders and game versions.
-5. Preserved server-session traffic totals across player reconnects and clarified HUD traffic composition percentages.
-
-#### v5.10.30.130-release
-
-1. Hardened transport envelope, template dictionary, fragment reassembly, and chunk patch decoding against malformed or oversized input.
-2. Added bounded decoder evidence for diagnosing recursive chunk NBT failures without recording full player payloads.
-3. Added recoverable KeepAlive stall handling while preserving normal login and disconnect semantics.
-4. Bounded replay retention and unified client chunk-cache memory accounting to prevent long-session memory growth.
-5. Published idle-gate state safely across network threads.
-6. Removed Create world and entity reads from Netty encoding paths.
-7. Made persistent-manifest gating generation-safe, preserving FIFO order across re-entry, stale completion, timeout, overflow, and connection close.
-8. Hardened release dependency verification and retained shared regression compatibility across all supported Netty versions.
-9. Added OP-only commands to list, add, and remove persistent proxy control channels without restarting the server.
-10. Separated tested modpacks, individually verified mods, and proxy integrations, and documented incompatible network optimization mods that inject into the same transport or compression chain.
+1. Preserved traffic history across BO upgrades and added version-aware BO Stats reporting, filtering, and chart boundaries; reports created before version tracking are grouped under `< 133`.
+2. Added bounded inbound packet provenance to connection-close diagnostics so third-party packet handling failures can be distinguished from BO transport failures without recording payload contents.
+3. Added a configurable persistent chunk-cache disk limit with a 256 MiB default and safe offline cleanup.
+4. Added persistent recipe synchronization deltas so unchanged recipe sets can be reused across reconnects and small recipe changes send only compact differences.
+5. Reduced foreground traffic from off-screen entity updates while preserving timely state recovery when entities return to view.
+6. Reduced WATUT dynamic GUI traffic without bypassing BO transport compression.
+7. Stabilized KeepAlive grace compatibility across supported loaders and game versions.
+8. Preserved server-session traffic totals across player reconnects and clarified HUD traffic composition percentages.
+9. Hardened transport envelope, template dictionary, fragment reassembly, and chunk patch decoding against malformed or oversized input.
+10. Added bounded decoder evidence for diagnosing recursive chunk NBT failures without recording full player payloads.
+11. Added recoverable KeepAlive stall handling while preserving normal login and disconnect semantics.
+12. Bounded replay retention and unified client chunk-cache memory accounting to prevent long-session memory growth.
+13. Published idle-gate state safely across network threads.
+14. Removed Create world and entity reads from Netty encoding paths.
+15. Made persistent-manifest gating generation-safe, preserving FIFO order across re-entry, stale completion, timeout, overflow, and connection close.
+16. Hardened release dependency verification and retained shared regression compatibility across all supported Netty versions.
+17. Added OP-only commands to list, add, and remove persistent proxy control channels without restarting the server.
+18. Separated tested modpacks, individually verified mods, and proxy integrations, and documented incompatible network optimization mods that inject into the same transport or compression chain.
+19. Bounded BO Stats upload responses and server resources, added queued local retries, and safely merged retained report history.
+20. Bounded persistent-cache inflation, active-session growth, retained peer state, adaptive bypass learning, and reconnect attempts.
+21. Hardened residual transport lifecycle and streaming recovery state so failed or closed sessions cannot retain unbounded work.
+22. Isolated diagnostic capture disk I/O from network processing and bounded diagnostics to active Minecraft sessions.
+23. Corrected server-cache HUD share accounting so displayed cache contribution cannot exceed its measured traffic basis.
 
 #### v5.10.30.112-release
 
