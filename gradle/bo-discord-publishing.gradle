@@ -167,9 +167,20 @@ ext.boDiscordPublishingDisabled = {
     return value.toLowerCase(Locale.ROOT) in ['1', 'true', 'yes', 'on']
 }
 
+ext.boDiscordFindProjectDirectory = { File sourceProjectDirectory ->
+    File projectParent = sourceProjectDirectory?.parentFile
+    List<File> candidates = [
+            projectParent == null ? null : new File(projectParent, 'Discord'),
+            projectParent?.parentFile == null ? null : new File(projectParent.parentFile, 'Discord')
+    ].findAll { it != null }.collect { it.canonicalFile }.unique { it.absolutePath }
+    File match = candidates.find { File candidate ->
+        candidate.isDirectory() && new File(candidate, 'scripts/send_release_log.py').isFile()
+    }
+    return match?.absolutePath ?: ''
+}
+
 ext.boDiscordDefaultProjectDirectory = {
-    File siblingProject = new File(rootProject.projectDir.parentFile, 'Discord')
-    return siblingProject.isDirectory() ? siblingProject.absolutePath : ''
+    return boDiscordFindProjectDirectory(rootProject.projectDir)
 }
 
 ext.boDiscordResolveInvocation = { Map overrides = [:] ->
@@ -382,6 +393,20 @@ tasks.register('testDiscordPublishSupport') {
         Map reloadedEntry = boDiscordFindLedgerEntry(reloaded, 'bandwidth', 'v9.8.7-beta', messageSha256) as Map
         assert reloadedEntry.status == 'success'
         assert boDiscordSuccessfulChunkKeys(reloadedEntry) == ["1:${'a' * 64}", "2:${'b' * 64}"]
+
+        File workspace = new File(temporaryDir, 'discord-discovery-workspace')
+        project.delete(workspace)
+        File sourceProject = new File(workspace, 'projects/BandwidthOptimizer')
+        File siblingDiscord = new File(workspace, 'projects/Discord')
+        File workspaceDiscord = new File(workspace, 'Discord')
+        sourceProject.mkdirs()
+        new File(workspaceDiscord, 'scripts').mkdirs()
+        new File(workspaceDiscord, 'scripts/send_release_log.py').setText('# workspace sender\n', 'UTF-8')
+        assert boDiscordFindProjectDirectory(sourceProject) == workspaceDiscord.canonicalPath
+
+        new File(siblingDiscord, 'scripts').mkdirs()
+        new File(siblingDiscord, 'scripts/send_release_log.py').setText('# sibling sender\n', 'UTF-8')
+        assert boDiscordFindProjectDirectory(sourceProject) == siblingDiscord.canonicalPath
     }
 }
 
