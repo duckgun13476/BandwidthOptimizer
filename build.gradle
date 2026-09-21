@@ -37,6 +37,28 @@ allprojects {
 apply from: rootProject.file('gradle/bo-publishing-root.gradle')
 apply from: rootProject.file('gradle/bo-discord-publishing.gradle')
 
+def boVersionProjectPaths = [
+        ':forge-1.19.2',
+        ':forge-1.20.1',
+        ':fabric-1.20.1',
+        ':fabric-1.21.1',
+        ':neoforge-1.21.1',
+        ':neoforge-26.1.2',
+        ':neoforge-26.2'
+]
+
+tasks.register('compileAllVersions') {
+    group = 'verification'
+    description = 'Compiles all supported loader and Minecraft version targets.'
+    dependsOn boVersionProjectPaths.collect { "${it}:compileJava" }
+}
+
+tasks.register('verifyAllVersions') {
+    group = 'verification'
+    description = 'Runs the shared cross-frame transport regression on every supported target.'
+    dependsOn boVersionProjectPaths.collect { "${it}:runCrossFrameZstdRegression" }
+}
+
 tasks.register('runClientAllVersions') {
     group = 'Development'
     description = 'Root aggregate placeholder for version-specific client runs.'

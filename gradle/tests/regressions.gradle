@@ -1,0 +1,416 @@
+def configureTestJavaExecTask = project.ext.configureTestJavaExecTask
+
+tasks.register('runChannelSimulate', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Runs the single-process vanilla packet encode/compress/decode/handle simulator.',
+            'com.PinkCats.bandwidthoptimizer.test.ChannelSimulate'
+    )
+}
+
+tasks.register('runChannelJsonlCompare', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Compares the useful fields inside send.jsonl and receive.jsonl.',
+            'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
+    )
+}
+
+tasks.register('runChunkBranchCoverageVerify', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies that runAll actually hit the targeted chunk transport optimization branches.',
+            'com.PinkCats.bandwidthoptimizer.test.RunAllChunkBranchCoverageMain'
+    )
+}
+
+tasks.register('runWatchBoundaryRefreshPatchVerify', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies the targeted watch-boundary refresh-patch regression artifacts.',
+            'com.PinkCats.bandwidthoptimizer.test.RunWatchBoundaryRefreshPatchRegressionMain'
+    )
+}
+
+tasks.register('runChannelTransportRoundTrip', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies the extracted channel transport algorithm and frame codec without touching the Old framework.',
+            'com.PinkCats.bandwidthoptimizer.test.ChannelTransportRoundTripMain'
+    )
+}
+
+tasks.register('runClientboundCommandTreeDeduplicatorRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies byte-exact command-tree deduplication commit and epoch semantics.',
+            'com.PinkCats.bandwidthoptimizer.channel.packet.ClientboundCommandTreeDeduplicatorRegressionMain'
+    )
+}
+
+tasks.register('runOutboundBurstWarningRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies bounded clientbound outbound burst warning windows and cooldowns.',
+            'com.PinkCats.bandwidthoptimizer.channel.ChannelOutboundBurstWarningRegressionMain'
+    )
+}
+
+tasks.register('runDirectBufferReuseRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies bounded direct Zstd workspaces and independent recovery reuse.',
+            'com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.KineticStreamingDirectBufferReuseRegressionMain'
+    )
+    jvmArgs '-XX:MaxDirectMemorySize=16m'
+}
+
+tasks.register('runInternalTransportCarrierRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies that BO transport carriers are never re-entered into the outbound transport hook.',
+            'com.PinkCats.bandwidthoptimizer.test.InternalTransportCarrierRegressionMain'
+    )
+}
+
+tasks.register('runCrossFrameZstdRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies sustained cross-frame Zstd reuse and gap recovery.',
+            'com.PinkCats.bandwidthoptimizer.test.CrossFrameZstdRegressionMain'
+    )
+}
+
+tasks.register('runPersistentChunkCacheDiskStoreRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies incremental persistent chunk storage, index fallback, and cleanup.',
+            'com.PinkCats.bandwidthoptimizer.chunk.persistent.PersistentChunkCacheDiskStoreRegressionMain'
+    )
+}
+
+tasks.register('runChunkPeerStateRetentionRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies bounded player-scope and per-channel chunk-state retention.',
+            'com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateRetentionRegressionMain'
+    )
+}
+
+tasks.register('runPersistentChunkCacheBoundaryRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies persistent cache scope, disconnect, migration, and corruption boundaries.',
+            'com.PinkCats.bandwidthoptimizer.chunk.persistent.PersistentChunkCacheBoundaryRegressionMain'
+    )
+}
+
+tasks.register('runVoxyVisualHandoffRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies PREPARE-to-Sodium visual handoff ordering for Voxy masks.',
+            'com.PinkCats.bandwidthoptimizer.integration.voxy.VoxyVisualHandoffRegressionMain'
+    )
+}
+
+tasks.register('runPersistentChunkCacheLoadRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies persistent cache capacity convergence, mixed load, and concurrent maintenance.',
+            'com.PinkCats.bandwidthoptimizer.chunk.persistent.PersistentChunkCacheLoadRegressionMain'
+    )
+    if (project.hasProperty('boPersistentCacheJfrFile')) {
+        jvmArgs "-XX:StartFlightRecording=filename=${project.property('boPersistentCacheJfrFile')},settings=profile,dumponexit=true"
+    }
+}
+
+tasks.register('runPersistentHotPathIndexRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies incremental immutable publication for the persistent cache hot-path index.',
+            'com.PinkCats.bandwidthoptimizer.chunk.persistent.PersistentHotPathIndexRegressionMain'
+    )
+}
+
+tasks.register('runPersistentChunkCacheDeltaRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies bounded persistent FULL/DELTA selection, recovery, and retention.',
+            'com.PinkCats.bandwidthoptimizer.chunk.persistent.PersistentChunkCacheDeltaRegressionMain'
+    )
+}
+
+tasks.register('runChunkPatchDecodeSecurityRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies patch decoders reject hostile lengths before allocation and preserve legal bytes.',
+            'com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatchDecodeSecurityRegressionMain'
+    )
+    maxHeapSize = '64m'
+}
+
+tasks.register('runIdleGateClientPublicationRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies client idle mode publication and disconnect reset semantics.',
+            'com.PinkCats.bandwidthoptimizer.gate.IdleGateClientPublicationRegressionMain'
+    )
+}
+
+tasks.register('runAttributeRecoveryPolicyRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies bounded idle attribute recovery and overflow pass-through.',
+            'com.PinkCats.bandwidthoptimizer.gate.recovery.AttributeRecoveryPolicyRegressionMain'
+    )
+}
+
+tasks.register('runActiveEntityViewGateRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies bounded active-play offscreen entity coalescing and recovery.',
+            'com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.ActiveEntityViewGateRegressionMain'
+    )
+}
+
+tasks.register('runIdleGateServerStateRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies idle-gate channel and resume-window lifecycle cleanup.',
+            'com.PinkCats.bandwidthoptimizer.gate.IdleGateServerStateRegressionMain'
+    )
+}
+
+tasks.register('runWeakIdentitySetRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies forced packet markers use weak identity ownership.',
+            'com.PinkCats.bandwidthoptimizer.util.WeakIdentitySetRegressionMain'
+    )
+}
+
+tasks.register('runReportSourceIdentityRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies stable pseudonymous report source identity persistence.',
+            'com.PinkCats.bandwidthoptimizer.report.unified.ReportSourceIdentityRegressionMain'
+    )
+}
+
+tasks.register('runChunkWatchBoundaryPendingStoreSecurityRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies watch-boundary replay ownership, byte admission, and close cleanup.',
+            'com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkWatchBoundaryPendingStoreSecurityRegressionMain'
+    )
+    maxHeapSize = '192m'
+}
+
+tasks.register('runChunkPersistentCacheMemoryBudgetRegression', JavaExec) {
+    configureTestJavaExecTask(
+            it,
+            'verification',
+            'Verifies unified persistent client-cache memory accounting and bounded eviction.',
+            'com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentCacheMemoryBudgetRegressionMain'
+    )
+}
+
+tasks.register('runPacketClassTraceDiagnosticRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies exact packet-class allowlisting, hashing, and default-off behavior.',
+            'com.PinkCats.bandwidthoptimizer.debug.PacketClassTraceDiagnosticRegressionMain'
+    )
+}
+
+tasks.register('runDiagnosticLogRateLimitRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies bounded diagnostic output per tool event.',
+            'com.PinkCats.bandwidthoptimizer.debug.DiagnosticLogRateLimitRegressionMain'
+    )
+}
+
+tasks.register('runBoundedDiagnosticFileWriterRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies diagnostic file writes are asynchronous, bounded, ordered, and fail closed.',
+            'com.PinkCats.bandwidthoptimizer.debug.BoundedDiagnosticFileWriterRegressionMain'
+    )
+}
+
+tasks.register('runConnectionDisconnectClassifierRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies disconnect cause precedence and reconnect-policy classification.',
+            'com.PinkCats.bandwidthoptimizer.connection.ConnectionDisconnectClassifierRegressionMain'
+    )
+}
+
+tasks.register('runKeepAliveTimeoutDiagnosticRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Runs KeepAlive timeout boundary and connection-phase regression checks.',
+            'com.PinkCats.bandwidthoptimizer.connection.KeepAliveTimeoutDiagnosticRegressionMain'
+    )
+}
+
+tasks.register('runKeepAliveGraceControllerRegression', JavaExec) {
+    group = 'verification'
+    description = 'Verifies bounded PLAY KeepAlive grace and internal ping/pong control frames.'
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.PinkCats.bandwidthoptimizer.connection.KeepAliveGraceControllerRegressionMain'
+}
+
+tasks.register('runClientReconnectCoordinatorRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies bounded client reconnect admission and retry behavior.',
+            'com.PinkCats.bandwidthoptimizer.connection.ClientReconnectCoordinatorRegressionMain'
+    )
+}
+
+tasks.register('runChunkLanePacketSnapshotRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies retained packet payload ownership across snapshot access metadata updates.',
+            'com.PinkCats.bandwidthoptimizer.chunk.snapshot.lane.ChunkLanePacketSnapshotRegressionMain'
+    )
+}
+
+tasks.register('runConnectionDisconnectClassifierPerformance', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Measures disconnect classifier packet and exception-path overhead.',
+            'com.PinkCats.bandwidthoptimizer.connection.ConnectionDisconnectClassifierPerformanceMain'
+    )
+}
+
+tasks.register('runConnectionPayloadTaskGuardRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies stale client payload tasks are rejected across protocol generations and disconnects.',
+            'com.PinkCats.bandwidthoptimizer.connection.ConnectionPayloadTaskGuardRegressionMain'
+    )
+}
+
+tasks.register('runConnectionInternetProbeGuardRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies known non-Minecraft protocol probes are rejected only before Minecraft decoding starts.',
+            'com.PinkCats.bandwidthoptimizer.connection.ConnectionInternetProbeGuardRegressionMain'
+    )
+}
+
+tasks.register('runChannelDecoderExceptionDumperRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies initial handshake noise is skipped and each connection writes at most one decoder dump.',
+            'com.PinkCats.bandwidthoptimizer.channel.capture.ChannelDecoderExceptionDumperRegressionMain'
+    )
+}
+
+tasks.register('runTrafficPeriodReportStoreRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies daily-backed month aggregation and independent hourly detail.',
+            'com.PinkCats.bandwidthoptimizer.report.traffic.TrafficPeriodReportStoreRegressionMain'
+    )
+}
+
+tasks.register('runBandwidthOptimizerCommandTreeRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies the compact public command tree and debug-only internal statistics.',
+            'com.PinkCats.bandwidthoptimizer.command.BandwidthOptimizerCommandTreeRegressionMain'
+    )
+    systemProperty 'bandwidthoptimizer.proxyControlConfigPath',
+            new File(project.layout.buildDirectory.get().asFile, 'tmp/command-tree/bandwidthoptimizer-common.toml').absolutePath
+}
+
+tasks.register('runZstdReplayComparison', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Compares independent and cross-frame Zstd bodies using a captured raw packet replay.',
+            'com.PinkCats.bandwidthoptimizer.test.ZstdReplayComparisonMain'
+    )
+    if (project.hasProperty('boReplayRawPath')) {
+        systemProperty 'bandwidthoptimizer.replayRawPath', project.property('boReplayRawPath').toString()
+    }
+}
+
+tasks.register('runSableChunkSyncCompatRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies Sable dynamic-structure chunk sync lifecycle tracking.',
+            'com.PinkCats.bandwidthoptimizer.test.SableChunkSyncCompatRegressionMain'
+    )
+}
+
+tasks.register('runOptionalDynamicCompatAbsentRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies optional dynamic-structure compatibility is a no-op without optional mods.',
+            'com.PinkCats.bandwidthoptimizer.test.OptionalDynamicCompatAbsentRegressionMain'
+    )
+}
+
+tasks.register('runProtocolLibProxyChannelIdRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies channel identity survives ProtocolLib proxy channels without Channel.id().',
+            'com.PinkCats.bandwidthoptimizer.test.ProtocolLibProxyChannelIdRegressionMain'
+    )
+}
+
+tasks.register('runBungeeCordPluginMessageCompatRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies BungeeCord plugin messages stay visible to proxy-side login/session plugins.',
+            'com.PinkCats.bandwidthoptimizer.integration.bungeecord.BungeeCordPluginMessageCompatRegressionMain'
+    )
+}
