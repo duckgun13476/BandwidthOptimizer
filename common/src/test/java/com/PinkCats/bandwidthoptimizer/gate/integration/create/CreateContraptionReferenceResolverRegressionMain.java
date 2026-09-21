@@ -20,7 +20,8 @@ public final class CreateContraptionReferenceResolverRegressionMain {
 
         Object bearing = new Object();
         assertReferences("bearing", CreateContraptionReferenceResolver.resolve(
-                new BearingController(bearing), "create:mechanical_bearing"), bearing);
+                new BearingController(bearing, true), "create:mechanical_bearing"), bearing);
+        verifyBearingIdleState();
 
         Object hourHand = new Object();
         Object minuteHand = new Object();
@@ -72,6 +73,23 @@ public final class CreateContraptionReferenceResolverRegressionMain {
         return new AABB(minX, 0.0D, 0.0D, maxX, 2.0D, 2.0D);
     }
 
+    private static void verifyBearingIdleState() {
+        String bearingType = "create:mechanical_bearing";
+        if (!CreateContraptionReferenceResolver.isKnownIdle(new BearingController(null, false), bearingType)) {
+            throw new AssertionError("stopped bearing must be recognized as an expected idle controller");
+        }
+        if (CreateContraptionReferenceResolver.isKnownIdle(new BearingController(new Object(), true), bearingType)) {
+            throw new AssertionError("running bearing must retain missing-bounds diagnostics");
+        }
+        if (CreateContraptionReferenceResolver.isKnownIdle(
+                new BearingController(null, false), "create:mechanical_piston")) {
+            throw new AssertionError("non-bearing controllers must not inherit the bearing idle exception");
+        }
+        if (CreateContraptionReferenceResolver.isKnownIdle(new BearingWithoutRunningState(), bearingType)) {
+            throw new AssertionError("unknown bearing state must retain missing-bounds diagnostics");
+        }
+    }
+
     private static void assertReferences(
             String label,
             CreateContraptionReferenceResolver.Resolution resolution,
@@ -104,15 +122,23 @@ public final class CreateContraptionReferenceResolverRegressionMain {
 
     private static final class BearingController {
         private final Object movedContraption;
+        private final boolean running;
 
-        private BearingController(Object movedContraption) {
+        private BearingController(Object movedContraption, boolean running) {
             this.movedContraption = movedContraption;
+            this.running = running;
         }
 
         private Object getMovedContraption() {
             return movedContraption;
         }
+
+        private boolean isRunning() {
+            return running;
+        }
     }
+
+    private static final class BearingWithoutRunningState {}
 
     private static final class ClockworkController {
         private final Object hourHand;

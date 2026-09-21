@@ -11,6 +11,7 @@ final class CreateContraptionReferenceResolver {
 
     private static final MemberKey ATTACHED_CONTRAPTION = MemberKey.method("getAttachedContraption");
     private static final MemberKey MOVED_CONTRAPTION_METHOD = MemberKey.method("getMovedContraption");
+    private static final MemberKey RUNNING_METHOD = MemberKey.method("isRunning");
     private static final MemberKey MOVED_CONTRAPTION_FIELD = MemberKey.field("movedContraption");
     private static final MemberKey HOUR_HAND = MemberKey.field("hourHand");
     private static final MemberKey MINUTE_HAND = MemberKey.field("minuteHand");
@@ -56,6 +57,15 @@ final class CreateContraptionReferenceResolver {
 
     static Object readContraption(Object entity) {
         return read(entity, CONTRAPTION);
+    }
+
+    static boolean isKnownIdle(Object controller, String typeKey) {
+        if (controller == null
+                || CreateGateTypePolicy.contraptionReferenceKind(typeKey)
+                != CreateGateTypePolicy.ContraptionReferenceKind.BEARING) {
+            return false;
+        }
+        return Boolean.FALSE.equals(read(controller, RUNNING_METHOD));
     }
 
     private static void add(List<Object> references, Object value) {

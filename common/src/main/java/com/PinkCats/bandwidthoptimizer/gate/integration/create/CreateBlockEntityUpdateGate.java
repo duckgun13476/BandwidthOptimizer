@@ -602,7 +602,7 @@ public final class CreateBlockEntityUpdateGate {
         Vec3 vanillaTarget = centerOf(pos);
         Vec3[] vanillaPoints = cornersOf(pos);
         if (isMovingContraptionController(typeKey)) {
-            DynamicTarget createTarget = resolveCreateContraptionTarget(player, pos);
+            DynamicTarget createTarget = resolveCreateContraptionTarget(player, pos, typeKey);
             if (createTarget != null) {
                 return createTarget;
             }
@@ -697,7 +697,7 @@ public final class CreateBlockEntityUpdateGate {
         }
     }
 
-    private static DynamicTarget resolveCreateContraptionTarget(ServerPlayer player, BlockPos pos) {
+    private static DynamicTarget resolveCreateContraptionTarget(ServerPlayer player, BlockPos pos, String typeKey) {
         if (player == null || pos == null) {
             return null;
         }
@@ -731,6 +731,9 @@ public final class CreateBlockEntityUpdateGate {
             bounds = bounds == null ? entityBounds : union(bounds, entityBounds);
         }
         if (bounds == null) {
+            if (CreateContraptionReferenceResolver.isKnownIdle(blockEntity, typeKey)) {
+                return forceImmediateTarget(pos);
+            }
             return null;
         }
         return new DynamicTarget(centerOf(bounds), cornersOf(bounds), false, true);
