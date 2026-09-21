@@ -1,8 +1,8 @@
 package com.PinkCats.bandwidthoptimizer.experimental.watch;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
-import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerChunkStateSnapshot;
-import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
+import com.PinkCats.bandwidthoptimizer.chunk.peer.ChunkPeerChunkStateSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.peer.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;

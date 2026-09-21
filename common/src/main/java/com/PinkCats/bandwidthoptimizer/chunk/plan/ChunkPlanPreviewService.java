@@ -5,8 +5,8 @@ import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
-import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerObservationSnapshot;
-import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.peer.ChunkPeerObservationSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.peer.ChunkPeerStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.experimental.hotspot.ExperientChunkHotspotPathRuntimeConfig;
 

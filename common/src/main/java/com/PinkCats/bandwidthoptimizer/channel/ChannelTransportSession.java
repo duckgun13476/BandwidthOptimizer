@@ -4,7 +4,7 @@ import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorit
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorithmId;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorithms;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
-import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.ChannelTransportOperationTelemetry;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportOperationTelemetry;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.TransportAlgorithm;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.KineticStreaming;
 

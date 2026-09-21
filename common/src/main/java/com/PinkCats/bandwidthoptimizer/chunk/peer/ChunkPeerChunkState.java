@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.chunk.PeerState;
+package com.PinkCats.bandwidthoptimizer.chunk.peer;
 
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;

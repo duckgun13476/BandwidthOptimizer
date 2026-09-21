@@ -1,7 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.experimental.runall;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
-import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
+import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelFrameJsonlLogger;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotVerifyHooks;
 import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;

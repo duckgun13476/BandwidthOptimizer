@@ -1,6 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.channel;
 
-import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.ChannelTransportOperationTelemetry;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportOperationTelemetry;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.CustomPayloadPacketCompat;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;

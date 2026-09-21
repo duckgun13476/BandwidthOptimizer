@@ -1,6 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.channel.algorithm;
 
-import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.ChannelTransportOperationTelemetry;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportOperationTelemetry;
 
 public interface ChannelTransportAlgorithmSession extends AutoCloseable {
 

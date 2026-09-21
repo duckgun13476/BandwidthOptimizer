@@ -11,9 +11,9 @@ import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescript
 import com.PinkCats.bandwidthoptimizer.chunk.debug.ChunkLoadDelayProbe;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkInboundDecodeResult;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceStore;
-import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelope;
-import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelopeCodec;
-import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelopeRejectionReporter;
+import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.envelope.ChunkTransportEnvelope;
+import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.envelope.ChunkTransportEnvelopeCodec;
+import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.envelope.ChunkTransportEnvelopeRejectionReporter;
 import com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatch;
 import com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatchApplier;
 import com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatchBuilder;
@@ -37,9 +37,9 @@ import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshot
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprintService;
-import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerChunkStateSnapshot;
-import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
-import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.peer.ChunkPeerChunkStateSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.peer.ChunkPeerStateManager;
+import com.PinkCats.bandwidthoptimizer.chunk.peer.ChunkPeerStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.chunk.store.blob.ChunkBlobHandle;
 import com.PinkCats.bandwidthoptimizer.chunk.store.global.ChunkGlobalSnapshotStore;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;

@@ -1,6 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.experimental.hotspot;
 
-import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
+import com.PinkCats.bandwidthoptimizer.chunk.peer.ChunkPeerStateManager;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.server.level.ServerPlayer;

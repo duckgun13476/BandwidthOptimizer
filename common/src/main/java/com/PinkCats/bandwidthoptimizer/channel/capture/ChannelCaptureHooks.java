@@ -1,6 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.channel.capture;
 
-import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
+import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelFrameJsonlLogger;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.ConnectionProtocolNameCompat;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportCompressionCaptureManager;
 import io.netty.buffer.ByteBuf;

@@ -4,7 +4,7 @@ import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
-import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.ChannelTransportOperationTelemetry;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportOperationTelemetry;
 import com.PinkCats.bandwidthoptimizer.debug.DebugRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.server.stat.VanillaCompressionEstimator;
 import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;

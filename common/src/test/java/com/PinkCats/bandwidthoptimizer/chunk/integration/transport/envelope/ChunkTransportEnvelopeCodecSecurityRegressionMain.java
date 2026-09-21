@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope;
+package com.PinkCats.bandwidthoptimizer.chunk.integration.transport.envelope;
 
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
 import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkLaneKind;

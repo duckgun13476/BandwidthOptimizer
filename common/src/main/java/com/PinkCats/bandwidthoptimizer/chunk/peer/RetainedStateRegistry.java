@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.chunk.PeerState;
+package com.PinkCats.bandwidthoptimizer.chunk.peer;
 
 import java.util.HashMap;
 import java.util.Iterator;

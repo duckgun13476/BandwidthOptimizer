@@ -593,7 +593,7 @@ tasks.register('runChunkTransportEnvelopeSecurityRegression', JavaExec) {
     description = 'Verifies hostile chunk envelope lengths are rejected before allocation.'
     dependsOn(tasks.named('testClasses'))
     classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
-    mainClass = 'com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelopeCodecSecurityRegressionMain'
+    mainClass = 'com.PinkCats.bandwidthoptimizer.chunk.integration.transport.envelope.ChunkTransportEnvelopeCodecSecurityRegressionMain'
     maxHeapSize = '48m'
 }
 

@@ -2,8 +2,8 @@ package com.PinkCats.bandwidthoptimizer.report;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher.OutboundChunkEncodeResult;
-import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelope;
-import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelopeCodec;
+import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.envelope.ChunkTransportEnvelope;
+import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.envelope.ChunkTransportEnvelopeCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.protocol.hotspot.ChunkHotspotFrameOp;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkDiagnosticRuntimeConfig;
 import io.netty.channel.ChannelHandlerContext;

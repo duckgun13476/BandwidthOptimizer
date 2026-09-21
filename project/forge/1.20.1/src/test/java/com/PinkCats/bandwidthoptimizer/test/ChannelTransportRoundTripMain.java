@@ -13,7 +13,7 @@ import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorit
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.KineticChannel;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.batch.ChannelTransportBatchManager;
-import com.PinkCats.bandwidthoptimizer.channel.algorithm.mes.ChannelTransportOperationTelemetry;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportOperationTelemetry;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.KineticStreamingLayer;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;

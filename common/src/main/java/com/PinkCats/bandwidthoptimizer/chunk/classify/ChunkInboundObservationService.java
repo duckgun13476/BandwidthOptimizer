@@ -16,8 +16,8 @@ import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTranspor
 import com.PinkCats.bandwidthoptimizer.chunk.packet.ClientboundPlayPacketCodec;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;
 import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager;
-import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
-import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateSnapshot;
+import com.PinkCats.bandwidthoptimizer.chunk.peer.ChunkPeerStateManager;
+import com.PinkCats.bandwidthoptimizer.chunk.peer.ChunkPeerStateSnapshot;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.protocol.Packet;

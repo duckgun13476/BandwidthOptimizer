@@ -105,7 +105,7 @@ tasks.register('runChunkPeerStateRetentionRegression', JavaExec) {
             delegate,
             'verification',
             'Verifies bounded player-scope and per-channel chunk-state retention.',
-            'com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateRetentionRegressionMain'
+            'com.PinkCats.bandwidthoptimizer.chunk.peer.ChunkPeerStateRetentionRegressionMain'
     )
 }
 

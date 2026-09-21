@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.channel.mes;
+package com.PinkCats.bandwidthoptimizer.channel.capture;
 
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;

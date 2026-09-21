@@ -4,7 +4,7 @@ import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
-import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
+import com.PinkCats.bandwidthoptimizer.chunk.peer.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.BlockEntityTypeKeyCompat;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat;
 import com.PinkCats.bandwidthoptimizer.integration.sable.SableDynamicStructureCompat;

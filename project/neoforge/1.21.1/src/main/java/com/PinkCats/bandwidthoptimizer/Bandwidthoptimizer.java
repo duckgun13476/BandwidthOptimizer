@@ -4,7 +4,7 @@ import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportNetworkChannel;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.ZstdRuntimeSupport;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCaptureRuntimeConfig;
-import com.PinkCats.bandwidthoptimizer.channel.mes.ChannelFrameJsonlLogger;
+import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelFrameJsonlLogger;
 import com.PinkCats.bandwidthoptimizer.client.config.ClientChunkCacheConfig;
 import com.PinkCats.bandwidthoptimizer.chunk.lifecycle.ChunkLifecycleCoordinator;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkPersistentClientCache;

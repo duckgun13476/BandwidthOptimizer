@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope;
+package com.PinkCats.bandwidthoptimizer.chunk.integration.transport.envelope;
 
 import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;

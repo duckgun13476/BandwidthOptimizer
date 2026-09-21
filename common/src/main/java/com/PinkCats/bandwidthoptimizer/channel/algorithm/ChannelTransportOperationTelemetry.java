@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.channel.algorithm.mes;
+package com.PinkCats.bandwidthoptimizer.channel.algorithm;
 
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportAlgorithmId;
 

@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.chunk.PeerState;
+package com.PinkCats.bandwidthoptimizer.chunk.peer;
 
 public record ChunkPeerStateSnapshot(
         String channelId,

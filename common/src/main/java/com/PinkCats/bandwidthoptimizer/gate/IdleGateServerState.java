@@ -1,7 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.gate;
 
 import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
-import com.PinkCats.bandwidthoptimizer.chunk.PeerState.ChunkPeerStateManager;
+import com.PinkCats.bandwidthoptimizer.chunk.peer.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.gate.recovery.IdleGateRecoveryRegistry;
 import com.PinkCats.bandwidthoptimizer.gate.source.ServerSourceGateStats;
 import io.netty.channel.Channel;
