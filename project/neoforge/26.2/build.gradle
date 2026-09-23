@@ -204,6 +204,7 @@ def neoforgeExcludedCommonJava = [
 sourceSets {
     main {
         java.srcDir rootProject.file('common/src/main/java')
+        java.srcDir rootProject.file('project/neoforge/26-common/src/main/java')
         java.srcDir project.file('src/main/java')
         resources.srcDir rootProject.file('common/src/main/resources')
         resources.srcDir project.file('src/main/resources')
@@ -211,6 +212,7 @@ sourceSets {
     }
     test {
         java.srcDir rootProject.file('common/src/test/java')
+        java.srcDir rootProject.file('project/neoforge/26-common/src/test/java')
         java.srcDir project.file('src/test/java')
         resources.srcDir project.file('src/test/resources')
     }
@@ -219,6 +221,7 @@ sourceSets {
 tasks.named('compileJava', JavaCompile).configure {
     setSource(files(
             project.fileTree('src/main/java'),
+            rootProject.fileTree('project/neoforge/26-common/src/main/java'),
             rootProject.fileTree('common/src/main/java') {
                 exclude neoforgeExcludedCommonJava
             }
