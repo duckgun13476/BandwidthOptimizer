@@ -5,8 +5,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -17,6 +20,12 @@ public final class ChannelJsonlCompareMain {
 
     private static final int MAX_MISMATCHES_TO_PRINT = 5;
     private static final String INTERNAL_TRANSPORT_CHANNEL_PREFIX = "bandwidthoptimizer:transport_";
+    private static final String RECIPE_PACKET_CLASS =
+            "net.minecraft.network.protocol.game.ClientboundUpdateRecipesPacket";
+    private static final Path SERVER_RECIPE_MARKER =
+            Path.of("run", "server", "bandwidthoptimizer-native", "bo-runall-recipe-sync.marker");
+    private static final Path CLIENT_RECIPE_MARKER =
+            Path.of("run", "client", "bandwidthoptimizer-native", "bo-runall-recipe-sync.marker");
     private static final String ALLOW_TRAILING_PACKET_STREAM_FRAMES_PROPERTY =
             "bandwidthoptimizer.compare.allowTrailingPacketStreamFrames";
     private static final Path DEFAULT_SERVER_SEND = Path.of("run", "server", "bandwidthoptimizer-native", "send.jsonl");
@@ -111,6 +120,7 @@ public final class ChannelJsonlCompareMain {
 
         List<MismatchDetail> mismatches = new ArrayList<>();
         long comparedLines = 0L;
+        long semanticRecipeMatches = 0L;
         boolean stoppedEarly = false;
 
         JsonlPacketStreamReader leftPacketStreamReader = null;
@@ -143,7 +153,11 @@ public final class ChannelJsonlCompareMain {
 
                 ComparableFrame leftFrame = parseComparableFrame(leftLine.jsonLine(), target.leftPath(), leftLine.rawLineNumber());
                 ComparableFrame rightFrame = parseComparableFrame(rightLine.jsonLine(), target.rightPath(), rightLine.rawLineNumber());
-                String difference = describeFieldDifference(leftFrame, rightFrame);
+                boolean semanticRecipeMatch = isVerifiedWarmRecipeMatch(target, leftFrame, rightFrame);
+                if (semanticRecipeMatch) {
+                    semanticRecipeMatches++;
+                }
+                String difference = semanticRecipeMatch ? null : describeFieldDifference(leftFrame, rightFrame);
                 if (difference != null) {
                     mismatches.add(new MismatchDetail(comparedLines, difference));
                     if (mismatches.size() >= MAX_MISMATCHES_TO_PRINT) {
@@ -161,6 +175,7 @@ public final class ChannelJsonlCompareMain {
                 rightPacketStreamReader == null ? 0L : rightPacketStreamReader.rawLines(),
                 leftPacketStreamReader == null ? 0L : leftPacketStreamReader.skippedInternalTransportCarriers(),
                 rightPacketStreamReader == null ? 0L : rightPacketStreamReader.skippedInternalTransportCarriers(),
+                semanticRecipeMatches,
                 mismatches,
                 stoppedEarly
         );
@@ -175,6 +190,7 @@ public final class ChannelJsonlCompareMain {
     private static ComparableFrame parseComparableFrame(String jsonLine, Path sourcePath, long lineNumber) {
         try {
             return new ComparableFrame(
+                    extractStringField(jsonLine, "channel_id"),
                     extractStringField(jsonLine, "protocol"),
                     extractStringField(jsonLine, "packet_class"),
                     extractIntField(jsonLine, "packet_id"),
@@ -285,6 +301,101 @@ public final class ChannelJsonlCompareMain {
         return String.join(" | ", differences);
     }
 
+    private static boolean isVerifiedWarmRecipeMatch(
+            ComparisonTarget target, ComparableFrame server, ComparableFrame client
+    ) throws IOException {
+        if (!target.label().startsWith("server packet-stream/send -> client packet-stream/receive")
+                || !"PLAY".equals(server.protocol())
+                || !Objects.equals(server.protocol(), client.protocol())
+                || !RECIPE_PACKET_CLASS.equals(server.packetClass())
+                || !Objects.equals(server.packetClass(), client.packetClass())
+                || server.packetId() != client.packetId()
+                || server.byteLength() != client.byteLength()
+                || Objects.equals(server.payloadHex(), client.payloadHex())) {
+            return false;
+        }
+        String serverRawHash = rawHash(server);
+        String clientRawHash = rawHash(client);
+        if (serverRawHash == null || clientRawHash == null) {
+            return false;
+        }
+        for (Map<String, String> sent : readRecipeMarkers(SERVER_RECIPE_MARKER)) {
+            if (!"RECIPE_DELTA".equals(sent.get("operation"))
+                    || !"true".equals(sent.get("semantic_identity"))
+                    || !markerMatchesFrame(sent, server, serverRawHash)) {
+                continue;
+            }
+            String semanticHash = sent.get("semantic_hash");
+            if (!isHash(semanticHash)) {
+                continue;
+            }
+            for (Map<String, String> decoded : readRecipeMarkers(CLIENT_RECIPE_MARKER)) {
+                if ("client_decoded".equals(decoded.get("stage"))
+                        && "true".equals(decoded.get("semantic_valid"))
+                        && RECIPE_PACKET_CLASS.equals(decoded.get("packet_class"))
+                        && semanticHash.equals(decoded.get("semantic_hash"))
+                        && markerMatchesFrame(decoded, client, clientRawHash)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean markerMatchesFrame(
+            Map<String, String> marker, ComparableFrame frame, String rawHash
+    ) {
+        String channel = marker.get("channel");
+        if (channel == null || !channel.matches("[0-9a-f]{8}")
+                || !frame.channelId().endsWith("-" + channel)
+                || !rawHash.equals(marker.get("raw_hash"))) {
+            return false;
+        }
+        try {
+            return frame.byteLength() == Integer.parseInt(marker.getOrDefault("original_bytes", ""));
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
+    }
+
+    private static String rawHash(ComparableFrame frame) {
+        try {
+            byte[] raw = HexFormat.of().parseHex(frame.payloadHex());
+            if (raw.length != frame.byteLength()) {
+                return null;
+            }
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(raw));
+        } catch (IllegalArgumentException | NoSuchAlgorithmException exception) {
+            return null;
+        }
+    }
+
+    private static boolean isHash(String value) {
+        return value != null && value.matches("[0-9a-f]{64}");
+    }
+
+    private static List<Map<String, String>> readRecipeMarkers(Path path) throws IOException {
+        if (!Files.isRegularFile(path) || Files.size(path) > 16_384L) {
+            return List.of();
+        }
+        List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
+        if (lines.size() > 32) {
+            return List.of();
+        }
+        List<Map<String, String>> events = new ArrayList<>(lines.size());
+        for (String line : lines) {
+            Map<String, String> fields = new HashMap<>();
+            for (String field : line.split("\\t", -1)) {
+                int separator = field.indexOf('=');
+                if (separator > 0) {
+                    fields.put(field.substring(0, separator), field.substring(separator + 1));
+                }
+            }
+            events.add(fields);
+        }
+        return events;
+    }
+
 
     private static String describeLengthMismatch(JsonlPacketStreamLine leftLine, JsonlPacketStreamLine rightLine) {
         if (leftLine == null) {
@@ -317,7 +428,8 @@ public final class ChannelJsonlCompareMain {
                         + ", skippedInternalTransport="
                         + report.leftSkippedInternalTransportCarriers()
                         + "/"
-                        + report.rightSkippedInternalTransportCarriers());
+                        + report.rightSkippedInternalTransportCarriers()
+                        + ", semanticRecipeMatches=" + report.semanticRecipeMatches());
                 continue;
             }
 
@@ -326,7 +438,8 @@ public final class ChannelJsonlCompareMain {
                     + ", skippedInternalTransport="
                     + report.leftSkippedInternalTransportCarriers()
                     + "/"
-                    + report.rightSkippedInternalTransportCarriers());
+                    + report.rightSkippedInternalTransportCarriers()
+                    + ", semanticRecipeMatches=" + report.semanticRecipeMatches());
             int printedCount = 0;
             for (MismatchDetail mismatch : report.mismatches()) {
                 printedCount++;
@@ -526,6 +639,7 @@ public final class ChannelJsonlCompareMain {
     private record ComparisonTarget(String label, Path leftPath, Path rightPath) { }
 
     private record ComparableFrame(
+            String channelId,
             String protocol,
             String packetClass,
             int packetId,
@@ -543,6 +657,7 @@ public final class ChannelJsonlCompareMain {
             long rightRawLines,
             long leftSkippedInternalTransportCarriers,
             long rightSkippedInternalTransportCarriers,
+            long semanticRecipeMatches,
             List<MismatchDetail> mismatches,
             boolean stoppedEarly
     ) {
