@@ -11,8 +11,11 @@ import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotReport;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.recipe.RecipeSyncTrafficStats;
+import com.PinkCats.bandwidthoptimizer.report.ChannelTransportSourceRankCore;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
 
+import java.lang.management.GarbageCollectorMXBean;
+import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -30,6 +33,7 @@ public final class UnifiedBandwidthReportCollector {
         sections.add(serverSection());
         sections.add(recipeSection());
         sections.add(chunkSection());
+        sections.add(jvmSection());
         sections.add(diagnosticsSection());
         return new UnifiedBandwidthReport(
                 SCHEMA_VERSION,
@@ -39,7 +43,8 @@ public final class UnifiedBandwidthReportCollector {
                 safeText(physicalSide, "unknown"),
                 "anonymous-aggregate",
                 List.copyOf(sections),
-                ChannelTransportBypassRankCore.snapshot(BYPASS_LIMIT)
+                ChannelTransportBypassRankCore.snapshot(BYPASS_LIMIT),
+                ChannelTransportSourceRankCore.snapshotForReport(100)
         );
     }
 
@@ -131,7 +136,7 @@ public final class UnifiedBandwidthReportCollector {
         add(metrics, "hotspot.outbound.logical_bytes", "Hotspot outbound logical", outboundChunk.logicalBytes(), "bytes", "logical_packet", "session", "Logical bytes for chunk full, reference, and patch operations only.");
         add(metrics, "hotspot.outbound.frame_bytes", "Hotspot outbound frames", outboundChunk.frameBytes(), "bytes", "chunk_frame", "session", "Chunk data frames only, excluding recipe and control frames; not socket wire bytes.");
         add(metrics, "hotspot.inbound.logical_bytes", "Hotspot inbound logical", inboundChunk.logicalBytes(), "bytes", "logical_packet", "session", "Restored logical bytes for chunk full, reference, and patch operations only.");
-        add(metrics, "shadow.total_bytes", "Shadow snapshot bytes", shadow.totalEncodedBytes(), "bytes", "memory", "current", "Encoded snapshot payload retained in memory.");
+        add(metrics, "shadow.total_bytes", "Logical snapshot coverage", shadow.totalEncodedBytes(), "bytes", "reuse_model", "current", "Sum of encoded packet lengths in retained snapshot metadata; not JVM heap retention.");
         add(metrics, "shadow.retained_original_bytes", "Shadow original bytes", shadow.retainedOriginalBytes(), "bytes", "memory", "current", "Original packet bytes retained for recovery.");
         add(metrics, "runtime.total_bytes", "Runtime reference bytes", runtime.totalBytes(), "bytes", "memory", "current", "Runtime reference cache memory.");
         add(metrics, "reuse.temporary_saved_bytes", "Client temporary reuse saved", reuse.temporaryReuseSavedBytes(), "bytes", "chunk_reuse", "session", "Client-confirmed temporary cache reuse savings.");
@@ -179,6 +184,26 @@ public final class UnifiedBandwidthReportCollector {
                     "Runtime diagnostic switch; cost=" + tool.cost().name().toLowerCase(java.util.Locale.ROOT) + ".");
         }
         return section("diagnostics", "Diagnostics", "Runtime tool state only; diagnostic log contents are not embedded.", metrics);
+    }
+
+    private static UnifiedBandwidthReport.Section jvmSection() {
+        Runtime runtime = Runtime.getRuntime();
+        long committed = runtime.totalMemory();
+        long used = Math.max(0L, committed - runtime.freeMemory());
+        long gcCount = 0L;
+        long gcMillis = 0L;
+        for (GarbageCollectorMXBean collector : ManagementFactory.getGarbageCollectorMXBeans()) {
+            gcCount += Math.max(collector.getCollectionCount(), 0L);
+            gcMillis += Math.max(collector.getCollectionTime(), 0L);
+        }
+        List<UnifiedBandwidthReport.Metric> metrics = new ArrayList<>();
+        add(metrics, "heap_used_bytes", "Heap used", used, "bytes", "jvm_heap", "current", "JVM heap used at report generation; includes all mods, not BO alone.");
+        add(metrics, "heap_committed_bytes", "Heap committed", committed, "bytes", "jvm_heap", "current", "Memory committed by the JVM heap at report generation.");
+        add(metrics, "heap_max_bytes", "Heap maximum", Math.max(runtime.maxMemory(), 0L), "bytes", "jvm_heap", "current", "Configured JVM heap maximum, if available.");
+        add(metrics, "uptime_millis", "Process uptime", Math.max(ManagementFactory.getRuntimeMXBean().getUptime(), 0L), "milliseconds", "jvm", "current", "JVM uptime at report generation.");
+        add(metrics, "gc_count", "GC collections", gcCount, "events", "jvm_gc", "process", "Cumulative collection count since JVM start; not a current pause rate.");
+        add(metrics, "gc_millis", "GC time", gcMillis, "milliseconds", "jvm_gc", "process", "Cumulative collection time since JVM start; not a current pause duration.");
+        return section("jvm", "JVM health", "Command-time heap and cumulative process counters; no heap dump or player data.", metrics);
     }
 
     private static UnifiedBandwidthReport.Section section(

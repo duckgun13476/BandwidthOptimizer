@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.report.unified;
 
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportBypassRankCore;
+import com.PinkCats.bandwidthoptimizer.report.ChannelTransportSourceRankCore;
 
 import java.util.List;
 
@@ -12,7 +13,8 @@ public record UnifiedBandwidthReport(
         String physicalSide,
         String privacyLevel,
         List<Section> sections,
-        ChannelTransportBypassRankCore.BypassSnapshot bypass
+        ChannelTransportBypassRankCore.BypassSnapshot bypass,
+        ChannelTransportSourceRankCore.SourceTrafficSnapshot sourceTraffic
 ) {
     public record Section(
             String id,

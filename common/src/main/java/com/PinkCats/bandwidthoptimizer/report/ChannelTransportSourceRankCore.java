@@ -101,6 +101,41 @@ public final class ChannelTransportSourceRankCore {
         );
     }
 
+    /** A read-only, bounded view for an operator-triggered report. Frame bytes are
+     * deliberately absent because shared batch frames cannot be assigned to children. */
+    public static SourceTrafficSnapshot snapshotForReport(int limit) {
+        List<SourceTrafficEntry> entries = new ArrayList<>(COUNTERS.size());
+        long packets = 0L;
+        long rawBytes = 0L;
+        for (Map.Entry<SourceKey, SourceCounter> item : COUNTERS.entrySet()) {
+            SourceCounter counter = item.getValue();
+            long count = counter.totalCount.sum();
+            long bytes = counter.totalRawBytes.sum();
+            if (count <= 0L) {
+                continue;
+            }
+            packets += count;
+            rawBytes += bytes;
+            SourceKey key = item.getKey();
+            entries.add(new SourceTrafficEntry(key.sourceKey(), key.packetClassName(),
+                    key.rawPacketId(), count, bytes));
+        }
+        entries.sort(Comparator.comparingLong(SourceTrafficEntry::rawBytes).reversed()
+                .thenComparing(SourceTrafficEntry::sourceKey)
+                .thenComparing(SourceTrafficEntry::packetClassName));
+        int listed = Math.min(Math.max(limit, 0), entries.size());
+        return new SourceTrafficSnapshot(entries.size(), packets, rawBytes,
+                List.copyOf(entries.subList(0, listed)));
+    }
+
+    public record SourceTrafficSnapshot(int distinctKeys, long packets, long rawBytes,
+                                        List<SourceTrafficEntry> entries) {
+    }
+
+    public record SourceTrafficEntry(String sourceKey, String packetClassName, int rawPacketId,
+                                     long packets, long rawBytes) {
+    }
+
     public static void resetCreateBlockEntityTransportStats() {
         CREATE_BLOCK_ENTITY_PACKET_COUNT.reset();
         CREATE_BLOCK_ENTITY_RAW_BYTES.reset();

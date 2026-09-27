@@ -79,13 +79,30 @@ const metricLabels = {
   'pt-BR': { frames: 'Quadros', packets: 'Pacotes lógicos', baseline_bytes: 'Bytes lógicos', vanilla_estimate_bytes: 'Estimativa vanilla', mapping_bytes: 'Bytes de mapeamento', zstd_body_bytes: 'Bytes do corpo Zstd', bo_frame_bytes: 'Bytes dos quadros BO', bypass_packets: 'Pacotes desviados', bypass_bytes: 'Bytes desviados', literal_entries: 'Entradas literais', exact_refs: 'Referências exatas', template_refs: 'Referências de modelo', active_channels: 'Conexões ativas', bound_players: 'Jogadores vinculados', outbound_raw_bytes: 'Saída original', outbound_vanilla_estimate_bytes: 'Estimativa vanilla de saída', outbound_wire_bytes: 'Saída medida', inbound_wire_bytes: 'Entrada medida', outbound_saved_bytes: 'Saída economizada', offline_reuse_saved_bytes: 'Economia do cache offline', temporary_reuse_saved_bytes: 'Economia do cache temporário', create_gate_observed_bytes: 'Observado pelo gate Create', create_gate_saved_bytes: 'Economia do gate Create', idle_gate_saved_bytes: 'Economia do gate AFK', 'hotspot.outbound.logical_bytes': 'Saída lógica hotspot', 'hotspot.outbound.frame_bytes': 'Quadros de saída hotspot', 'hotspot.inbound.logical_bytes': 'Entrada lógica hotspot', 'shadow.total_bytes': 'Cobertura lógica dos snapshots (não é memória)', 'shadow.retained_original_bytes': 'Payload original retido atualmente', 'runtime.total_bytes': 'Payload de referência em execução', 'reuse.temporary_saved_bytes': 'Reuso temporário do cliente', 'reuse.offline_saved_bytes': 'Reuso offline do cliente' }
 };
 
+const reportLabels = {
+  'zh-CN': { versionScope: '版本（总览、趋势与月排行）', scopeAll: '月数据包含所有版本；当前小时排行始终显示最新快照。', scopeSelected: '月数据仅包含所选版本；当前小时排行始终显示最新快照。', peakHour: '最高小时下行', peakPlayers: '该小时不同玩家', partialHours: '未完成小时', sourceTitle: '已观测来源逻辑流量', sourceNote: '按来源累计的原始逻辑字节，可能包含 BO 载体；不能当作线路流量或逐来源节省量。', sourceMissing: '这份旧报告未包含来源排行。', sourceKeys: '已观测来源键', sourceRaw: '来源逻辑字节', heap_used_bytes: 'JVM 堆已用', heap_committed_bytes: 'JVM 堆已提交', heap_max_bytes: 'JVM 堆上限', uptime_millis: 'JVM 运行时间', gc_count: 'GC 次数', gc_millis: '累计 GC 时间', uploadHint: 'JSON 或 Gzip，解压后最多 16 MiB', reportTooLarge: '报告解压后不能超过 16 MiB。', browserCompression: '此浏览器不能压缩大型报告，请在游戏内上传。', compressedTooLarge: '压缩后仍超过网页请求限制，请在游戏内上传。' },
+  'en-US': { versionScope: 'Version (summary, trend, monthly ranking)', scopeAll: 'Monthly data includes all versions; the current-hour ranking always shows the latest snapshot.', scopeSelected: 'Monthly data includes only the selected version; the current-hour ranking always shows the latest snapshot.', peakHour: 'Peak hourly outbound', peakPlayers: 'Distinct players that hour', partialHours: 'Incomplete hours', sourceTitle: 'Observed source logical traffic', sourceNote: 'Cumulative raw logical bytes by source, possibly including BO carriers. These are not socket bytes or per-source savings.', sourceMissing: 'This older report has no source ranking.', sourceKeys: 'Observed source keys', sourceRaw: 'Source logical bytes', heap_used_bytes: 'JVM heap used', heap_committed_bytes: 'JVM heap committed', heap_max_bytes: 'JVM heap maximum', uptime_millis: 'JVM uptime', gc_count: 'GC collections', gc_millis: 'Cumulative GC time', uploadHint: 'JSON or Gzip, up to 16 MiB uncompressed', reportTooLarge: 'The uncompressed report must not exceed 16 MiB.', browserCompression: 'This browser cannot compress a large report. Upload it in game.', compressedTooLarge: 'The compressed report still exceeds the web request limit. Upload it in game.' },
+  'pt-BR': { versionScope: 'Versão (resumo, tendência e ranking mensal)', scopeAll: 'Os dados mensais incluem todas as versões; o ranking da hora atual mostra o registro mais recente.', scopeSelected: 'Os dados mensais incluem apenas a versão selecionada; o ranking da hora atual mostra o registro mais recente.', peakHour: 'Pico de saída por hora', peakPlayers: 'Jogadores distintos nessa hora', partialHours: 'Horas incompletas', sourceTitle: 'Tráfego lógico por origem', sourceNote: 'Bytes lógicos brutos acumulados por origem, possivelmente incluindo quadros BO. Não são bytes de rede nem economia por origem.', sourceMissing: 'Este relatório antigo não contém ranking por origem.', sourceKeys: 'Origens observadas', sourceRaw: 'Bytes lógicos por origem', heap_used_bytes: 'Heap JVM usado', heap_committed_bytes: 'Heap JVM reservado', heap_max_bytes: 'Heap JVM máximo', uptime_millis: 'Tempo de execução JVM', gc_count: 'Coletas GC', gc_millis: 'Tempo GC acumulado', uploadHint: 'JSON ou Gzip, até 16 MiB descompactado', reportTooLarge: 'O relatório descompactado não pode exceder 16 MiB.', browserCompression: 'Este navegador não consegue comprimir um relatório grande. Envie pelo jogo.', compressedTooLarge: 'O relatório comprimido excede o limite da solicitação web. Envie pelo jogo.' }
+};
+const rt = key => reportLabels[language]?.[key] || reportLabels['en-US'][key] || key;
+const sourcePeriodLabel = {
+  'zh-CN': '统计窗口：本次服务器运行期间，与上方月度流量不是同一时间范围。',
+  'en-US': 'Window: this server run, which may differ from the monthly traffic window above.',
+  'pt-BR': 'Período: esta execução do servidor, que pode diferir do tráfego mensal acima.'
+};
+const jvmLabels = {
+  'zh-CN': { title: 'JVM 运行状态', description: '生成报告时的堆状态及进程累计计数；包含所有模组。', process: '进程累计', jvm_heap: 'JVM 堆', jvm_gc: '垃圾回收', jvm: 'JVM', milliseconds: '毫秒', events: '次' },
+  'en-US': { title: 'JVM health', description: 'Heap state at report time and cumulative process counters across all mods.', process: 'Process cumulative', jvm_heap: 'JVM heap', jvm_gc: 'Garbage collection', jvm: 'JVM', milliseconds: 'ms', events: 'events' },
+  'pt-BR': { title: 'Estado da JVM', description: 'Estado do heap no momento do relatório e contadores acumulados de todos os mods.', process: 'Processo acumulado', jvm_heap: 'Heap JVM', jvm_gc: 'Coleta de lixo', jvm: 'JVM', milliseconds: 'ms', events: 'eventos' }
+};
+
 const languageNode = document.querySelector('#language');
 const supportedLanguage = value => value === 'pt-BR' ? value : value?.startsWith('zh') ? 'zh-CN' : 'en-US';
 let language = localStorage.getItem('bostats.language') || supportedLanguage(navigator.language);
 if (!translations[language]) language = 'en-US';
 let reportBundle = null;
 const visibleSeries = new Set(['total', 'outbound', 'inbound']);
-const pages = { bypassSources: { page: 1, size: 10 }, bypassEntries: { page: 1, size: 10 } };
+const pages = { bypassSources: { page: 1, size: 10 }, bypassEntries: { page: 1, size: 10 }, sources: { page: 1, size: 10 } };
 let activeView = ['details', 'packets'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
 if (location.hash === '#players') history.replaceState(null, '', '#overview');
 let chartHoverIndex = -1;
@@ -149,7 +166,7 @@ function renderUpload() {
   document.querySelector('#upload-subtitle').textContent = t('uploadSubtitle');
   document.querySelector('#upload-prompt').textContent = t('uploadPrompt');
   document.querySelector('#upload-choice').textContent = t('uploadChoice');
-  document.querySelector('#upload-hint').textContent = t('uploadHint');
+  document.querySelector('#upload-hint').textContent = rt('uploadHint');
   document.querySelector('#upload-file-name').textContent = uploadFile?.name || t('noFile');
   document.querySelector('#upload-file-size').textContent = uploadFile ? bytes(uploadFile.size) : '';
   uploadSubmitNode.textContent = t('uploadReport');
@@ -163,13 +180,35 @@ function selectUploadFile(file) {
 }
 
 async function decodedUploadBytes(file) {
+  const limit = 16 * 1024 * 1024;
+  if (file.size > limit) throw new Error('reportTooLarge');
   let data = await file.arrayBuffer();
   const bytesView = new Uint8Array(data);
   if (bytesView[0] === 0x1f && bytesView[1] === 0x8b) {
     if (typeof DecompressionStream !== 'function') throw new Error('invalidReport');
-    data = await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+    const reader = new Blob([data]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
+    const chunks = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > limit) throw new Error('reportTooLarge');
+        chunks.push(value);
+      }
+    } catch (error) {
+      await reader.cancel().catch(() => {});
+      throw error?.message === 'reportTooLarge' ? error : new Error('invalidReport');
+    } finally {
+      reader.releaseLock();
+    }
+    const decoded = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) { decoded.set(chunk, offset); offset += chunk.byteLength; }
+    data = decoded.buffer;
   }
-  if (data.byteLength > 4 * 1024 * 1024) throw new Error('reportTooLarge');
+  if (data.byteLength > limit) throw new Error('reportTooLarge');
   return data;
 }
 
@@ -181,15 +220,25 @@ async function uploadSelectedReport() {
   uploadStatusNode.hidden = false;
   try {
     const data = await decodedUploadBytes(uploadFile);
-    const report = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(data));
+    let report;
+    try { report = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(data)); }
+    catch { throw new Error('invalidReport'); }
     if (report?.schemaVersion !== 1 || typeof report.reportId !== 'string' || !report.summary || !report.playerTraffic) throw new Error('invalidReport');
-    const response = await fetch('/api/v1/reports', { method: 'POST', headers: { 'Content-Type': 'application/vnd.bandwidthoptimizer.report-bundle+json' }, body: data });
+    const headers = { 'Content-Type': 'application/vnd.bandwidthoptimizer.report-bundle+json' };
+    let body = data;
+    if (data.byteLength > 4 * 1024 * 1024) {
+      if (typeof CompressionStream !== 'function') throw new Error('browserCompression');
+      body = await new Response(new Blob([data]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
+      if (body.byteLength > 4 * 1024 * 1024) throw new Error('compressedTooLarge');
+      headers['Content-Encoding'] = 'gzip';
+    }
+    const response = await fetch('/api/v1/reports', { method: 'POST', headers, body });
     const result = await response.json().catch(() => ({}));
     if (!response.ok || !result.url) throw new Error(result.error || 'uploadFailed');
     location.assign(result.url);
   } catch (error) {
-    const key = ['invalidReport', 'reportTooLarge'].includes(error?.message) ? error.message : 'uploadFailed';
-    uploadStatusNode.textContent = t(key);
+    const key = ['invalidReport', 'reportTooLarge', 'browserCompression', 'compressedTooLarge'].includes(error?.message) ? error.message : 'uploadFailed';
+    uploadStatusNode.textContent = rt(key) === key ? t(key) : rt(key);
     uploadStatusNode.className = 'upload-status error';
     uploadSubmitNode.disabled = false;
   }
@@ -224,6 +273,7 @@ function render() {
   document.querySelector('[data-view="packets"]').textContent = t('tabPackets');
   document.querySelector('#trend-title').textContent = t('trend');
   document.querySelector('#trend-version-label').textContent = t('version');
+  document.querySelector('#trend-version-label').textContent = rt('versionScope');
   document.querySelector('#trend-player-label').textContent = t('dataRange');
   document.querySelector('#month-title').textContent = t('month');
   document.querySelector('#current-title').textContent = t('current');
@@ -238,25 +288,55 @@ function render() {
 
   const server = summary.sections.find(section => section.id === 'server');
   const values = Object.fromEntries((server?.metrics || []).map(item => [item.id, item.value]));
-  const monthTotals = history?.totals || traffic?.totals || {};
-  const monthPlayers = history?.players || traffic?.players || [];
+  populateVersionSelector(history);
+  const selectedHistory = selectVersionHistory(history);
+  const monthTotals = selectedHistory.totals || traffic?.totals || {};
+  const monthPlayers = selectedHistory.players || traffic?.players || [];
+  const peak = selectedHistory.hours.reduce((best, hour) =>
+    !best || Number(hour.totals?.outboundWireBytes || 0) > Number(best.totals?.outboundWireBytes || 0) ? hour : best, null);
   document.querySelector('#summary').innerHTML = [
     metric(t('sessionOutbound'), bytes(values.outbound_wire_bytes)), metric(t('sessionInbound'), bytes(values.inbound_wire_bytes)),
     metric(t('monthTotal'), bytes(totalWire(monthTotals))), metric(t('monthOutbound'), bytes(monthTotals.outboundWireBytes)),
-    metric(t('monthInbound'), bytes(monthTotals.inboundWireBytes)), metric(t('players'), `${monthPlayers.length}`)
+    metric(t('monthInbound'), bytes(monthTotals.inboundWireBytes)), metric(t('players'), `${monthPlayers.length}`),
+    metric(rt('peakHour'), peak ? `${bytes(peak.totals?.outboundWireBytes)} · ${formatHour(peak.periodStartMillis)}` : t('noData')),
+    metric(rt('peakPlayers'), peak ? `${(peak.players || []).length}` : t('noData')),
+    metric(rt('partialHours'), `${selectedHistory.hours.filter(hour => !hour.complete).length}`)
   ].join('');
+  document.querySelector('#scope-note').textContent = !history ? '' : document.querySelector('#trend-version').value === '__all' ? rt('scopeAll') : rt('scopeSelected');
 
   populatePlayerSelectors(monthPlayers);
-  populateVersionSelector(history);
   renderTrend(history);
-  renderMonth(monthPlayers, history);
+  renderMonth(monthPlayers, selectedHistory);
   renderCurrent(traffic?.players || [], traffic);
   renderDetails(summary.sections || []);
   renderBypass(summary.bypass);
+  renderSourceTraffic(summary.sourceTraffic);
 
   statusNode.hidden = true;
   document.querySelector('#trend-section').hidden = !history;
   setActiveView(activeView, false);
+}
+
+function selectVersionHistory(history) {
+  if (!history) return { totals: null, players: null, hours: [] };
+  const version = document.querySelector('#trend-version').value;
+  if (version === '__all') return history;
+  const hours = (history.hours || []).filter(hour => hourVersion(hour) === version);
+  const totals = { outboundWireBytes: 0, inboundWireBytes: 0 };
+  const players = new Map();
+  for (const hour of hours) {
+    totals.outboundWireBytes += Number(hour.totals?.outboundWireBytes || 0);
+    totals.inboundWireBytes += Number(hour.totals?.inboundWireBytes || 0);
+    for (const player of hour.players || []) {
+      if (!player.playerUuid) continue;
+      let entry = players.get(player.playerUuid);
+      if (!entry) { entry = { playerUuid: player.playerUuid, playerName: player.playerName, traffic: { outboundWireBytes: 0, inboundWireBytes: 0 } }; players.set(player.playerUuid, entry); }
+      if (player.playerName) entry.playerName = player.playerName;
+      entry.traffic.outboundWireBytes += Number(player.outboundWireBytes || 0);
+      entry.traffic.inboundWireBytes += Number(player.inboundWireBytes || 0);
+    }
+  }
+  return { ...history, totals, players: [...players.values()], hours };
 }
 
 function populateVersionSelector(history) {
@@ -387,7 +467,10 @@ function drawChart(history) {
 
 function renderMonth(players, history) {
   const rows = [...players].sort((a, b) => totalWire(b.traffic) - totalWire(a.traffic));
-  document.querySelector('#month-period').textContent = history ? `${formatDate(history.periodStartMillis)} - ${formatDate(history.periodEndMillis - 1)}` : '';
+  const hours = history?.hours || [];
+  const start = hours.length ? hours[0].periodStartMillis : history?.periodStartMillis;
+  const end = hours.length ? hours[hours.length - 1].periodEndMillis : history?.periodEndMillis;
+  document.querySelector('#month-period').textContent = start && end ? `${formatDate(start)} - ${formatDate(end - 1)}` : '';
   renderPlayerRanking('month', rows);
 }
 
@@ -448,8 +531,8 @@ function renderDetails(sections) {
 }
 
 function detailSection(section, content, extraClass = '') {
-  const title = t('sections')[section.id] || section.title;
-  const description = t('descriptions')[section.id] || section.description;
+  const title = section.id === 'jvm' ? jvmLabels[language].title : t('sections')[section.id] || section.title;
+  const description = section.id === 'jvm' ? jvmLabels[language].description : t('descriptions')[section.id] || section.description;
   return `<section class="detail-band ${extraClass}"><div class="detail-heading"><div><h3>${escapeText(title)}</h3><p>${escapeText(description)}</p></div></div>${content}</section>`;
 }
 
@@ -558,6 +641,28 @@ function renderBypass(bypass) {
   renderPagination('bypassEntries', entries.length, () => renderBypass(bypass));
 }
 
+function renderSourceTraffic(snapshot) {
+  const node = document.querySelector('#source-traffic-section');
+  if (!snapshot) {
+    node.className = 'section bypass-section';
+    node.innerHTML = `<h3>${escapeText(rt('sourceTitle'))}</h3><p>${escapeText(rt('sourceMissing'))}</p>`;
+    return;
+  }
+  const entries = Array.isArray(snapshot.entries) ? snapshot.entries : [];
+  const listedBytes = entries.reduce((sum, entry) => sum + Number(entry.rawBytes || 0), 0);
+  const maximum = Math.max(1, ...entries.map(entry => Number(entry.rawBytes || 0)));
+  const rows = pageSlice(entries, pages.sources).map(entry => {
+    const amount = Number(entry.rawBytes || 0);
+    const name = entry.sourceKey || entry.packetClassName || '#unknown';
+    return `<div class="bypass-row bypass-entry"><div class="bypass-identity"><strong>${escapeText(name)}</strong><small>${escapeText(entry.packetClassName || '')}</small></div><div class="bypass-main"><meter class="visual-track" min="0" max="100" value="${(100 * amount / maximum).toFixed(3)}"></meter><div class="bypass-values"><strong>${bytes(amount)}</strong><small>${new Intl.NumberFormat(language).format(Number(entry.packets || 0))} ${escapeText(t('units').packets)}</small></div></div></div>`;
+  }).join('') || `<div class="empty">${escapeText(t('noData'))}</div>`;
+  const missingKeys = Math.max(0, Number(snapshot.distinctKeys || 0) - entries.length);
+  const missingBytes = Math.max(0, Number(snapshot.rawBytes || 0) - listedBytes);
+  node.className = 'section bypass-section';
+  node.innerHTML = `<h3>${escapeText(rt('sourceTitle'))}</h3><p>${escapeText(rt('sourceNote'))} ${escapeText(sourcePeriodLabel[language])}</p><div class="bypass-summary"><div><small>${escapeText(rt('sourceRaw'))}</small><strong>${bytes(snapshot.rawBytes)}</strong></div><div><small>${escapeText(rt('sourceKeys'))}</small><strong>${entries.length} / ${new Intl.NumberFormat(language).format(Number(snapshot.distinctKeys || 0))}</strong></div><div><small>${escapeText(t('unlistedKeys'))}</small><strong>${bytes(missingBytes)}</strong><span>${new Intl.NumberFormat(language).format(missingKeys)} ${escapeText(t('units').entries)}</span></div></div><div class="bypass-list">${rows}</div><div class="pagination" id="sources-pagination"></div>`;
+  renderPagination('sources', entries.length, () => renderSourceTraffic(snapshot));
+}
+
 function aggregateBypassSources(entries, bypass) {
   const sources = new Map();
   entries.forEach(entry => {
@@ -631,13 +736,13 @@ function renderMetricGroups(metrics) {
   return `<div class="metric-groups">${groups.map(group => {
     const maximumBytes = Math.max(1, ...group.items.filter(item => item.unit === 'bytes').map(item => Number(item.value || 0)));
     const rows = group.items.map(item => renderVisualMetric(item, maximumBytes)).join('');
-    return `<div class="metric-group scope-${escapeAttribute(group.scope)}"><div class="metric-group-title">${escapeText(t('scopes')[group.scope] || group.scope)}</div>${rows}</div>`;
+    return `<div class="metric-group scope-${escapeAttribute(group.scope)}"><div class="metric-group-title">${escapeText(t('scopes')[group.scope] || jvmLabels[language][group.scope] || group.scope)}</div>${rows}</div>`;
   }).join('')}</div>`;
 }
 
 function renderVisualMetric(item, maximumBytes) {
   const label = escapeText(metricLabel(item));
-  const stage = escapeText(t('stages')[item.stage] || item.stage);
+  const stage = escapeText(t('stages')[item.stage] || jvmLabels[language][item.stage] || item.stage);
   const value = escapeText(metricValue(item));
   if (item.unit !== 'bytes') return `<div class="visual-metric count-metric"><div class="visual-label"><strong>${label}</strong><small>${stage}</small></div><output>${value}</output></div>`;
   const percentage = Math.max(0, Math.min(100, Number(item.value || 0) * 100 / maximumBytes));
@@ -663,8 +768,8 @@ function renderPagination(name, count, rerender) {
 }
 
 function pageSlice(rows, state) { const start = (state.page - 1) * state.size; return rows.slice(start, start + state.size); }
-function metricLabel(item) { const short = item.id.split('.').pop(); return metricLabels[language]?.[item.id] || metricLabels[language]?.[short] || item.label; }
-function metricValue(item) { if (item.unit === 'bytes') return bytes(item.value); if (item.unit === 'boolean') return Number(item.value) ? t('enabled') : t('disabled'); return `${new Intl.NumberFormat(language).format(Number(item.value || 0))} ${t('units')[item.unit] || item.unit}`; }
+function metricLabel(item) { const short = item.id.split('.').pop(); return reportLabels[language]?.[item.id] || metricLabels[language]?.[item.id] || metricLabels[language]?.[short] || item.label; }
+function metricValue(item) { if (item.unit === 'bytes') return bytes(item.value); if (item.unit === 'boolean') return Number(item.value) ? t('enabled') : t('disabled'); return `${new Intl.NumberFormat(language).format(Number(item.value || 0))} ${t('units')[item.unit] || jvmLabels[language][item.unit] || item.unit}`; }
 function totalWire(traffic) { return Number(traffic?.outboundWireBytes || 0) + Number(traffic?.inboundWireBytes || 0); }
 function emptyRow(columns) { return `<tr><td colspan="${columns}" class="empty">${escapeText(t('noData'))}</td></tr>`; }
 function formatDate(value) { return new Intl.DateTimeFormat(language, { dateStyle: 'medium' }).format(new Date(value)); }
@@ -701,7 +806,7 @@ document.addEventListener('focusout', event => { if (rankingSegment(event.target
 window.addEventListener('scroll', hideRankingTooltip, true);
 window.addEventListener('hashchange', () => setActiveView(location.hash.slice(1), false));
 document.querySelector('#trend-player').addEventListener('change', () => { chartHoverIndex = -1; renderTrend(reportBundle?.trafficHistory); });
-document.querySelector('#trend-version').addEventListener('change', () => { chartHoverIndex = -1; renderTrend(reportBundle?.trafficHistory); });
+document.querySelector('#trend-version').addEventListener('change', () => { chartHoverIndex = -1; render(); });
 chartNode.addEventListener('pointermove', event => {
   const points = chartPoints(reportBundle?.trafficHistory);
   const rect = chartNode.getBoundingClientRect();

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>BO Stats</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="/static/app.css?v=16">
+  <link rel="stylesheet" href="/static/app.css?v=18">
 </head>
 <body>
   <header>
@@ -33,7 +33,7 @@
           <span class="upload-mark" aria-hidden="true">↑</span>
           <strong id="upload-prompt">将报告拖到这里</strong>
           <span id="upload-choice">或选择文件</span>
-          <small id="upload-hint">JSON 或 Gzip，最大 4 MiB</small>
+          <small id="upload-hint">JSON 或 Gzip，解压后最多 16 MiB</small>
         </label>
         <input id="upload-file" type="file" accept=".json,.json.gz,.gz,application/json,application/gzip" hidden>
         <div class="upload-selection">
@@ -51,6 +51,7 @@
       <section id="overview">
         <div class="page-heading"><div><h1 id="page-title">带宽报告</h1><p id="page-subtitle">服务器带宽使用与优化结果</p></div></div>
         <div class="summary" id="summary"></div>
+        <p id="scope-note" class="scope-note"></p>
       </section>
       <section id="trend-section">
         <div class="section-heading trend-heading">
@@ -82,10 +83,10 @@
       <section id="details"><div class="page-heading"><div><h1 id="details-title">传输详情</h1><p id="details-subtitle">各压缩阶段与运行状态</p></div></div><div id="sections"></div></section>
     </div>
     <div id="view-packets" class="view-page" hidden>
-      <section id="packet-analysis"><div class="page-heading"><div><h1 id="packets-title">包分析</h1><p id="packets-subtitle">旁路来源与包级流量明细</p></div></div><div id="bypass-section"></div></section>
+      <section id="packet-analysis"><div class="page-heading"><div><h1 id="packets-title">包分析</h1><p id="packets-subtitle">旁路来源与包级流量明细</p></div></div><div id="source-traffic-section"></div><div id="bypass-section"></div></section>
     </div>
   </main>
   <div id="ranking-tooltip" class="ranking-tooltip" role="tooltip" hidden></div>
-  <script src="/static/app.js?v=16" defer></script>
+  <script src="/static/app.js?v=18" defer></script>
 </body>
 </html>
