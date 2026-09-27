@@ -293,7 +293,7 @@ class BostatsServerRegression(unittest.TestCase):
 
         self.assertIn('id="report-version"', index)
         self.assertIn('id="trend-version"', index)
-        self.assertIn('app.js?v=18', index)
+        self.assertIn('app.js?v=19', index)
         self.assertIn('id="source-traffic-section"', index)
         self.assertIn('id="scope-note"', index)
         self.assertIn("legacyVersion: '< 133版本'", javascript)
