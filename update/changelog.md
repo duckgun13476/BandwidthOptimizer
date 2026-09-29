@@ -1,3 +1,7 @@
+#### v5.10.30.135
+
+1. Abort BO startup when its bundled private Zstd runtime is missing or damaged, with the source location and expected/actual length and SHA-256 in the error. Preserve automatic repair when only the extracted disk cache is damaged.
+
 #### v5.10.30.134-release
 
 1. Preserved traffic history across BO upgrades and added version-aware BO Stats reporting, filtering, and chart boundaries; reports created before version tracking are grouped under `< 133`.
