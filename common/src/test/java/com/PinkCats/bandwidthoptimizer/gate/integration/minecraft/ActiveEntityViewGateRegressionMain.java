@@ -1,92 +1,113 @@
 package com.PinkCats.bandwidthoptimizer.gate.integration.minecraft;
 
+import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
+
 import java.util.List;
 
 public final class ActiveEntityViewGateRegressionMain {
-
     private ActiveEntityViewGateRegressionMain() {}
 
     public static void main(String[] args) {
-        verifyCoalescingAndRecovery();
-        verifyEntityIdReuse();
-        verifyDimensionScopeChange();
+        verifyHalfRateAndExactDelta();
+        verifyRotationAndGroundState();
+        verifyOverflowFailsOpen();
+        verifyOneTickExpiryAndRemoval();
         verifyBoundedRetention();
-        System.out.println("Active entity view gate regression passed.");
+        System.out.println("Active entity interpolation gate regression passed.");
     }
 
-    private static void verifyCoalescingAndRecovery() {
+    private static void verifyHalfRateAndExactDelta() {
         ActiveEntityViewGate.PlayerState state = new ActiveEntityViewGate.PlayerState();
-        require(state.remember(7, ActiveEntityViewGate.POSITION, 10L).captured(),
-                "first update must be captured");
-        require(state.remember(7, ActiveEntityViewGate.MOTION, 11L).coalesced(),
-                "later updates for one entity must coalesce");
-        require(state.pendingCount() == 1, "coalescing must retain one entity");
-
-        List<ActiveEntityViewGate.ReadyEntity> hidden = state.drainReady(12L, 1, ignored -> true).ready();
-        require(hidden.isEmpty(), "hidden entity must remain deferred before timeout");
-        List<ActiveEntityViewGate.ReadyEntity> visible = state.drainReady(13L, 1, ignored -> false).ready();
-        require(visible.size() == 1 && !visible.get(0).timedOut(),
-                "visible entity must release immediately");
-        require(visible.get(0).pending().mask()
-                        == (ActiveEntityViewGate.POSITION | ActiveEntityViewGate.MOTION),
-                "visible recovery must preserve every coalesced state kind");
-
-        state.remember(8, ActiveEntityViewGate.ATTRIBUTES, 20L);
-        List<ActiveEntityViewGate.ReadyEntity> timedOut = state.drainReady(
-                20L + ActiveEntityViewGate.MAX_HOLD_TICKS,
-                1,
-                ignored -> true).ready();
-        require(timedOut.size() == 1 && timedOut.get(0).timedOut(),
-                "continuously hidden entity must receive a bounded authoritative refresh");
+        ClientboundMoveEntityPacket first = pos(7, 100, 0, 0);
+        ClientboundMoveEntityPacket second = pos(7, 200, 5, -4);
+        require(state.accept(7, first, 10L).replacement() == null,
+                "even tick should send without delay");
+        require(state.accept(7, first, 11L).captured(),
+                "odd tick should hold one movement update");
+        var result = state.accept(7, second, 12L);
+        require(result.replacement() != null && !result.captured(), "next update must combine");
+        require(result.replacement().getXa() == 300
+                        && result.replacement().getYa() == 5
+                        && result.replacement().getZa() == -4,
+                "combined delta must exactly reconstruct the server position");
+        require(ActiveEntityViewGate.snapshot().pendingEntities() == 0,
+                "paired update must release its global slot");
     }
 
-    private static void verifyEntityIdReuse() {
+    private static void verifyRotationAndGroundState() {
         ActiveEntityViewGate.PlayerState state = new ActiveEntityViewGate.PlayerState();
-        state.remember(17, ActiveEntityViewGate.POSITION, 30L);
-        state.remove(17);
-        state.remember(17, ActiveEntityViewGate.ATTRIBUTES, 30L);
-
-        require(state.drainReady(31L, 1, ignored -> false).ready().isEmpty(),
-                "stale queue generation must not release a reused entity ID");
-        List<ActiveEntityViewGate.ReadyEntity> current = state.drainReady(31L, 1, ignored -> false).ready();
-        require(current.size() == 1
-                        && current.get(0).pending().mask() == ActiveEntityViewGate.ATTRIBUTES,
-                "the current generation must release independently");
+        var first = new ClientboundMoveEntityPacket.PosRot(
+                8, (short) 10, (short) 0, (short) 20, (byte) 15, (byte) 16, true);
+        var second = new ClientboundMoveEntityPacket.Rot(8, (byte) 25, (byte) 26, false);
+        var merged = ActiveEntityViewGate.combine(8, first, second, (byte) 25, (byte) 26);
+        require(merged instanceof ClientboundMoveEntityPacket.PosRot,
+                "position and latest rotation must share one packet");
+        require(merged.getXa() == 10 && merged.getZa() == 20,
+                "rotation-only update must preserve pending position");
+        require(rotationByte(merged, "yRot") == 25 && rotationByte(merged, "xRot") == 26
+                        && !merged.isOnGround(),
+                "latest rotation and ground state must win");
+        require(ActiveEntityViewGate.payloadBytes(8, first)
+                        + ActiveEntityViewGate.payloadBytes(8, second)
+                        > ActiveEntityViewGate.payloadBytes(8, merged),
+                "one merged packet must use fewer payload bytes");
     }
 
-    private static void verifyDimensionScopeChange() {
+    private static void verifyOverflowFailsOpen() {
         ActiveEntityViewGate.PlayerState state = new ActiveEntityViewGate.PlayerState();
-        Object firstLevel = new Object();
-        Object secondLevel = new Object();
-        state.enterScope(firstLevel);
-        state.remember(29, ActiveEntityViewGate.POSITION, 40L);
-        state.enterScope(secondLevel);
+        var first = pos(9, 32760, 0, 0);
+        var second = pos(9, 100, 0, 0);
+        require(state.accept(9, first, 31L).captured(), "first update must be held");
+        var result = state.accept(9, second, 32L);
+        require(result.overflow() == first && result.replacement() == null,
+                "unrepresentable sum must send both original packets in order");
+        require(ActiveEntityViewGate.snapshot().pendingEntities() == 0,
+                "overflow must release its global slot");
+    }
 
-        require(state.pendingCount() == 0 && state.queueSize() == 0,
-                "dimension changes must discard entity IDs from the previous level");
+    private static void verifyOneTickExpiryAndRemoval() {
+        ActiveEntityViewGate.PlayerState state = new ActiveEntityViewGate.PlayerState();
+        var first = pos(10, 20, 0, 0);
+        require(state.accept(10, first, 41L).captured(), "first update must be held");
+        require(state.drainExpired(41L).isEmpty(), "same tick must not flush");
+        List<ClientboundMoveEntityPacket> expired = state.drainExpired(42L);
+        require(expired.size() == 1 && expired.get(0) == first,
+                "next tick must flush if no partner arrived");
+        require(state.accept(11, pos(11, 20, 0, 0), 43L).captured(),
+                "new entity must be held");
+        require(state.remove(11), "removal/teleport must invalidate pending delta");
+        require(state.drainExpired(44L).isEmpty(), "invalidated delta must never replay");
     }
 
     private static void verifyBoundedRetention() {
         ActiveEntityViewGate.PlayerState state = new ActiveEntityViewGate.PlayerState();
-        for (int entityId = 0; entityId < ActiveEntityViewGate.MAX_PENDING_ENTITIES_PER_PLAYER; entityId++) {
-            require(state.remember(entityId, ActiveEntityViewGate.POSITION, 0L).captured(),
+        for (int id = 1; id <= ActiveEntityViewGate.MAX_PENDING_ENTITIES_PER_PLAYER; id++) {
+            require(state.accept(id, pos(id, 1, 0, 0), 51L).captured(),
                     "bounded entities must be admitted");
         }
-        require(!state.remember(ActiveEntityViewGate.MAX_PENDING_ENTITIES_PER_PLAYER,
-                        ActiveEntityViewGate.POSITION,
-                        0L).captured(),
-                "entity retention must fail open at its hard limit");
+        require(!state.accept(999, pos(999, 1, 0, 0), 51L).captured(),
+                "per-player overflow must pass through");
+        require(ActiveEntityViewGate.snapshot().pendingEntities()
+                        == ActiveEntityViewGate.MAX_PENDING_ENTITIES_PER_PLAYER,
+                "global pending count must match retained entries");
+        state.clear();
+        require(ActiveEntityViewGate.snapshot().pendingEntities() == 0,
+                "clear must release all global slots");
+    }
 
-        for (int cycle = 0; cycle < ActiveEntityViewGate.MAX_QUEUE_ENTRIES_PER_PLAYER * 3; cycle++) {
-            int entityId = cycle % ActiveEntityViewGate.MAX_PENDING_ENTITIES_PER_PLAYER;
-            state.remove(entityId);
-            require(state.remember(entityId, ActiveEntityViewGate.POSITION, cycle + 1L).captured(),
-                    "reused IDs must remain admissible");
+    private static ClientboundMoveEntityPacket.Pos pos(int id, int x, int y, int z) {
+        return new ClientboundMoveEntityPacket.Pos(
+                id, (short) x, (short) y, (short) z, true);
+    }
+
+    private static byte rotationByte(ClientboundMoveEntityPacket packet, String field) {
+        try {
+            var member = ClientboundMoveEntityPacket.class.getDeclaredField(field);
+            member.setAccessible(true);
+            return member.getByte(packet);
+        } catch (ReflectiveOperationException exception) {
+            throw new AssertionError("Unable to read test packet rotation", exception);
         }
-        require(state.pendingCount() == ActiveEntityViewGate.MAX_PENDING_ENTITIES_PER_PLAYER,
-                "ID churn must not change the entity bound");
-        require(state.queueSize() <= ActiveEntityViewGate.MAX_QUEUE_ENTRIES_PER_PLAYER,
-                "stale generations must not grow the queue beyond its hard bound");
     }
 
     private static void require(boolean condition, String message) {

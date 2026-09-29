@@ -12,6 +12,10 @@ public final class EntityMotionPacketCompat {
         return packet.getId();
     }
 
+    public static int entityId(ClientboundTeleportEntityPacket packet) {
+        return packet.getId();
+    }
+
     public static ClientboundTeleportEntityPacket teleport(Entity entity) {
         return new ClientboundTeleportEntityPacket(entity);
     }

@@ -9,4 +9,10 @@ public interface ClientboundMoveEntityPacketAccessor {
 
     @Accessor("entityId")
     int bandwidthoptimizer$getEntityId();
+
+    @Accessor("yRot")
+    byte bandwidthoptimizer$getYRotByte();
+
+    @Accessor("xRot")
+    byte bandwidthoptimizer$getXRotByte();
 }

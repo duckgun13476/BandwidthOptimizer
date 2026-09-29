@@ -1,7 +1,5 @@
 package com.PinkCats.bandwidthoptimizer.gate.integration.minecraft;
 
-import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
-import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateServerState;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.EntityMotionPacketCompat;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat;
@@ -12,43 +10,39 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
-import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
-import net.minecraft.network.protocol.game.ClientboundUpdateAttributesPacket;
+import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.LivingEntity;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.IntPredicate;
 
-/** Coalesces reconstructable updates for entities outside an active player's view. */
+/**
+ * Combines adjacent active-play movement updates without changing the client's
+ * authoritative position. Vanilla interpolates each delivered endpoint.
+ */
 public final class ActiveEntityViewGate {
-
     private static final boolean ENABLED = Boolean.parseBoolean(System.getProperty(
-            "bandwidthoptimizer.activeEntityViewGateEnabled", "true"));
-    static final byte POSITION = 1;
-    static final byte MOTION = 1 << 1;
-    static final byte ATTRIBUTES = 1 << 2;
-    static final int MAX_PENDING_ENTITIES_PER_PLAYER = 4_096;
-    static final int MAX_QUEUE_ENTRIES_PER_PLAYER = MAX_PENDING_ENTITIES_PER_PLAYER * 2;
-    private static final int MAX_CHECKS_PER_PLAYER_TICK = 256;
-    private static final int MAX_CHECKS_PER_TICK = 2_048;
-    static final long MAX_HOLD_TICKS = 100L;
+            "bandwidthoptimizer.activeEntityInterpolationEnabled",
+            System.getProperty("bandwidthoptimizer.activeEntityViewGateEnabled", "true")));
+    static final int MAX_PENDING_ENTITIES_PER_PLAYER = 128;
+    static final int MAX_PENDING_ENTITIES_TOTAL = 2_048;
     private static final ConcurrentHashMap<UUID, PlayerState> STATES = new ConcurrentHashMap<>();
     private static final WeakIdentitySet<Packet<?>> FORCED_PACKETS = new WeakIdentitySet<>();
+    private static final AtomicInteger PENDING_TOTAL = new AtomicInteger();
+    private static final AtomicLong OBSERVED_PACKETS = new AtomicLong();
+    private static final AtomicLong OBSERVED_PAYLOAD_BYTES = new AtomicLong();
     private static final AtomicLong CAPTURED_PACKETS = new AtomicLong();
     private static final AtomicLong COALESCED_PACKETS = new AtomicLong();
-    private static final AtomicLong VISIBLE_RELEASES = new AtomicLong();
+    private static final AtomicLong COALESCED_SAVED_PAYLOAD_BYTES = new AtomicLong();
     private static final AtomicLong TIMEOUT_RELEASES = new AtomicLong();
-    private static final AtomicLong RESTORED_PACKETS = new AtomicLong();
-    private static final AtomicLong NEXT_DIAGNOSTIC_MILLIS = new AtomicLong();
+    private static final AtomicLong OVERFLOW_RELEASES = new AtomicLong();
+    private static final AtomicLong SUPERSEDED_PACKETS = new AtomicLong();
 
     private ActiveEntityViewGate() {}
 
@@ -56,97 +50,92 @@ public final class ActiveEntityViewGate {
         if (!ENABLED || channel == null || packet == null || FORCED_PACKETS.remove(packet)) {
             return false;
         }
-        if (IdleGateServerState.isResumeDirectWindow(channel)) {
-            return false;
-        }
         ServerPlayer player = IdleGateServerState.resolvePlayer(channel);
-        if (player == null || IdleGateServerState.snapshot(player).mode().isIdle()) {
+        if (player == null) {
             return false;
         }
+        PlayerState existing = STATES.get(player.getUUID());
         if (packet instanceof ClientboundRemoveEntitiesPacket removal) {
-            PlayerState state = STATES.get(player.getUUID());
-            if (state != null) {
-                state.remove(removal);
+            if (existing != null) {
+                for (int id : removal.getEntityIds()) {
+                    if (existing.remove(id)) {
+                        SUPERSEDED_PACKETS.incrementAndGet();
+                    }
+                }
             }
             return false;
         }
-
-        int entityId;
-        byte mask;
-        if (packet instanceof ClientboundMoveEntityPacket movement) {
-            entityId = ((ClientboundMoveEntityPacketAccessor) movement).bandwidthoptimizer$getEntityId();
-            mask = POSITION;
-        } else if (packet instanceof ClientboundSetEntityMotionPacket motion) {
-            entityId = EntityMotionPacketCompat.entityId(motion);
-            mask = MOTION;
-        } else if (packet instanceof ClientboundUpdateAttributesPacket attributes) {
-            entityId = attributes.getEntityId();
-            mask = ATTRIBUTES;
-        } else {
+        if (packet instanceof ClientboundTeleportEntityPacket teleport) {
+            if (existing != null && existing.remove(EntityMotionPacketCompat.entityId(teleport))) {
+                SUPERSEDED_PACKETS.incrementAndGet();
+            }
             return false;
         }
-        if (player.getId() == entityId || isOwnFishingHook(player, entityId)) {
+        if (!(packet instanceof ClientboundMoveEntityPacket movement)
+                || IdleGateServerState.isResumeDirectWindow(channel)
+                || IdleGateServerState.snapshot(player).mode().isIdle()) {
             return false;
         }
-        if (!IdleGateForegroundEntityViewPolicy.shouldDefer(player, entityId)) {
+        int entityId = ((ClientboundMoveEntityPacketAccessor) movement).bandwidthoptimizer$getEntityId();
+        if (player.getId() == entityId || player.fishing != null && player.fishing.getId() == entityId) {
             return false;
         }
         ServerLevel level = ServerPlayerLevelCompat.serverLevel(player);
-        if (level == null) {
+        if (level == null || level.getServer() == null || !level.getServer().isSameThread()) {
             return false;
         }
-        RememberResult result = STATES.computeIfAbsent(player.getUUID(), ignored -> new PlayerState())
-                .remember(player, level, entityId, mask, level.getGameTime());
-        if (!result.captured()) {
+        long gameTime = level.getGameTime();
+        PlayerState state = STATES.computeIfAbsent(player.getUUID(), ignored -> new PlayerState());
+        state.bind(player, level);
+        OBSERVED_PACKETS.incrementAndGet();
+        OBSERVED_PAYLOAD_BYTES.addAndGet(payloadBytes(entityId, movement));
+        CaptureResult result = state.accept(entityId, movement, gameTime);
+        if (result.captured()) {
+            CAPTURED_PACKETS.incrementAndGet();
+            return true;
+        }
+        if (result.overflow() != null) {
+            OVERFLOW_RELEASES.incrementAndGet();
+            sendForced(player, result.overflow());
             return false;
         }
-        CAPTURED_PACKETS.incrementAndGet();
-        if (result.coalesced()) {
+        if (result.replacement() != null) {
             COALESCED_PACKETS.incrementAndGet();
+            COALESCED_SAVED_PAYLOAD_BYTES.addAndGet(
+                    payloadBytes(entityId, result.held())
+                            + payloadBytes(entityId, movement)
+                            - payloadBytes(entityId, result.replacement()));
+            sendForced(player, result.replacement());
+            return true;
         }
-        return true;
+        return false;
     }
 
     public static void onServerTick() {
         if (!ENABLED) {
             return;
         }
-        int remainingChecks = MAX_CHECKS_PER_TICK;
         for (Map.Entry<UUID, PlayerState> entry : STATES.entrySet()) {
-            if (remainingChecks <= 0) {
-                break;
-            }
             PlayerState state = entry.getValue();
             ServerPlayer player = state.player();
             if (player == null || player.connection == null) {
-                STATES.remove(entry.getKey(), state);
-                continue;
-            }
-            if (IdleGateServerState.snapshot(player).mode().isIdle()) {
+                if (STATES.remove(entry.getKey(), state)) {
+                    state.clear();
+                }
                 continue;
             }
             ServerLevel level = ServerPlayerLevelCompat.serverLevel(player);
-            if (level == null) {
-                continue;
-            }
-            if (!state.matchesLevel(level)) {
-                STATES.remove(entry.getKey(), state);
-                continue;
-            }
-            DrainResult drained = state.drainReady(
-                    level.getGameTime(),
-                    Math.min(MAX_CHECKS_PER_PLAYER_TICK, remainingChecks),
-                    entityId -> IdleGateForegroundEntityViewPolicy.shouldDefer(player, entityId));
-            remainingChecks -= drained.checks();
-            for (ReadyEntity readyEntity : drained.ready()) {
-                if (readyEntity.timedOut()) {
-                    TIMEOUT_RELEASES.incrementAndGet();
-                } else {
-                    VISIBLE_RELEASES.incrementAndGet();
+            if (level == null || !state.matchesLevel(level)) {
+                if (STATES.remove(entry.getKey(), state)) {
+                    state.clear();
                 }
-                RESTORED_PACKETS.addAndGet(restore(player, level, readyEntity.pending()));
+                continue;
             }
-            logDiagnosticSnapshot(drained.ready().size());
+            List<ClientboundMoveEntityPacket> expired = state.drainExpired(level.getGameTime());
+            for (ClientboundMoveEntityPacket movement : expired) {
+                TIMEOUT_RELEASES.incrementAndGet();
+                sendForced(player, movement);
+            }
             if (state.isEmpty()) {
                 STATES.remove(entry.getKey(), state);
             }
@@ -155,81 +144,82 @@ public final class ActiveEntityViewGate {
 
     public static void discard(ServerPlayer player) {
         if (player != null) {
-            STATES.remove(player.getUUID());
+            PlayerState state = STATES.remove(player.getUUID());
+            if (state != null) {
+                state.clear();
+            }
         }
     }
 
     public static Snapshot snapshot() {
-        int pendingEntities = 0;
-        for (PlayerState state : STATES.values()) {
-            pendingEntities += state.pendingCount();
-        }
         return new Snapshot(
                 CAPTURED_PACKETS.get(),
                 COALESCED_PACKETS.get(),
-                VISIBLE_RELEASES.get(),
+                0L,
                 TIMEOUT_RELEASES.get(),
-                RESTORED_PACKETS.get(),
-                pendingEntities);
+                TIMEOUT_RELEASES.get() + OVERFLOW_RELEASES.get(),
+                PENDING_TOTAL.get(),
+                OBSERVED_PACKETS.get(),
+                OBSERVED_PAYLOAD_BYTES.get(),
+                COALESCED_SAVED_PAYLOAD_BYTES.get(),
+                OVERFLOW_RELEASES.get(),
+                SUPERSEDED_PACKETS.get());
     }
 
     public static void resetStats() {
+        OBSERVED_PACKETS.set(0L);
+        OBSERVED_PAYLOAD_BYTES.set(0L);
         CAPTURED_PACKETS.set(0L);
         COALESCED_PACKETS.set(0L);
-        VISIBLE_RELEASES.set(0L);
+        COALESCED_SAVED_PAYLOAD_BYTES.set(0L);
         TIMEOUT_RELEASES.set(0L);
-        RESTORED_PACKETS.set(0L);
-        NEXT_DIAGNOSTIC_MILLIS.set(0L);
+        OVERFLOW_RELEASES.set(0L);
+        SUPERSEDED_PACKETS.set(0L);
     }
 
-    private static boolean isOwnFishingHook(ServerPlayer player, int entityId) {
-        return player.fishing != null && player.fishing.getId() == entityId;
+    static ClientboundMoveEntityPacket combine(int entityId, ClientboundMoveEntityPacket first,
+                                                 ClientboundMoveEntityPacket second) {
+        ClientboundMoveEntityPacket latestRotation = second.hasRotation() ? second : first;
+        byte yaw = 0;
+        byte pitch = 0;
+        if (latestRotation.hasRotation()) {
+            ClientboundMoveEntityPacketAccessor accessor = (ClientboundMoveEntityPacketAccessor) latestRotation;
+            yaw = accessor.bandwidthoptimizer$getYRotByte();
+            pitch = accessor.bandwidthoptimizer$getXRotByte();
+        }
+        return combine(entityId, first, second, yaw, pitch);
     }
 
-    private static void logDiagnosticSnapshot(int releasedEntities) {
-        if (releasedEntities <= 0
-                || !DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.COMPAT_DYNAMIC_GATES)) {
-            return;
+    static ClientboundMoveEntityPacket combine(int entityId, ClientboundMoveEntityPacket first,
+                                                 ClientboundMoveEntityPacket second, byte yaw, byte pitch) {
+        int x = first.getXa() + second.getXa();
+        int y = first.getYa() + second.getYa();
+        int z = first.getZa() + second.getZa();
+        if (x < Short.MIN_VALUE || x > Short.MAX_VALUE
+                || y < Short.MIN_VALUE || y > Short.MAX_VALUE
+                || z < Short.MIN_VALUE || z > Short.MAX_VALUE) {
+            return null;
         }
-        long nowMillis = System.currentTimeMillis();
-        long nextMillis = NEXT_DIAGNOSTIC_MILLIS.get();
-        if (nowMillis < nextMillis
-                || !NEXT_DIAGNOSTIC_MILLIS.compareAndSet(nextMillis, nowMillis + 10_000L)) {
-            return;
+        boolean position = first.hasPosition() || second.hasPosition();
+        boolean rotation = first.hasRotation() || second.hasRotation();
+        if (position && rotation) {
+            return new ClientboundMoveEntityPacket.PosRot(
+                    entityId, (short) x, (short) y, (short) z, yaw, pitch, second.isOnGround());
         }
-        Snapshot snapshot = snapshot();
-        DiagnosticLog.info(
-                DiagnosticToolRegistry.Tool.COMPAT_DYNAMIC_GATES,
-                "event=active_entity_view_gate captured={} coalesced={} visibleReleases={} timeoutReleases={} restoredPackets={} pending={}",
-                snapshot.capturedPackets(),
-                snapshot.coalescedPackets(),
-                snapshot.visibleReleases(),
-                snapshot.timeoutReleases(),
-                snapshot.restoredPackets(),
-                snapshot.pendingEntities());
+        if (position) {
+            return new ClientboundMoveEntityPacket.Pos(
+                    entityId, (short) x, (short) y, (short) z, second.isOnGround());
+        }
+        return new ClientboundMoveEntityPacket.Rot(entityId, yaw, pitch, second.isOnGround());
     }
 
-    private static int restore(ServerPlayer player, ServerLevel level, PendingEntity pending) {
-        Entity entity = level.getEntity(pending.entityId());
-        if (entity == null || entity == player) {
-            return 0;
+    static int payloadBytes(int entityId, ClientboundMoveEntityPacket movement) {
+        int varint = 1;
+        for (int value = entityId; (value & ~0x7f) != 0; value >>>= 7) {
+            varint++;
         }
-        int restoredPackets = 0;
-        if ((pending.mask() & POSITION) != 0) {
-            sendForced(player, EntityMotionPacketCompat.teleport(entity));
-            restoredPackets++;
-        }
-        if ((pending.mask() & MOTION) != 0) {
-            sendForced(player, new ClientboundSetEntityMotionPacket(entity));
-            restoredPackets++;
-        }
-        if ((pending.mask() & ATTRIBUTES) != 0 && entity instanceof LivingEntity livingEntity) {
-            sendForced(player, new ClientboundUpdateAttributesPacket(
-                    livingEntity.getId(),
-                    livingEntity.getAttributes().getSyncableAttributes()));
-            restoredPackets++;
-        }
-        return restoredPackets;
+        return varint + (movement.hasPosition() ? 6 : 0)
+                + (movement.hasRotation() ? 2 : 0) + 1;
     }
 
     private static void sendForced(ServerPlayer player, Packet<?> packet) {
@@ -242,142 +232,102 @@ public final class ActiveEntityViewGate {
         }
     }
 
-    public record Snapshot(
-            long capturedPackets,
-            long coalescedPackets,
-            long visibleReleases,
-            long timeoutReleases,
-            long restoredPackets,
-            int pendingEntities
-    ) {}
-
-    record PendingEntity(int entityId, byte mask, long firstGameTime, long generation) {
-        private PendingEntity merge(byte additionalMask) {
-            return new PendingEntity(
-                    this.entityId,
-                    (byte) (this.mask | additionalMask),
-                    this.firstGameTime,
-                    this.generation);
-        }
+    private static boolean reserveSlot() {
+        int count;
+        do {
+            count = PENDING_TOTAL.get();
+            if (count >= MAX_PENDING_ENTITIES_TOTAL) {
+                return false;
+            }
+        } while (!PENDING_TOTAL.compareAndSet(count, count + 1));
+        return true;
     }
 
-    record ReadyEntity(PendingEntity pending, boolean timedOut) {}
+    public record Snapshot(
+            long capturedPackets, long coalescedPackets, long visibleReleases,
+            long timeoutReleases, long restoredPackets, int pendingEntities,
+            long observedPackets, long observedPayloadBytes, long coalescedSavedPayloadBytes,
+            long overflowReleases, long supersededPackets
+    ) {}
 
-    record DrainResult(List<ReadyEntity> ready, int checks) {}
-
-    private record QueueEntry(int entityId, long generation) {}
-
-    record RememberResult(boolean captured, boolean coalesced) {
-        private static final RememberResult REJECTED = new RememberResult(false, false);
-        private static final RememberResult ADMITTED = new RememberResult(true, false);
-        private static final RememberResult COALESCED = new RememberResult(true, true);
+    record PendingMove(ClientboundMoveEntityPacket packet, long gameTime) {}
+    record CaptureResult(boolean captured, ClientboundMoveEntityPacket held,
+                         ClientboundMoveEntityPacket replacement, ClientboundMoveEntityPacket overflow) {
+        static final CaptureResult PASS = new CaptureResult(false, null, null, null);
+        static final CaptureResult CAPTURED = new CaptureResult(true, null, null, null);
     }
 
     static final class PlayerState {
-        private final Int2ObjectOpenHashMap<PendingEntity> pending = new Int2ObjectOpenHashMap<>();
-        private final ArrayDeque<QueueEntry> queue = new ArrayDeque<>();
+        private final Int2ObjectOpenHashMap<PendingMove> pending = new Int2ObjectOpenHashMap<>();
         private volatile ServerPlayer player;
-        private volatile Object levelScope;
-        private long nextGeneration;
+        private volatile ServerLevel level;
 
-        synchronized RememberResult remember(
-                ServerPlayer player,
-                ServerLevel level,
-                int entityId,
-                byte mask,
-                long gameTime
-        ) {
+        synchronized void bind(ServerPlayer player, ServerLevel level) {
+            if (this.level != level) {
+                clear();
+                this.level = level;
+            }
             this.player = player;
-            enterScope(level);
-            return remember(entityId, mask, gameTime);
         }
 
-        synchronized void enterScope(Object levelScope) {
-            if (this.levelScope == levelScope) {
-                return;
+        synchronized CaptureResult accept(int entityId, ClientboundMoveEntityPacket movement, long gameTime) {
+            PendingMove first = pending.remove(entityId);
+            if (first != null) {
+                PENDING_TOTAL.decrementAndGet();
+                ClientboundMoveEntityPacket combined = combine(entityId, first.packet(), movement);
+                return combined == null
+                        ? new CaptureResult(false, null, null, first.packet())
+                        : new CaptureResult(false, first.packet(), combined, null);
             }
-            this.levelScope = levelScope;
-            this.pending.clear();
-            this.queue.clear();
+            if ((gameTime & 1L) == 0L
+                    || pending.size() >= MAX_PENDING_ENTITIES_PER_PLAYER
+                    || !reserveSlot()) {
+                return CaptureResult.PASS;
+            }
+            pending.put(entityId, new PendingMove(movement, gameTime));
+            return CaptureResult.CAPTURED;
         }
 
-        synchronized RememberResult remember(int entityId, byte mask, long gameTime) {
-            PendingEntity current = this.pending.get(entityId);
-            if (current != null) {
-                this.pending.put(entityId, current.merge(mask));
-                return RememberResult.COALESCED;
+        synchronized boolean remove(int entityId) {
+            if (pending.remove(entityId) == null) {
+                return false;
             }
-            if (this.pending.size() >= MAX_PENDING_ENTITIES_PER_PLAYER) {
-                return RememberResult.REJECTED;
+            PENDING_TOTAL.decrementAndGet();
+            return true;
+        }
+
+        synchronized List<ClientboundMoveEntityPacket> drainExpired(long gameTime) {
+            if (pending.isEmpty()) {
+                return List.of();
             }
-            if (this.queue.size() >= MAX_QUEUE_ENTRIES_PER_PLAYER) {
-                compactQueue();
+            List<ClientboundMoveEntityPacket> expired = new ArrayList<>();
+            var iterator = pending.int2ObjectEntrySet().fastIterator();
+            while (iterator.hasNext()) {
+                var entry = iterator.next();
+                if (gameTime > entry.getValue().gameTime()) {
+                    expired.add(entry.getValue().packet());
+                    iterator.remove();
+                    PENDING_TOTAL.decrementAndGet();
+                }
             }
-            long generation = ++this.nextGeneration;
-            this.pending.put(entityId, new PendingEntity(entityId, mask, gameTime, generation));
-            this.queue.addLast(new QueueEntry(entityId, generation));
-            return RememberResult.ADMITTED;
+            return expired;
+        }
+
+        synchronized void clear() {
+            PENDING_TOTAL.addAndGet(-pending.size());
+            pending.clear();
         }
 
         private ServerPlayer player() {
-            return this.player;
+            return player;
         }
 
         private boolean matchesLevel(ServerLevel level) {
-            return this.levelScope == level;
-        }
-
-        private synchronized void remove(ClientboundRemoveEntitiesPacket packet) {
-            for (int entityId : packet.getEntityIds()) {
-                this.pending.remove(entityId);
-            }
-        }
-
-        synchronized void remove(int entityId) {
-            this.pending.remove(entityId);
-        }
-
-        synchronized DrainResult drainReady(long gameTime, int maxChecks, IntPredicate shouldDefer) {
-            int checks = Math.min(Math.max(maxChecks, 0), this.queue.size());
-            if (checks == 0) {
-                return new DrainResult(List.of(), 0);
-            }
-            int performedChecks = checks;
-            List<ReadyEntity> ready = new ArrayList<>();
-            while (checks-- > 0) {
-                QueueEntry queued = this.queue.removeFirst();
-                PendingEntity current = this.pending.get(queued.entityId());
-                if (current == null || current.generation() != queued.generation()) {
-                    continue;
-                }
-                boolean expired = gameTime - current.firstGameTime() >= MAX_HOLD_TICKS;
-                if (expired || !shouldDefer.test(queued.entityId())) {
-                    this.pending.remove(queued.entityId());
-                    ready.add(new ReadyEntity(current, expired));
-                } else {
-                    this.queue.addLast(queued);
-                }
-            }
-            return new DrainResult(ready, performedChecks);
+            return this.level == level;
         }
 
         private synchronized boolean isEmpty() {
-            return this.pending.isEmpty();
-        }
-
-        synchronized int pendingCount() {
-            return this.pending.size();
-        }
-
-        synchronized int queueSize() {
-            return this.queue.size();
-        }
-
-        private void compactQueue() {
-            this.queue.removeIf(queued -> {
-                PendingEntity current = this.pending.get(queued.entityId());
-                return current == null || current.generation() != queued.generation();
-            });
+            return pending.isEmpty();
         }
     }
 }

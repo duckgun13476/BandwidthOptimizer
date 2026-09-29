@@ -189,7 +189,7 @@ tasks.register('runActiveEntityViewGateRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,
             'verification',
-            'Verifies bounded active-play offscreen entity coalescing and recovery.',
+            'Verifies exact active-play movement pairing, interpolation cadence, and bounded recovery.',
             'com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.ActiveEntityViewGateRegressionMain'
     )
 }
