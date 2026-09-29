@@ -414,3 +414,12 @@ tasks.register('runBungeeCordPluginMessageCompatRegression', JavaExec) {
             'com.PinkCats.bandwidthoptimizer.integration.bungeecord.BungeeCordPluginMessageCompatRegressionMain'
     )
 }
+
+tasks.register('runEmbeddedZstdJarStoreRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies corrupt private Zstd archives are rejected and repaired from a valid embedded resource.',
+            'com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.EmbeddedZstdJarStoreRegressionMain'
+    )
+}

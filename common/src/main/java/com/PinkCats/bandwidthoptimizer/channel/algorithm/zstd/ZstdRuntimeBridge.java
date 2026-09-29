@@ -3,17 +3,14 @@ package com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd;
 import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.ByteBuffer;
-import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -159,30 +156,10 @@ final class ZstdRuntimeBridge {
         return new URLClassLoader(new URL[]{embeddedJarUrl}, ClassLoader.getPlatformClassLoader());
     }
 
-    // 将嵌入的 zstd jar 写入驱动目录；主目录已有可读 jar 时直接复用，避免 Windows 文件占用导致覆盖失败。
+    // Reuse only a complete private runtime; a partial extraction must recover on the next launch.
     private static Path writeEmbeddedJar(ClassLoader sourceClassLoader, Path driverDirectory, boolean forceUniqueFile) throws IOException {
         Path embeddedJarPath = embeddedJarPath(driverDirectory, forceUniqueFile);
-        if (!forceUniqueFile && Files.isRegularFile(embeddedJarPath) && Files.size(embeddedJarPath) > 0L) {
-            return embeddedJarPath;
-        }
-
-        Files.createDirectories(embeddedJarPath.getParent());
-        try (InputStream inputStream = sourceClassLoader.getResourceAsStream(EMBEDDED_ZSTD_RESOURCE)) {
-            if (inputStream == null) {
-                throw new IOException("Missing embedded zstd-jni resource: " + EMBEDDED_ZSTD_RESOURCE);
-            }
-            try {
-                Files.copy(inputStream, embeddedJarPath, forceUniqueFile
-                        ? new StandardCopyOption[0]
-                        : new StandardCopyOption[]{StandardCopyOption.REPLACE_EXISTING});
-            } catch (FileAlreadyExistsException exception) {
-                if (Files.isRegularFile(embeddedJarPath) && Files.size(embeddedJarPath) > 0L) {
-                    return embeddedJarPath;
-                }
-                throw exception;
-            }
-        }
-        return embeddedJarPath;
+        return EmbeddedZstdJarStore.install(sourceClassLoader, EMBEDDED_ZSTD_RESOURCE, embeddedJarPath, forceUniqueFile);
     }
 
     private static Path embeddedJarPath(Path driverDirectory, boolean forceUniqueFile) {
