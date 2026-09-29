@@ -1,0 +1,103 @@
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+import org.gradle.jvm.toolchain.JavaToolchainService
+
+boolean standaloneFabricBuild = rootProject.projectDir.canonicalFile == project.projectDir.canonicalFile
+
+if (standaloneFabricBuild) {
+    apply from: file('fabric-standalone.gradle')
+} else {
+    plugins.apply('base')
+    plugins.apply('java-base')
+
+    group = 'verification'
+
+    File repositoryRootDir = rootProject.projectDir
+    File wrapperFile = new File(repositoryRootDir, 'project/fabric/26-common/' + (System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows') ? 'gradlew.bat' : 'gradlew'))
+
+    def buildStandaloneFabricCommand = { String taskName ->
+        List<String> command = []
+        if (System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')) {
+            command.addAll(['cmd', '/c', wrapperFile.absolutePath])
+        } else {
+            command.add(wrapperFile.absolutePath)
+        }
+        command.addAll(['-g', gradle.gradleUserHomeDir.absolutePath, '-p', new File(project.projectDir.parentFile, '26.1.2-standalone').absolutePath, '--console=plain'])
+        gradle.startParameter.projectProperties.each { String key, String value ->
+            command.add("-P${key}=${value}")
+        }
+        command.add(taskName)
+        return command
+    }
+
+    def resolveFabricJavaHome = {
+        JavaToolchainService toolchainService = extensions.getByType(JavaToolchainService)
+        return toolchainService.launcherFor {
+            languageVersion = JavaLanguageVersion.of(25)
+        }.get().metadata.installationPath.asFile
+    }
+
+    def registerFabricProxyTask = { String taskName, String taskGroup, String taskDescription ->
+        def configureProxyTask = { Task task ->
+            task.group = taskGroup
+            task.description = taskDescription
+            task.doLast {
+                File javaHome = resolveFabricJavaHome.call()
+                exec {
+                    workingDir repositoryRootDir
+                    environment 'JAVA_HOME', javaHome.absolutePath
+                    environment 'Path', new File(javaHome, 'bin').absolutePath + File.pathSeparator + System.getenv('Path')
+                    commandLine buildStandaloneFabricCommand.call(taskName)
+                }
+            }
+        }
+
+        Task existingTask = tasks.findByName(taskName)
+        if (existingTask != null) {
+            configureProxyTask.call(existingTask)
+        } else {
+            tasks.register(taskName) {
+                configureProxyTask.call(delegate as Task)
+            }
+        }
+    }
+
+    [
+            ['compileJava', 'build', 'Compiles the Fabric 26.1.2 standalone source set.'],
+            ['compileTestJava', 'build', 'Compiles the Fabric 26.1.2 standalone test source set.'],
+            ['classes', 'build', 'Builds the Fabric 26.1.2 standalone main classes.'],
+            ['testClasses', 'build', 'Builds the Fabric 26.1.2 standalone test classes.'],
+            ['jar', 'build', 'Builds the Fabric 26.1.2 development jar.'],
+            ['sourcesJar', 'build', 'Builds the Fabric 26.1.2 sources jar.'],
+            ['build', 'build', 'Builds the Fabric 26.1.2 standalone project.'],
+            ['runClient', 'application', 'Starts the Fabric 26.1.2 client run.'],
+            ['runServer', 'application', 'Starts the Fabric 26.1.2 server run.'],
+            ['runAll', 'application', 'Starts the Fabric 26.1.2 server/client runAll verification.'],
+            ['runAllAutoExitCompare', 'verification', 'Runs Fabric 26.1.2 runAll and compares final jsonl files.'],
+            ['runChannelJsonlCompare', 'verification', 'Compares Fabric 26.1.2 four-way jsonl captures.'],
+            ['runChannelSimulate', 'verification', 'Runs the Fabric 26.1.2 channel simulation.'],
+            ['runChannelTransportReport', 'verification', 'Runs Fabric 26.1.2 transport report scenarios.'],
+            ['runChannelTransportRoundTrip', 'verification', 'Verifies Fabric 26.1.2 transport codec round trips.'],
+            ['runInternalTransportCarrierRegression', 'verification', 'Verifies Fabric 26.1.2 internal carrier isolation.'],
+            ['runSingleplayerCarrierRegression', 'verification', 'Runs Fabric 26.1.2 LocalChannel carrier regression.'],
+            ['runCrossFrameZstdRegression', 'verification', 'Verifies Fabric 26.1.2 cross-frame Zstd reuse and recovery.'],
+            ['runClientboundCommandTreeDeduplicatorRegression', 'verification', 'Verifies Fabric 26.1.2 command-tree de-duplication.'],
+            ['runOutboundBurstWarningRegression', 'verification', 'Verifies Fabric 26.1.2 outbound burst warning bounds.'],
+            ['runDirectBufferReuseRegression', 'verification', 'Verifies Fabric 26.1.2 bounded direct Zstd workspaces.'],
+            ['runChunkBranchCoverageVerify', 'verification', 'Verifies Fabric 26.1.2 chunk branch coverage.'],
+            ['runWatchBoundaryRefreshPatchRegression', 'verification', 'Runs Fabric 26.1.2 watch-boundary refresh-patch regression.'],
+            ['verifyPublishArtifact', 'Publishing', 'Verifies the Fabric 26.1.2 publish artifact.'],
+            ['checkCurseForgePublishStatus', 'Publishing', 'Checks Fabric 26.1.2 CurseForge publishing status.'],
+            ['checkModrinthPublishStatus', 'Publishing', 'Checks Fabric 26.1.2 Modrinth publishing status.'],
+            ['checkPublishRemoteStatus', 'Publishing', 'Checks Fabric 26.1.2 remote publishing status.'],
+            ['PublishInfo', 'Publishing', 'Prints Fabric 26.1.2 publishing metadata.'],
+            ['publishInfo', 'Publishing', 'Alias for Fabric 26.1.2 PublishInfo.'],
+            ['allworkPublishInfo', 'Allwork', 'Allwork alias for Fabric 26.1.2 PublishInfo.'],
+            ['allworkJarJar', 'Allwork', 'Allwork alias for the Fabric 26.1.2 publish jar.'],
+            ['publishCurseForge', 'Publishing', 'Publishes the Fabric 26.1.2 jar to CurseForge.'],
+            ['publishMods', 'Publishing', 'Publishes the Fabric 26.1.2 jar through mod-publish-plugin.'],
+            ['publishAll', 'Publishing', 'Publishes the Fabric 26.1.2 jar to configured platforms.'],
+            ['allworkPublishAll', 'Allwork', 'Allwork alias for Fabric 26.1.2 publishAll.']
+    ].each { List<String> taskSpec ->
+        registerFabricProxyTask.call(taskSpec[0], taskSpec[1], taskSpec[2])
+    }
+}

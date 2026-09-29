@@ -7,8 +7,25 @@ import java.util.Locale
 import java.util.Properties
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import javax.inject.Inject
+import org.gradle.process.ExecOperations
+
+abstract class BoRunAllProcessOperations {
+    @Inject abstract ExecOperations getExecOperations()
+}
 
 File boRepositoryRootDir = project.ext.boRepositoryRootDir
+project.ext.boRunAllProcessOperations = project.objects.newInstance(BoRunAllProcessOperations).execOperations
+project.ext.boRunAllTestJavaExecutable = {
+    project.javaToolchains.launcherFor {
+        languageVersion = project.java.toolchain.languageVersion.get()
+    }.get().executablePath.asFile.absolutePath
+}
+def boRunAllWrapperPath = { boolean isWindows ->
+    project.ext.has('boRunAllWrapperFile')
+            ? project.ext.boRunAllWrapperFile.absolutePath
+            : new File(boRepositoryRootDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+}
 def boRunAllTasksEnabled = project.ext.boRunAllTasksEnabled
 
 // run Gradle run mission.
@@ -24,7 +41,7 @@ def startExistingRunTaskProcess(File projectDir, boolean isWindows, String wrapp
     } else {
         command.add(wrapperPath)
     }
-    command.addAll(['-p', projectDir.absolutePath])
+    command.addAll(['-g', project.gradle.gradleUserHomeDir.absolutePath, '-p', projectDir.absolutePath])
 
     if (extraGradleArgs != null) {
         command.addAll(extraGradleArgs.findAll { it != null && !it.isBlank() })
@@ -406,7 +423,8 @@ def isRunAllChunkBranchCoverageVerificationEnabled(Project projectRef) {
 
 def runChunkBranchCoverageVerifyNow(Project projectRef) {
 
-    projectRef.javaexec {
+    boRunAllProcessOperations.javaexec {
+        executable = boRunAllTestJavaExecutable.call()
         classpath = sourceSets.test.runtimeClasspath
         mainClass = 'com.PinkCats.bandwidthoptimizer.test.RunAllChunkBranchCoverageMain'
     }
@@ -414,7 +432,8 @@ def runChunkBranchCoverageVerifyNow(Project projectRef) {
 
 def runChannelJsonlCompareNow(Project projectRef) {
 
-    projectRef.javaexec {
+    boRunAllProcessOperations.javaexec {
+        executable = boRunAllTestJavaExecutable.call()
         classpath = sourceSets.test.runtimeClasspath
         mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
         systemProperty 'bandwidthoptimizer.compare.allowTrailingPacketStreamFrames', 'true'
@@ -423,13 +442,14 @@ def runChannelJsonlCompareNow(Project projectRef) {
 
 def runWatchBoundaryRefreshPatchVerifyNow(Project projectRef) {
 
-    projectRef.javaexec {
+    boRunAllProcessOperations.javaexec {
+        executable = boRunAllTestJavaExecutable.call()
         classpath = sourceSets.test.runtimeClasspath
         mainClass = 'com.PinkCats.bandwidthoptimizer.test.RunWatchBoundaryRefreshPatchRegressionMain'
     }
 }
 
-def configureRunAllServerProperties(File propertiesFile, int serverPort) {
+def configureRunAllServerProperties(File propertiesFile, int serverPort, String worldName = 'bo-runall-world') {
 
     Properties properties = new Properties()
     if (propertiesFile.exists()) {
@@ -444,7 +464,7 @@ def configureRunAllServerProperties(File propertiesFile, int serverPort) {
     properties.setProperty('enforce-secure-profile', 'false')
     properties.setProperty('server-ip', '')
     properties.setProperty('server-port', String.valueOf(serverPort))
-    properties.setProperty('level-name', 'bo-runall-world')
+    properties.setProperty('level-name', worldName)
 
     propertiesFile.withOutputStream { output ->
         properties.store(output, 'BandwidthOptimizer runAll local test server')
@@ -528,7 +548,7 @@ def stopExistingRunAllProcesses(Project projectRef, File projectDirFile, boolean
     }
 
     String escapedProjectDir = projectDirFile.absolutePath.replace("'", "''")
-    projectRef.exec {
+    boRunAllProcessOperations.exec {
         commandLine 'powershell', '-NoProfile', '-Command',
                 "\$targets = Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -and \$_.CommandLine -like '*${escapedProjectDir}*' -and (\$_.CommandLine -like '*forgeclientuserdev*' -or \$_.CommandLine -like '*forgeserveruserdev*' -or \$_.CommandLine -like '*gradlew.bat*runClient*' -or \$_.CommandLine -like '*gradlew.bat*runServer*' -or \$_.CommandLine -like '*gradle-wrapper.jar*runClient*' -or \$_.CommandLine -like '*gradle-wrapper.jar*runServer*' -or \$_.CommandLine -like '*fabric.dli.env=client*' -or \$_.CommandLine -like '*fabric.dli.env=server*' -or \$_.CommandLine -like '*LatencyTcpProxyMain*') }; \$targets | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }"
         ignoreExitValue = true
@@ -542,7 +562,7 @@ def stopRunAllServerProcesses(Project projectRef, File projectDirFile, boolean i
     }
 
     String escapedProjectDir = projectDirFile.absolutePath.replace("'", "''")
-    projectRef.exec {
+    boRunAllProcessOperations.exec {
         commandLine 'powershell', '-NoProfile', '-Command',
                 "\$targets = Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -and \$_.CommandLine -like '*${escapedProjectDir}*' -and (\$_.CommandLine -like '*forgeserveruserdev*' -or \$_.CommandLine -like '*gradlew.bat*runServer*' -or \$_.CommandLine -like '*gradle-wrapper.jar*runServer*' -or \$_.CommandLine -like '*fabric.dli.env=server*') }; \$targets | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }"
         ignoreExitValue = true
@@ -617,7 +637,7 @@ def forceStopRunAllProcesses(Project projectRef, File projectDirFile, boolean is
 
         if (isWindows) {
             // runServer/runClient are Gradle wrappers; terminate their owned JVM tree as one test unit.
-            projectRef.exec {
+            boRunAllProcessOperations.exec {
                 commandLine 'cmd', '/c', 'taskkill', '/PID', String.valueOf(process.pid()), '/T', '/F'
                 ignoreExitValue = true
             }
@@ -685,7 +705,8 @@ def copyScenarioArtifactIfExists(File sourceFile, File targetFile) {
 def writeDefaultTransportReportScenarioList(Project projectRef, File scenarioListFile) {
 
     scenarioListFile.parentFile.mkdirs()
-    projectRef.javaexec {
+    boRunAllProcessOperations.javaexec {
+        executable = boRunAllTestJavaExecutable.call()
         classpath = sourceSets.test.runtimeClasspath
         mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelTransportReportScenarioListMain'
         args '--output', scenarioListFile.absolutePath
@@ -737,7 +758,7 @@ tasks.register('runSingleplayerCarrierRegression') {
     doLast {
         boolean isWindows = System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')
         File projectDirFile = project.projectDir
-        String wrapperPath = new File(boRepositoryRootDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        String wrapperPath = boRunAllWrapperPath.call(isWindows)
         File marker = new File(projectDirFile, 'run/client/bo-singleplayer-carrier-regression.ok')
         File clientTaskLog = new File(projectDirFile, 'run/runall-singleplayer-carrier-client-task.log')
         Files.deleteIfExists(marker.toPath())
@@ -773,7 +794,7 @@ tasks.register('runSingleplayerCarrierRegression') {
         } finally {
             if (clientProcess.isAlive()) {
                 if (isWindows) {
-                    project.exec {
+                    boRunAllProcessOperations.exec {
                         commandLine 'cmd', '/c', 'taskkill', '/PID', String.valueOf(clientProcess.pid()), '/T', '/F'
                         ignoreExitValue = true
                     }
@@ -796,7 +817,7 @@ tasks.register('runChannelTransportReport') {
         String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
         boolean isWindows = osName.contains('windows')
         File projectDirFile = project.projectDir
-        String wrapperPath = new File(boRepositoryRootDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        String wrapperPath = boRunAllWrapperPath.call(isWindows)
         long scenarioTimeoutMillis = project.ext.boReadRunAllLongProperty.call(project, 'boTransportReportScenarioTimeoutMillis', 480000L)
         long scenarioRetryCount = project.ext.boReadRunAllLongProperty.call(project, 'boTransportReportScenarioRetries', 1L)
         File serverOutputDir = project.ext.boServerOutputRoot.call(project)
@@ -891,7 +912,8 @@ tasks.register('runChannelTransportReport') {
             }
         }
 
-        project.javaexec {
+        boRunAllProcessOperations.javaexec {
+            executable = boRunAllTestJavaExecutable.call()
             classpath = sourceSets.test.runtimeClasspath
             mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelTransportCompressionReportMain'
             args '--manifest', manifestFile.absolutePath, '--output', reportFile.absolutePath
@@ -911,7 +933,7 @@ tasks.register('runAll') {
         String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
         boolean isWindows = osName.contains('windows')
         File projectDirFile = project.projectDir
-        String wrapperPath = new File(boRepositoryRootDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        String wrapperPath = boRunAllWrapperPath.call(isWindows)
         long observeSeconds = project.ext.boReadRunAllLongProperty.call(project, 'boRunAllObserveSeconds', 0L)
         long settleMillis = project.ext.boReadRunAllLongProperty.call(project, 'boRunAllSettleMillis', 3000L)
         long settleTimeoutMillis = project.ext.boReadRunAllLongProperty.call(project, 'boRunAllSettleTimeoutMillis', 15000L)
@@ -961,7 +983,8 @@ tasks.register('runAll') {
 
         int serverPort = readRunAllServerPort(project)
         String clientAddress = readRunAllClientAddress(project)
-        configureRunAllServerProperties(serverProperties, serverPort)
+        configureRunAllServerProperties(serverProperties, serverPort,
+                (project.findProperty('boRunAllWorldName') ?: 'bo-runall-world').toString())
         configureRunAllServerOperators(serverOpsFile)
 
         println "runAll: 正在启动本地测试服务端，端口 ${serverPort}。"
@@ -1096,7 +1119,7 @@ tasks.register('runAllAutoExitCompare') {
         String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
         boolean isWindows = osName.contains('windows')
         File projectDirFile = project.projectDir
-        String wrapperPath = new File(boRepositoryRootDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        String wrapperPath = boRunAllWrapperPath.call(isWindows)
         String exitTrigger = readRunAllAutoExitTrigger(project)
         long exitDelaySeconds = project.ext.boReadRunAllLongProperty.call(project, 'boRunAllExitDelaySeconds', 3L)
         long triggerTimeoutMillis = project.ext.boReadRunAllLongProperty.call(project, 'boRunAllTriggerTimeoutMillis', 180000L)
@@ -1144,7 +1167,8 @@ tasks.register('runAllAutoExitCompare') {
 
         int serverPort = readRunAllServerPort(project)
         String clientAddress = readRunAllClientAddress(project)
-        configureRunAllServerProperties(serverProperties, serverPort)
+        configureRunAllServerProperties(serverProperties, serverPort,
+                (project.findProperty('boRunAllWorldName') ?: 'bo-runall-world').toString())
         configureRunAllServerOperators(serverOpsFile)
 
         Process serverProcess = null
@@ -1251,7 +1275,7 @@ tasks.register('runWatchBoundaryRefreshPatchRegression') {
         String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
         boolean isWindows = osName.contains('windows')
         File projectDirFile = project.projectDir
-        String wrapperPath = new File(boRepositoryRootDir, isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+        String wrapperPath = boRunAllWrapperPath.call(isWindows)
         long exitDelaySeconds = project.ext.boReadRunAllLongProperty.call(project, 'boRunAllExitDelaySeconds', 3L)
         long triggerTimeoutMillis = project.ext.boReadRunAllLongProperty.call(project, 'boRunAllTriggerTimeoutMillis', 240000L)
         long settleMillis = project.ext.boReadRunAllLongProperty.call(project, 'boRunAllSettleMillis', 3000L)

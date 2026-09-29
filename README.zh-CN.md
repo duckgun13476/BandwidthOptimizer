@@ -62,6 +62,8 @@ BandwidthOptimizer 在 Minecraft 或加载器完成数据包编码后观察完�
 | Forge | 1.20.1 | Release |
 | Fabric / Quilt | 1.20.1 | Release；需要 Fabric API |
 | Fabric / Quilt | 1.21.1 | Release；需要 Fabric API |
+| Fabric | 26.1.2 | Beta；需要 Fabric API |
+| Fabric | 26.2 | Beta；需要 Fabric API |
 | NeoForge | 1.21.1 | Release |
 | NeoForge | 26.1.2 | Release |
 | NeoForge | 26.2 | Beta |

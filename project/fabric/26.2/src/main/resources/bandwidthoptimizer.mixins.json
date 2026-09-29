@@ -1,0 +1,31 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.PinkCats.bandwidthoptimizer.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "mixins": [
+    "create.CreateControlledContraptionEntityMixin",
+    "create.CreateGantryContraptionEntityMixin",
+    "minecraft.ClientboundSectionBlocksUpdatePacketAccessor",
+    "minecraft.ClientboundMoveEntityPacketAccessor",
+    "minecraft.EntityLevelAccessor",
+    "minecraft.ConnectionAccessor",
+    "minecraft.ConnectionBandwidthStatsMixin",
+    "minecraft.ConnectionSendBoundaryMixin",
+    "minecraft.InternetProbeFrameDecoderMixin",
+    "minecraft.PacketOutPipeMixin",
+    "minecraft.PacketInPipeMixin",
+    "minecraft.ServerCommonPacketListenerChunkWatchMixin",
+    "minecraft.ServerGamePacketListenerImplAccessor",
+    "minecraft.ServerKeepAliveTimeoutBoundaryMixin"
+  ],
+  "client": [
+    "minecraft.MinecraftDisconnect26Mixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  }
+}

@@ -164,6 +164,8 @@ mod combination or proxy topology.
 | Forge | 1.20.1 | Release |
 | Fabric / Quilt | 1.20.1 | Release; Fabric API required |
 | Fabric / Quilt | 1.21.1 | Release; Fabric API required |
+| Fabric | 26.1.2 | Beta; Fabric API required |
+| Fabric | 26.2 | Beta; Fabric API required |
 | NeoForge | 1.21.1 | Release |
 | NeoForge | 26.1.2 | Release |
 | NeoForge | 26.2 | Beta |

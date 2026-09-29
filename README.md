@@ -95,6 +95,8 @@ Choose the build matching both the Minecraft version and loader.
 | Forge | 1.20.1 | Release |
 | Fabric / Quilt | 1.20.1 | Release; requires Fabric API |
 | Fabric / Quilt | 1.21.1 | Release; requires Fabric API |
+| Fabric | 26.1.2 | Beta; requires Fabric API |
+| Fabric | 26.2 | Beta; requires Fabric API |
 | NeoForge | 1.21.1 | Release |
 | NeoForge | 26.1.2 | Release |
 | NeoForge | 26.2 | Beta |

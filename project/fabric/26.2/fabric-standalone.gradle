@@ -1,0 +1,205 @@
+import me.modmuss50.mpp.MppPlugin
+
+buildscript {
+    repositories {
+        maven {
+            name = 'GradlePluginPortal'
+            url = 'https://plugins.gradle.org/m2/'
+        }
+        maven {
+            name = 'Fabric'
+            url = 'https://maven.fabricmc.net/'
+        }
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'me.modmuss50:mod-publish-plugin:1.0.0'
+    }
+}
+
+apply plugin: 'idea'
+apply plugin: MppPlugin
+
+ext.boRunAllWrapperFile = file('../26-common/gradlew.bat')
+apply from: file('../../../gradle/bo-property-loader.gradle')
+project.ext.publish_version = 'beta'
+apply from: file('../../../test.gradle')
+
+group = mod_group_id
+version = mod_version
+
+ext.bo_publish_artifact_task_name = 'jar'
+ext.bo_publish_artifact_relative_path = "../26.2/build/libs/${package_name}-${mod_version}-fabric-26.2.jar"
+ext.bo_publish_loader_id = 'fabric'
+ext.bo_publish_curseforge_loaders = ['Fabric']
+ext.bo_publish_modrinth_loaders = ['fabric']
+ext.bo_publish_required_dependencies = ['fabric-api']
+ext.minecraft_version = '26.2'
+
+base {
+    archivesName = "${package_name}-fabric-26.2"
+}
+
+repositories {
+    def localTorqueMaven = project.findProperty('torqueLocalMaven')
+    if (localTorqueMaven != null && !localTorqueMaven.toString().isBlank()) {
+        maven {
+            name = 'PinkCatsLocalTorque'
+            url = uri(localTorqueMaven.toString())
+            content {
+                includeGroup 'com.pinkcats.torque'
+            }
+        }
+    }
+    maven {
+        name = 'PinkCatsMaven'
+        url = uri('https://logistics.aisaveworld.tech/d/share/maven/torque')
+        content {
+            includeGroup 'com.pinkcats.torque'
+        }
+    }
+    mavenCentral()
+    maven {
+        name = 'Fabric'
+        url = 'https://maven.fabricmc.net/'
+    }
+    maven {
+        url = 'https://repo.spongepowered.org/repository/maven-public/'
+    }
+}
+
+configurations {
+    embeddedRuntimeLibs {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
+}
+
+def embeddedRuntimeLibsOutputDir = layout.buildDirectory.dir('generated/boEmbeddedRuntimeLibs')
+def fabricApiVersion = '0.156.0+26.2'
+
+tasks.register('prepareEmbeddedRuntimeLibs', Copy) {
+    from(configurations.embeddedRuntimeLibs)
+    into(embeddedRuntimeLibsOutputDir.map { it.dir('META-INF/bandwidthoptimizer/libs') })
+}
+
+sourceSets.main.resources.srcDir embeddedRuntimeLibsOutputDir
+
+dependencies {
+    String zstdJniVersion = '1.5.7-7'
+
+    minecraft 'com.mojang:minecraft:26.2'
+    implementation 'net.fabricmc:fabric-loader:0.19.3'
+    implementation "net.fabricmc.fabric-api:fabric-api:${fabricApiVersion}"
+    implementation "com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}"
+    include "com.pinkcats.torque:TorqueAPI-layer-api:${torque_api_version}"
+    compileOnly "com.github.luben:zstd-jni:${zstdJniVersion}"
+    testRuntimeOnly "com.github.luben:zstd-jni:${zstdJniVersion}"
+    embeddedRuntimeLibs "com.github.luben:zstd-jni:${zstdJniVersion}"
+}
+
+def fabricExcludedCommonJava = [
+        'com/PinkCats/bandwidthoptimizer/chunk/packet/ClientboundPlayPacketCodec.java',
+        'com/PinkCats/bandwidthoptimizer/debug/ClientPacketHandleDiagnosticProbe.java',
+        'com/PinkCats/bandwidthoptimizer/debug/MovementDiagnosticProbe.java',
+        'com/PinkCats/bandwidthoptimizer/integration/minecraft/ClientWindowCompat.java',
+        'com/PinkCats/bandwidthoptimizer/integration/minecraft/CommandSourceCompat.java',
+        'com/PinkCats/bandwidthoptimizer/integration/minecraft/EntityMotionPacketCompat.java',
+        'com/PinkCats/bandwidthoptimizer/integration/minecraft/NbtCompoundCompat.java'
+]
+
+sourceSets {
+    main {
+        java.srcDir '../../../common/src/main/java'
+        java.srcDir '../26-common/src/main/java'
+        java.srcDir '../26.2/src/main/java'
+        resources.srcDir '../../../common/src/main/resources'
+        resources.srcDir '../26.2/src/main/resources'
+        resources.exclude 'META-INF/mods.toml'
+    }
+    test {
+        java.srcDir '../../../common/src/test/java'
+        java.srcDir '../26-common/src/test/java'
+        resources.srcDir '../26.2/src/test/resources'
+    }
+}
+
+tasks.named('compileJava', JavaCompile).configure {
+    setSource(files(
+            project.fileTree('../26-common/src/main/java'),
+            project.fileTree('../26.2/src/main/java'),
+            project.fileTree('../../../common/src/main/java') {
+                exclude fabricExcludedCommonJava
+            }
+    ))
+}
+
+loom {
+    runs {
+        client {
+            client()
+            runDir = 'run/client'
+            configureBandwidthOptimizerClientRun(project, delegate)
+        }
+        server {
+            server()
+            runDir = 'run/server'
+            configureBandwidthOptimizerServerRun(project, delegate)
+        }
+    }
+}
+
+processResources {
+    dependsOn tasks.named('prepareEmbeddedRuntimeLibs')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    var replaceProperties = [
+            mod_id            : mod_id,
+            mod_name          : mod_name,
+            mod_version       : mod_version,
+            mod_authors       : mod_authors,
+            mod_description   : mod_description,
+            mod_license       : mod_license,
+            loader_version    : '0.19.3',
+            minecraft_version : '26.2',
+            fabric_api_version: fabricApiVersion
+    ]
+    inputs.properties replaceProperties
+    filesMatching(['fabric.mod.json', 'pack.mcmeta']) {
+        expand replaceProperties + [project: project]
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    dependsOn tasks.named('prepareEmbeddedRuntimeLibs')
+    archiveFileName = "${package_name}-${mod_version}-fabric-26.2.jar"
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes([
+                "MixinConfigs": "bandwidthoptimizer.mixins.json"
+        ])
+    }
+    from(embeddedRuntimeLibsOutputDir)
+}
+
+tasks.withType(Jar).configureEach {
+    if (name == 'sourcesJar') {
+        dependsOn tasks.named('prepareEmbeddedRuntimeLibs')
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    }
+}
+
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 25
+    options.compilerArgs.addAll(['-Xmaxerrs', '1000'])
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(25)
+    withSourcesJar()
+}
+
+apply from: file('../../../gradle/bo-publishing.gradle')
+apply from: file('../../../gradle/bo-fabric-publishing-verify.gradle')

@@ -1,0 +1,7 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version '1.17.21'
+    id 'idea'
+}
+
+layout.buildDirectory = file('../26.1.2/build')
+apply from: file('../26.1.2/fabric-standalone.gradle')
