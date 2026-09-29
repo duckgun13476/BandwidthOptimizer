@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.Config;
 import com.PinkCats.bandwidthoptimizer.connection.ConnectionDisconnectClassifier;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.EmbeddedZstdResourceCorruptionException;
 import io.netty.channel.Channel;
 
 import java.nio.charset.StandardCharsets;
@@ -56,6 +57,14 @@ public final class ChannelTransportRuntimeGuard {
                 );
             }
         } catch (Throwable throwable) {
+            EmbeddedZstdResourceCorruptionException corruption =
+                    EmbeddedZstdResourceCorruptionException.findCause(throwable);
+            if (corruption != null) {
+                initialized = false;
+                transportAvailable = false;
+                unavailableReason = corruption.getMessage();
+                throw corruption;
+            }
             transportAvailable = false;
             unavailableReason = TransportRuntimeFailureReason.describe(throwable);
             Bandwidthoptimizer.LOGGER.warn(

@@ -37,7 +37,8 @@ public final class EmbeddedZstdJarStoreRegressionMain {
         try {
             Files.write(target, truncated);
             require(!EmbeddedZstdJarStore.isUsable(target), "truncated cache passed validation");
-            IOException sourceFailure = expectFailure(() -> install(badSource, target, false, complete, expectedHash, warnings));
+            EmbeddedZstdResourceCorruptionException sourceFailure = expectCorruption(
+                    () -> install(badSource, target, false, complete, expectedHash, warnings));
             require(sourceFailure.getMessage().contains("source=test-outer.jar!/test/zstd.jar"),
                     "failure omitted embedded source location");
             require(sourceFailure.getMessage().contains("actualBytes=" + truncated.length),
@@ -53,13 +54,15 @@ public final class EmbeddedZstdJarStoreRegressionMain {
                     "cache repair did not report its location");
 
             warnings.clear();
-            install(badSource, target, false, complete, expectedHash, warnings);
+            EmbeddedZstdResourceCorruptionException cachedSourceFailure = expectCorruption(
+                    () -> install(badSource, target, false, complete, expectedHash, warnings));
             require(Arrays.equals(complete, Files.readAllBytes(target)), "valid cache was overwritten");
-            require(warnings.size() == 1 && warnings.get(0).contains("BO jar embedded zstd-jni is damaged"),
-                    "corrupt BO jar was not reported when a valid cache masked the failure");
+            require(cachedSourceFailure.getMessage().contains("cacheIssue=null"),
+                    "valid cache masked corrupt embedded resource");
+            require(warnings.isEmpty(), "fatal embedded corruption was reported as a warning");
 
             Path backup = directory.resolve("backup.jar");
-            expectFailure(() -> install(badSource, backup, true, complete, expectedHash, warnings));
+            expectCorruption(() -> install(badSource, backup, true, complete, expectedHash, warnings));
             require(!Files.exists(backup), "failed backup extraction left a partial jar");
             install(goodSource, backup, true, complete, expectedHash, warnings);
             require(EmbeddedZstdJarStore.isUsable(backup), "unique backup extraction failed");
@@ -95,7 +98,7 @@ public final class EmbeddedZstdJarStoreRegressionMain {
             }
             URL url = outerJar.toUri().toURL();
             try (URLClassLoader source = new URLClassLoader(new URL[]{url}, null)) {
-                IOException failure = expectFailure(() -> EmbeddedZstdJarStore.install(source, embeddedResource,
+                EmbeddedZstdResourceCorruptionException failure = expectCorruption(() -> EmbeddedZstdJarStore.install(source, embeddedResource,
                         archive + "!/" + outerName + "!/" + embeddedResource,
                         directory.resolve("reported-cache.jar"), false, 7_400_645L, expectedHash, warning -> {}));
                 require(failure.getMessage().contains("BO jar embedded zstd-jni is damaged"),
@@ -146,11 +149,11 @@ public final class EmbeddedZstdJarStoreRegressionMain {
         }
     }
 
-    private static IOException expectFailure(CheckedOperation operation) throws IOException {
+    private static EmbeddedZstdResourceCorruptionException expectCorruption(CheckedOperation operation) throws IOException {
         try {
             operation.run();
             throw new AssertionError("corrupt embedded resource was accepted");
-        } catch (IOException expected) {
+        } catch (EmbeddedZstdResourceCorruptionException expected) {
             return expected;
         }
     }

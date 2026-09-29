@@ -37,17 +37,13 @@ final class EmbeddedZstdJarStore {
     ) throws IOException {
         String cacheProblem = unique ? "new backup location" : inspectCache(target, expectedBytes, expectedSha256);
         String sourceProblem = inspectSource(sourceClassLoader, resource, expectedBytes, expectedSha256);
-        if (cacheProblem == null) {
-            if (sourceProblem != null) {
-                warning.accept("BO jar embedded zstd-jni is damaged; using verified disk cache. source="
-                        + sourceLocation + ", sourceIssue=" + sourceProblem + ", cache=" + target.toAbsolutePath());
-            }
-            return target;
-        }
         if (sourceProblem != null) {
-            throw new IOException("BO jar embedded zstd-jni is damaged and cannot repair cache: source="
+            throw new EmbeddedZstdResourceCorruptionException("BO jar embedded zstd-jni is damaged; startup aborted: source="
                     + sourceLocation + ", sourceIssue=" + sourceProblem + ", cache=" + target.toAbsolutePath()
                     + ", cacheIssue=" + cacheProblem);
+        }
+        if (cacheProblem == null) {
+            return target;
         }
 
         Files.createDirectories(target.getParent());
@@ -61,7 +57,7 @@ final class EmbeddedZstdJarStore {
             }
             String extractedProblem = inspectCache(temporary, expectedBytes, expectedSha256);
             if (extractedProblem != null) {
-                throw new IOException("BO jar embedded zstd-jni changed during extraction: source="
+                throw new EmbeddedZstdResourceCorruptionException("BO jar embedded zstd-jni changed during extraction; startup aborted: source="
                         + sourceLocation + ", extractedIssue=" + extractedProblem + ", cache=" + target.toAbsolutePath());
             }
             try {

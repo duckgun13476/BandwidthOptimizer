@@ -46,12 +46,16 @@ final class ZstdRuntimeBridge {
         try {
             // Keep BO's Java bindings and native driver in the same isolated loader.
             return bindEmbedded(false);
+        } catch (EmbeddedZstdResourceCorruptionException corruption) {
+            throw corruption;
         } catch (Throwable throwable) {
             embeddedFailure = throwable;
         }
 
         try {
             return bindEmbedded(true);
+        } catch (EmbeddedZstdResourceCorruptionException corruption) {
+            throw corruption;
         } catch (Throwable backupEmbeddedFailure) {
             embeddedFailure.addSuppressed(backupEmbeddedFailure);
         }
