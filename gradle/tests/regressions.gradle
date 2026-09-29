@@ -423,3 +423,12 @@ tasks.register('runEmbeddedZstdJarStoreRegression', JavaExec) {
             'com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.EmbeddedZstdJarStoreRegressionMain'
     )
 }
+
+tasks.register('runTransportRuntimeFailureReasonRegression', JavaExec) {
+    configureTestJavaExecTask(
+            delegate,
+            'verification',
+            'Verifies startup warnings surface the embedded runtime failure through initializer wrappers.',
+            'com.PinkCats.bandwidthoptimizer.channel.TransportRuntimeFailureReasonRegressionMain'
+    )
+}

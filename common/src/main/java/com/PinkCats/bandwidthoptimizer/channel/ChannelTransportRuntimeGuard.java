@@ -57,7 +57,7 @@ public final class ChannelTransportRuntimeGuard {
             }
         } catch (Throwable throwable) {
             transportAvailable = false;
-            unavailableReason = throwable.getClass().getSimpleName() + ": " + throwable.getMessage();
+            unavailableReason = TransportRuntimeFailureReason.describe(throwable);
             Bandwidthoptimizer.LOGGER.warn(
                     "[Transport] Runtime unavailable, transparent transport disabled. algorithmId={}, reason={}",
                     ChannelTransportLayerRuntimeConfig.algorithmId(),

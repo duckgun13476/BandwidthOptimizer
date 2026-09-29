@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd;
 
 import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
+import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 
 import java.io.IOException;
 import java.lang.reflect.Constructor;
@@ -21,6 +22,9 @@ final class ZstdRuntimeBridge {
     private static final String END_DIRECTIVE_CLASS = "com.github.luben.zstd.EndDirective";
     private static final String EMBEDDED_ZSTD_RESOURCE = "META-INF/bandwidthoptimizer/libs/zstd-jni-1.5.7-7.jar";
     private static final String EMBEDDED_ZSTD_FILE_NAME = "zstd-jni-1.5.7-7.jar";
+    private static final long EMBEDDED_ZSTD_BYTES = 7_400_645L;
+    private static final String EMBEDDED_ZSTD_SHA256 =
+            "D4725BCE2C3E4F3DF54CBEA8BF5966E240872BB7BA7658572EDEDAEF28A01D83";
     private static final String ZSTD_TEMP_FOLDER_PROPERTY = "ZstdTempFolder";
     private static final String DRIVER_BACKUP_DIRECTORY = "driver-backup";
     private static final String EMBEDDED_LIBS_DIRECTORY = "embedded-libs";
@@ -159,7 +163,22 @@ final class ZstdRuntimeBridge {
     // Reuse only a complete private runtime; a partial extraction must recover on the next launch.
     private static Path writeEmbeddedJar(ClassLoader sourceClassLoader, Path driverDirectory, boolean forceUniqueFile) throws IOException {
         Path embeddedJarPath = embeddedJarPath(driverDirectory, forceUniqueFile);
-        return EmbeddedZstdJarStore.install(sourceClassLoader, EMBEDDED_ZSTD_RESOURCE, embeddedJarPath, forceUniqueFile);
+        URL resourceUrl = sourceClassLoader.getResource(EMBEDDED_ZSTD_RESOURCE);
+        var codeSource = ZstdRuntimeBridge.class.getProtectionDomain().getCodeSource();
+        String sourceLocation = resourceUrl == null
+                ? (codeSource == null ? ZstdRuntimeBridge.class.getName() : codeSource.getLocation())
+                        + "!/" + EMBEDDED_ZSTD_RESOURCE
+                : resourceUrl.toExternalForm();
+        return EmbeddedZstdJarStore.install(
+                sourceClassLoader,
+                EMBEDDED_ZSTD_RESOURCE,
+                sourceLocation,
+                embeddedJarPath,
+                forceUniqueFile,
+                EMBEDDED_ZSTD_BYTES,
+                EMBEDDED_ZSTD_SHA256,
+                warning -> Bandwidthoptimizer.LOGGER.warn("[Transport] {}", warning)
+        );
     }
 
     private static Path embeddedJarPath(Path driverDirectory, boolean forceUniqueFile) {
