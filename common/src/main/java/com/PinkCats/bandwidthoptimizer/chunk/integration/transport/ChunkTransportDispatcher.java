@@ -160,6 +160,7 @@ public final class ChunkTransportDispatcher {
             return null;
         }
 
+        runtimeDecision = reserveRecoveryBeforePublish(context, runtimeDecision, originalPacketBytes);
         byte[] envelopePayloadBytes = runtimeDecision.copyTransportPayloadBytes();
         byte[] encodedEnvelopeBytes = ChunkTransportEnvelopeCodec.encodeEnvelope(
                 new ChunkTransportEnvelope(runtimeDecision.frame(), envelopePayloadBytes)
@@ -197,7 +198,6 @@ public final class ChunkTransportDispatcher {
                     fingerprint.shortHash()
             );
         }
-        rememberRecoverableFullChunkFrame(context, runtimeDecision, originalPacketBytes);
         return encodedEnvelopeBytes;
     }
 
@@ -377,6 +377,9 @@ public final class ChunkTransportDispatcher {
         }
 
         hotpathStartNanos = HotpathCostProbe.start();
+        runtimeDecision = reserveRecoveryBeforePublish(context, runtimeDecision, originalPacketBytes);
+        HotpathCostProbe.end("chunk.rememberRecoverableFull", hotpathStartNanos);
+        hotpathStartNanos = HotpathCostProbe.start();
         long envelopeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         byte[] encodedEnvelopeBytes = ChunkTransportEnvelopeCodec.encodeEnvelope(
                 new ChunkTransportEnvelope(runtimeDecision.frame(), runtimeDecision.copyTransportPayloadBytes())
@@ -431,9 +434,6 @@ public final class ChunkTransportDispatcher {
             );
         }
         HotpathCostProbe.end("chunk.diagnosticFrameLog", hotpathStartNanos);
-        hotpathStartNanos = HotpathCostProbe.start();
-        rememberRecoverableFullChunkFrame(context, runtimeDecision, originalPacketBytes);
-        HotpathCostProbe.end("chunk.rememberRecoverableFull", hotpathStartNanos);
         return OutboundChunkEncodeResult.applied(
                 runtimeDecision.operation(),
                 runtimeDecision.frame().reason(),
@@ -1793,7 +1793,7 @@ public final class ChunkTransportDispatcher {
                 && runtimeFullBasePacketBytes.length > 0;
     }
 
-    private static void rememberRecoverableFullChunkFrame(
+    private static RuntimeChunkTransportDecision reserveRecoveryBeforePublish(
             ChannelHandlerContext context,
             RuntimeChunkTransportDecision runtimeDecision,
             byte[] originalPacketBytes
@@ -1802,13 +1802,27 @@ public final class ChunkTransportDispatcher {
                 || runtimeDecision == null
                 || runtimeDecision.frame() == null
                 || !shouldRememberRecoverableFullChunkFrame(runtimeDecision.frame())) {
-            return;
+            return runtimeDecision;
         }
-        ChunkWatchBoundaryReusePendingStore.rememberProbe(
-                context.channel(),
-                runtimeDecision.frame(),
-                originalPacketBytes
-        );
+        ChunkHotspotFrame admitted = reserveRecoverableFrame(context.channel(), runtimeDecision.frame(), originalPacketBytes);
+        if (admitted == runtimeDecision.frame()) return runtimeDecision;
+        ChunkPlanDecision d = runtimeDecision.decision();
+        ChunkPlanDecision full = new ChunkPlanDecision(ChunkPlanDecisionKind.PUBLISH_FULL, admitted.reason(),
+                d.knownSnapshotPublished(), d.fullSnapshotVersion(), d.mutationVersion(), d.laneVersion(),
+                0L, 0L, d.reusedGlobalSnapshot(), d.globalObservationCount(), d.knownSnapshotHash(),
+                d.knownSnapshotShortHash(), d.currentPayloadHash(), d.currentPayloadShortHash(), d.laneName(),
+                d.chunkText(), d.encodedBytes(), d.bypassBytes(), d.fullTransportBytes(), d.refTransportBytes(),
+                d.patchTransportBytes(), d.fullTransportBytes());
+        return new RuntimeChunkTransportDecision(ChunkHotspotFrameOp.PUBLISH_FULL, admitted, originalPacketBytes, full);
+    }
+
+    static ChunkHotspotFrame reserveRecoverableFrame(io.netty.channel.Channel channel, ChunkHotspotFrame frame, byte[] bytes) {
+        if (!shouldRememberRecoverableFullChunkFrame(frame)
+                || ChunkWatchBoundaryReusePendingStore.rememberProbe(channel, frame, bytes)) return frame;
+        return new ChunkHotspotFrame(frame.protocolVersion(), ChunkHotspotFrameOp.PUBLISH_FULL, frame.epoch(),
+                frame.observedPacketCount(), frame.protocolName(), frame.packetClassName(), frame.hotspotKind(),
+                frame.laneKind(), frame.coordinate(), frame.originalEncodedBytes(), frame.fullSnapshotVersion(),
+                frame.laneVersion(), frame.payloadHash(), frame.payloadHash(), 0L, "runtime_replay_budget_publish_full");
     }
 
     private static boolean isWatchBoundaryReuseProbeFrame(ChunkHotspotFrame frame) {
