@@ -78,8 +78,8 @@ public final class ChannelTransportBatchManager {
         OutboundBatchState batchState = getOrCreateOutboundBatchState(context.channel());
         batchState.addPacket(
                 context,
-                copyBytesOrEmpty(transportPacketBytes),
-                copyBytesOrEmpty(directFallbackPacketBytes),
+                transportPacketBytes,
+                directFallbackPacketBytes,
                 packetFlow,
                 outboundPacketCapture,
                 boundaryPacketTrace,
@@ -170,6 +170,7 @@ public final class ChannelTransportBatchManager {
                 drainedBatch.totalPacketBytes(),
                 () -> writeDrainedOutboundBatch(channel, drainedBatch, flushMode)
         )) {
+
             return;
         }
 
@@ -256,41 +257,71 @@ public final class ChannelTransportBatchManager {
                     epochBoundary.lastSequence()
             );
         }
+
         var writeFuture = ChannelTransportHooks.writeTransportCarrierPacketToPipeline(
                 channel,
                 packetFlow,
                 wrappedFrame.transportFrameBytes()
         );
         if (writeFuture == null) {
+
             writePendingPacketsDirectly(drainedBatch, "batch_carrier_pipeline_direct");
             return;
         }
         recordOutboundBatchPacketStream(drainedBatch.context(), drainedBatch.pendingPackets());
+        OutboundBatchCompletion completion = prepareBatchCompletion(drainedBatch, wrappedFrame);
         writeFuture.addListener(future -> {
+
             if (!future.isSuccess()) {
                 Throwable failure = future.cause() == null ? new IllegalStateException("Unknown outbound batch flush failure") : future.cause();
                 if (shouldIgnoreBatchFlushFailure(channel, failure)) {
-                    completeBatchPacketTrace(drainedBatch.pendingPackets(), "discarded", "channel_closing", new byte[0]);
+                    completion.discardedTraces().forEach(Runnable::run);
                     return;
                 }
-                completeBatchPacketTrace(drainedBatch.pendingPackets(), "failed", "write_failure", new byte[0]);
+                completion.failedTraces().forEach(Runnable::run);
                 failStatefulBatchCommit(channel, "outbound-batch-flush", failure);
                 return;
             }
-            recordOutboundBatchTransportStats(drainedBatch.context(), readProtocolName(drainedBatch.context()), wrappedFrame);
-            ChannelTransportPacketRankCaptureManager.completeBatchTransportCapture(
-                    drainedBatch.packetCaptures(),
-                    wrappedFrame
+            recordOutboundBatchTransportStats(completion.context(), readProtocolName(completion.context()), completion.frame());
+            ChannelTransportPacketRankCaptureManager.completeBatchTransportCaptureMetadata(
+                    completion.packetCaptures(),
+                    completion.frame()
             );
-            completeBatchBoundaryTrace(drainedBatch.pendingPackets(), wrappedFrame);
-            completeBatchPacketTrace(
-                    drainedBatch.pendingPackets(),
-                    "batch",
-                    wrappedFrame.frameKind().name(),
-                    wrappedFrame.transportFrameBytes()
-            );
+            completeBatchBoundaryTrace(completion.packets(), completion.frame());
+            completion.successTraces().forEach(Runnable::run);
         });
     }
+
+    private static OutboundBatchCompletion prepareBatchCompletion(
+            OutboundBatchDrain drain, ChannelTransportPacketCodec.WrappedTransportFrame frame
+    ) {
+        List<CompletedPacketMetadata> packets = new ArrayList<>(drain.pendingPackets().size());
+        List<Runnable> success = new ArrayList<>();
+        List<Runnable> failed = new ArrayList<>();
+        List<Runnable> discarded = new ArrayList<>();
+        for (PendingOutboundPacket packet : drain.pendingPackets()) {
+            packets.add(new CompletedPacketMetadata(packet.packetBytes().length, packet.boundaryPacketTrace()));
+            if (packet.packetClassTraceToken() != null) {
+                success.add(PacketClassTraceDiagnostic.prepareOutboundBatchCompletion(packet.packetClassTraceToken(),
+                        "batch", frame.frameKind().name(), frame.transportFrameBytes(), drain.pendingPackets().size()));
+                failed.add(PacketClassTraceDiagnostic.prepareOutboundBatchCompletion(packet.packetClassTraceToken(),
+                        "failed", "write_failure", new byte[0], drain.pendingPackets().size()));
+                discarded.add(PacketClassTraceDiagnostic.prepareOutboundBatchCompletion(packet.packetClassTraceToken(),
+                        "discarded", "channel_closing", new byte[0], drain.pendingPackets().size()));
+            }
+        }
+        return new OutboundBatchCompletion(drain.context(), frame.metadata(), List.copyOf(packets),
+                drain.packetCaptures(), List.copyOf(success), List.copyOf(failed), List.copyOf(discarded));
+    }
+
+    private record CompletedPacketMetadata(int packetBytesLength,
+            ChunkBoundaryBandwidthRecorder.OutboundPacketTrace boundaryPacketTrace) { }
+
+    private record OutboundBatchCompletion(ChannelHandlerContext context,
+            ChannelTransportPacketCodec.WrappedTransportFrameMetadata frame,
+            List<CompletedPacketMetadata> packets,
+            List<ChannelTransportPacketRankCaptureManager.OutboundPacketCapture> packetCaptures,
+            List<Runnable> successTraces, List<Runnable> failedTraces, List<Runnable> discardedTraces) { }
 
     private static List<OutboundBatchDrain> splitDrainInHalf(OutboundBatchDrain drainedBatch) {
         int midpoint = Math.max(drainedBatch.pendingPackets().size() / 2, 1);
@@ -402,9 +433,9 @@ public final class ChannelTransportBatchManager {
     private static void recordOutboundBatchTransportStats(
             ChannelHandlerContext context,
             String protocolName,
-            ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame
+            ChannelTransportPacketCodec.WrappedTransportFrameMetadata wrappedFrame
     ) {
-        ChannelTransportTelemetry.recordOutboundWrap(protocolName, wrappedFrame);
+        ChannelTransportTelemetry.recordOutboundWrapMetadata(protocolName, wrappedFrame);
         ChannelBandwidthStats stats = ServerBandwidthStatsRegistry.getOrCreate(context);
         if (stats != null && wrappedFrame != null) {
             stats.recordOutboundTransportFrame(wrappedFrame.transportFrameLength(), 1);
@@ -432,12 +463,11 @@ public final class ChannelTransportBatchManager {
                 ? "BATCH_DIRECT_FALLBACK"
                 : "BATCH_DIRECT_FALLBACK:" + reason;
         for (PendingOutboundPacket pendingPacket : pendingPackets) {
-            byte[] directPacketBytes = pendingPacket.copyDirectFallbackPacketBytes();
             ChunkBoundaryBandwidthRecorder.completeOutboundTrace(
                     pendingPacket.boundaryPacketTrace(),
                     actualPath,
                     "DIRECT",
-                    directPacketBytes.length,
+                    pendingPacket.directFallbackPacketBytes().length,
                     false,
                     1
             );
@@ -504,7 +534,7 @@ public final class ChannelTransportBatchManager {
             return;
         }
         for (PendingOutboundPacket pendingPacket : pendingPackets) {
-            byte[] directPacketBytes = pendingPacket.copyDirectFallbackPacketBytes();
+            byte[] directPacketBytes = pendingPacket.directFallbackPacketBytes();
             ChannelTransportHooks.recordCommittedOutboundPacketStream(
                     context,
                     packetClassNameOf(pendingPacket),
@@ -533,8 +563,8 @@ public final class ChannelTransportBatchManager {
     }
 
     private static void completeBatchBoundaryTrace(
-            List<PendingOutboundPacket> pendingPackets,
-            ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame
+            List<CompletedPacketMetadata> pendingPackets,
+            ChannelTransportPacketCodec.WrappedTransportFrameMetadata wrappedFrame
     ) {
         if (pendingPackets == null || pendingPackets.isEmpty() || wrappedFrame == null) {
             return;
@@ -553,19 +583,19 @@ public final class ChannelTransportBatchManager {
         }
 
         long totalWeight = 0L;
-        for (PendingOutboundPacket pendingPacket : pendingPackets) {
-            totalWeight += Math.max(pendingPacket.packetBytes().length, 1);
+        for (CompletedPacketMetadata pendingPacket : pendingPackets) {
+            totalWeight += Math.max(pendingPacket.packetBytesLength(), 1);
         }
 
         long remainingFrameBytes = wrappedFrame.transportFrameLength();
         long remainingWeight = Math.max(totalWeight, pendingPackets.size());
         for (int index = 0; index < pendingPackets.size(); index++) {
-            PendingOutboundPacket pendingPacket = pendingPackets.get(index);
+            CompletedPacketMetadata pendingPacket = pendingPackets.get(index);
             int allocatedFrameBytes;
             if (index == pendingPackets.size() - 1) {
                 allocatedFrameBytes = (int) Math.max(remainingFrameBytes, 0L);
             } else {
-                long weight = Math.max(pendingPacket.packetBytes().length, 1);
+                long weight = Math.max(pendingPacket.packetBytesLength(), 1);
                 allocatedFrameBytes = (int) Math.max((remainingFrameBytes * weight) / Math.max(remainingWeight, 1L), 0L);
                 remainingFrameBytes -= allocatedFrameBytes;
                 remainingWeight -= weight;
@@ -773,9 +803,12 @@ public final class ChannelTransportBatchManager {
             PacketClassTraceDiagnostic.OutboundBatchToken packetClassTraceToken
     ) {
         private PendingOutboundPacket {
+            // Compare before copying: the owned arrays may alias, never the producer's array.
+            boolean sameFallback = directFallbackPacketBytes == null || directFallbackPacketBytes.length == 0
+                    || directFallbackPacketBytes == packetBytes;
             packetBytes = copyBytesOrEmpty(packetBytes);
-            directFallbackPacketBytes = directFallbackPacketBytes == null || directFallbackPacketBytes.length == 0
-                    ? copyBytesOrEmpty(packetBytes)
+            directFallbackPacketBytes = sameFallback
+                    ? packetBytes
                     : copyBytesOrEmpty(directFallbackPacketBytes);
         }
 
@@ -791,7 +824,8 @@ public final class ChannelTransportBatchManager {
         private List<byte[]> packetBytesList() {
             List<byte[]> packetBytesList = new ArrayList<>(this.pendingPackets.size());
             for (PendingOutboundPacket pendingPacket : this.pendingPackets) {
-                packetBytesList.add(copyBytesOrEmpty(pendingPacket.packetBytes()));
+                // The codec takes its own defensive copy at entry.
+                packetBytesList.add(pendingPacket.packetBytes());
             }
             return List.copyOf(packetBytesList);
         }
@@ -847,14 +881,15 @@ public final class ChannelTransportBatchManager {
         ) {
             synchronized (this.pendingPackets) {
                 this.lastContext = context;
-                this.pendingPackets.add(new PendingOutboundPacket(
+                PendingOutboundPacket pending = new PendingOutboundPacket(
                         packetBytes,
                         directFallbackPacketBytes,
                         packetFlow,
                         outboundPacketCapture,
                         boundaryPacketTrace,
                         packetClassTraceToken
-                ));
+                );
+                this.pendingPackets.add(pending);
             }
         }
 

@@ -111,6 +111,10 @@ public final class ChannelTransportTelemetry {
 
     // This function records one outbound transport wrap, including stage bytes and mapping counters.
     public static void recordOutboundWrap(String protocolName, ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame) {
+        recordOutboundWrapMetadata(protocolName, wrappedFrame == null ? null : wrappedFrame.metadata());
+    }
+
+    public static void recordOutboundWrapMetadata(String protocolName, ChannelTransportPacketCodec.WrappedTransportFrameMetadata wrappedFrame) {
         if (wrappedFrame == null) {
             return;
         }
@@ -431,7 +435,7 @@ public final class ChannelTransportTelemetry {
         return Math.max(totalBytes, 0L);
     }
 
-    private static void updateWrapEffectCounters(ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame) {
+    private static void updateWrapEffectCounters(ChannelTransportPacketCodec.WrappedTransportFrameMetadata wrappedFrame) {
         if (wrappedFrame.transportFrameLength() < wrappedFrame.originalPacketBytes()) {
             OUTBOUND_SHRUNK_FRAME_COUNT.increment();
             return;

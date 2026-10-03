@@ -133,6 +133,13 @@ public final class ChannelTransportPacketRankCaptureManager {
             List<OutboundPacketCapture> captures,
             ChannelTransportPacketCodec.WrappedTransportFrame wrappedFrame
     ) {
+        completeBatchTransportCaptureMetadata(captures, wrappedFrame == null ? null : wrappedFrame.metadata());
+    }
+
+    public static void completeBatchTransportCaptureMetadata(
+            List<OutboundPacketCapture> captures,
+            ChannelTransportPacketCodec.WrappedTransportFrameMetadata wrappedFrame
+    ) {
         if (captures == null || captures.isEmpty() || wrappedFrame == null) {
             return;
         }

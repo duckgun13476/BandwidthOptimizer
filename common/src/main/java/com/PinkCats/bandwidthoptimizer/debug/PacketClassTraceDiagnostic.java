@@ -211,10 +211,17 @@ public final class PacketClassTraceDiagnostic {
             byte[] encodedBytes,
             int packetCount
     ) {
+        prepareOutboundBatchCompletion(token, route, detail, encodedBytes, packetCount).run();
+    }
+
+    /** Precompute the fingerprint so an unfinished socket write retains no packet bytes. */
+    public static Runnable prepareOutboundBatchCompletion(
+            OutboundBatchToken token, String route, String detail, byte[] encodedBytes, int packetCount
+    ) {
         if (token == null || !isSessionActive(token.channelId(), token.sessionId())) {
-            return;
+            return () -> { };
         }
-        emit(new TraceEvent(
+        TraceEvent event = new TraceEvent(
                 token.timestampMillis(),
                 token.sequence(),
                 "encode",
@@ -227,7 +234,12 @@ public final class PacketClassTraceDiagnostic {
                 token.before(),
                 fingerprint(encodedBytes),
                 Math.max(packetCount, 1)
-        ));
+        );
+        return () -> {
+            if (isSessionActive(token.channelId(), token.sessionId())) {
+                emit(event);
+            }
+        };
     }
 
     public static void recordInboundDirect(

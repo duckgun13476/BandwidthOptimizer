@@ -401,7 +401,22 @@ public final class ChannelTransportPacketCodec {
         public int transportFrameLength() {
             return this.transportFrameBytes.length;
         }
+
+        public WrappedTransportFrameMetadata metadata() {
+            return new WrappedTransportFrameMetadata(frameKind, transportFrameLength(), originalPacketBytes,
+                    originalPacketCount, zstdBodyBytes, telemetry);
+        }
     }
+
+    /** Completion accounting must not extend the lifetime of the encoded payload. */
+    public record WrappedTransportFrameMetadata(
+            FrameKind frameKind,
+            int transportFrameLength,
+            int originalPacketBytes,
+            int originalPacketCount,
+            int zstdBodyBytes,
+            ChannelTransportOperationTelemetry telemetry
+    ) { }
 
     public record UnwrappedTransportFrame(
             FrameKind frameKind,
