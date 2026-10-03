@@ -92,7 +92,7 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
             return;
         }
         IdleGateBackgroundPacketGate.recordPassedPacket(context == null ? null : context.channel(), packet, this.protocolInfo.flow(), encodedByteLength);
-        com.PinkCats.bandwidthoptimizer.channel.ChannelOutboundBurstWarning.recordLogicalPacket(context, this.protocolInfo.flow(), packet.getClass().getName(), encodedByteLength);
+        com.PinkCats.bandwidthoptimizer.channel.ChannelOutboundBurstWarning.recordLogicalPacket(context, this.protocolInfo.flow(), packet.getClass().getName() + " payloadChannel=" + com.PinkCats.bandwidthoptimizer.integration.minecraft.CustomPayloadPacketCompat.payloadChannel(packet), encodedByteLength);
         if (ChannelTransportStreamingEpochGate.deferIfClosed(
                 context,
                 ChannelTransportHooks.isInternalTransportCarrierPacket(packet),

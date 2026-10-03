@@ -1,3 +1,9 @@
+#### v5.10.31.136
+
+1. Reserve bounded FULL replay data before advertising chunk REF/PATCH dependencies; send FULL when recovery storage is unavailable, and retain unanswered recovery data until response or disconnect.
+2. Release original batch payloads and redundant fallback/frame copies before asynchronous socket writes finish, preserving exact packet delivery and completion accounting.
+3. Automatically warn when sustained outbound connection pressure coincides with heavy traffic from a named custom-payload channel; include recent logical bytes, packet counts and connection backlog, with bounded metadata and a warning cooldown.
+
 #### v5.10.30.135
 
 1. Abort BO startup when its bundled private Zstd runtime is missing or damaged, with the source location and expected/actual length and SHA-256 in the error. Preserve automatic repair when only the extracted disk cache is damaged.

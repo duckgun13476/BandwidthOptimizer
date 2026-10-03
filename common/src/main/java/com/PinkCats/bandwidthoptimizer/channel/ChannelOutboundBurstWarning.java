@@ -29,6 +29,7 @@ public final class ChannelOutboundBurstWarning {
             String packetClassName,
             int logicalBytes
     ) {
+        ChannelOutboundFloodWarning.record(context, flow, packetClassName, logicalBytes);
         if (!DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.OUTBOUND_BURST)
                 || flow != PacketFlow.CLIENTBOUND
                 || context == null

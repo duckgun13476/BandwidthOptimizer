@@ -122,9 +122,9 @@ public final class ChunkWatchBoundaryPendingStoreSecurityRegressionMain {
                 require(admitted.operation() == (index < 512 ? ChunkHotspotFrameOp.PUBLISH_REF : ChunkHotspotFrameOp.PUBLISH_FULL),
                         "Entry limit must refuse the new dependency, preserving existing recovery payloads");
                 if (index == 512) {
-                    var envelope = new com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelope(admitted, bytes);
-                    var decoded = com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelopeCodec.decodeEnvelope(
-                            com.PinkCats.bandwidthoptimizer.chunk.integration.transport.Envelope.ChunkTransportEnvelopeCodec.encodeEnvelope(envelope));
+                    var envelope = new com.PinkCats.bandwidthoptimizer.chunk.integration.transport.envelope.ChunkTransportEnvelope(admitted, bytes);
+                    var decoded = com.PinkCats.bandwidthoptimizer.chunk.integration.transport.envelope.ChunkTransportEnvelopeCodec.decodeEnvelope(
+                            com.PinkCats.bandwidthoptimizer.chunk.integration.transport.envelope.ChunkTransportEnvelopeCodec.encodeEnvelope(envelope));
                     require(decoded.frame().operation() == ChunkHotspotFrameOp.PUBLISH_FULL
                             && java.util.Arrays.equals(bytes, decoded.copyOriginalPacketBytes()), "FULL fallback did not preserve original bytes on wire");
                 }
