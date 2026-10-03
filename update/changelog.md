@@ -1,4 +1,4 @@
-#### v5.10.31.136
+#### v5.10.31.137
 
 1. Reserve bounded FULL replay data before advertising chunk REF/PATCH dependencies; send FULL when recovery storage is unavailable, and retain unanswered recovery data until response or disconnect.
 2. Release original batch payloads and redundant fallback/frame copies before asynchronous socket writes finish, preserving exact packet delivery and completion accounting.
