@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.gate.integration.minecraft;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateServerState;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.EntityMotionPacketCompat;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat;
+import com.PinkCats.bandwidthoptimizer.integration.sable.SableEntityGateCompat;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ClientboundMoveEntityPacketAccessor;
 import com.PinkCats.bandwidthoptimizer.util.WeakIdentitySet;
 import io.netty.channel.Channel;
@@ -82,6 +83,17 @@ public final class ActiveEntityViewGate {
         }
         ServerLevel level = ServerPlayerLevelCompat.serverLevel(player);
         if (level == null || level.getServer() == null || !level.getServer().isSameThread()) {
+            return false;
+        }
+        if (SableEntityGateCompat.shouldPassThrough(player, entityId)) {
+            // Release the original held packet before the new packet; never combine Sable metadata.
+            if (existing != null && !existing.matchesLevel(level)) {
+                existing.clear();
+            }
+            ClientboundMoveEntityPacket held = existing == null ? null : existing.take(entityId);
+            if (held != null) {
+                sendForced(player, held);
+            }
             return false;
         }
         long gameTime = level.getGameTime();
@@ -294,6 +306,15 @@ public final class ActiveEntityViewGate {
             }
             PENDING_TOTAL.decrementAndGet();
             return true;
+        }
+
+        synchronized ClientboundMoveEntityPacket take(int entityId) {
+            PendingMove move = pending.remove(entityId);
+            if (move == null) {
+                return null;
+            }
+            PENDING_TOTAL.decrementAndGet();
+            return move.packet();
         }
 
         synchronized List<ClientboundMoveEntityPacket> drainExpired(long gameTime) {

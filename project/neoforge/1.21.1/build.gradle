@@ -649,6 +649,13 @@ tasks.register('runActiveEntityViewGateRegression', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.ActiveEntityViewGateRegressionMain'
 }
 
+tasks.register('runSableEntityGateCompatRegression', JavaExec) {
+    group = 'verification'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.integration.sable.SableEntityGateCompatRegressionMain'
+}
+
 tasks.register('runSourceGateAccountingRegression', JavaExec) {
     group = 'verification'
     description = 'Verifies source-gate accounting deltas and IdleGate wire compatibility.'

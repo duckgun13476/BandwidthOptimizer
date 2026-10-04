@@ -5,6 +5,7 @@ import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateServerState;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.EntityMotionPacketCompat;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat;
+import com.PinkCats.bandwidthoptimizer.integration.sable.SableEntityGateCompat;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ClientboundMoveEntityPacketAccessor;
 import io.netty.channel.Channel;
 import it.unimi.dsi.fastutil.ints.Int2ByteOpenHashMap;
@@ -110,6 +111,13 @@ public final class EntityMotionRecoveryPolicy extends IdleGateRecoveryPolicy {
         if (isOwnFishingHook(player, entityId)) {
             return false;
         }
+        if (SableEntityGateCompat.shouldPassThrough(player, entityId)) {
+            PlayerState pending = states.get(player.getUUID());
+            if (pending != null) {
+                pending.remove(entityId);
+            }
+            return false;
+        }
         PlayerState state = states.computeIfAbsent(player.getUUID(), ignored -> new PlayerState());
         return state.bind(player).remember(entityId, updateMask);
     }
@@ -140,7 +148,7 @@ public final class EntityMotionRecoveryPolicy extends IdleGateRecoveryPolicy {
         long skipped = 0L;
         for (Int2ByteMap.Entry entry : entities.int2ByteEntrySet()) {
             Entity entity = level.getEntity(entry.getIntKey());
-            if (entity == null || entity == player) {
+            if (entity == null || entity == player || SableEntityGateCompat.shouldPassThrough(entity)) {
                 skipped++;
                 continue;
             }
@@ -199,6 +207,10 @@ public final class EntityMotionRecoveryPolicy extends IdleGateRecoveryPolicy {
             for (int entityId : entityIds) {
                 entities.remove(entityId);
             }
+        }
+
+        private synchronized void remove(int entityId) {
+            entities.remove(entityId);
         }
 
         private synchronized Int2ByteOpenHashMap drain() {

@@ -1,5 +1,11 @@
 def configureTestJavaExecTask = project.ext.configureTestJavaExecTask
 
+tasks.register('runSableEntityGateCompatRegression', JavaExec) {
+    configureTestJavaExecTask(delegate, 'verification',
+            'Verifies Sable entity gate exclusions, riding transitions and optional API failure.',
+            'com.PinkCats.bandwidthoptimizer.integration.sable.SableEntityGateCompatRegressionMain')
+}
+
 tasks.register('runChannelSimulate', JavaExec) {
     configureTestJavaExecTask(
             delegate,

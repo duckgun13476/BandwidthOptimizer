@@ -4,6 +4,7 @@ import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.gate.IdleGateServerState;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat;
+import com.PinkCats.bandwidthoptimizer.integration.sable.SableEntityGateCompat;
 import io.netty.channel.Channel;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntIterator;
@@ -34,6 +35,13 @@ public final class AttributeRecoveryPolicy extends IdleGateRecoveryPolicy {
         }
         ServerPlayer player = IdleGateServerState.resolvePlayer(channel);
         if (player == null) {
+            return false;
+        }
+        if (SableEntityGateCompat.shouldPassThrough(player, packet.getEntityId())) {
+            PlayerState pending = states.get(player.getUUID());
+            if (pending != null) {
+                pending.remove(packet.getEntityId());
+            }
             return false;
         }
         PlayerState state = states.computeIfAbsent(player.getUUID(), ignored -> new PlayerState());
@@ -86,7 +94,7 @@ public final class AttributeRecoveryPolicy extends IdleGateRecoveryPolicy {
         long skipped = 0L;
         for (IntIterator iterator = entityIds.iterator(); iterator.hasNext();) {
             net.minecraft.world.entity.Entity entity = level.getEntity(iterator.nextInt());
-            if (!(entity instanceof LivingEntity livingEntity)) {
+            if (!(entity instanceof LivingEntity livingEntity) || SableEntityGateCompat.shouldPassThrough(entity)) {
                 skipped++;
                 continue;
             }
@@ -137,6 +145,10 @@ public final class AttributeRecoveryPolicy extends IdleGateRecoveryPolicy {
             }
             entityIds.add(entityId);
             return true;
+        }
+
+        synchronized void remove(int entityId) {
+            entityIds.remove(entityId);
         }
 
         synchronized IntArrayList drain() {

@@ -22,6 +22,8 @@ public final class AttributeRecoveryPolicyRegressionMain {
                 "restore must retain every captured entity ID");
         require(!state.isPassThrough(), "drain must reset overflow state");
         require(state.remember(7), "state must be reusable after restore");
+        state.remove(7);
+        require(state.drain().isEmpty(), "Sable transition must remove stale attribute replay");
         System.out.println("Attribute recovery policy regression passed.");
     }
 

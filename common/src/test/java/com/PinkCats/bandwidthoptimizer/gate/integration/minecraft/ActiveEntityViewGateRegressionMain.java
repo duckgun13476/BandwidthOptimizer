@@ -13,7 +13,19 @@ public final class ActiveEntityViewGateRegressionMain {
         verifyOverflowFailsOpen();
         verifyOneTickExpiryAndRemoval();
         verifyBoundedRetention();
+        verifyPassThroughTransition();
         System.out.println("Active entity interpolation gate regression passed.");
+    }
+
+    private static void verifyPassThroughTransition() {
+        ActiveEntityViewGate.PlayerState state = new ActiveEntityViewGate.PlayerState();
+        ClientboundMoveEntityPacket packet = pos(17, 123, 45, -67);
+        require(state.accept(17, packet, 11L).captured(), "transition fixture must have one held packet");
+        require(state.take(17) == packet, "Sable transition must release the exact original packet");
+        require(state.take(17) == null, "original packet must be released only once");
+        require(ActiveEntityViewGate.snapshot().pendingEntities() == 0,
+                "Sable transition must release its global slot");
+        require(state.drainExpired(12L).isEmpty(), "released packet must not replay on next tick");
     }
 
     private static void verifyHalfRateAndExactDelta() {
