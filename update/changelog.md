@@ -1,3 +1,10 @@
+#### v5.10.32.138
+
+1. Fixed recipe synchronization ordering during BO cache negotiation so recipe-book unlocks and later packets cannot overtake the recipe table, restoring craftable candidates and recipe auto-fill. Preserve original encoded bytes when releasing queued packets.
+2. Let Sable-related entities and their riding relationships pass through entity gates without merging or rebuilding movement packets, preserving Sable coordinate metadata while retaining BO transport compression.
+
+Thanks to ILICH-Iliq for collaborating on the recipe synchronization fix.
+
 #### v5.10.31.137
 
 1. Reserve bounded FULL replay data before advertising chunk REF/PATCH dependencies; send FULL when recovery storage is unavailable, and retain unanswered recovery data until response or disconnect.
