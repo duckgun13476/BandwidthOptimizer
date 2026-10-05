@@ -51,6 +51,16 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
     @Inject(method = "encode*", at = @At("HEAD"), cancellable = true)
     private void bandwidthoptimizer$rememberWriterIndex(ChannelHandlerContext context, Packet<T> packet, ByteBuf out, CallbackInfo ci) {
 
+        byte[] recipeReplay = com.PinkCats.bandwidthoptimizer.recipe.RecipeSyncNegotiationGate.replayBytes(context, packet);
+        if (recipeReplay != null) {
+            this.bandwidthoptimizer$writerIndexBefore = out.writerIndex();
+            this.bandwidthoptimizer$encodeStartNanos = System.nanoTime();
+            out.writeBytes(recipeReplay);
+            bandwidthoptimizer$captureAndMaybeWrap(context, packet, out, ci);
+            ci.cancel();
+            return;
+        }
+
         //Index
         this.bandwidthoptimizer$writerIndexBefore = out.writerIndex();
         this.bandwidthoptimizer$encodeStartNanos = System.nanoTime();
@@ -61,6 +71,10 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
     private void bandwidthoptimizer$captureAndMaybeWrap(ChannelHandlerContext context, Packet<T> packet, ByteBuf out, CallbackInfo ci) {
         if (ChannelTransportHooks.isInternalTransportCarrierPacket(packet)) {
             com.PinkCats.bandwidthoptimizer.channel.ChannelOutboundBurstWarning.recordWireFrame(context, this.flow, out.writerIndex() - this.bandwidthoptimizer$writerIndexBefore, true);
+            return;
+        }
+        if (com.PinkCats.bandwidthoptimizer.recipe.RecipeSyncNegotiationGate.tryQueue(
+                context, packet, out, this.bandwidthoptimizer$writerIndexBefore)) {
             return;
         }
         if (TrueUuidLateLoginQueryGuard.tryDropOutboundLateCustomQueryAck(context, packet, this.flow, out, this.bandwidthoptimizer$writerIndexBefore)) {

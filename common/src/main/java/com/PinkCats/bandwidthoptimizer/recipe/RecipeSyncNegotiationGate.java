@@ -1,8 +1,13 @@
 package com.PinkCats.bandwidthoptimizer.recipe;
 
 import io.netty.channel.Channel;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
+import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportNetworkChannel;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.batch.ChannelTransportBatchManager;
+import com.PinkCats.bandwidthoptimizer.integration.minecraft.CustomPayloadPacketCompat;
 import net.minecraft.network.protocol.Packet;
 
 import java.util.ArrayDeque;
@@ -15,7 +20,7 @@ public final class RecipeSyncNegotiationGate {
     private static final AttributeKey<State> STATE_KEY =
             AttributeKey.valueOf("bandwidthoptimizer:recipe_sync_gate");
     private static final long TIMEOUT_MILLIS = 2_000L;
-    private static final int MAX_PACKETS = 4;
+    private static final int MAX_PACKETS = 1024;
     private static final long MAX_BYTES = 64L * 1024L * 1024L;
 
     private RecipeSyncNegotiationGate() {}
@@ -38,7 +43,18 @@ public final class RecipeSyncNegotiationGate {
     }
 
     public static boolean tryQueue(ChannelHandlerContext context, Packet<?> packet, int encodedBytes) {
-        if (!RecipeSyncRuntimeConfig.isEnabled() || context == null || packet == null || !isRecipePacket(packet)) {
+        return tryQueue(context, packet, encodedBytes, null);
+    }
+
+    public static boolean tryQueue(ChannelHandlerContext context, Packet<?> packet, ByteBuf out, int start) {
+        int bytes = out.writerIndex() - start;
+        boolean consumed = tryQueue(context, packet, bytes, out);
+        if (consumed) out.writerIndex(start);
+        return consumed;
+    }
+
+    private static boolean tryQueue(ChannelHandlerContext context, Packet<?> packet, int encodedBytes, ByteBuf out) {
+        if (context == null || packet == null) {
             return false;
         }
         Channel channel = context.channel();
@@ -46,7 +62,19 @@ public final class RecipeSyncNegotiationGate {
         if (state == null) {
             return false;
         }
-        QueueResult result = state.queue(packet, Math.max(encodedBytes, 0));
+        if (state.isReplaying(packet)) {
+            return false;
+        }
+        // BO carriers must progress: they include the scope/base negotiation and earlier batches.
+        if (ChannelTransportNetworkChannel.TRANSPORT_PAYLOAD_ID.toString()
+                .equals(CustomPayloadPacketCompat.payloadChannel(packet))) {
+            return false;
+        }
+        QueueResult result = state.queue(packet, Math.max(encodedBytes, 0), RecipeSyncRuntimeConfig.isEnabled(), out);
+        if (result.consumed()) {
+            // Commit predecessors before the suspended packet or a capacity/timeout release.
+            ChannelTransportBatchManager.flushOutboundBatchNow(context);
+        }
         if (!result.released().isEmpty()) {
             flush(channel, result.released());
         }
@@ -55,6 +83,11 @@ public final class RecipeSyncNegotiationGate {
 
     public static void complete(Channel channel, long generation) {
         release(channel, generation);
+    }
+
+    public static byte[] replayBytes(ChannelHandlerContext context, Packet<?> packet) {
+        State state = context == null ? null : context.channel().attr(STATE_KEY).get();
+        return state == null ? null : state.replayBytes(packet);
     }
 
     public static boolean isRecipePacket(Object packet) {
@@ -70,11 +103,11 @@ public final class RecipeSyncNegotiationGate {
             return;
         }
         State state = channel.attr(STATE_KEY).get();
-        List<Packet<?>> packets = state == null ? List.of() : state.release(generation);
+        List<Queued> packets = state == null ? List.of() : state.release(generation);
         flush(channel, packets);
     }
 
-    private static void flush(Channel channel, List<Packet<?>> packets) {
+    private static void flush(Channel channel, List<Queued> packets) {
         if (packets.isEmpty()) {
             return;
         }
@@ -82,8 +115,18 @@ public final class RecipeSyncNegotiationGate {
             if (!channel.isOpen()) {
                 return;
             }
-            for (Packet<?> packet : packets) {
-                channel.write(packet);
+            for (Queued queued : packets) {
+                State state = channel.attr(STATE_KEY).get();
+                if (state != null) {
+                    state.setReplaying(queued);
+                }
+                try {
+                    channel.write(queued.packet());
+                } finally {
+                    if (state != null) {
+                        state.setReplaying(null);
+                    }
+                }
             }
             channel.flush();
         };
@@ -114,12 +157,27 @@ public final class RecipeSyncNegotiationGate {
         private long deadlineNanos;
         private long bytes;
         private boolean pending;
+        private boolean started;
+        private Queued replaying;
+
+        synchronized boolean isReplaying(Packet<?> packet) {
+            return this.replaying != null && this.replaying.packet() == packet;
+        }
+
+        synchronized byte[] replayBytes(Packet<?> packet) {
+            return isReplaying(packet) ? this.replaying.encoded() : null;
+        }
+
+        synchronized void setReplaying(Queued queued) {
+            this.replaying = queued;
+        }
 
         synchronized ArmResult arm(long deadlineNanos) {
-            ArrayList<Packet<?>> released = drain();
+            ArrayList<Queued> released = drain();
             this.generation = this.generation == Long.MAX_VALUE ? 1L : this.generation + 1L;
             this.deadlineNanos = deadlineNanos;
             this.pending = true;
+            this.started = false;
             return new ArmResult(this.generation, released);
         }
 
@@ -127,24 +185,29 @@ public final class RecipeSyncNegotiationGate {
             return this.generation;
         }
 
-        synchronized QueueResult queue(Packet<?> packet, int encodedBytes) {
+        synchronized QueueResult queue(Packet<?> packet, int encodedBytes, boolean enabled, ByteBuf out) {
             if (!this.pending) {
                 return QueueResult.notConsumed();
             }
-            if (System.nanoTime() >= this.deadlineNanos
+            if (!this.started && !isRecipePacket(packet)) {
+                return QueueResult.notConsumed();
+            }
+            this.started = true;
+            byte[] snapshot = out == null ? null : ByteBufUtil.getBytes(out, out.writerIndex() - encodedBytes, encodedBytes, true);
+            if (!enabled || System.nanoTime() >= this.deadlineNanos
                     || this.packets.size() >= MAX_PACKETS
                     || this.bytes > MAX_BYTES - encodedBytes) {
-                ArrayList<Packet<?>> released = drain();
-                released.add(packet);
+                ArrayList<Queued> released = drain();
+                released.add(new Queued(packet, snapshot));
                 this.pending = false;
                 return new QueueResult(true, released);
             }
-            this.packets.addLast(new Queued(packet, encodedBytes));
+            this.packets.addLast(new Queued(packet, snapshot));
             this.bytes += encodedBytes;
             return new QueueResult(true, List.of());
         }
 
-        synchronized List<Packet<?>> release(long expectedGeneration) {
+        synchronized List<Queued> release(long expectedGeneration) {
             if (!this.pending || expectedGeneration != this.generation) {
                 return List.of();
             }
@@ -156,21 +219,22 @@ public final class RecipeSyncNegotiationGate {
             this.pending = false;
             this.packets.clear();
             this.bytes = 0L;
+            this.started = false;
         }
 
-        private ArrayList<Packet<?>> drain() {
-            ArrayList<Packet<?>> released = new ArrayList<>(this.packets.size());
+        private ArrayList<Queued> drain() {
+            ArrayList<Queued> released = new ArrayList<>(this.packets.size());
             while (!this.packets.isEmpty()) {
-                released.add(this.packets.removeFirst().packet());
+                released.add(this.packets.removeFirst());
             }
             this.bytes = 0L;
             return released;
         }
     }
 
-    private record Queued(Packet<?> packet, int bytes) {}
-    private record ArmResult(long generation, List<Packet<?>> released) {}
-    private record QueueResult(boolean consumed, List<Packet<?>> released) {
+    private record Queued(Packet<?> packet, byte[] encoded) {}
+    private record ArmResult(long generation, List<Queued> released) {}
+    private record QueueResult(boolean consumed, List<Queued> released) {
         static QueueResult notConsumed() {
             return new QueueResult(false, List.of());
         }

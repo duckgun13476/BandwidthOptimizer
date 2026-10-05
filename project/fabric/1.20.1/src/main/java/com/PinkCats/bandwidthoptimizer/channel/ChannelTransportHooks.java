@@ -229,11 +229,6 @@ public final class ChannelTransportHooks {
             }
         }
 
-        if (com.PinkCats.bandwidthoptimizer.recipe.RecipeSyncNegotiationGate.tryQueue(
-                context, packet, originalPacketBytes.length)) {
-            out.writerIndex(startIndexInclusive);
-            return;
-        }
         OutboundChunkEncodeResult chunkEncodeResult = ChunkTransportDispatcher.tryEncodeOutboundPacketWithTrace(
                 context,
                 protocolName,

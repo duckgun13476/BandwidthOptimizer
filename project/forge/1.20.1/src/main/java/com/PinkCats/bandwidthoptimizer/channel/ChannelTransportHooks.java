@@ -235,11 +235,6 @@ public final class ChannelTransportHooks {
             }
         }
 
-        if (com.PinkCats.bandwidthoptimizer.recipe.RecipeSyncNegotiationGate.tryQueue(
-                context, packet, originalPacketBytes.length)) {
-            out.writerIndex(startIndexInclusive);
-            return;
-        }
         long chunkEncodeStartNanos = NettySpikeProbe.BO_Diag_nettyMSPT_timer(
                 context,
                 "outbound_chunk_encode",
