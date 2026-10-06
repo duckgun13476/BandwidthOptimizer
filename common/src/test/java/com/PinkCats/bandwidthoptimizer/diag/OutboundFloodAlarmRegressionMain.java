@@ -23,6 +23,13 @@ public final class OutboundFloodAlarmRegressionMain {
         check(lines.size() == 1, "expired source must not be blamed");
         for (int i = 0; i < 10000; i++) normal.submitted("source" + i, 1, 120);
         check(normal.sourceCount() <= 64, "bounded source state");
+        check(normal.describe(120, 0).contains("unattributedLogicalBytes=9936"), "lost attribution not explicit");
+        for (int i = 0; i < 20; i++) normal.submitted("packet payloadChannel=vss:main", 2577531, 121);
+        check(normal.describe(121, 32 * OutboundFloodAlarm.MIB).contains("source=vss:main"),
+                "late heavy source hidden by full table");
+        check(!normal.describe(132, 0).contains("vss:main"), "expired producer attributed");
+        normal.submitted("late payloadChannel=small:main", 100, 132);
+        check(normal.sourceCount() == 1, "expired source slots not reclaimed");
         alarm.sample(170, true, 0, lines::add);
         for (int i = 171; i <= 176; i++) {
             alarm.submitted("payloadChannel=vss:main", 8 * 1024 * 1024, i);

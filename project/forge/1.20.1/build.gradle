@@ -155,6 +155,12 @@ tasks.register('runRecipeSyncOrderingRegression', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.recipe.RecipeSyncOrderingRegressionMain'
 }
 
+tasks.register('runOutboundQueueCapacityGuardRegression', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.PinkCats.bandwidthoptimizer.channel.OutboundQueueCapacityGuardRegressionMain'
+}
+
 tasks.register('runRecipeSyncTransportLifecycleRegression', JavaExec) {
     group = 'verification'
     description = 'Verifies full rebuild, durable promotion, and exact recipe delta transport.'
