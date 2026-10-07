@@ -47,6 +47,10 @@ public final class ActiveEntityViewGate {
 
     private ActiveEntityViewGate() {}
 
+    public static boolean enabled() {
+        return ENABLED;
+    }
+
     public static boolean tryCapture(Channel channel, Packet<?> packet) {
         if (!ENABLED || channel == null || packet == null || FORCED_PACKETS.remove(packet)) {
             return false;

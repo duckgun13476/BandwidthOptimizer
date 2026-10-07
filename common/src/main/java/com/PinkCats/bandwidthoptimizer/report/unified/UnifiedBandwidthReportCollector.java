@@ -10,6 +10,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshot
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotReport;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
+import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.ActiveEntityViewGate;
 import com.PinkCats.bandwidthoptimizer.recipe.RecipeSyncTrafficStats;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportSourceRankCore;
 import com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry;
@@ -31,6 +32,7 @@ public final class UnifiedBandwidthReportCollector {
         List<UnifiedBandwidthReport.Section> sections = new ArrayList<>();
         sections.add(transportSection());
         sections.add(serverSection());
+        sections.add(entityInterpolationSection());
         sections.add(recipeSection());
         sections.add(chunkSection());
         sections.add(jvmSection());
@@ -111,6 +113,22 @@ public final class UnifiedBandwidthReportCollector {
         add(metrics, "source_gate_estimated_outbound_saved_bytes", "Source gate estimated outbound saved", snapshot.serverSourceGateEstimatedOutboundSavedBytes(), "bytes", "estimated_gate_suppressed", "server_session", "Estimated clientbound WATUT fanout prevented at capture time; this is the source-gate amount included in outbound savings.");
         add(metrics, "source_gate_suppressed_frames", "Source gate suppressed frames", snapshot.serverSourceGateSuppressedFrames(), "frames", "gate_suppressed", "server_session", "WATUT GUI frames prevented before payload construction.");
         return section("server", "Server session", "Aggregate server counters without player names, UUIDs, addresses, or channel identifiers.", metrics);
+    }
+
+    private static UnifiedBandwidthReport.Section entityInterpolationSection() {
+        ActiveEntityViewGate.Snapshot snapshot = ActiveEntityViewGate.snapshot();
+        List<UnifiedBandwidthReport.Metric> metrics = new ArrayList<>();
+        add(metrics, "enabled", "Entity movement pairing enabled", ActiveEntityViewGate.enabled() ? 1L : 0L, "boolean", "gate_input", "current", "Whether active-play relative movement pairing is enabled for this JVM.");
+        add(metrics, "observed_packets", "Observed movement packets", snapshot.observedPackets(), "packets", "gate_input", "server_session", "Eligible active-play relative entity movement packets observed before pairing.");
+        add(metrics, "observed_payload_bytes", "Observed movement payload", snapshot.observedPayloadBytes(), "bytes", "gate_input", "server_session", "Encoded relative movement packet bodies before pairing, excluding packet ID, compression, and socket framing.");
+        add(metrics, "captured_packets", "Temporarily held movement packets", snapshot.capturedPackets(), "packets", "gate_input", "server_session", "Packets held pending the next active-play movement update; includes later unpaired and superseded releases.");
+        add(metrics, "coalesced_packets", "Coalesced movement packets", snapshot.coalescedPackets(), "packets", "gate_suppressed", "server_session", "Pairs emitted as one exact cumulative movement packet; each pair removes one logical packet.");
+        add(metrics, "saved_payload_bytes", "Coalesced payload reduction", snapshot.coalescedSavedPayloadBytes(), "bytes", "gate_suppressed", "server_session", "Sum of original movement packet body bytes minus replacement body bytes for completed pairs; not measured wire savings.");
+        add(metrics, "timeout_releases", "Unpaired releases", snapshot.timeoutReleases(), "packets", "gate_input", "server_session", "Held movement packets released unchanged after the next server tick without a partner.");
+        add(metrics, "overflow_releases", "Delta overflow releases", snapshot.overflowReleases(), "packets", "gate_input", "server_session", "Unrepresentable combined deltas released as the two original packets in order.");
+        add(metrics, "superseded_packets", "Superseded held packets", snapshot.supersededPackets(), "packets", "gate_suppressed", "server_session", "Held movement packets invalidated by a later absolute teleport or entity removal; excluded from paired payload reduction.");
+        add(metrics, "pending_entities", "Pending movement packets", snapshot.pendingEntities(), "packets", "gate_input", "current", "Movement packets currently held for at most one server tick across all players.");
+        return section("entity_interpolation", "Entity movement interpolation", "Server-run relative movement pairing; vanilla clients interpolate delivered endpoints. Payload reduction is before compression and is not measured socket savings.", metrics);
     }
 
     private static UnifiedBandwidthReport.Section chunkSection() {

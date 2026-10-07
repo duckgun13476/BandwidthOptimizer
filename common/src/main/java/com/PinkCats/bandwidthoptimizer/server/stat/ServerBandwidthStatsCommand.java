@@ -73,9 +73,10 @@ public final class ServerBandwidthStatsCommand {
                                 sessionTotals.serverCreateGateSavedBytes(),
                                 sessionTotals.serverCreateGateObservedBytes()
                         )
-                        + ", activeEntityGate=" + activeEntityGate.capturedPackets()
-                        + " captured/" + activeEntityGate.coalescedPackets() + " coalesced"
-                        + "/" + activeEntityGate.restoredPackets() + " restored"
+                        + ", entityInterpolation=" + activeEntityGate.observedPackets() + " observed"
+                        + "/" + activeEntityGate.coalescedPackets() + " paired"
+                        + "/" + formatBytes(activeEntityGate.coalescedSavedPayloadBytes()) + " payload reduced"
+                        + "/" + activeEntityGate.timeoutReleases() + " unpaired"
                         + "/" + activeEntityGate.pendingEntities() + " pending"
                         + ", estRatio=" + ratioText(
                                 totals.outboundWireBytes(),

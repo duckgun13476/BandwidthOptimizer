@@ -176,7 +176,11 @@ class BostatsServerRegression(unittest.TestCase):
                 report = json.dumps({
                     "schemaVersion": 1,
                     "reportId": "bounded-server-regression",
-                    "summary": {},
+                    "summary": {"sections": [{"id": "entity_interpolation", "metrics": [
+                        {"id": "observed_packets", "value": 20, "unit": "packets"},
+                        {"id": "coalesced_packets", "value": 10, "unit": "packets"},
+                        {"id": "saved_payload_bytes", "value": 80, "unit": "bytes"},
+                    ]}]},
                     "playerTraffic": {},
                 }, separators=(",", ":")).encode()
                 compressed = gzip.compress(report)
