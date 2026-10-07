@@ -1,19 +1,19 @@
-#### v5.10.32.138
+#### v5.10.32.139
+
+Changes since the last public release, v5.10.30.134. Includes the fixes previously tested as builds 135, 137, and 138.
 
 1. Fixed recipe synchronization ordering during BO cache negotiation so recipe-book unlocks and later packets cannot overtake the recipe table, restoring craftable candidates and recipe auto-fill. Preserve original encoded bytes when releasing queued packets.
-2. Let Sable-related entities and their riding relationships pass through entity gates without merging or rebuilding movement packets, preserving Sable coordinate metadata while retaining BO transport compression.
+2. Reserve bounded FULL replay data before advertising chunk REF/PATCH dependencies; send FULL when recovery storage is unavailable, and retain unanswered recovery data until response or disconnect.
+3. Release original batch payloads and redundant fallback/frame copies before asynchronous socket writes finish, reducing memory retained during outbound congestion while preserving exact delivery and completion accounting.
+4. Identify heavy custom-payload channels even when they first appear after the bounded source table fills. Report recent logical bytes, packet counts, connection backlog, and unattributed traffic explicitly.
+5. Added outbound socket queue admission limits: 128 MiB per connection and 512 MiB of globally managed unfinished wire charge. Exceeding a budget closes the triggering connection and reports the reason and recent producers. Keep reservations until actual write completion or closure, including when the caller cancels its completion promise. Large traffic that continues draining is not blocked solely for its cumulative volume.
+6. Replaced normal-play off-screen entity suppression with short, exact relative-movement coalescing, removing the old turn-back teleport recovery behavior. No fixed bandwidth reduction is claimed.
+7. Let Sable-related entities and their riding relationships pass through entity gates without merging or rebuilding movement packets, preserving Sable coordinate metadata while retaining BO transport compression.
+8. Abort BO startup when its bundled private Zstd runtime is missing or damaged, with source location and expected/actual length and SHA-256 in the error. Automatically repair damaged extracted disk-cache copies when the bundled runtime is intact.
+9. Added Fabric 26.1.2 and 26.2 beta builds and consolidated shared cross-version sources and verification tasks.
+10. Improved BO report source attribution and JVM metrics, large-report viewing, and recipe-analysis localization in BO Stats.
 
 Thanks to ILICH-Iliq for collaborating on the recipe synchronization fix.
-
-#### v5.10.31.137
-
-1. Reserve bounded FULL replay data before advertising chunk REF/PATCH dependencies; send FULL when recovery storage is unavailable, and retain unanswered recovery data until response or disconnect.
-2. Release original batch payloads and redundant fallback/frame copies before asynchronous socket writes finish, preserving exact packet delivery and completion accounting.
-3. Automatically warn when sustained outbound connection pressure coincides with heavy traffic from a named custom-payload channel; include recent logical bytes, packet counts and connection backlog, with bounded metadata and a warning cooldown.
-
-#### v5.10.30.135
-
-1. Abort BO startup when its bundled private Zstd runtime is missing or damaged, with the source location and expected/actual length and SHA-256 in the error. Preserve automatic repair when only the extracted disk cache is damaged.
 
 #### v5.10.30.134-release
 
