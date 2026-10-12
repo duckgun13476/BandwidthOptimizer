@@ -53,6 +53,7 @@ public final class UnifiedBandwidthReportCollector {
     private static UnifiedBandwidthReport.Section transportSection() {
         ChannelTransportTelemetry.Snapshot snapshot = ChannelTransportTelemetry.snapshot();
         List<UnifiedBandwidthReport.Metric> metrics = new ArrayList<>();
+        add(metrics, "counters_started_at_millis", "Counters started at", ChannelTransportTelemetry.countersStartedAtMillis(), "timestamp", "observation", "process", "Counter initialization or latest reset, in epoch milliseconds.");
         appendDirection(metrics, "outbound", snapshot.outbound());
         appendDirection(metrics, "inbound", snapshot.inbound());
         return section(
@@ -97,6 +98,7 @@ public final class UnifiedBandwidthReportCollector {
     private static UnifiedBandwidthReport.Section serverSection() {
         ServerBandwidthStatsRegistry.TotalsSnapshot snapshot = ServerBandwidthStatsRegistry.snapshotSessionTotals();
         List<UnifiedBandwidthReport.Metric> metrics = new ArrayList<>();
+        add(metrics, "counters_started_at_millis", "Counters started at", ServerBandwidthStatsRegistry.countersStartedAtMillis(), "timestamp", "observation", "server_session", "Counter initialization or latest session reset, in epoch milliseconds.");
         add(metrics, "active_channels", "Active channels", snapshot.activeChannels(), "channels", "connection", "server_session", "Currently tracked channels.");
         add(metrics, "bound_players", "Bound players", snapshot.boundPlayers(), "players", "connection", "server_session", "Currently bound player channels; identities are not exported.");
         add(metrics, "outbound_raw_bytes", "Outbound raw", snapshot.outboundRawEncodedBytes(), "bytes", "logical_packet", "server_session", "Server logical encoded bytes.");

@@ -108,6 +108,14 @@ const sourcePeriodLabel = {
   'en-US': 'Window: this server run, which may differ from the monthly traffic window above.',
   'pt-BR': 'Período: esta execução do servidor, que pode diferir do tráfego mensal acima.'
 };
+const periodLabels = {
+  'zh-CN': { hour: '小时', day: '天', trend: '流量趋势', granularity: '趋势粒度', dailyNote: '按浏览器时区汇总已记录的小时；缺失小时不补零。', hours: '已记录小时', partial: '未完成记录', details: '累计流量与报告生成时的状态；不受总览的版本筛选影响。', transport: '传输计数器初始化或最近清零后累计。', server: '服务器统计会话累计，包含已断开的连接；手动清零后重新累计。', other: '累计计数从各模块初始化或最近清零起算；内存、缓存和开关为报告生成时的状态。', start: '统计开始', unknown: '旧报告未记录起点', end: '报告生成', counters: '包数量与映射明细' },
+  'en-US': { hour: 'Hour', day: 'Day', trend: 'Traffic trend', granularity: 'Trend interval', dailyNote: 'Recorded hours summed in your browser time zone; missing hours are not filled with zero.', hours: 'Recorded hours', partial: 'Incomplete records', details: 'Cumulative traffic and state at report creation; unaffected by the overview version filter.', transport: 'Transport counters since initialization or the last reset.', server: 'Totals for this server statistics session, including closed connections; manual reset starts them again.', other: 'Counters since module initialization or last reset; memory, caches and switches show state at report creation.', start: 'Statistics started', unknown: 'Start not recorded in older report', end: 'Report created', counters: 'Packet counts and mapping details' },
+  'pt-BR': { hour: 'Hora', day: 'Dia', trend: 'Tendência do tráfego', granularity: 'Intervalo', dailyNote: 'Horas registradas somadas no fuso do navegador; horas ausentes não são preenchidas com zero.', hours: 'Horas registradas', partial: 'Registros incompletos', details: 'Tráfego acumulado e estado na criação do relatório; não afetados pelo filtro de versão.', transport: 'Contadores de transporte desde a inicialização ou último reset.', server: 'Totais desta sessão, incluindo conexões encerradas; zerar manualmente reinicia os totais.', other: 'Contadores desde a inicialização ou último reset; memória, caches e opções mostram o estado na criação do relatório.', start: 'Início das estatísticas', unknown: 'Início não registrado no relatório antigo', end: 'Relatório criado', counters: 'Contagens e detalhes de mapeamento' }
+};
+const pt = key => (periodLabels[language] || periodLabels['en-US'])[key];
+const cutoffLabels = { 'zh-CN': '统计截至', 'en-US': 'Counters observed at', 'pt-BR': 'Contadores observados em' };
+let trendGranularity = 'hour';
 const jvmLabels = {
   'zh-CN': { title: 'JVM 运行状态', description: '生成报告时的堆状态及进程累计计数；包含所有模组。', process: '进程累计', jvm_heap: 'JVM 堆', jvm_gc: '垃圾回收', jvm: 'JVM', milliseconds: '毫秒', events: '次' },
   'en-US': { title: 'JVM health', description: 'Heap state at report time and cumulative process counters across all mods.', process: 'Process cumulative', jvm_heap: 'JVM heap', jvm_gc: 'Garbage collection', jvm: 'JVM', milliseconds: 'ms', events: 'events' },
@@ -379,7 +387,13 @@ function playerOptions(players) {
 
 function renderTrend(history) {
   if (!history) return;
-  document.querySelector('#trend-period').textContent = `${formatDate(history.periodStartMillis)} - ${formatDate(history.periodEndMillis - 1)}`;
+  document.querySelector('#trend-title').textContent = pt('trend');
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  document.querySelector('#trend-period').textContent = `${formatDate(history.periodStartMillis)} - ${formatDate(history.periodEndMillis - 1)} · ${zone}${trendGranularity === 'day' ? ' · ' + pt('dailyNote') : ''}`;
+  const granularity = document.querySelector('#trend-granularity');
+  granularity.setAttribute('aria-label', pt('granularity'));
+  granularity.innerHTML = ['hour', 'day'].map(value => `<button type="button" data-interval="${value}" aria-pressed="${trendGranularity === value}">${escapeText(pt(value))}</button>`).join('');
+  granularity.querySelectorAll('button').forEach(button => button.addEventListener('click', () => { trendGranularity = button.dataset.interval; chartHoverIndex = -1; renderTrend(history); }));
   const legend = document.querySelector('#trend-legend');
   legend.innerHTML = ['total', 'outbound', 'inbound'].map(series => `<button type="button" class="legend-${series}" data-series="${series}" aria-pressed="${visibleSeries.has(series)}"><span class="legend-dot"></span>${escapeText(t(series))}</button>`).join('');
   legend.querySelectorAll('button').forEach(button => button.addEventListener('click', () => {
@@ -395,12 +409,27 @@ function renderTrend(history) {
 function chartPoints(history) {
   const uuid = document.querySelector('#trend-player').value;
   const selectedVersion = document.querySelector('#trend-version').value;
-  return (history?.hours || []).filter(hour => selectedVersion === '__all' || hourVersion(hour) === selectedVersion).map(hour => {
+  const hourly = (history?.hours || []).filter(hour => selectedVersion === '__all' || hourVersion(hour) === selectedVersion).map(hour => {
     const traffic = uuid === '__server' ? hour.totals : (hour.players || []).find(player => player.playerUuid === uuid);
     const outbound = Number(traffic?.outboundWireBytes || 0);
     const inbound = Number(traffic?.inboundWireBytes || 0);
-    return { time: hour.periodStartMillis, version: hourVersion(hour), outbound, inbound, total: outbound + inbound };
+    return { time: hour.periodStartMillis, version: hourVersion(hour), outbound, inbound, total: outbound + inbound, incomplete: !hour.complete };
+  }).sort((a, b) => a.time - b.time);
+  return trendGranularity === 'day' ? aggregateDailyPoints(hourly) : hourly;
+}
+
+function aggregateDailyPoints(hourly) {
+  const days = new Map();
+  hourly.forEach(point => {
+    const date = new Date(point.time);
+    const time = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    let day = days.get(time);
+    if (!day) { day = { time, outbound: 0, inbound: 0, total: 0, versions: new Set(), hours: new Set(), partial: 0 }; days.set(time, day); }
+    day.outbound += point.outbound; day.inbound += point.inbound; day.total += point.total;
+    day.versions.add(point.version); day.hours.add(point.time);
+    if (point.incomplete) day.partial++;
   });
+  return [...days.values()].sort((a, b) => a.time - b.time).map(day => ({ time: day.time, outbound: day.outbound, inbound: day.inbound, total: day.total, version: [...day.versions].join(' / '), recordedHours: day.hours.size, partial: day.partial }));
 }
 
 function drawChart(history) {
@@ -460,7 +489,7 @@ function drawChart(history) {
   for (let i = 0; i < tickCount; i++) {
     const index = Math.round((points.length - 1) * i / Math.max(1, tickCount - 1));
     context.fillStyle = text; context.textAlign = i === 0 ? 'left' : i === tickCount - 1 ? 'right' : 'center';
-    context.fillText(formatChartHour(points[index]?.time), x(index), height - 14);
+    context.fillText(trendGranularity === 'day' ? formatDate(points[index]?.time) : formatChartHour(points[index]?.time), x(index), height - 14);
   }
   active.forEach(series => {
     context.strokeStyle = colors[series]; context.lineWidth = 2; context.lineJoin = 'round'; context.beginPath();
@@ -472,14 +501,14 @@ function drawChart(history) {
     const hoverX = x(chartHoverIndex);
     context.strokeStyle = text; context.lineWidth = 1; context.beginPath(); context.moveTo(hoverX, pad.top); context.lineTo(hoverX, pad.top + innerHeight); context.stroke();
     active.forEach(series => { context.fillStyle = colors[series]; context.beginPath(); context.arc(hoverX, y(point[series]), 3.5, 0, Math.PI * 2); context.fill(); });
-    const lines = [formatHour(point.time), `${t('version')}  ${versionLabel(point.version)}`, ...active.map(series => `${t(series)}  ${bytes(point[series])}`)];
+    const lines = [trendGranularity === 'day' ? formatDate(point.time) : formatHour(point.time), `${t('version')}  ${versionLabel(point.version)}`, ...active.map(series => `${t(series)}  ${bytes(point[series])}`), ...(trendGranularity === 'day' ? [`${pt('hours')}: ${point.recordedHours} · ${pt('partial')}: ${point.partial}`] : [])];
     const boxWidth = Math.max(...lines.map(line => context.measureText(line).width)) + 24;
     const boxHeight = lines.length * 20 + 10;
     const boxX = hoverX + boxWidth + 16 > width ? hoverX - boxWidth - 10 : hoverX + 10;
     const boxY = pad.top + 6;
     context.fillStyle = surface; context.fillRect(boxX, boxY, boxWidth, boxHeight);
     context.strokeStyle = grid; context.strokeRect(boxX, boxY, boxWidth, boxHeight);
-    lines.forEach((line, index) => { context.fillStyle = index < 2 ? foreground : colors[active[index - 2]]; context.textAlign = 'left'; context.fillText(line, boxX + 12, boxY + 15 + index * 20); });
+    lines.forEach((line, index) => { context.fillStyle = index < 2 || index >= active.length + 2 ? foreground : colors[active[index - 2]]; context.textAlign = 'left'; context.fillText(line, boxX + 12, boxY + 15 + index * 20); });
   }
 }
 
@@ -544,14 +573,24 @@ function hideRankingTooltip() {
 }
 
 function renderDetails(sections) {
+  document.querySelector('#details-subtitle').textContent = pt('details');
   const renderers = { transport: renderTransportDetails, server: renderServerDetails, entity_interpolation: renderEntityInterpolationDetails, recipe: renderRecipeDetails, chunk: renderChunkDetails, diagnostics: renderDiagnosticDetails };
   document.querySelector('#sections').innerHTML = sections.map(section => (renderers[section.id] || renderGenericDetails)(section)).join('');
+  document.querySelectorAll('.pipeline-facts').forEach(facts => {
+    const disclosure = document.createElement('details');
+    const summary = document.createElement('summary');
+    summary.textContent = pt('counters');
+    facts.before(disclosure); disclosure.append(summary, facts);
+  });
 }
 
 function detailSection(section, content, extraClass = '') {
   const title = section.id === 'jvm' ? jvmLabels[language].title : t('sections')[section.id] || section.title;
   const description = section.id === 'jvm' ? jvmLabels[language].description : t('descriptions')[section.id] || section.description;
-  return `<section class="detail-band ${extraClass}"><div class="detail-heading"><div><h3>${escapeText(title)}</h3><p>${escapeText(description)}</p></div></div>${content}</section>`;
+  const started = sectionMetrics(section).counters_started_at_millis?.value;
+  const period = section.id === 'transport' ? pt('transport') : section.id === 'server' ? pt('server') : pt('other');
+  const dates = ['transport', 'server'].includes(section.id) ? `<p>${escapeText(pt('start'))}: ${escapeText(Number(started) > 0 ? formatDateTime(started) : pt('unknown'))} → ${escapeText(pt('end'))}: ${escapeText(formatDateTime(reportBundle.generatedAtMillis))} · ${escapeText(Intl.DateTimeFormat().resolvedOptions().timeZone)}</p>` : '';
+  return `<section class="detail-band ${extraClass}"><div class="detail-heading"><div><h3>${escapeText(title)}</h3><p>${escapeText(description)}</p><p>${escapeText(period)}</p>${dates}</div></div>${content}</section>`;
 }
 
 function sectionMetrics(section) {
@@ -667,6 +706,14 @@ function renderBypass(bypass) {
   node.innerHTML = `<h3>${escapeText(t('bypassAnalysis'))}</h3><p>${escapeText(t('bypassSubtitle'))}</p><div class="bypass-summary"><div><small>${escapeText(t('cumulativeTraffic'))}</small><strong>${bytes(bypass.totalBytes)}</strong><span>${new Intl.NumberFormat(language).format(Number(bypass.totalPackets || 0))} ${escapeText(t('units').packets)}</span></div><div><small>${escapeText(t('windowTraffic'))}</small><strong>${bytes(bypass.windowBytes)}</strong><span>${new Intl.NumberFormat(language).format(Number(bypass.windowPackets || 0))} ${escapeText(t('units').packets)}</span></div><div><small>${escapeText(t('capturedKeys'))}</small><strong>${entries.length} / ${new Intl.NumberFormat(language).format(Number(bypass.distinctKeys || 0))}</strong><span>${escapeText(t('distinctKeys'))}</span></div></div><div class="bypass-subheading"><h4>${escapeText(t('bypassSources'))}</h4></div><div class="bypass-list">${sourceRows}</div><div class="pagination" id="bypassSources-pagination"></div><div class="bypass-subheading"><h4>${escapeText(t('bypassEntries'))}</h4></div><div class="bypass-list">${entryRows}</div><div class="pagination" id="bypassEntries-pagination"></div>`;
   renderPagination('bypassSources', sources.length, () => renderBypass(bypass));
   renderPagination('bypassEntries', entries.length, () => renderBypass(bypass));
+  node.insertAdjacentHTML('afterbegin', observationPeriod(bypass));
+}
+
+function observationPeriod(snapshot) {
+  const started = Number(snapshot.countersStartedAtMillis);
+  const observed = Number(snapshot.observedAtMillis);
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return `<p>${escapeText(pt('start'))}: ${escapeText(started > 0 ? formatDateTime(started) : pt('unknown'))} → ${escapeText(cutoffLabels[language] || cutoffLabels['en-US'])}: ${escapeText(formatDateTime(observed > 0 ? observed : reportBundle.generatedAtMillis))} · ${escapeText(zone)}</p>${snapshot.windowStartedAtMillis ? `<p>${escapeText(t('windowTraffic'))}: ${escapeText(formatDateTime(snapshot.windowStartedAtMillis))} → ${escapeText(formatDateTime(observed))}</p>` : ''}`;
 }
 
 const sourceDetailLabels = {
@@ -700,10 +747,11 @@ function renderSourceTraffic(snapshot) {
   const missingKeys = Math.max(0, Number(snapshot.distinctKeys || 0) - entries.length);
   const missingBytes = Math.max(0, total - listedBytes);
   node.className = 'section bypass-section';
-  const controls = detailed ? `<select id="source-traffic-order" aria-label="${escapeText(labels.title)}">${Object.entries(orders).map(([key, label]) => `<option value="${key}" ${key === sourceTrafficOrder ? 'selected' : ''}>${escapeText(labels[label])}</option>`).join('')}</select><p>${escapeText(labels.observed)}: ${snapshot.observedAtMillis ? escapeText(new Date(snapshot.observedAtMillis).toLocaleString(language)) : '—'} · ${escapeText(labels.window)}: ${snapshot.windowStartedAtMillis && snapshot.observedAtMillis ? escapeText(new Date(snapshot.windowStartedAtMillis).toLocaleString(language)) + ' – ' + escapeText(new Date(snapshot.observedAtMillis).toLocaleString(language)) : '—'}</p>` : '';
+  const controls = detailed ? `<select id="source-traffic-order" aria-label="${escapeText(labels.title)}">${Object.entries(orders).map(([key, label]) => `<option value="${key}" ${key === sourceTrafficOrder ? 'selected' : ''}>${escapeText(labels[label])}</option>`).join('')}</select>` : '';
   node.innerHTML = `<h3>${escapeText(labels.title)}</h3><p>${escapeText(detailed ? labels.note : rt('sourceNote') + ' ' + sourcePeriodLabel[language])}</p>${controls}<div class="bypass-summary"><div><small>${escapeText(labels[orders[totalField]])}</small><strong>${bytes(total)}</strong><span>${escapeText(labels.coverage)}: ${total > 0 ? (100 * listedBytes / total).toFixed(2) : '0.00'}%</span></div><div><small>${escapeText(rt('sourceKeys'))}</small><strong>${entries.length} / ${new Intl.NumberFormat(language).format(Number(snapshot.distinctKeys || 0))}</strong></div><div><small>${escapeText(t('unlistedKeys'))}</small><strong>${bytes(missingBytes)}</strong><span>${new Intl.NumberFormat(language).format(missingKeys)} ${escapeText(t('units').entries)}</span></div></div><div class="bypass-list">${rows}</div><div class="pagination" id="sources-pagination"></div>`;
   node.querySelector('#source-traffic-order')?.addEventListener('change', event => { sourceTrafficOrder = event.target.value; pages.sources.page = 1; renderSourceTraffic(snapshot); });
   renderPagination('sources', entries.length, () => renderSourceTraffic(snapshot));
+  node.insertAdjacentHTML('afterbegin', observationPeriod(snapshot));
 }
 
 function aggregateBypassSources(entries, bypass) {
@@ -812,7 +860,7 @@ function renderPagination(name, count, rerender) {
 
 function pageSlice(rows, state) { const start = (state.page - 1) * state.size; return rows.slice(start, start + state.size); }
 function metricLabel(item) { const short = item.id.split('.').pop(); return (item.sectionId === 'recipe' && recipeLabels[language]?.[item.id]) || (item.sectionId === 'entity_interpolation' && entityInterpolationLabels[language]?.[item.id]) || reportLabels[language]?.[item.id] || metricLabels[language]?.[item.id] || metricLabels[language]?.[short] || item.label; }
-function metricValue(item) { if (item.unit === 'bytes') return bytes(item.value); if (item.unit === 'boolean') return Number(item.value) ? t('enabled') : t('disabled'); return `${new Intl.NumberFormat(language).format(Number(item.value || 0))} ${t('units')[item.unit] || jvmLabels[language][item.unit] || item.unit}`; }
+function metricValue(item) { if (item.unit === 'timestamp') return formatDateTime(item.value); if (item.unit === 'bytes') return bytes(item.value); if (item.unit === 'boolean') return Number(item.value) ? t('enabled') : t('disabled'); return `${new Intl.NumberFormat(language).format(Number(item.value || 0))} ${t('units')[item.unit] || jvmLabels[language][item.unit] || item.unit}`; }
 function totalWire(traffic) { return Number(traffic?.outboundWireBytes || 0) + Number(traffic?.inboundWireBytes || 0); }
 function emptyRow(columns) { return `<tr><td colspan="${columns}" class="empty">${escapeText(t('noData'))}</td></tr>`; }
 function formatDate(value) { return new Intl.DateTimeFormat(language, { dateStyle: 'medium' }).format(new Date(value)); }

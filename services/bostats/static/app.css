@@ -74,7 +74,9 @@ h2 { font-size: 16px; line-height: 1.2; margin: 0; font-weight: 650; }
 .section-heading > div:first-child { min-width: 0; }
 .section-heading span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
 .trend-heading { align-items: center; }
-.trend-controls { display: flex; align-items: center; gap: 9px; }
+.trend-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+#trend-granularity { min-height: 0; padding: 0; border-bottom: 0; flex-wrap: nowrap; }
+.pipeline-lane details > summary { cursor: pointer; padding: 10px 12px; color: var(--muted); font-size: 12px; }
 .trend-controls label { color: var(--muted); font-size: 12px; }
 .trend-controls select { min-width: 150px; }
 #trend-player { min-width: 220px; }

@@ -14,7 +14,8 @@ public final class SourceTrafficDetailRegressionMain {
         var live = ChannelTransportSourceRankCore.snapshotForReport(1);
         require(live.entries().size() == 2, "raw and actual leaders must both survive truncation");
         require(live.actualBytes() == 100 && live.rawBytes() == 1100, "live totals");
-        require(live.observedAtMillis() == 0, "no completed window yet");
+        require(live.windowStartedAtMillis() == 0, "no completed window yet");
+        require(live.countersStartedAtMillis() > 0 && live.observedAtMillis() >= live.countersStartedAtMillis(), "cumulative observation period");
         Method snapshot = ChannelTransportSourceRankCore.class.getDeclaredMethod("snapshotEntries");
         snapshot.setAccessible(true);
         List<?> drained = (List<?>) snapshot.invoke(null);
@@ -44,6 +45,18 @@ public final class SourceTrafficDetailRegressionMain {
         var roundTrip = new Gson().fromJson(json, ChannelTransportSourceRankCore.SourceTrafficSnapshot.class);
         require(roundTrip.equals(bounded), "upload JSON must retain all detail fields");
         require(!json.contains("private-channel"), "JSON channel privacy");
+        var telemetryStart = com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry.class.getDeclaredField("countersStartedAtMillis");
+        telemetryStart.setAccessible(true);
+        telemetryStart.setLong(null, 1L);
+        com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry.reset();
+        require(com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry.countersStartedAtMillis() > 1L, "transport reset renews period");
+        var sessionStart = com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry.class.getDeclaredField("countersStartedAtMillis");
+        sessionStart.setAccessible(true);
+        sessionStart.setLong(null, 1L);
+        com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry.resetAll();
+        require(com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry.countersStartedAtMillis() > 1L, "server reset renews period");
+        var bypass = com.PinkCats.bandwidthoptimizer.channel.ChannelTransportBypassRankCore.snapshot(100);
+        require(bypass.countersStartedAtMillis() > 0 && bypass.observedAtMillis() >= bypass.windowStartedAtMillis(), "bypass periods");
         System.out.println("Source traffic detail regression passed.");
     }
 

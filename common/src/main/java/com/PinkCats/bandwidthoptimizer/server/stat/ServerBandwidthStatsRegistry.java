@@ -40,6 +40,9 @@ public final class ServerBandwidthStatsRegistry {
     private static final ChannelBandwidthStats CLOSED_SESSION_TOTALS =
             new ChannelBandwidthStats("<closed-session>");
     private static Object sessionOwner;
+    private static volatile long countersStartedAtMillis = System.currentTimeMillis();
+
+    public static long countersStartedAtMillis() { return countersStartedAtMillis; }
 
     private ServerBandwidthStatsRegistry() {}
 
@@ -115,6 +118,7 @@ public final class ServerBandwidthStatsRegistry {
 
     public static void resetAll() {
         synchronized (SESSION_TOTALS_LOCK) {
+            countersStartedAtMillis = System.currentTimeMillis();
             PlayerTrafficPeriodArchive.beforeCountersReset(snapshotChannels());
             for (ChannelBandwidthStats stats : ACTIVE_CHANNELS.values()) {
                 if (stats != null) {

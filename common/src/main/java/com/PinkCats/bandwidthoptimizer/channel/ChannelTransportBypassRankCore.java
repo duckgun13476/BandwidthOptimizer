@@ -44,6 +44,8 @@ public final class ChannelTransportBypassRankCore {
     });
 
     private static long windowBypassCount;
+    private static final long COUNTERS_STARTED_AT_MILLIS = System.currentTimeMillis();
+    private static long windowStartedAtMillis = COUNTERS_STARTED_AT_MILLIS;
     private static long windowBypassBytes;
     private static long totalBypassCount;
     private static long totalBypassBytes;
@@ -131,6 +133,9 @@ public final class ChannelTransportBypassRankCore {
                     totalBypassCount,
                     totalBypassBytes,
                     COUNTERS.size(),
+                    COUNTERS_STARTED_AT_MILLIS,
+                    windowStartedAtMillis,
+                    System.currentTimeMillis(),
                     entries
             );
         }
@@ -190,6 +195,7 @@ public final class ChannelTransportBypassRankCore {
         }
         windowBypassCount = 0L;
         windowBypassBytes = 0L;
+        windowStartedAtMillis = System.currentTimeMillis();
     }
 
     private static void logEntries(List<Map.Entry<BypassKey, BypassCounter>> entries, int topN) {
@@ -843,6 +849,9 @@ public final class ChannelTransportBypassRankCore {
             long totalPackets,
             long totalBytes,
             int distinctKeys,
+            long countersStartedAtMillis,
+            long windowStartedAtMillis,
+            long observedAtMillis,
             List<BypassEntry> entries
     ) {
     }

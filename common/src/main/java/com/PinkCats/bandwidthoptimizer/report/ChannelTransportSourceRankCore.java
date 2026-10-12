@@ -37,6 +37,7 @@ public final class ChannelTransportSourceRankCore {
     private static final DateTimeFormatter REPORT_DISPLAY_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.ROOT);
     private static final ConcurrentHashMap<SourceKey, SourceCounter> COUNTERS = new ConcurrentHashMap<>();
     private static volatile SourceTrafficSnapshot latestTrafficSnapshot;
+    private static final long COUNTERS_STARTED_AT_MILLIS = System.currentTimeMillis();
     private static long windowStartedAtMillis = System.currentTimeMillis();
     private static final LongAdder CREATE_BLOCK_ENTITY_PACKET_COUNT = new LongAdder();
     private static final LongAdder CREATE_BLOCK_ENTITY_RAW_BYTES = new LongAdder();
@@ -115,7 +116,7 @@ public final class ChannelTransportSourceRankCore {
                     completed.windowStartedAtMillis(), completed.observedAtMillis(), limit);
             return new SourceTrafficSnapshot(completed.distinctKeys(), view.packets(), view.rawBytes(),
                     view.actualBytes(), view.windowPackets(), view.windowRawBytes(), view.windowActualBytes(),
-                    view.windowStartedAtMillis(), view.observedAtMillis(), view.rankingLimit(), view.entries());
+                    view.windowStartedAtMillis(), view.observedAtMillis(), view.rankingLimit(), view.countersStartedAtMillis(), view.entries());
         }
         List<SourceTrafficEntry> entries = new ArrayList<>(COUNTERS.size());
         long packets = 0L;
@@ -141,13 +142,13 @@ public final class ChannelTransportSourceRankCore {
         entries.sort(Comparator.comparingLong(SourceTrafficEntry::rawBytes).reversed()
                 .thenComparing(SourceTrafficEntry::sourceKey)
                 .thenComparing(SourceTrafficEntry::packetClassName));
-        return trafficSnapshot(entries, packets, rawBytes, actualBytes, 0, 0, 0, 0, 0, limit);
+        return trafficSnapshot(entries, packets, rawBytes, actualBytes, 0, 0, 0, 0, System.currentTimeMillis(), limit);
     }
 
     public record SourceTrafficSnapshot(int distinctKeys, long packets, long rawBytes,
                                         long actualBytes, long windowPackets, long windowRawBytes,
                                         long windowActualBytes, long windowStartedAtMillis,
-                                        long observedAtMillis, int rankingLimit,
+                                        long observedAtMillis, int rankingLimit, long countersStartedAtMillis,
                                         List<SourceTrafficEntry> entries) {
     }
 
@@ -172,7 +173,7 @@ public final class ChannelTransportSourceRankCore {
                     .thenComparingInt(SourceTrafficEntry::rawPacketId)).limit(bounded).forEach(selected::add);
         }
         return new SourceTrafficSnapshot(entries.size(), packets, rawBytes, actualBytes,
-                windowPackets, windowRawBytes, windowActualBytes, started, observed, bounded,
+                windowPackets, windowRawBytes, windowActualBytes, started, observed, bounded, COUNTERS_STARTED_AT_MILLIS,
                 List.copyOf(selected));
     }
 

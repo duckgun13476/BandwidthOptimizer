@@ -69,7 +69,12 @@ public final class ChannelTransportTelemetry {
 
     private ChannelTransportTelemetry() {}
 
+    private static volatile long countersStartedAtMillis = System.currentTimeMillis();
+
+    public static long countersStartedAtMillis() { return countersStartedAtMillis; }
+
     public static void reset() {
+        countersStartedAtMillis = System.currentTimeMillis();
         OUTBOUND_WRAP_COUNT.set(0L);
         INBOUND_UNWRAP_COUNT.set(0L);
         OUTBOUND_SHRINK_SAMPLE_COUNT.set(0L);

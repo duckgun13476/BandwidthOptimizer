@@ -238,6 +238,7 @@ class BostatsServerRegression(unittest.TestCase):
                     "actualBytes": 100, "windowPackets": 3, "windowRawBytes": 300,
                     "windowActualBytes": 40, "windowStartedAtMillis": 1000,
                     "observedAtMillis": 2000, "rankingLimit": 100,
+                    "countersStartedAtMillis": 500,
                     "entries": [{"sourceKey": "custom_payload:test:channel",
                                  "packetClassName": "CustomPayload", "rawPacketId": 23,
                                  "rawBytes": 900, "actualBytes": 90, "packets": 9,
@@ -311,7 +312,8 @@ class BostatsServerRegression(unittest.TestCase):
 
         self.assertIn('id="report-version"', index)
         self.assertIn('id="trend-version"', index)
-        self.assertIn('app.js?v=20', index)
+        self.assertIn('app.js?v=21', index)
+        self.assertIn('id="trend-granularity"', index)
         self.assertIn('id="source-traffic-section"', index)
         self.assertIn('id="scope-note"', index)
         self.assertIn("legacyVersion: '< 133版本'", javascript)

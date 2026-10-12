@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>BO Stats</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="/static/app.css?v=18">
+  <link rel="stylesheet" href="/static/app.css?v=19">
 </head>
 <body>
   <header>
@@ -57,6 +57,7 @@
         <div class="section-heading trend-heading">
           <div><h2 id="trend-title">小时流量趋势</h2><span id="trend-period"></span></div>
           <div class="trend-controls">
+            <div class="legend" id="trend-granularity" role="group" aria-label="趋势粒度"></div>
             <label for="trend-version" id="trend-version-label">版本</label>
             <select id="trend-version"></select>
             <label for="trend-player" id="trend-player-label">数据范围</label>
@@ -87,6 +88,6 @@
     </div>
   </main>
   <div id="ranking-tooltip" class="ranking-tooltip" role="tooltip" hidden></div>
-  <script src="/static/app.js?v=20" defer></script>
+  <script src="/static/app.js?v=21" defer></script>
 </body>
 </html>

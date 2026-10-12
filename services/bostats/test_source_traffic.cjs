@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, 'static/app.js'), 'utf8');
 let change;
-const node = { className: '', innerHTML: '', querySelector: () => ({ addEventListener: (_, callback) => { change = callback; } }) };
+const node = { className: '', innerHTML: '', insertAdjacentHTML: (_, html) => { node.innerHTML = html + node.innerHTML; }, querySelector: () => ({ addEventListener: (_, callback) => { change = callback; } }) };
 const context = {
   document: { querySelector: () => node }, language: 'en-US',
   pages: { sources: { page: 1, size: 10 } },
@@ -15,6 +15,7 @@ const context = {
   pageSlice: (rows, state) => rows.slice((state.page - 1) * state.size, state.page * state.size),
   renderPagination: () => {}
 };
+context.observationPeriod = () => 'observation period';
 vm.createContext(context);
 vm.runInContext(source.slice(source.indexOf('const sourceDetailLabels ='), source.indexOf('function aggregateBypassSources')), context);
 context.renderSourceTraffic(null);
