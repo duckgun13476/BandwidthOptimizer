@@ -656,6 +656,17 @@ tasks.register('runSableEntityGateCompatRegression', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.integration.sable.SableEntityGateCompatRegressionMain'
 }
 
+tasks.register('runSableControllerTargetProjectionRegression', JavaExec) {
+    group = 'verification'
+    dependsOn(tasks.named('testClasses'))
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.integration.sable.SableControllerTargetProjectionRegressionMain'
+    if (project.hasProperty('boSableCompanionTestJar')) {
+        classpath += files(project.property('boSableCompanionTestJar'))
+        systemProperty 'boSableRealPoseTest', 'true'
+    }
+}
+
 tasks.register('runSourceGateAccountingRegression', JavaExec) {
     group = 'verification'
     description = 'Verifies source-gate accounting deltas and IdleGate wire compatibility.'
