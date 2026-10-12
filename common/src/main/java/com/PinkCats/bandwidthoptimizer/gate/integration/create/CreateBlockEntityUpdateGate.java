@@ -8,6 +8,7 @@ import com.PinkCats.bandwidthoptimizer.chunk.peer.ChunkPeerStateManager;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.BlockEntityTypeKeyCompat;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat;
 import com.PinkCats.bandwidthoptimizer.integration.sable.SableDynamicStructureCompat;
+import com.PinkCats.bandwidthoptimizer.integration.sable.SableControllerTargetProjection;
 import com.PinkCats.bandwidthoptimizer.integration.valkyrienskies.ValkyrienSkiesDynamicStructureCompat;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
 import com.PinkCats.bandwidthoptimizer.gate.recovery.IdleGateRecoveryRegistry;
@@ -604,7 +605,13 @@ public final class CreateBlockEntityUpdateGate {
         if (isMovingContraptionController(typeKey)) {
             DynamicTarget createTarget = resolveCreateContraptionTarget(player, pos, typeKey);
             if (createTarget != null) {
-                return createTarget;
+                if (createTarget.forceImmediate()) {
+                    return createTarget;
+                }
+                SableControllerTargetProjection.Target projected = SableControllerTargetProjection.resolve(
+                        player, pos, typeKey, createTarget.target(), createTarget.points());
+                return new DynamicTarget(projected.center(), projected.points(),
+                        projected.forceImmediate(), createTarget.refreshRequired());
             }
             warnCreateContraptionFallback(player, typeKey, pos);
             return new DynamicTarget(vanillaTarget, vanillaPoints, true, false);
