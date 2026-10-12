@@ -1,3 +1,9 @@
+#### v5.10.32.140
+
+1. Fixed Create mechanical bearing update gating inside Sable sub-levels by transforming the bearing target and its bounds into world coordinates. Refresh the projection as the sub-level moves or rotates, preserving normal visibility gating and timely state recovery.
+
+Thanks to kalium (chidayuyu-stack) for the original BandwidthSableFix implementation and collaboration on this integration.
+
 #### v5.10.32.139
 
 Changes since the last public release, v5.10.30.134. Includes the fixes previously tested as builds 135, 137, and 138.
