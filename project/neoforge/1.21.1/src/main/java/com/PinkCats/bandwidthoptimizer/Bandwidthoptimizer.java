@@ -95,6 +95,7 @@ public class Bandwidthoptimizer {
 
     @SubscribeEvent
     public void onServerTick(ServerTickEvent.Post event) {
+        com.PinkCats.bandwidthoptimizer.integration.watut.WatutServerFrameCompat.tick(event.getServer());
         ChannelTransportCompressionCaptureManager.onServerTick(event);
         ChannelTransportPacketRankCaptureManager.onServerTick(event);
     }

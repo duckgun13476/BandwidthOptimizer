@@ -1,3 +1,9 @@
+#### v5.10.32.141-release
+
+1. Reuse identical complete WATUT GUI images on supported Forge and NeoForge integrations, preserving self delivery and fresh-viewer updates with bounded frame caches.
+2. Replay complete WATUT images only to nearby players in the same dimension on login, keeping image fragments out of persistent status snapshots.
+3. Add WATUT image, status and mouse traffic counters, separate client/server reuse savings, and localized report details with explicit observation periods.
+
 #### v5.10.32.140-release
 
 1. Fixed Create mechanical bearing synchronization inside moving or rotating Sable sub-levels.

@@ -14,6 +14,7 @@ public final class ServerBandwidthStatsLifecycleHooks {
 
     @SubscribeEvent
     public static void onServerStopping(ServerStoppingEvent event) {
+        com.PinkCats.bandwidthoptimizer.integration.watut.WatutServerFrameCompat.clear();
         ServerBandwidthStatsPersistence.flushOnServerStopping(event.getServer());
     }
 }

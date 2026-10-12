@@ -53,6 +53,8 @@ for (const language of ['en-US', 'zh-CN', 'pt-BR']) {
   context.t = key => key === 'sections' ? { transport: 'Transport' } : key === 'descriptions' ? { transport: 'Pipeline' } : 'Window';
   const details = context.detailSection({ id: 'transport', metrics: [{ id: 'counters_started_at_millis', value: 1000 }] }, 'stages');
   assert.match(details, /1000/); assert.match(details, /5000/);
+  const watutDetails = context.detailSection({ id: 'watut', title: 'WATUT', description: 'Image payload', metrics: [{ id: 'counters_started_at_millis', value: 1200 }] }, 'images');
+  assert.match(watutDetails, /1200/); assert.match(watutDetails, /5000/);
   assert.doesNotMatch(details, /undefined|NaN/);
 }
 console.log('Period regression passed (hour/day conservation, player/version filters, DST, missing hours, old/new intervals, three languages).');

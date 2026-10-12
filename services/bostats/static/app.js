@@ -85,6 +85,18 @@ const metricLabels = {
   'pt-BR': { frames: 'Quadros', packets: 'Pacotes lógicos', baseline_bytes: 'Bytes lógicos', vanilla_estimate_bytes: 'Estimativa vanilla', mapping_bytes: 'Bytes de mapeamento', zstd_body_bytes: 'Bytes do corpo Zstd', bo_frame_bytes: 'Bytes dos quadros BO', bypass_packets: 'Pacotes desviados', bypass_bytes: 'Bytes desviados', literal_entries: 'Entradas literais', exact_refs: 'Referências exatas', template_refs: 'Referências de modelo', active_channels: 'Conexões ativas', bound_players: 'Jogadores vinculados', outbound_raw_bytes: 'Saída original', outbound_vanilla_estimate_bytes: 'Estimativa vanilla de saída', outbound_wire_bytes: 'Saída medida', inbound_wire_bytes: 'Entrada medida', outbound_saved_bytes: 'Saída economizada', offline_reuse_saved_bytes: 'Economia do cache offline', temporary_reuse_saved_bytes: 'Economia do cache temporário', create_gate_observed_bytes: 'Observado pelo gate Create', create_gate_saved_bytes: 'Economia do gate Create', idle_gate_saved_bytes: 'Economia do gate AFK', 'hotspot.outbound.logical_bytes': 'Saída lógica hotspot', 'hotspot.outbound.frame_bytes': 'Quadros de saída hotspot', 'hotspot.inbound.logical_bytes': 'Entrada lógica hotspot', 'shadow.total_bytes': 'Cobertura lógica dos snapshots (não é memória)', 'shadow.retained_original_bytes': 'Payload original retido atualmente', 'runtime.total_bytes': 'Payload de referência em execução', 'reuse.temporary_saved_bytes': 'Reuso temporário do cliente', 'reuse.offline_saved_bytes': 'Reuso offline do cliente' }
 };
 
+const watutLabels = {
+  'zh-CN': { title: 'WATUT 截图复用', description: '从计数器初始化或重置到本次报告。字节仅计压缩截图负载，不含 NBT、BO 或线路封装。客户端节省只属于报告所在客户端；登录补图仅发给同维度附近玩家。', payload: '压缩截图负载', packet: 'WATUT 包分类', labels: { received_image_payload_bytes: '服务器收到的截图负载', received_image_packets: '收到的截图分片', received_state_packets: '收到的界面、聊天与挂机状态包', received_mouse_packets: '收到的鼠标包', received_other_packets: '收到的其他 WATUT 包', client_saved_payload_bytes: '本客户端重复截图节省', client_suppressed_frames: '本客户端抑制的重复帧', server_saved_payload_bytes: '服务器重复截图负载节省', server_suppressed_recipient_frames: '服务器避免的接收者帧', login_replay_payload_bytes: '登录定向补图负载', login_replay_recipient_frames: '登录定向补图帧' } },
+  'en-US': { title: 'WATUT image reuse', description: 'From counter initialization or reset to this report. Bytes count compressed screenshot payload only, excluding NBT, BO and socket framing. Client savings belong only to the reporting client; login images go only to nearby players in the same dimension.', payload: 'Compressed image payload', packet: 'WATUT packet category', labels: { received_image_payload_bytes: 'Image payload received by server', received_image_packets: 'Received image fragments', received_state_packets: 'Received GUI, chat and idle status packets', received_mouse_packets: 'Received mouse packets', received_other_packets: 'Other received WATUT packets', client_saved_payload_bytes: 'Image payload saved on this client', client_suppressed_frames: 'Duplicate frames suppressed on this client', server_saved_payload_bytes: 'Duplicate image payload saved by server', server_suppressed_recipient_frames: 'Recipient frames avoided by server', login_replay_payload_bytes: 'Targeted login image payload', login_replay_recipient_frames: 'Targeted login image frames' } },
+  'pt-BR': { title: 'Reuso de imagens WATUT', description: 'Da inicialização ou reinício dos contadores até este relatório. Bytes medem apenas o payload comprimido da imagem, sem NBT, BO ou encapsulamento de rede. A economia do cliente pertence somente ao cliente do relatório; imagens de entrada vão apenas a jogadores próximos na mesma dimensão.', payload: 'Payload comprimido da imagem', packet: 'Categoria de pacote WATUT', labels: { received_image_payload_bytes: 'Payload de imagem recebido pelo servidor', received_image_packets: 'Fragmentos de imagem recebidos', received_state_packets: 'Pacotes de interface, chat e inatividade recebidos', received_mouse_packets: 'Pacotes de mouse recebidos', received_other_packets: 'Outros pacotes WATUT recebidos', client_saved_payload_bytes: 'Payload de imagem economizado neste cliente', client_suppressed_frames: 'Quadros duplicados suprimidos neste cliente', server_saved_payload_bytes: 'Payload duplicado economizado pelo servidor', server_suppressed_recipient_frames: 'Quadros por destinatário evitados pelo servidor', login_replay_payload_bytes: 'Payload de imagem direcionado na entrada', login_replay_recipient_frames: 'Quadros de imagem direcionados na entrada' } }
+};
+for (const [locale, labels] of Object.entries(watutLabels)) {
+  translations[locale].sections.watut = labels.title;
+  translations[locale].descriptions.watut = labels.description;
+  translations[locale].stages.watut_image_payload = labels.payload;
+  translations[locale].stages.watut_semantic_packet = labels.packet;
+}
+
 const recipeLabels = {
   'zh-CN': { frames: '配方同步帧', full_frames: '完整帧', identity_frames: '复用帧', structural_delta_frames: '结构差量帧', byte_delta_frames: '字节差量帧', logical_bytes: '配方原始字节', payload_bytes: '配方载荷字节', frame_bytes: '配方 BO 帧字节', saved_bytes: '配方节省字节' },
   'en-US': { frames: 'Recipe sync frames', full_frames: 'Full frames', identity_frames: 'Reuse frames', structural_delta_frames: 'Structural delta frames', byte_delta_frames: 'Byte delta frames', logical_bytes: 'Recipe logical bytes', payload_bytes: 'Recipe payload bytes', frame_bytes: 'Recipe BO frame bytes', saved_bytes: 'Recipe saved bytes' },
@@ -589,7 +601,7 @@ function detailSection(section, content, extraClass = '') {
   const description = section.id === 'jvm' ? jvmLabels[language].description : t('descriptions')[section.id] || section.description;
   const started = sectionMetrics(section).counters_started_at_millis?.value;
   const period = section.id === 'transport' ? pt('transport') : section.id === 'server' ? pt('server') : pt('other');
-  const dates = ['transport', 'server'].includes(section.id) ? `<p>${escapeText(pt('start'))}: ${escapeText(Number(started) > 0 ? formatDateTime(started) : pt('unknown'))} → ${escapeText(pt('end'))}: ${escapeText(formatDateTime(reportBundle.generatedAtMillis))} · ${escapeText(Intl.DateTimeFormat().resolvedOptions().timeZone)}</p>` : '';
+  const dates = ['transport', 'server', 'watut'].includes(section.id) ? `<p>${escapeText(pt('start'))}: ${escapeText(Number(started) > 0 ? formatDateTime(started) : pt('unknown'))} → ${escapeText(pt('end'))}: ${escapeText(formatDateTime(reportBundle.generatedAtMillis))} · ${escapeText(Intl.DateTimeFormat().resolvedOptions().timeZone)}</p>` : '';
   return `<section class="detail-band ${extraClass}"><div class="detail-heading"><div><h3>${escapeText(title)}</h3><p>${escapeText(description)}</p><p>${escapeText(period)}</p>${dates}</div></div>${content}</section>`;
 }
 
@@ -673,7 +685,8 @@ function renderDiagnosticDetails(section) {
 }
 
 function renderGenericDetails(section) {
-  const content = section.metrics.every(item => item.unit === 'boolean') ? renderBooleanMetrics(section.metrics) : renderMetricGroups(section.metrics);
+  const metrics = section.metrics.map(item => ({ ...item, sectionId: section.id }));
+  const content = metrics.every(item => item.unit === 'boolean') ? renderBooleanMetrics(metrics) : renderMetricGroups(metrics);
   return detailSection(section, content);
 }
 
@@ -859,7 +872,7 @@ function renderPagination(name, count, rerender) {
 }
 
 function pageSlice(rows, state) { const start = (state.page - 1) * state.size; return rows.slice(start, start + state.size); }
-function metricLabel(item) { const short = item.id.split('.').pop(); return (item.sectionId === 'recipe' && recipeLabels[language]?.[item.id]) || (item.sectionId === 'entity_interpolation' && entityInterpolationLabels[language]?.[item.id]) || reportLabels[language]?.[item.id] || metricLabels[language]?.[item.id] || metricLabels[language]?.[short] || item.label; }
+function metricLabel(item) { const short = item.id.split('.').pop(); return (item.sectionId === 'watut' && watutLabels[language]?.labels[item.id]) || (item.sectionId === 'recipe' && recipeLabels[language]?.[item.id]) || (item.sectionId === 'entity_interpolation' && entityInterpolationLabels[language]?.[item.id]) || reportLabels[language]?.[item.id] || metricLabels[language]?.[item.id] || metricLabels[language]?.[short] || item.label; }
 function metricValue(item) { if (item.unit === 'timestamp') return formatDateTime(item.value); if (item.unit === 'bytes') return bytes(item.value); if (item.unit === 'boolean') return Number(item.value) ? t('enabled') : t('disabled'); return `${new Intl.NumberFormat(language).format(Number(item.value || 0))} ${t('units')[item.unit] || jvmLabels[language][item.unit] || item.unit}`; }
 function totalWire(traffic) { return Number(traffic?.outboundWireBytes || 0) + Number(traffic?.inboundWireBytes || 0); }
 function emptyRow(columns) { return `<tr><td colspan="${columns}" class="empty">${escapeText(t('noData'))}</td></tr>`; }

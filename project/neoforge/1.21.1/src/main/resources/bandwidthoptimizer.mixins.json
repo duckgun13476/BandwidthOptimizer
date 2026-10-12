@@ -16,7 +16,8 @@
     "minecraft.PacketOutPipeMixin",
     "minecraft.PacketInPipeMixin",
     "minecraft.ServerGamePacketListenerImplAccessor",
-    "minecraft.ServerKeepAliveTimeoutBoundaryMixin"
+    "minecraft.ServerKeepAliveTimeoutBoundaryMixin",
+    "watut.WatutPlayerStatusManagerServerMixin"
   ],
   "client": [
     "minecraft.PauseScreenDisconnectMixin",

@@ -13,6 +13,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(targets = "com.corosus.watut.PlayerStatusManagerClient", remap = false)
 public abstract class WatutPlayerStatusManagerClientMixin {
 
+    @Dynamic("Optional WATUT identical fresh-frame reuse")
+    @Inject(method = "sendScreenRenderData", at = @At("HEAD"), cancellable = true, require = 0, remap = false)
+    private void bandwidthoptimizer$reuseWatutFrame(@Coerce Object status, CallbackInfo ci) {
+        if (WatutDynamicGuiCompat.beforeSendScreenRenderData(this, status)) ci.cancel();
+    }
+
     @Dynamic("Optional WATUT compat")
     @Inject(method = "tickGame", at = @At("TAIL"), require = 0, remap = false)
     private void bandwidthoptimizer$throttleWatutDynamicGui(CallbackInfo ci) {
@@ -21,7 +27,7 @@ public abstract class WatutPlayerStatusManagerClientMixin {
 
     @Dynamic("Optional WATUT compat")
     @Inject(method = "sendScreenRenderData", at = @At("TAIL"), require = 0, remap = false)
-    private void bandwidthoptimizer$restoreWatutTextureBuffer(@Coerce Object status, CallbackInfo ci) {
+    private void bandwidthoptimizer$observeWatutFrame(@Coerce Object status, CallbackInfo ci) {
         WatutDynamicGuiCompat.afterSendScreenRenderData(this, status);
     }
 }

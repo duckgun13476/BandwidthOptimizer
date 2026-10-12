@@ -22,7 +22,8 @@
     "minecraft.ServerboundCustomPayloadPacketAccessor",
     "minecraft.ServerGamePacketListenerImplAccessor",
     "minecraft.ServerKeepAliveTimeoutBoundaryMixin",
-    "minecraft.ServerGamePacketListenerCommandMixin"
+    "minecraft.ServerGamePacketListenerCommandMixin",
+    "watut.WatutPlayerStatusManagerServerMixin"
   ],
   "client": [
     "minecraft.ClientPacketListenerChunkHandleMixin",

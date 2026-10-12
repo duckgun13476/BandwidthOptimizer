@@ -24,6 +24,7 @@ public final class ServerBandwidthStatsHudSync {
         }
 
         MinecraftServer server = event.getServer();
+        com.PinkCats.bandwidthoptimizer.integration.watut.WatutServerFrameCompat.tick(server);
         ServerBandwidthStatsPersistence.onServerTick(server);
         List<ServerPlayer> players = server.getPlayerList().getPlayers();
         if (players.isEmpty()) {

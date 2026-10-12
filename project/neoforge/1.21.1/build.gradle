@@ -923,3 +923,11 @@ tasks.register('runAll') {
         }
     }
 }
+
+
+tasks.register('runWatutFrameReuseRegression', JavaExec) {
+    group = 'verification'
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.PinkCats.bandwidthoptimizer.integration.watut.WatutFrameReuseRegressionMain'
+}

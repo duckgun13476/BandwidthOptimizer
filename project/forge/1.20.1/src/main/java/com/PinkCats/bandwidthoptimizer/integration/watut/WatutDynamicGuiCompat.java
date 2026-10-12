@@ -105,6 +105,44 @@ public final class WatutDynamicGuiCompat {
         }
     }
 
+    public static boolean beforeSendScreenRenderData(Object manager, Object status) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null) return false;
+        Object pixels = objectValue(screenData(status), "getTexturePixelData");
+        if (!(pixels instanceof ByteBuffer buffer)) return false;
+        State state = state(manager);
+        HashMap<UUID, Boolean> nearby = new HashMap<>();
+        double radius = Math.max(0, intStaticValue("com.corosus.watut.config.ConfigServerControlledSyncedToClient",
+                "distanceRequiredToShowGUIInfo", 10));
+        for (Player player : mc.level.players())
+            if (player.distanceToSqr(mc.player) < radius * radius) nearby.put(player.getUUID(), true);
+        int width = dynamicGuiDimension("widthScaledDown"), height = dynamicGuiDimension("heightScaledDown");
+        if (width <= 0 || height <= 0) return false;
+        boolean suppress = state.frameReuse.suppress(mc.level, mc.screen, buffer, width, height,
+                nearby.keySet(), mc.level.getGameTime());
+        if (suppress) {
+            WatutTrafficStats.clientSuppressed(buffer.remaining());
+            // Count only upload savings here. Server fanout reuse has its own observed counter.
+            ClientSourceGateStats.recordEstimatedSavings(buffer.remaining(), 0L, 1L);
+        }
+        return suppress;
+    }
+
+    private static int dynamicGuiDimension(String field) {
+        try {
+            String owner = "com.corosus.watut.client.screen.ScreenParticleRenderer";
+            Optional<Method> method = METHODS.computeIfAbsent(owner + "#guiInstance", ignored -> {
+                try { return Optional.of(Class.forName(owner).getMethod("getInstance")); }
+                catch (ReflectiveOperationException | LinkageError exception) { return Optional.empty(); }
+            });
+            Optional<Field> dimension = STATIC_FIELDS.computeIfAbsent(owner + "#" + field, ignored -> {
+                try { return Optional.of(Class.forName(owner).getField(field)); }
+                catch (ReflectiveOperationException | LinkageError exception) { return Optional.empty(); }
+            });
+            return method.isEmpty() || dimension.isEmpty() ? -1 : dimension.get().getInt(method.get().invoke(null));
+        } catch (ReflectiveOperationException | LinkageError ignored) { return -1; }
+    }
+
     private static void recordSuppressedFrame(State state, Player sourcePlayer) {
         long frameBytes = state.lastObservedFrameBytes;
         if (frameBytes <= 0L) {
@@ -430,6 +468,7 @@ public final class WatutDynamicGuiCompat {
     }
 
     private static final class State {
+        private final WatutClientFrameReuse frameReuse = new WatutClientFrameReuse();
         private int visibilityState = VISIBILITY_UNSEEN;
         private long lastAcceptedFrameTick = Long.MIN_VALUE;
         private long lastViewerCheckTick = Long.MIN_VALUE;
@@ -449,6 +488,7 @@ public final class WatutDynamicGuiCompat {
         }
 
         private void reset() {
+            frameReuse.reset();
             screenIdentity = null;
             visibilityState = VISIBILITY_UNSEEN;
             lastAcceptedFrameTick = Long.MIN_VALUE;

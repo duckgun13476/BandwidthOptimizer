@@ -34,6 +34,7 @@ public final class UnifiedBandwidthReportCollector {
         sections.add(serverSection());
         sections.add(entityInterpolationSection());
         sections.add(recipeSection());
+        sections.add(watutSection());
         sections.add(chunkSection());
         sections.add(jvmSection());
         sections.add(diagnosticsSection());
@@ -204,6 +205,24 @@ public final class UnifiedBandwidthReportCollector {
                     "Runtime diagnostic switch; cost=" + tool.cost().name().toLowerCase(java.util.Locale.ROOT) + ".");
         }
         return section("diagnostics", "Diagnostics", "Runtime tool state only; diagnostic log contents are not embedded.", metrics);
+    }
+
+    private static UnifiedBandwidthReport.Section watutSection() {
+        var stats = com.PinkCats.bandwidthoptimizer.integration.watut.WatutTrafficStats.snapshot();
+        List<UnifiedBandwidthReport.Metric> metrics = new ArrayList<>();
+        add(metrics, "counters_started_at_millis", "Counters started at", stats.startedAtMillis(), "timestamp", "observation", "process", "Counter initialization or latest reset, in epoch milliseconds.");
+        add(metrics, "received_image_payload_bytes", "Received image payload", stats.receivedImagePayloadBytes(), "bytes", "watut_image_payload", "process", "Compressed screenshot byte-array bytes received by this server, before fanout; excludes NBT, BO and socket framing.");
+        add(metrics, "received_image_packets", "Received image fragments", stats.receivedImagePackets(), "packets", "watut_semantic_packet", "process", "NBT packets containing screenshot data; not complete frame count.");
+        add(metrics, "received_state_packets", "Received status packets", stats.receivedStatePackets(), "packets", "watut_semantic_packet", "process", "Non-image GUI, chat or idle packets; image classification takes precedence.");
+        add(metrics, "received_mouse_packets", "Received mouse packets", stats.receivedMousePackets(), "packets", "watut_semantic_packet", "process", "Non-image, non-status mouse packets; click transitions remain unchanged.");
+        add(metrics, "received_other_packets", "Received other packets", stats.receivedOtherPackets(), "packets", "watut_semantic_packet", "process", "Other WATUT receiveAny packets, including typing amplifier; categories are disjoint.");
+        add(metrics, "client_saved_payload_bytes", "Client image payload saved", stats.clientSavedPayloadBytes(), "bytes", "watut_image_payload", "process", "Identical fresh captures suppressed on this client only. Does not estimate server fanout or wire savings.");
+        add(metrics, "client_suppressed_frames", "Client duplicate frames suppressed", stats.clientSuppressedFrames(), "frames", "watut_image_payload", "process", "Explicit cached-frame replay, screen/viewer changes and periodic refresh are not suppressed.");
+        add(metrics, "server_saved_payload_bytes", "Server image payload saved", stats.serverSavedPayloadBytes(), "bytes", "watut_image_payload", "process", "Exact compressed screenshot bytes withheld from recipients already sent the complete identical frame; excludes NBT and socket overhead.");
+        add(metrics, "server_suppressed_recipient_frames", "Server duplicate recipient frames suppressed", stats.serverSuppressedRecipientFrames(), "frames", "watut_image_payload", "process", "One frame for each recipient skipped; source self delivery is preserved.");
+        add(metrics, "login_replay_payload_bytes", "Nearby login image replay", stats.loginReplayPayloadBytes(), "bytes", "watut_image_payload", "process", "Complete bounded cached images sent only to nearby same-level entrants, not global state snapshots.");
+        add(metrics, "login_replay_recipient_frames", "Nearby login frames", stats.loginReplayRecipientFrames(), "frames", "watut_image_payload", "process", "Complete images replayed through the optional WATUT server adapter.");
+        return section("watut", "WATUT image reuse", "Process counters; byte values are compressed image payload bytes, not total channel or socket traffic. Client counters belong to the reporting client, not all server players.", metrics);
     }
 
     private static UnifiedBandwidthReport.Section jvmSection() {

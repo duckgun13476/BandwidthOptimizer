@@ -285,3 +285,11 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 apply from: rootProject.file('gradle/bo-publishing.gradle')
+
+
+tasks.register('runWatutFrameReuseRegression', JavaExec) {
+    group = 'verification'
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.PinkCats.bandwidthoptimizer.integration.watut.WatutFrameReuseRegressionMain'
+}
