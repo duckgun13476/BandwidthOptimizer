@@ -12,6 +12,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -35,6 +36,8 @@ public final class ChannelTransportSourceRankCore {
     private static final String LATEST_REPORT_FILE_NAME = "latest-source-report.md";
     private static final DateTimeFormatter REPORT_DISPLAY_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.ROOT);
     private static final ConcurrentHashMap<SourceKey, SourceCounter> COUNTERS = new ConcurrentHashMap<>();
+    private static volatile SourceTrafficSnapshot latestTrafficSnapshot;
+    private static long windowStartedAtMillis = System.currentTimeMillis();
     private static final LongAdder CREATE_BLOCK_ENTITY_PACKET_COUNT = new LongAdder();
     private static final LongAdder CREATE_BLOCK_ENTITY_RAW_BYTES = new LongAdder();
     private static final LongAdder CREATE_BLOCK_ENTITY_ACTUAL_BYTES = new LongAdder();
@@ -101,12 +104,23 @@ public final class ChannelTransportSourceRankCore {
         );
     }
 
-    /** A read-only, bounded view for an operator-triggered report. Frame bytes are
-     * deliberately absent because shared batch frames cannot be assigned to children. */
+    /** Last completed MD observation, with batch shares explicitly marked as estimates.
+     * Reading this view never drains the periodic counters or exposes channel identities. */
     public static SourceTrafficSnapshot snapshotForReport(int limit) {
+        SourceTrafficSnapshot completed = latestTrafficSnapshot;
+        if (completed != null) {
+            SourceTrafficSnapshot view = trafficSnapshot(completed.entries(), completed.packets(),
+                    completed.rawBytes(), completed.actualBytes(), completed.windowPackets(),
+                    completed.windowRawBytes(), completed.windowActualBytes(),
+                    completed.windowStartedAtMillis(), completed.observedAtMillis(), limit);
+            return new SourceTrafficSnapshot(completed.distinctKeys(), view.packets(), view.rawBytes(),
+                    view.actualBytes(), view.windowPackets(), view.windowRawBytes(), view.windowActualBytes(),
+                    view.windowStartedAtMillis(), view.observedAtMillis(), view.rankingLimit(), view.entries());
+        }
         List<SourceTrafficEntry> entries = new ArrayList<>(COUNTERS.size());
         long packets = 0L;
         long rawBytes = 0L;
+        long actualBytes = 0L;
         for (Map.Entry<SourceKey, SourceCounter> item : COUNTERS.entrySet()) {
             SourceCounter counter = item.getValue();
             long count = counter.totalCount.sum();
@@ -116,24 +130,50 @@ public final class ChannelTransportSourceRankCore {
             }
             packets += count;
             rawBytes += bytes;
+            actualBytes += counter.totalActualBytes.sum();
             SourceKey key = item.getKey();
             entries.add(new SourceTrafficEntry(key.sourceKey(), key.packetClassName(),
-                    key.rawPacketId(), count, bytes));
+                    key.rawPacketId(), count, bytes, counter.totalActualBytes.sum(),
+                    counter.totalTransportInputBytes.sum(), counter.chunkWrappedCount.sum(),
+                    counter.estimatedActualCount.sum(), counter.lastActualPath,
+                    counter.lastActualFrameKind, 0, 0, 0));
         }
         entries.sort(Comparator.comparingLong(SourceTrafficEntry::rawBytes).reversed()
                 .thenComparing(SourceTrafficEntry::sourceKey)
                 .thenComparing(SourceTrafficEntry::packetClassName));
-        int listed = Math.min(Math.max(limit, 0), entries.size());
-        return new SourceTrafficSnapshot(entries.size(), packets, rawBytes,
-                List.copyOf(entries.subList(0, listed)));
+        return trafficSnapshot(entries, packets, rawBytes, actualBytes, 0, 0, 0, 0, 0, limit);
     }
 
     public record SourceTrafficSnapshot(int distinctKeys, long packets, long rawBytes,
+                                        long actualBytes, long windowPackets, long windowRawBytes,
+                                        long windowActualBytes, long windowStartedAtMillis,
+                                        long observedAtMillis, int rankingLimit,
                                         List<SourceTrafficEntry> entries) {
     }
 
     public record SourceTrafficEntry(String sourceKey, String packetClassName, int rawPacketId,
-                                     long packets, long rawBytes) {
+                                     long packets, long rawBytes, long actualBytes, long transportInputBytes,
+                                     long chunkWrappedPackets, long estimatedPackets, String lastPath,
+                                     String lastFrame, long windowPackets, long windowRawBytes,
+                                     long windowActualBytes) {
+    }
+
+    private static SourceTrafficSnapshot trafficSnapshot(List<SourceTrafficEntry> entries,
+            long packets, long rawBytes, long actualBytes, long windowPackets, long windowRawBytes,
+            long windowActualBytes, long started, long observed, int limit) {
+        int bounded = Math.min(Math.max(limit, 0), 100);
+        LinkedHashSet<SourceTrafficEntry> selected = new LinkedHashSet<>();
+        for (var order : List.<java.util.function.ToLongFunction<SourceTrafficEntry>>of(
+                SourceTrafficEntry::rawBytes, SourceTrafficEntry::actualBytes,
+                SourceTrafficEntry::windowRawBytes, SourceTrafficEntry::windowActualBytes)) {
+            entries.stream().sorted(Comparator.comparingLong(order).reversed()
+                    .thenComparing(SourceTrafficEntry::sourceKey)
+                    .thenComparing(SourceTrafficEntry::packetClassName)
+                    .thenComparingInt(SourceTrafficEntry::rawPacketId)).limit(bounded).forEach(selected::add);
+        }
+        return new SourceTrafficSnapshot(entries.size(), packets, rawBytes, actualBytes,
+                windowPackets, windowRawBytes, windowActualBytes, started, observed, bounded,
+                List.copyOf(selected));
     }
 
     public static void resetCreateBlockEntityTransportStats() {
@@ -221,6 +261,20 @@ public final class ChannelTransportSourceRankCore {
             totalRawBytes += counter.totalRawBytes();
             totalActualBytes += counter.totalActualBytes();
         }
+
+        long observed = System.currentTimeMillis();
+        List<SourceTrafficEntry> traffic = new ArrayList<>(entries.size());
+        for (SourceReportEntry entry : entries) {
+            SourceKey key = entry.key();
+            SourceCounterSnapshot c = entry.counter();
+            traffic.add(new SourceTrafficEntry(key.sourceKey(), key.packetClassName(), key.rawPacketId(),
+                    c.totalCount(), c.totalRawBytes(), c.totalActualBytes(), c.totalTransportInputBytes(),
+                    c.chunkWrappedCount(), c.estimatedActualCount(), c.lastActualPath(), c.lastActualFrameKind(),
+                    c.windowCount(), c.windowRawBytes(), c.windowActualBytes()));
+        }
+        latestTrafficSnapshot = trafficSnapshot(traffic, totalCount, totalRawBytes, totalActualBytes,
+                windowCount, windowRawBytes, windowActualBytes, windowStartedAtMillis, observed, 100);
+        windowStartedAtMillis = observed;
 
         StringBuilder builder = new StringBuilder(8192);
         builder.append("# BandwidthOptimizer Transport Source Report").append(System.lineSeparator());

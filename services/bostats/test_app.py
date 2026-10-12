@@ -233,6 +233,19 @@ class BostatsServerRegression(unittest.TestCase):
             with self.temporary_storage(directory):
                 first = self.report_payload("merge-0001", "a" * 64, 1000, 11, "Alice")
                 second = self.report_payload("merge-0002", "a" * 64, 2000, 17, "Alice2")
+                second["summary"]["sourceTraffic"] = {
+                    "distinctKeys": 2, "packets": 10, "rawBytes": 1000,
+                    "actualBytes": 100, "windowPackets": 3, "windowRawBytes": 300,
+                    "windowActualBytes": 40, "windowStartedAtMillis": 1000,
+                    "observedAtMillis": 2000, "rankingLimit": 100,
+                    "entries": [{"sourceKey": "custom_payload:test:channel",
+                                 "packetClassName": "CustomPayload", "rawPacketId": 23,
+                                 "rawBytes": 900, "actualBytes": 90, "packets": 9,
+                                 "transportInputBytes": 800, "estimatedPackets": 9,
+                                 "chunkWrappedPackets": 0, "lastPath": "BATCH_SHARE",
+                                 "lastFrame": "STREAM_BATCH", "windowPackets": 3,
+                                 "windowRawBytes": 300, "windowActualBytes": 40}]
+                }
                 first_raw = self.encode(first)
                 second_raw = self.encode(second)
 
@@ -250,6 +263,7 @@ class BostatsServerRegression(unittest.TestCase):
                 self.assertEqual([1000, 2000], [hour["periodStartMillis"] for hour in stored["trafficHistory"]["hours"]])
                 self.assertEqual(28, stored["trafficHistory"]["totals"]["outboundWireBytes"])
                 self.assertEqual("Alice2", stored["trafficHistory"]["players"][0]["playerName"])
+                self.assertEqual(second["summary"]["sourceTraffic"], stored["summary"]["sourceTraffic"])
                 database = app.sqlite3.connect(app.DATABASE)
                 try:
                     self.assertEqual(1, database.execute("SELECT COUNT(*) FROM reports").fetchone()[0])
@@ -297,7 +311,7 @@ class BostatsServerRegression(unittest.TestCase):
 
         self.assertIn('id="report-version"', index)
         self.assertIn('id="trend-version"', index)
-        self.assertIn('app.js?v=19', index)
+        self.assertIn('app.js?v=20', index)
         self.assertIn('id="source-traffic-section"', index)
         self.assertIn('id="scope-note"', index)
         self.assertIn("legacyVersion: '< 133版本'", javascript)

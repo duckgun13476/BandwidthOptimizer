@@ -669,6 +669,12 @@ function renderBypass(bypass) {
   renderPagination('bypassEntries', entries.length, () => renderBypass(bypass));
 }
 
+const sourceDetailLabels = {
+  'zh-CN': { title: '来源流量明细', note: '累计为本次进程运行期间；窗口来自最近一次周期报告。传输字节为 BO 帧归因，批量包按份额估算，非逐来源线路实测；只包含已观测的出站来源。', totalRaw: '累计原始', totalActual: '累计传输（含估算）', windowRaw: '窗口原始', windowActual: '窗口传输（含估算）', estimated: '估算包', chunk: '区块协议包', ratio: '传输 / 原始', observed: '观测时间', unavailable: '旧报告未提供', window: '窗口', coverage: '已列来源占比' },
+  'en-US': { title: 'Source traffic details', note: 'Totals cover this process run; the window is the last periodic observation. Transport bytes attribute BO frames, estimating shared batches, not per-source socket measurements. Only observed outbound sources are included.', totalRaw: 'Total raw', totalActual: 'Total transport (includes estimates)', windowRaw: 'Window raw', windowActual: 'Window transport (includes estimates)', estimated: 'Estimated packets', chunk: 'Chunk protocol packets', ratio: 'Transport / raw', observed: 'Observed at', unavailable: 'Unavailable in older report', window: 'Window', coverage: 'Listed source coverage' },
+  'pt-BR': { title: 'Detalhes de tráfego por origem', note: 'Totais desta execução; a janela é a última observação periódica. Bytes de transporte atribuem quadros BO com estimativas para lotes compartilhados, não medições de rede por origem. Inclui apenas origens de saída observadas.', totalRaw: 'Total bruto', totalActual: 'Total transporte (inclui estimativas)', windowRaw: 'Janela bruta', windowActual: 'Janela transporte (inclui estimativas)', estimated: 'Pacotes estimados', chunk: 'Pacotes do protocolo de chunks', ratio: 'Transporte / bruto', observed: 'Observado em', unavailable: 'Indisponível no relatório antigo', window: 'Janela', coverage: 'Cobertura das origens listadas' }
+};
+let sourceTrafficOrder = 'rawBytes';
 function renderSourceTraffic(snapshot) {
   const node = document.querySelector('#source-traffic-section');
   if (!snapshot) {
@@ -676,18 +682,27 @@ function renderSourceTraffic(snapshot) {
     node.innerHTML = `<h3>${escapeText(rt('sourceTitle'))}</h3><p>${escapeText(rt('sourceMissing'))}</p>`;
     return;
   }
-  const entries = Array.isArray(snapshot.entries) ? snapshot.entries : [];
-  const listedBytes = entries.reduce((sum, entry) => sum + Number(entry.rawBytes || 0), 0);
-  const maximum = Math.max(1, ...entries.map(entry => Number(entry.rawBytes || 0)));
+  const labels = sourceDetailLabels[language] || sourceDetailLabels['en-US'];
+  const detailed = Number.isFinite(snapshot.actualBytes);
+  const orders = { rawBytes: 'totalRaw', actualBytes: 'totalActual', windowRawBytes: 'windowRaw', windowActualBytes: 'windowActual' };
+  if (!detailed) sourceTrafficOrder = 'rawBytes';
+  const entries = [...(Array.isArray(snapshot.entries) ? snapshot.entries : [])].sort((a, b) => Number(b[sourceTrafficOrder] || 0) - Number(a[sourceTrafficOrder] || 0) || String(a.sourceKey).localeCompare(String(b.sourceKey)));
+  const totalField = sourceTrafficOrder;
+  const listedBytes = entries.reduce((sum, entry) => sum + Number(entry[totalField] || 0), 0);
+  const maximum = Math.max(1, ...entries.map(entry => Number(entry[totalField] || 0)));
+  const total = Number(snapshot[totalField] || 0);
   const rows = pageSlice(entries, pages.sources).map(entry => {
-    const amount = Number(entry.rawBytes || 0);
+    const amount = Number(entry[totalField] || 0);
     const name = entry.sourceKey || entry.packetClassName || '#unknown';
-    return `<div class="bypass-row bypass-entry"><div class="bypass-identity"><strong>${escapeText(name)}</strong><small>${escapeText(entry.packetClassName || '')}</small></div><div class="bypass-main"><meter class="visual-track" min="0" max="100" value="${(100 * amount / maximum).toFixed(3)}"></meter><div class="bypass-values"><strong>${bytes(amount)}</strong><small>${new Intl.NumberFormat(language).format(Number(entry.packets || 0))} ${escapeText(t('units').packets)}</small></div></div></div>`;
+    const detail = detailed ? `<small>${escapeText(labels.totalRaw)}: ${bytes(entry.rawBytes)} · ${escapeText(labels.totalActual)}: ${bytes(entry.actualBytes)} · ${escapeText(labels.ratio)}: ${Number(entry.rawBytes) > 0 ? (Number(entry.actualBytes) / Number(entry.rawBytes)).toFixed(3) + '×' : '—'}</small><small>${escapeText(labels.windowRaw)}: ${bytes(entry.windowRawBytes)} · ${escapeText(labels.windowActual)}: ${bytes(entry.windowActualBytes)} · ${new Intl.NumberFormat(language).format(Number(entry.windowPackets || 0))} ${escapeText(t('units').packets)}</small><small>${escapeText(labels.chunk)}: ${Number(entry.chunkWrappedPackets || 0)} · ${escapeText(labels.estimated)}: ${Number(entry.estimatedPackets || 0)}</small><small>${escapeText(entry.lastPath || '')} / ${escapeText(entry.lastFrame || '')}</small>` : '';
+    return `<div class="bypass-row bypass-entry"><div class="bypass-identity"><strong>${escapeText(name)}</strong><small>${escapeText(entry.packetClassName || '')}${Number.isFinite(entry.rawPacketId) ? ' #' + entry.rawPacketId : ''}</small>${detail}</div><div class="bypass-main"><meter class="visual-track" min="0" max="100" value="${(100 * amount / maximum).toFixed(3)}"></meter><div class="bypass-values"><strong>${bytes(amount)}</strong><small>${total > 0 ? (100 * amount / total).toFixed(2) : '0.00'}%</small><small>${new Intl.NumberFormat(language).format(Number(entry.packets || 0))} ${escapeText(t('units').packets)}</small></div></div></div>`;
   }).join('') || `<div class="empty">${escapeText(t('noData'))}</div>`;
   const missingKeys = Math.max(0, Number(snapshot.distinctKeys || 0) - entries.length);
-  const missingBytes = Math.max(0, Number(snapshot.rawBytes || 0) - listedBytes);
+  const missingBytes = Math.max(0, total - listedBytes);
   node.className = 'section bypass-section';
-  node.innerHTML = `<h3>${escapeText(rt('sourceTitle'))}</h3><p>${escapeText(rt('sourceNote'))} ${escapeText(sourcePeriodLabel[language])}</p><div class="bypass-summary"><div><small>${escapeText(rt('sourceRaw'))}</small><strong>${bytes(snapshot.rawBytes)}</strong></div><div><small>${escapeText(rt('sourceKeys'))}</small><strong>${entries.length} / ${new Intl.NumberFormat(language).format(Number(snapshot.distinctKeys || 0))}</strong></div><div><small>${escapeText(t('unlistedKeys'))}</small><strong>${bytes(missingBytes)}</strong><span>${new Intl.NumberFormat(language).format(missingKeys)} ${escapeText(t('units').entries)}</span></div></div><div class="bypass-list">${rows}</div><div class="pagination" id="sources-pagination"></div>`;
+  const controls = detailed ? `<select id="source-traffic-order" aria-label="${escapeText(labels.title)}">${Object.entries(orders).map(([key, label]) => `<option value="${key}" ${key === sourceTrafficOrder ? 'selected' : ''}>${escapeText(labels[label])}</option>`).join('')}</select><p>${escapeText(labels.observed)}: ${snapshot.observedAtMillis ? escapeText(new Date(snapshot.observedAtMillis).toLocaleString(language)) : '—'} · ${escapeText(labels.window)}: ${snapshot.windowStartedAtMillis && snapshot.observedAtMillis ? escapeText(new Date(snapshot.windowStartedAtMillis).toLocaleString(language)) + ' – ' + escapeText(new Date(snapshot.observedAtMillis).toLocaleString(language)) : '—'}</p>` : '';
+  node.innerHTML = `<h3>${escapeText(labels.title)}</h3><p>${escapeText(detailed ? labels.note : rt('sourceNote') + ' ' + sourcePeriodLabel[language])}</p>${controls}<div class="bypass-summary"><div><small>${escapeText(labels[orders[totalField]])}</small><strong>${bytes(total)}</strong><span>${escapeText(labels.coverage)}: ${total > 0 ? (100 * listedBytes / total).toFixed(2) : '0.00'}%</span></div><div><small>${escapeText(rt('sourceKeys'))}</small><strong>${entries.length} / ${new Intl.NumberFormat(language).format(Number(snapshot.distinctKeys || 0))}</strong></div><div><small>${escapeText(t('unlistedKeys'))}</small><strong>${bytes(missingBytes)}</strong><span>${new Intl.NumberFormat(language).format(missingKeys)} ${escapeText(t('units').entries)}</span></div></div><div class="bypass-list">${rows}</div><div class="pagination" id="sources-pagination"></div>`;
+  node.querySelector('#source-traffic-order')?.addEventListener('change', event => { sourceTrafficOrder = event.target.value; pages.sources.page = 1; renderSourceTraffic(snapshot); });
   renderPagination('sources', entries.length, () => renderSourceTraffic(snapshot));
 }
 

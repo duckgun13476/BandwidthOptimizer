@@ -199,6 +199,13 @@ tasks.register('runRecipeSyncOrderingRegression', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.recipe.RecipeSyncOrderingRegressionMain'
 }
 
+tasks.register('runSourceTrafficDetailRegression', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.PinkCats.bandwidthoptimizer.report.SourceTrafficDetailRegressionMain'
+    systemProperty 'bandwidthoptimizer.outputDirectory', rootProject.file('.tmp/source-traffic-regression').absolutePath
+}
+
 tasks.register('runOutboundQueueCapacityGuardRegression', JavaExec) {
     dependsOn testClasses
     classpath = sourceSets.test.runtimeClasspath
