@@ -39,6 +39,7 @@ public final class WatutServerFrameCompat {
         WatutFrameStore<CompoundTag> store = STORES.computeIfAbsent(manager, ignored -> new WatutFrameStore<>());
         WatutFrameStore.Delivery<CompoundTag> delivery = delivery(manager);
         if (!pureImage(data)) {
+            if (data.contains(PIXELS, Tag.TAG_BYTE_ARRAY)) WatutTrafficStats.nativeImage();
             // A state transition is an ordering barrier: emit buffered original fragments first.
             if (data.contains("playerGuiStatus") || data.contains(PIXELS)) store.remove(source, delivery);
             else store.flush(source, delivery);
@@ -46,10 +47,12 @@ public final class WatutServerFrameCompat {
         }
         CompoundTag packet = data.copy();
         packet.putString("playerUuid", source.getUUID().toString());
-        return store.receive(source, ServerPlayerLevelCompat.serverLevel(source), new WatutFrameStore.Header(
+        boolean handled = store.receive(source, ServerPlayerLevelCompat.serverLevel(source), new WatutFrameStore.Header(
                 packet.getInt(WIDTH), packet.getInt(HEIGHT), packet.getInt(SIZE), packet.getInt(COUNT)),
                 packet.getInt(INDEX), packet.getByteArray(PIXELS), packet,
                 recipients(source), source.getServer().getTickCount(), delivery);
+        if (!handled) WatutTrafficStats.nativeImage();
+        return handled;
     }
 
     public static void afterReceive(Object manager, Player player) {
@@ -78,7 +81,7 @@ public final class WatutServerFrameCompat {
         }
     }
 
-    public static void clear() { STORES.clear(); }
+    public static void clear() { STORES.clear(); ServerWatutClientStats.clear(); }
 
     private static boolean pureImage(CompoundTag data) {
         if (!data.getAllKeys().equals(IMAGE_KEYS) || !data.contains(PIXELS, Tag.TAG_BYTE_ARRAY)) return false;
@@ -105,6 +108,7 @@ public final class WatutServerFrameCompat {
     private static WatutFrameStore.Delivery<CompoundTag> delivery(Object manager, boolean loginReplay) {
         return new WatutFrameStore.Delivery<>() {
             public void nativePacket(Object source, CompoundTag packet) {
+                WatutTrafficStats.nativeImage();
                 REPLAYING.set(true);
                 try { invoke(api.receive, manager, source, packet); }
                 finally { REPLAYING.remove(); }
@@ -112,6 +116,7 @@ public final class WatutServerFrameCompat {
             public void frame(Object source, Object recipient, List<CompoundTag> packets) {
                 Object networking = invoke(api.instance, null);
                 for (CompoundTag packet : packets) invoke(api.send, networking, packet, recipient);
+                WatutTrafficStats.serverSent(packets.stream().mapToLong(p -> p.getByteArray(PIXELS).length).sum());
                 if (loginReplay) WatutTrafficStats.loginReplay(packets.stream().mapToLong(p -> p.getByteArray(PIXELS).length).sum());
             }
             public void suppressed(long bytes, int recipients) {

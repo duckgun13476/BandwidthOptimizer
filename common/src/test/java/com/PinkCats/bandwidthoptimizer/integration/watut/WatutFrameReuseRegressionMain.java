@@ -18,6 +18,7 @@ public final class WatutFrameReuseRegressionMain {
         completeFrameDelivery();
         nativeFallbackAndLimits();
         capacityAndExpiry();
+        WatutClientReportingRegressionMain.run();
         System.out.println("WATUT frame reuse PASS: exact image restoration, newcomer-only replay, self delivery, transitions, FIFO fallback, lifecycle and hard bounds");
     }
 

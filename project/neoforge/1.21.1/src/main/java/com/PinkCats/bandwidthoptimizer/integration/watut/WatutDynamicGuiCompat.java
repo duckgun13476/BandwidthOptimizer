@@ -100,6 +100,7 @@ public final class WatutDynamicGuiCompat {
         Object texturePixelData = objectValue(screenData(status), "getTexturePixelData");
         if (texturePixelData instanceof ByteBuffer buffer) {
             state(manager).lastObservedFrameBytes = Math.max(buffer.remaining(), 0);
+            WatutTrafficStats.clientSent(Math.max(buffer.remaining(), 0));
         }
     }
 
@@ -121,7 +122,7 @@ public final class WatutDynamicGuiCompat {
         if (suppress) {
             WatutTrafficStats.clientSuppressed(buffer.remaining());
             // Count only upload savings here. Server fanout reuse has its own observed counter.
-            ClientSourceGateStats.recordEstimatedSavings(buffer.remaining(), 0L, 1L);
+            // Exact dedup is reported independently; cadence estimates must not absorb it.
         }
         return suppress;
     }

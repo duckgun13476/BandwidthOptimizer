@@ -31,6 +31,7 @@ public final class IdleGateClientController {
     private static float lastPitch = Float.NaN;
     private static Object lastLevelIdentity;
     private static Object lastConnectionIdentity;
+    private static Object statisticsConnection;
     private static long worldReadySinceMillis;
 
     private IdleGateClientController() {}
@@ -43,6 +44,10 @@ public final class IdleGateClientController {
         if (minecraft == null || minecraft.player == null || minecraft.getConnection() == null) {
             resetLocalState();
             return;
+        }
+        if (statisticsConnection != minecraft.getConnection()) {
+            resetLocalState();
+            statisticsConnection = minecraft.getConnection();
         }
 
         long nowMillis = System.currentTimeMillis();
@@ -100,6 +105,7 @@ public final class IdleGateClientController {
         lastSentHudVisible = hudVisible;
         lastReportMillis = nowMillis;
         ClientSourceGateStats.Snapshot sourceGateStats = ClientSourceGateStats.snapshot();
+        var watut = com.PinkCats.bandwidthoptimizer.integration.watut.WatutTrafficStats.snapshot();
         currentSender.accept(new IdleGateStatePayload(
                 ++sequence,
                 mode,
@@ -107,7 +113,8 @@ public final class IdleGateClientController {
                 nowMillis,
                 sourceGateStats.estimatedSavedBytes(),
                 sourceGateStats.estimatedOutboundSavedBytes(),
-                sourceGateStats.suppressedFrames()));
+                sourceGateStats.suppressedFrames(), true, watut.clientSavedPayloadBytes(),
+                watut.clientSuppressedFrames(), watut.clientSentPayloadBytes()));
     }
 
     private static long reportIntervalMillis(IdleGateMode mode) {
@@ -207,6 +214,7 @@ public final class IdleGateClientController {
     }
 
     private static void resetLocalState() {
+        statisticsConnection = null;
         lastSentMode = IdleGateMode.ACTIVE;
         currentMode = IdleGateMode.ACTIVE;
         lastSentHudVisible = true;
@@ -218,6 +226,7 @@ public final class IdleGateClientController {
         lastYaw = Float.NaN;
         lastPitch = Float.NaN;
         ClientSourceGateStats.reset();
+        com.PinkCats.bandwidthoptimizer.integration.watut.WatutTrafficStats.resetClient();
         clearWorldReadyState();
     }
 

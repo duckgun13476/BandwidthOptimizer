@@ -33,6 +33,11 @@ public final class IdleGateServerState {
             return;
         }
         IdleGateStatePayload safePayload = payload == null ? IdleGateStatePayload.active() : payload;
+        if (safePayload.watutStatsSupported()) {
+            com.PinkCats.bandwidthoptimizer.integration.watut.ServerWatutClientStats.accept(player,
+                    safePayload.sequence(), safePayload.watutClientSavedPayloadBytes(),
+                    safePayload.watutClientSuppressedFrames(), safePayload.watutClientSentPayloadBytes());
+        }
         ServerSourceGateStats.accept(
                 player.getUUID(),
                 safePayload.sourceGateEstimatedSavedBytes(),
@@ -42,7 +47,7 @@ public final class IdleGateServerState {
         Channel channel = ChunkPeerStateManager.findPlayerChannel(player);
         String channelId = channel == null ? "" : ChannelIdentity.longText(channel);
         if (!channelId.isBlank()) {
-            registerCloseCleanup(channel, channelId);
+            registerCloseCleanup(channel, channelId, player);
             UUID previousPlayerId = CHANNEL_PLAYERS.put(channelId, player.getUUID());
             if (!player.getUUID().equals(previousPlayerId)) {
                 RESUME_DIRECT_UNTIL.put(channelId, System.currentTimeMillis() + JOIN_DIRECT_MILLIS);
@@ -103,6 +108,7 @@ public final class IdleGateServerState {
 
     public static void onPlayerLoggedOut(ServerPlayer player) {
         if (player != null) {
+            com.PinkCats.bandwidthoptimizer.integration.watut.ServerWatutClientStats.remove(player);
             IdleGateRecoveryRegistry.discard(player);
             ServerSourceGateStats.removeClient(player.getUUID());
             PLAYER_STATES.remove(player.getUUID());
@@ -115,9 +121,12 @@ public final class IdleGateServerState {
         }
     }
 
-    private static void registerCloseCleanup(Channel channel, String channelId) {
+    private static void registerCloseCleanup(Channel channel, String channelId, ServerPlayer player) {
         if (channel.attr(CLOSE_CLEANUP_REGISTERED).setIfAbsent(Boolean.TRUE) == null) {
-            channel.closeFuture().addListener(ignored -> clearChannelState(channelId));
+            channel.closeFuture().addListener(ignored -> {
+                clearChannelState(channelId);
+                com.PinkCats.bandwidthoptimizer.integration.watut.ServerWatutClientStats.remove(player);
+            });
         }
     }
 

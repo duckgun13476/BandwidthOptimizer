@@ -133,6 +133,7 @@ public final class ServerBandwidthStatsRegistry {
         IdleGateBackgroundPacketGate.reset();
         ActiveEntityViewGate.resetStats();
         ServerSourceGateStats.reset();
+        com.PinkCats.bandwidthoptimizer.integration.watut.WatutTrafficStats.resetServer();
         ChannelTransportSourceRankCore.resetCreateBlockEntityTransportStats();
         ServerBandwidthRecentWindow.reset();
         PlayerTrafficPeriodArchive.afterCountersReset(snapshotChannels());

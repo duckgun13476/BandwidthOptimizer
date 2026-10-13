@@ -90,6 +90,27 @@ const watutLabels = {
   'en-US': { title: 'WATUT image reuse', description: 'From counter initialization or reset to this report. Bytes count compressed screenshot payload only, excluding NBT, BO and socket framing. Client savings belong only to the reporting client; login images go only to nearby players in the same dimension.', payload: 'Compressed image payload', packet: 'WATUT packet category', labels: { received_image_payload_bytes: 'Image payload received by server', received_image_packets: 'Received image fragments', received_state_packets: 'Received GUI, chat and idle status packets', received_mouse_packets: 'Received mouse packets', received_other_packets: 'Other received WATUT packets', client_saved_payload_bytes: 'Image payload saved on this client', client_suppressed_frames: 'Duplicate frames suppressed on this client', server_saved_payload_bytes: 'Duplicate image payload saved by server', server_suppressed_recipient_frames: 'Recipient frames avoided by server', login_replay_payload_bytes: 'Targeted login image payload', login_replay_recipient_frames: 'Targeted login image frames' } },
   'pt-BR': { title: 'Reuso de imagens WATUT', description: 'Da inicialização ou reinício dos contadores até este relatório. Bytes medem apenas o payload comprimido da imagem, sem NBT, BO ou encapsulamento de rede. A economia do cliente pertence somente ao cliente do relatório; imagens de entrada vão apenas a jogadores próximos na mesma dimensão.', payload: 'Payload comprimido da imagem', packet: 'Categoria de pacote WATUT', labels: { received_image_payload_bytes: 'Payload de imagem recebido pelo servidor', received_image_packets: 'Fragmentos de imagem recebidos', received_state_packets: 'Pacotes de interface, chat e inatividade recebidos', received_mouse_packets: 'Pacotes de mouse recebidos', received_other_packets: 'Outros pacotes WATUT recebidos', client_saved_payload_bytes: 'Payload de imagem economizado neste cliente', client_suppressed_frames: 'Quadros duplicados suprimidos neste cliente', server_saved_payload_bytes: 'Payload duplicado economizado pelo servidor', server_suppressed_recipient_frames: 'Quadros por destinatário evitados pelo servidor', login_replay_payload_bytes: 'Payload de imagem direcionado na entrada', login_replay_recipient_frames: 'Quadros de imagem direcionados na entrada' } }
 };
+Object.assign(watutLabels['zh-CN'].labels, {
+  client_reports_started_at_millis: '客户端汇总窗口开始时间', client_sent_payload_bytes: '本客户端已发送图片载荷',
+  reported_client_saved_payload_bytes: '客户端上报的精确去重节省', reported_client_suppressed_frames: '客户端上报的去重帧数',
+  reported_client_sent_payload_bytes: '客户端上报的已发送图片载荷', reporting_client_connections: '当前已上报客户端连接',
+  server_sent_payload_bytes: '服务器复用适配器已发送图片载荷', native_image_packets: '原生旁路图片分片（未计入发送量）'
+});
+Object.assign(watutLabels['en-US'].labels, {
+  client_reports_started_at_millis: 'Client aggregation window started at', client_sent_payload_bytes: 'Images sent by this client',
+  reported_client_saved_payload_bytes: 'Client-reported exact dedup savings', reported_client_suppressed_frames: 'Client-reported duplicate frames',
+  reported_client_sent_payload_bytes: 'Client-reported sent image payload', reporting_client_connections: 'Currently reporting client connections',
+  server_sent_payload_bytes: 'Images sent by server reuse adapter', native_image_packets: 'Native fallback image fragments (sent bytes uncounted)'
+});
+Object.assign(watutLabels['pt-BR'].labels, {
+  client_reports_started_at_millis: 'Início da janela de agregação dos clientes', client_sent_payload_bytes: 'Imagens enviadas por este cliente',
+  reported_client_saved_payload_bytes: 'Economia exata informada pelos clientes', reported_client_suppressed_frames: 'Quadros duplicados informados pelos clientes',
+  reported_client_sent_payload_bytes: 'Payload de imagens enviadas informado pelos clientes', reporting_client_connections: 'Conexões de clientes com estatísticas',
+  server_sent_payload_bytes: 'Imagens enviadas pelo adaptador de reuso do servidor', native_image_packets: 'Fragmentos nativos (bytes enviados não contabilizados)'
+});
+watutLabels['zh-CN'].description += ' 客户端汇总来自支持独立统计的客户端心跳上报，与旧门控估算分开；旧客户端不视为零收益。当前上报人数与历史累计量并非同一覆盖范围；原生旁路分片不计入适配器发送量。';
+watutLabels['en-US'].description += ' Client aggregation comes from capable client heartbeat reports, separate from cadence estimates; legacy clients do not imply zero savings. Current reporting connections differ from historical totals. Native fallback fragments are excluded from adapter sent bytes.';
+watutLabels['pt-BR'].description += ' A agregação vem dos relatórios dos clientes compatíveis, separada das estimativas de frequência; clientes antigos não representam economia zero. Conexões atuais diferem dos totais históricos. Fragmentos nativos não entram nos bytes enviados pelo adaptador.';
 for (const [locale, labels] of Object.entries(watutLabels)) {
   translations[locale].sections.watut = labels.title;
   translations[locale].descriptions.watut = labels.description;

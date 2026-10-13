@@ -10,7 +10,7 @@ vm.runInContext(source.slice(source.indexOf('const watutLabels ='), source.index
 vm.runInContext('globalThis.labels = watutLabels', context);
 for (const locale of locales) {
   const labels = context.labels[locale];
-  assert.equal(Object.keys(labels.labels).length, 11);
+  assert.equal(Object.keys(labels.labels).length, 19);
   assert.equal(context.translations[locale].sections.watut, labels.title);
   assert.equal(context.translations[locale].descriptions.watut, labels.description);
   assert.equal(context.translations[locale].stages.watut_image_payload, labels.payload);
