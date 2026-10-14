@@ -35,6 +35,7 @@ public final class UnifiedBandwidthReportCollector {
         sections.add(entityInterpolationSection());
         sections.add(recipeSection());
         sections.add(watutSection());
+        sections.add(tabListSection());
         sections.add(chunkSection());
         sections.add(jvmSection());
         sections.add(diagnosticsSection());
@@ -205,6 +206,17 @@ public final class UnifiedBandwidthReportCollector {
                     "Runtime diagnostic switch; cost=" + tool.cost().name().toLowerCase(java.util.Locale.ROOT) + ".");
         }
         return section("diagnostics", "Diagnostics", "Runtime tool state only; diagnostic log contents are not embedded.", metrics);
+    }
+
+    private static UnifiedBandwidthReport.Section tabListSection() {
+        var stats = com.PinkCats.bandwidthoptimizer.channel.packet.ClientboundTabListDeduplicator.snapshot();
+        List<UnifiedBandwidthReport.Metric> metrics = new ArrayList<>();
+        add(metrics, "counters_started_at_millis", "Counters started at", stats.startedAtMillis(), "timestamp", "observation", "process", "Counter initialization, in epoch milliseconds.");
+        add(metrics, "saved_raw_bytes", "Duplicate header/footer bytes suppressed", stats.savedRawBytes(), "bytes", "native_encoded_packet", "process", "Exact native encoded bytes withheld before BO compression; not socket savings.");
+        add(metrics, "suppressed_packets", "Duplicate header/footer packets", stats.suppressedPackets(), "packets", "native_encoded_packet", "process", "Identical committed state only; changing animations and five-second refresh pass through.");
+        add(metrics, "accepted_raw_bytes", "Header/footer bytes accepted", stats.acceptedRawBytes(), "bytes", "native_encoded_packet", "process", "Accepted by transport or ordered epoch queue; not a socket delivery acknowledgement. Includes oversized baseline bypasses.");
+        add(metrics, "accepted_packets", "Header/footer packets accepted", stats.acceptedPackets(), "packets", "native_encoded_packet", "process", "Same enabled observation path as suppressed packets; disabled observations are excluded.");
+        return section("tab_list", "TAB header/footer reuse", "Process-lifetime enabled-path counters. Native encoded bytes before compression, not measured wire savings.", metrics);
     }
 
     private static UnifiedBandwidthReport.Section watutSection() {

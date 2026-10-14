@@ -93,6 +93,11 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
             out.writerIndex(this.bandwidthoptimizer$writerIndexBefore);
             return;
         }
+        com.PinkCats.bandwidthoptimizer.channel.packet.ClientboundTabListDeduplicator.Candidate tabListCandidate =
+                com.PinkCats.bandwidthoptimizer.channel.packet.ClientboundTabListDeduplicator.inspect(context, packet, this.flow, out, this.bandwidthoptimizer$writerIndexBefore);
+        if (tabListCandidate.dropped()) {
+            return;
+        }
         ClientboundCommandTreeDeduplicator.Candidate commandTreeCandidate =
                 ClientboundCommandTreeDeduplicator.inspect(context, packet, this.flow, out, this.bandwidthoptimizer$writerIndexBefore);
         if (commandTreeCandidate.dropped()) {
@@ -108,6 +113,7 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
                 bytes -> ChannelTransportHooks.recordCommittedOutboundPacketStream(context, packet, bytes)
         )) {
             ClientboundCommandTreeDeduplicator.commit(commandTreeCandidate);
+            com.PinkCats.bandwidthoptimizer.channel.packet.ClientboundTabListDeduplicator.commit(tabListCandidate);
             return;
         }
         long returnHookStartNanos = System.nanoTime();
@@ -144,6 +150,7 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
             ChannelTransportHooks.tryToWrapOutboundPacket(context, packet, out, this.bandwidthoptimizer$writerIndexBefore, this);
             com.PinkCats.bandwidthoptimizer.channel.ChannelOutboundBurstWarning.recordWireFrame(context, this.flow, out.writerIndex() - this.bandwidthoptimizer$writerIndexBefore, false);
             ClientboundCommandTreeDeduplicator.commit(commandTreeCandidate);
+            com.PinkCats.bandwidthoptimizer.channel.packet.ClientboundTabListDeduplicator.commit(tabListCandidate);
             HotpathCostProbe.end("transportWrap", stageStartNanos);
             long hookNanos = System.nanoTime() - returnHookStartNanos;
 

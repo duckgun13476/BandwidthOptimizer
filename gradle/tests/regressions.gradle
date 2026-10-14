@@ -66,6 +66,12 @@ tasks.register('runClientboundCommandTreeDeduplicatorRegression', JavaExec) {
     )
 }
 
+tasks.register('runClientboundTabListDeduplicatorRegression', JavaExec) {
+    configureTestJavaExecTask(delegate, 'verification',
+            'Verifies exact TAB state reuse, bounded ownership and ordered epoch admission.',
+            'com.PinkCats.bandwidthoptimizer.channel.packet.ClientboundTabListDeduplicatorRegressionMain')
+}
+
 tasks.register('runOutboundBurstWarningRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,
