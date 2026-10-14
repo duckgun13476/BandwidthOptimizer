@@ -1,3 +1,11 @@
+#### v5.10.32.150-release
+
+1. Reduce chunk snapshot and synchronous transport encoding allocations while preserving packet order and payload contents.
+2. Avoid redundant NeoForge splitter encoding for verified bounded vanilla motion and head-rotation packets; retain native splitting for custom codecs.
+3. Skip unchanged TAB header/footer updates and combine redundant CreateSifter processing updates.
+4. Combine adjacent complete LightmansCurrency bank snapshots within supported item trades, preserving final balances, complete logs and other packet ordering.
+5. Add entity and LightmansCurrency traffic breakdowns, optimization counters and localized report details; separate exact WATUT client reuse savings.
+
 #### v5.10.32.141-release
 
 1. Reuse identical complete WATUT GUI images on supported Forge and NeoForge integrations, preserving self delivery and fresh-viewer updates with bounded frame caches.
