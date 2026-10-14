@@ -36,6 +36,7 @@ public final class UnifiedBandwidthReportCollector {
         sections.add(recipeSection());
         sections.add(watutSection());
         sections.add(tabListSection());
+        sections.add(sifterSection());
         sections.add(chunkSection());
         sections.add(jvmSection());
         sections.add(diagnosticsSection());
@@ -217,6 +218,17 @@ public final class UnifiedBandwidthReportCollector {
         add(metrics, "accepted_raw_bytes", "Header/footer bytes accepted", stats.acceptedRawBytes(), "bytes", "native_encoded_packet", "process", "Accepted by transport or ordered epoch queue; not a socket delivery acknowledgement. Includes oversized baseline bypasses.");
         add(metrics, "accepted_packets", "Header/footer packets accepted", stats.acceptedPackets(), "packets", "native_encoded_packet", "process", "Same enabled observation path as suppressed packets; disabled observations are excluded.");
         return section("tab_list", "TAB header/footer reuse", "Process-lifetime enabled-path counters. Native encoded bytes before compression, not measured wire savings.", metrics);
+    }
+
+    private static UnifiedBandwidthReport.Section sifterSection() {
+        var stats = com.PinkCats.bandwidthoptimizer.integration.createsifter.SifterSyncTransaction.snapshot();
+        List<UnifiedBandwidthReport.Metric> metrics = new ArrayList<>();
+        add(metrics, "counters_started_at_millis", "Counters started at", stats.startedAtMillis(), "timestamp", "observation", "process", "Counter initialization in epoch milliseconds.");
+        add(metrics, "transactions", "Processing transactions", stats.transactions(), "transactions", "source_sync", "process", "Supported server-side CreateSifter processing calls.");
+        add(metrics, "deferred_calls", "Deferred sync calls", stats.deferredCalls(), "calls", "source_sync", "process", "Calls combined inside one synchronous processing transaction.");
+        add(metrics, "flushed_calls", "Final sync calls", stats.flushedCalls(), "calls", "source_sync", "process", "Successful immediate final-state flushes, not socket acknowledgements.");
+        add(metrics, "saved_calls", "Sync calls avoided", stats.savedCalls(), "calls", "source_sync", "process", "Deferred calls minus successful final flushes; not bytes or measured wire savings.");
+        return section("create_sifter", "CreateSifter synchronization", "Synchronous processing-call reduction. Start, completion and external updates remain independent.", metrics);
     }
 
     private static UnifiedBandwidthReport.Section watutSection() {

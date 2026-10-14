@@ -4,6 +4,8 @@
   "package": "com.PinkCats.bandwidthoptimizer.mixin",
   "compatibilityLevel": "JAVA_25",
   "mixins": [
+    "createsifter.SifterCycleSyncMixin",
+    "createsifter.SifterSendDataMixin",
     "create.CreateControlledContraptionEntityMixin",
     "create.CreateGantryContraptionEntityMixin",
     "minecraft.ClientboundSectionBlocksUpdatePacketAccessor",

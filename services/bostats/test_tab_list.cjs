@@ -6,7 +6,7 @@ const source = fs.readFileSync(path.join(__dirname, 'static/app.js'), 'utf8');
 const locales = ['zh-CN', 'en-US', 'pt-BR'];
 const context = { translations: Object.fromEntries(locales.map(locale => [locale, { sections: {}, descriptions: {} }])) };
 vm.createContext(context);
-vm.runInContext(source.slice(source.indexOf('const tabListLabels ='), source.indexOf('const watutLabels =')), context);
+vm.runInContext(source.slice(source.indexOf('const tabListLabels ='), source.indexOf('const sifterLabels =')), context);
 vm.runInContext('globalThis.labels = tabListLabels', context);
 for (const locale of locales) {
   const entry = context.labels[locale];
@@ -18,5 +18,5 @@ for (const locale of locales) {
   for (const text of Object.values(entry.labels)) assert.ok(text.length > 0);
 }
 assert.match(source, /sectionId === 'tab_list' && tabListLabels\[language\]/);
-assert.match(source, /'watut', 'tab_list'\]\.includes\(section.id\)/);
+assert.match(source, /'watut', 'tab_list', 'create_sifter'\]\.includes\(section.id\)/);
 console.log('TAB report localization passed (three languages, metrics and period).');
