@@ -5,6 +5,10 @@
   "compatibilityLevel": "JAVA_17",
   "refmap": "bandwidthoptimizer.refmap.json",
   "mixins": [
+    "lightmanscurrency.CurrencyTraderSyncMixin",
+    "lightmanscurrency.CurrencyBankCacheMixin",
+    "lightmanscurrency.CurrencyPacketBarrierMixin",
+    "lightmanscurrency.CurrencyConnectionBarrierMixin",
     "createsifter.SifterCycleSyncMixin",
     "createsifter.SifterSendDataMixin",
     "create.CreateControlledContraptionEntityMixin",

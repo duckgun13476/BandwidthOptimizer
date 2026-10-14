@@ -19,5 +19,5 @@ for (const locale of locales) {
   assert.match(entry.description, /不是流量字节|not bytes|não são bytes/);
 }
 assert.match(source, /sectionId === 'create_sifter' && sifterLabels\[language\]/);
-assert.match(source, /'create_sifter'\]\.includes\(section.id\)/);
+assert.match(source, /'create_sifter', 'lightmanscurrency'\]\.includes\(section.id\)/);
 console.log('Sifter report localization passed (three languages, source-call units and period).');

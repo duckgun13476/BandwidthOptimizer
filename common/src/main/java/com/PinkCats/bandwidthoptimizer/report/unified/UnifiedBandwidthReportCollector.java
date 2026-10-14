@@ -37,6 +37,7 @@ public final class UnifiedBandwidthReportCollector {
         sections.add(watutSection());
         sections.add(tabListSection());
         sections.add(sifterSection());
+        sections.add(currencySection());
         sections.add(chunkSection());
         sections.add(jvmSection());
         sections.add(diagnosticsSection());
@@ -229,6 +230,16 @@ public final class UnifiedBandwidthReportCollector {
         add(metrics, "flushed_calls", "Final sync calls", stats.flushedCalls(), "calls", "source_sync", "process", "Successful immediate final-state flushes, not socket acknowledgements.");
         add(metrics, "saved_calls", "Sync calls avoided", stats.savedCalls(), "calls", "source_sync", "process", "Deferred calls minus successful final flushes; not bytes or measured wire savings.");
         return section("create_sifter", "CreateSifter synchronization", "Synchronous processing-call reduction. Start, completion and external updates remain independent.", metrics);
+    }
+
+    private static UnifiedBandwidthReport.Section currencySection() {
+        var stats = com.PinkCats.bandwidthoptimizer.integration.lightmanscurrency.CurrencyBankSyncTransaction.snapshot();
+        List<UnifiedBandwidthReport.Metric> metrics = new ArrayList<>();
+        add(metrics, "counters_started_at_millis", "Counters started at", stats.startedAtMillis(), "timestamp", "observation", "process", "Counter initialization in epoch milliseconds.");
+        add(metrics, "requested_calls", "Requested bank sync calls", stats.requestedCalls(), "calls", "source_sync", "process", "Full broadcast account snapshots requested inside supported player item-trader transactions.");
+        add(metrics, "flushed_calls", "Bank snapshot calls flushed", stats.flushedCalls(), "calls", "source_sync", "process", "Successful native calls flushed before another packet, trade event, or return; not socket acknowledgements.");
+        add(metrics, "saved_calls", "Bank sync calls avoided", stats.savedCalls(), "calls", "source_sync", "process", "Adjacent full snapshots for the same account/cache combined; targeted, inventory, notification and Stats sends remain independent. Not measured byte/socket savings.");
+        return section("lightmanscurrency", "LightmansCurrency bank synchronization", "Process-lifetime source-call counters. Full bank snapshots retain the final balance and complete log.", metrics);
     }
 
     private static UnifiedBandwidthReport.Section watutSection() {

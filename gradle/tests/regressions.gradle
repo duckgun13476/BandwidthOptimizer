@@ -1,5 +1,10 @@
 def configureTestJavaExecTask = project.ext.configureTestJavaExecTask
 
+tasks.register('runCurrencyBankSyncTransactionRegression', JavaExec) {
+    configureTestJavaExecTask(delegate, 'verification', 'Verifies adjacent full bank snapshots and ordering barriers.',
+            'com.PinkCats.bandwidthoptimizer.integration.lightmanscurrency.CurrencyBankSyncTransactionRegressionMain')
+}
+
 tasks.register('runLightmansCurrencySourceDetailRegression', JavaExec) {
     configureTestJavaExecTask(delegate, 'verification',
             'Verifies read-only bounded optional currency payload source attribution and report totals.',

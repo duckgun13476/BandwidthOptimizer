@@ -4,6 +4,10 @@
   "package": "com.PinkCats.bandwidthoptimizer.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "lightmanscurrency.CurrencyTraderSyncMixin",
+    "lightmanscurrency.CurrencyBankCacheMixin",
+    "lightmanscurrency.CurrencyPacketBarrierMixin",
+    "lightmanscurrency.CurrencyConnectionBarrierMixin",
     "neoforge.GenericPacketSplitterMixin",
     "createsifter.SifterCycleSyncMixin",
     "createsifter.SifterSendDataMixin",
