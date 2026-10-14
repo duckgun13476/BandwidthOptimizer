@@ -1,6 +1,10 @@
 package com.PinkCats.bandwidthoptimizer.chunk.peer;
 
 import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketDescriptor;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkHotspotKind;
+import com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkLaneKind;
+import com.PinkCats.bandwidthoptimizer.chunk.snapshot.ChunkSnapshotFingerprint;
 
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
@@ -12,6 +16,8 @@ public final class ChunkPeerStateRetentionRegressionMain {
     public static void main(String[] args) {
         verifyPlayerScopeRetention();
         verifyChunkStateLruAndTtl();
+        verifyAcrossScopeSelection();
+        verifyAcrossScopeExpiryFallback();
         System.out.println("Chunk peer state retention regression passed");
     }
 
@@ -73,6 +79,73 @@ public final class ChunkPeerStateRetentionRegressionMain {
 
     private static String hash(char value) {
         return String.valueOf(value).repeat(64);
+    }
+
+    private static void verifyAcrossScopeSelection() {
+        AtomicLong now = new AtomicLong(1L);
+        ChunkPeerState state = new ChunkPeerState("selection", 3, 100L, now::get);
+        ChunkPacketCoordinate coordinate = ChunkPacketCoordinate.ofChunk(1, 2);
+        publish(state, 1L, coordinate, 'a', 10L);
+        publish(state, 2L, coordinate, 'b', 10L);
+        state.recordPersistentClientManifest(3L, coordinate, 1L, hash('c'), 1024);
+        require(state.latestKnownSnapshotAcrossScopes(null) == null, "null coordinate selected a state");
+        require(state.latestKnownSnapshotAcrossScopes(ChunkPacketCoordinate.unknown()) == null,
+                "unknown coordinate selected a state");
+        require(state.latestKnownSnapshotAcrossScopes(ChunkPacketCoordinate.ofChunk(2, 1)) == null,
+                "different coordinates selected a state");
+        require(state.snapshotChunk(2L, coordinate).knownSnapshotHash().equals(hash('b')),
+                "exact-scope query changed");
+        require(state.latestKnownSnapshotAcrossScopes(coordinate).knownSnapshotHash().equals(hash('a')),
+                "timestamp tie did not retain first encountered published state");
+        // Selecting scope 1 touches its LRU entry; adding another state evicts scope 3.
+        state.recordPersistentClientManifest(4L, coordinate, 1L, hash('d'), 1024);
+        require(state.snapshotChunk(3L, coordinate) == null, "winner lookup did not preserve LRU touch");
+        publish(state, 2L, coordinate, 'b', 20L);
+        require(state.latestKnownSnapshotAcrossScopes(coordinate).knownSnapshotHash().equals(hash('b')),
+                "newest published state was not selected");
+        state.invalidateChunk(2L, coordinate);
+        require(state.latestKnownSnapshotAcrossScopes(coordinate).knownSnapshotHash().equals(hash('a')),
+                "invalidated winner remained selected");
+        now.set(101L);
+        require(state.latestKnownSnapshotAcrossScopes(coordinate) == null, "expired state remained selected");
+    }
+
+    private static void verifyAcrossScopeExpiryFallback() {
+        AtomicLong now = new AtomicLong(1L);
+        java.util.concurrent.atomic.AtomicInteger reads = new java.util.concurrent.atomic.AtomicInteger();
+        boolean[] advanceDuringQuery = {false};
+        ChunkPeerState state = new ChunkPeerState("fallback", 2, 100L, () -> {
+            if (advanceDuringQuery[0] && reads.incrementAndGet() == 2) {
+                now.set(101L);
+            }
+            return now.get();
+        });
+        ChunkPacketCoordinate coordinate = ChunkPacketCoordinate.ofChunk(3, 4);
+        publish(state, 1L, coordinate, 'e', 30L);
+        advanceDuringQuery[0] = true;
+        require(state.latestKnownSnapshotAcrossScopes(coordinate).knownSnapshotHash().equals(hash('e')),
+                "second-prune expiry lost the selected snapshot fallback");
+        require(state.snapshotChunk(1L, coordinate) == null, "fallback resurrected an expired map entry");
+    }
+
+    private static void publish(ChunkPeerState state, long scope, ChunkPacketCoordinate coordinate,
+                                char fingerprint, long timestamp) {
+        state.setEpoch(scope);
+        state.recordObservation(new ChunkPacketDescriptor("PLAY", "full", ChunkHotspotKind.FULL_CHUNK,
+                ChunkLaneKind.FULL, coordinate), new ChunkSnapshotFingerprint("test", hash(fingerprint),
+                String.valueOf(fingerprint), 1024), null);
+        // Deterministic wall-clock ties without adding a production clock or testing counter.
+        try {
+            var getter = ChunkPeerState.class.getDeclaredMethod("getChunkStateForControl", long.class,
+                    ChunkPacketCoordinate.class);
+            getter.setAccessible(true);
+            Object chunkState = getter.invoke(state, scope, coordinate);
+            var field = ChunkPeerChunkState.class.getDeclaredField("lastObservedAtMillis");
+            field.setAccessible(true);
+            field.setLong(chunkState, timestamp);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException(exception);
+        }
     }
 
     private static void require(boolean condition, String message) {

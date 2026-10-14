@@ -109,29 +109,24 @@ final class ChunkPeerState {
         }
 
         pruneExpiredChunkStates();
-        ChunkPeerChunkStateSnapshot latestSnapshot = null;
+        ChunkPeerChunkState latestState = null;
         String latestKey = null;
         for (Map.Entry<String, TrackedChunkState> entry : this.chunkStates.entrySet()) {
             ChunkPeerChunkState chunkState = entry.getValue().state();
-            if (chunkState == null) {
+            if (chunkState == null
+                    || !chunkState.hasPublishedSnapshotAt(coordinate.chunkX(), coordinate.chunkZ())) {
                 continue;
             }
-            ChunkPeerChunkStateSnapshot candidateSnapshot = chunkState.snapshotForQuery();
-            if (candidateSnapshot == null
-                    || candidateSnapshot.chunkKey() == null
-                    || candidateSnapshot.chunkKey().chunkX() != coordinate.chunkX()
-                    || candidateSnapshot.chunkKey().chunkZ() != coordinate.chunkZ()
-                    || !candidateSnapshot.knownSnapshotPublished()) {
-                continue;
-            }
-            if (latestSnapshot == null
-                    || candidateSnapshot.lastObservedAtMillis() > latestSnapshot.lastObservedAtMillis()) {
-                latestSnapshot = candidateSnapshot;
+            if (latestState == null
+                    || chunkState.lastObservedAtMillis() > latestState.lastObservedAtMillis()) {
+                latestState = chunkState;
                 latestKey = entry.getKey();
             }
         }
         ChunkPeerChunkState selected = latestKey == null ? null : getChunkState(latestKey);
-        return selected == null ? latestSnapshot : selected.snapshotForQuery();
+        // A second expiry scan may remove the winner. Retain its state as the old snapshot fallback.
+        ChunkPeerChunkState result = selected == null ? latestState : selected;
+        return result == null ? null : result.snapshotForQuery();
     }
 
     synchronized ChunkPeerChunkStateSnapshot acknowledgeChunk(

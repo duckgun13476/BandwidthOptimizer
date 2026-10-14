@@ -203,6 +203,15 @@ final class ChunkPeerChunkState {
         return snapshot();
     }
 
+    boolean hasPublishedSnapshotAt(int chunkX, int chunkZ) {
+        return this.knownSnapshotPublished && this.chunkKey != null
+                && this.chunkKey.chunkX() == chunkX && this.chunkKey.chunkZ() == chunkZ;
+    }
+
+    long lastObservedAtMillis() {
+        return this.lastObservedAtMillis;
+    }
+
     private void clearReceiverAcknowledgement() {
         this.receiverSnapshotAcknowledged = false;
         this.persistentClientManifestAcknowledged = false;
