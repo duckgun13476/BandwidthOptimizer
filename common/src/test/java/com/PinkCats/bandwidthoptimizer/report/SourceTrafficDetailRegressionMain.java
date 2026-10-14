@@ -16,6 +16,7 @@ public final class SourceTrafficDetailRegressionMain {
         require(live.actualBytes() == 100 && live.rawBytes() == 1100, "live totals");
         require(live.windowStartedAtMillis() == 0, "no completed window yet");
         require(live.countersStartedAtMillis() > 0 && live.observedAtMillis() >= live.countersStartedAtMillis(), "cumulative observation period");
+        ChannelTransportSourceRankCore.recordEntitySyncDetail(new EntitySyncDetailCounters.Detail("attributes", "mod:vehicle", List.of("mod:mass"), 0));
         Method snapshot = ChannelTransportSourceRankCore.class.getDeclaredMethod("snapshotEntries");
         snapshot.setAccessible(true);
         List<?> drained = (List<?>) snapshot.invoke(null);
@@ -24,6 +25,7 @@ public final class SourceTrafficDetailRegressionMain {
         writer.invoke(null, "regression", drained, 1);
         var completed = ChannelTransportSourceRankCore.snapshotForReport(1);
         require(completed.windowPackets() == 2 && completed.windowActualBytes() == 100, "completed window");
+        require(completed.entitySync().windowPackets() == 1 && completed.entitySync().entries().get(0).fieldId().equals("mod:mass"), "completed entity detail window");
         require(completed.observedAtMillis() >= completed.windowStartedAtMillis(), "window timestamps");
         var wire = completed.entries().stream().filter(e -> e.sourceKey().equals("test:wire")).findFirst().orElseThrow();
         require(wire.estimatedPackets() == 1 && wire.lastPath().equals("BATCH_SHARE"), "batch estimate attribution");
@@ -32,6 +34,7 @@ public final class SourceTrafficDetailRegressionMain {
         require(ChannelTransportSourceRankCore.snapshotForReport(1).windowPackets() == 2, "read must not drain window");
         writer.invoke(null, "regression-next", snapshot.invoke(null), 1);
         require(ChannelTransportSourceRankCore.snapshotForReport(1).windowPackets() == 0, "next periodic window drains once");
+        require(ChannelTransportSourceRankCore.snapshotForReport(1).entitySync().windowPackets() == 0 && ChannelTransportSourceRankCore.snapshotForReport(1).entitySync().packets() == 1, "detail cumulative survives window drain");
         require(ChannelTransportSourceRankCore.snapshotForReport(1).packets() == 2, "cumulative totals survive reset");
         for (int i = 0; i < 501; i++) {
             ChannelTransportSourceRankCore.recordOutboundPacket("test:key-" + i, "Packet", i,

@@ -37,6 +37,7 @@ public final class ChannelTransportSourceRankCore {
     private static final DateTimeFormatter REPORT_DISPLAY_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.ROOT);
     private static final ConcurrentHashMap<SourceKey, SourceCounter> COUNTERS = new ConcurrentHashMap<>();
     private static volatile SourceTrafficSnapshot latestTrafficSnapshot;
+    private static final EntitySyncDetailCounters ENTITY_SYNC = new EntitySyncDetailCounters();
     private static final long COUNTERS_STARTED_AT_MILLIS = System.currentTimeMillis();
     private static long windowStartedAtMillis = System.currentTimeMillis();
     private static final LongAdder CREATE_BLOCK_ENTITY_PACKET_COUNT = new LongAdder();
@@ -105,6 +106,10 @@ public final class ChannelTransportSourceRankCore {
         );
     }
 
+    public static void recordEntitySyncDetail(EntitySyncDetailCounters.Detail detail) {
+        if (detail != null && isEnabled()) ENTITY_SYNC.record(detail);
+    }
+
     /** Last completed MD observation, with batch shares explicitly marked as estimates.
      * Reading this view never drains the periodic counters or exposes channel identities. */
     public static SourceTrafficSnapshot snapshotForReport(int limit) {
@@ -113,10 +118,10 @@ public final class ChannelTransportSourceRankCore {
             SourceTrafficSnapshot view = trafficSnapshot(completed.entries(), completed.packets(),
                     completed.rawBytes(), completed.actualBytes(), completed.windowPackets(),
                     completed.windowRawBytes(), completed.windowActualBytes(),
-                    completed.windowStartedAtMillis(), completed.observedAtMillis(), limit);
+                    completed.windowStartedAtMillis(), completed.observedAtMillis(), limit, completed.entitySync());
             return new SourceTrafficSnapshot(completed.distinctKeys(), view.packets(), view.rawBytes(),
                     view.actualBytes(), view.windowPackets(), view.windowRawBytes(), view.windowActualBytes(),
-                    view.windowStartedAtMillis(), view.observedAtMillis(), view.rankingLimit(), view.countersStartedAtMillis(), view.entries());
+                    view.windowStartedAtMillis(), view.observedAtMillis(), view.rankingLimit(), view.countersStartedAtMillis(), view.entries(), completed.entitySync());
         }
         List<SourceTrafficEntry> entries = new ArrayList<>(COUNTERS.size());
         long packets = 0L;
@@ -142,14 +147,14 @@ public final class ChannelTransportSourceRankCore {
         entries.sort(Comparator.comparingLong(SourceTrafficEntry::rawBytes).reversed()
                 .thenComparing(SourceTrafficEntry::sourceKey)
                 .thenComparing(SourceTrafficEntry::packetClassName));
-        return trafficSnapshot(entries, packets, rawBytes, actualBytes, 0, 0, 0, 0, System.currentTimeMillis(), limit);
+        return trafficSnapshot(entries, packets, rawBytes, actualBytes, 0, 0, 0, 0, System.currentTimeMillis(), limit, ENTITY_SYNC.snapshot(limit, false));
     }
 
     public record SourceTrafficSnapshot(int distinctKeys, long packets, long rawBytes,
                                         long actualBytes, long windowPackets, long windowRawBytes,
                                         long windowActualBytes, long windowStartedAtMillis,
                                         long observedAtMillis, int rankingLimit, long countersStartedAtMillis,
-                                        List<SourceTrafficEntry> entries) {
+                                        List<SourceTrafficEntry> entries, EntitySyncDetailCounters.Snapshot entitySync) {
     }
 
     public record SourceTrafficEntry(String sourceKey, String packetClassName, int rawPacketId,
@@ -161,7 +166,7 @@ public final class ChannelTransportSourceRankCore {
 
     private static SourceTrafficSnapshot trafficSnapshot(List<SourceTrafficEntry> entries,
             long packets, long rawBytes, long actualBytes, long windowPackets, long windowRawBytes,
-            long windowActualBytes, long started, long observed, int limit) {
+            long windowActualBytes, long started, long observed, int limit, EntitySyncDetailCounters.Snapshot entitySync) {
         int bounded = Math.min(Math.max(limit, 0), 100);
         LinkedHashSet<SourceTrafficEntry> selected = new LinkedHashSet<>();
         for (var order : List.<java.util.function.ToLongFunction<SourceTrafficEntry>>of(
@@ -174,7 +179,7 @@ public final class ChannelTransportSourceRankCore {
         }
         return new SourceTrafficSnapshot(entries.size(), packets, rawBytes, actualBytes,
                 windowPackets, windowRawBytes, windowActualBytes, started, observed, bounded, COUNTERS_STARTED_AT_MILLIS,
-                List.copyOf(selected));
+                List.copyOf(selected), entitySync);
     }
 
     public static void resetCreateBlockEntityTransportStats() {
@@ -273,8 +278,9 @@ public final class ChannelTransportSourceRankCore {
                     c.chunkWrappedCount(), c.estimatedActualCount(), c.lastActualPath(), c.lastActualFrameKind(),
                     c.windowCount(), c.windowRawBytes(), c.windowActualBytes()));
         }
+        var detailWindow = ENTITY_SYNC.snapshot(100, true);
         latestTrafficSnapshot = trafficSnapshot(traffic, totalCount, totalRawBytes, totalActualBytes,
-                windowCount, windowRawBytes, windowActualBytes, windowStartedAtMillis, observed, 100);
+                windowCount, windowRawBytes, windowActualBytes, windowStartedAtMillis, observed, 100, detailWindow);
         windowStartedAtMillis = observed;
 
         StringBuilder builder = new StringBuilder(8192);
@@ -298,6 +304,7 @@ public final class ChannelTransportSourceRankCore {
         appendSourceTable(builder, "## Source Rank By Window Actual Bytes", sortByWindowActual(entries), topN);
         appendSourceTable(builder, "## Source Rank By Total Raw Bytes", sortByTotalRaw(entries), topN);
         appendSourceTable(builder, "## Source Rank By Total Actual Bytes", sortByTotalActual(entries), topN);
+        appendEntitySyncTable(builder, detailWindow);
 
         try {
             Path reportDirectory = resolveReportDirectory();
@@ -343,6 +350,19 @@ public final class ChannelTransportSourceRankCore {
                     .append(" |").append(System.lineSeparator());
         }
         builder.append(System.lineSeparator());
+    }
+
+    private static void appendEntitySyncTable(StringBuilder builder, EntitySyncDetailCounters.Snapshot detail) {
+        builder.append("## Entity Sync Field Occurrences\n\n")
+                .append("Field occurrences are not field byte totals. Metadata IDs are entity-type-specific wire IDs; no values, UUIDs or entity instance IDs are retained.\n\n")
+                .append("- Packets: ").append(detail.packets()).append(", unknown type: ").append(detail.unknownTypePackets())
+                .append(", omitted field occurrences: ").append(detail.omittedFields()).append("; key cap: 4096; export: top 100 total/window union.\n\n")
+                .append("| Kind | Entity Type | Field / Attribute ID | Total Occurrences | Window Occurrences |\n")
+                .append("|---|---|---|---:|---:|\n");
+        for (var entry : detail.entries()) builder.append("| ").append(markdownCell(entry.kind()))
+                .append(" | ").append(markdownCell(entry.entityType())).append(" | ").append(markdownCell(entry.fieldId()))
+                .append(" | ").append(entry.occurrences()).append(" | ").append(entry.windowOccurrences()).append(" |\n");
+        builder.append('\n');
     }
 
     private static List<SourceReportEntry> sortByWindowRaw(List<SourceReportEntry> entries) {

@@ -39,3 +39,16 @@ for (const language of ['en-US', 'zh-CN', 'pt-BR']) {
   assert.match(node.innerHTML, /95.00%/);
 }
 console.log('Source traffic rendering regression passed (old/new, three languages, sorting, pagination, escaping).');
+for (const language of ['en-US', 'zh-CN', 'pt-BR']) {
+  context.language = language;
+  const detail = context.renderEntitySyncDetails({ packets: 5, unknownTypePackets: 1, omittedFields: 4, trackedKeys: 2,
+    entries: [{ kind: 'metadata', entityType: '<script>pig', fieldId: '<unsafe>', occurrences: 5, windowOccurrences: 2 }] });
+  assert.match(detail, /&lt;script>/);
+  assert.doesNotMatch(detail, /<script>|<unsafe>|NaN|undefined/);
+  assert.match(detail, /4096/);
+  context.renderSourceTraffic({ ...report, entitySync: { packets: 1, trackedKeys: 1,
+    entries: [{ kind: 'attributes', entityType: 'mod:vehicle', fieldId: 'mod:mass', occurrences: 1, windowOccurrences: 1 }] } });
+  assert.match(node.innerHTML, /mod:mass/);
+}
+assert.equal(context.renderEntitySyncDetails(null), '');
+console.log('Entity sync field rendering passed (three languages, legacy reports, escaping).');

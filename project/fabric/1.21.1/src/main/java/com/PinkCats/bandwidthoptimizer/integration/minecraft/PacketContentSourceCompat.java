@@ -36,6 +36,31 @@ public final class PacketContentSourceCompat {
         return List.of();
     }
 
+    public static com.PinkCats.bandwidthoptimizer.report.EntitySyncDetailCounters.Detail entitySyncDetail(Packet<?> packet, String kind, String type) {
+        int max = com.PinkCats.bandwidthoptimizer.report.EntitySyncDetailCounters.MAX_FIELDS;
+        java.util.List<String> fields = new java.util.ArrayList<>();
+        int count = 0;
+        if (packet instanceof net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket metadata) {
+            var items = metadata.packedItems();
+            if (items != null) {
+                count = items.size();
+                for (int i = 0; i < Math.min(count, max); i++) {
+                    var item = items.get(i);
+                    fields.add(Integer.toString(item.id()));
+                }
+            }
+        } else if (packet instanceof net.minecraft.network.protocol.game.ClientboundUpdateAttributesPacket attributes) {
+            var values = attributes.getValues();
+            count = values.size();
+            for (int i = 0; i < Math.min(count, max); i++) {
+                var value = values.get(i);
+                var key = BuiltInRegistries.ATTRIBUTE.getKey(value.attribute().value());
+                fields.add(key == null ? "<unknown>" : key.toString());
+            }
+        }
+        return new com.PinkCats.bandwidthoptimizer.report.EntitySyncDetailCounters.Detail(kind, type, fields, Math.max(count - max, 0));
+    }
+
     private static List<String> one(Object key) {
         return key == null ? List.of() : List.of(key.toString());
     }

@@ -69,6 +69,7 @@ public final class ChannelTransportPacketRankCaptureManager {
             return null;
         }
 
+        var entitySyncDetail = ChannelTransportPacketRankSourceResolver.resolveEntitySyncDetail(context, packet, rawPacketBytes);
         boolean packetRankActive = activeCaptureSession != null;
         return new OutboundPacketCapture(
                 packetRankActive ? activeCaptureSession.sessionId() : -1L,
@@ -76,11 +77,12 @@ public final class ChannelTransportPacketRankCaptureManager {
                 System.currentTimeMillis(),
                 com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()),
                 packet.getClass().getName(),
-                ChannelTransportPacketRankSourceResolver.resolveSourceKey(packet),
+                entitySyncDetail == null ? ChannelTransportPacketRankSourceResolver.resolveSourceKey(packet) : entitySyncDetail.sourceKey(),
                 tryReadLeadingVarInt(rawPacketBytes),
                 rawPacketBytes.length,
                 transportInputPacketBytes.length,
                 packetRankActive ? transportInputPacketBytes : null,
+                entitySyncDetail,
                 chunkProtocolApplied
         );
     }
@@ -313,6 +315,7 @@ public final class ChannelTransportPacketRankCaptureManager {
             return;
         }
 
+        ChannelTransportSourceRankCore.recordEntitySyncDetail(capture.entitySyncDetail());
         ChannelTransportSourceRankCore.recordOutboundPacket(
                 capture.sourceKey(),
                 capture.packetClassName(),
@@ -392,6 +395,7 @@ public final class ChannelTransportPacketRankCaptureManager {
             int rawPacketBytes,
             int transportInputBytes,
             byte[] retainedTransportInputBytes,
+            EntitySyncDetailCounters.Detail entitySyncDetail,
             boolean chunkProtocolApplied
     ) {
         public OutboundPacketCapture {

@@ -26,6 +26,8 @@ public final class ChannelTransportPacketRankSourceResolver {
     private static final int MAX_MULTI_SOURCE_NAMESPACES = 32;
     private static final AttributeKey<EntitySourceTable> ENTITY_SOURCES =
             AttributeKey.valueOf("bandwidthoptimizer.report.entity_sources");
+    private static final AttributeKey<EntitySyncSourceTracker> DETAILED_ENTITIES =
+            AttributeKey.valueOf("bandwidthoptimizer.report.detailed_entities");
     private static final Set<String> ENTITY_REFERENCE_PACKETS = Set.of(
             "ClientboundAnimatePacket",
             "ClientboundDamageEventPacket",
@@ -45,6 +47,35 @@ public final class ChannelTransportPacketRankSourceResolver {
             "ClientboundUpdateAttributesPacket"
     );
     private ChannelTransportPacketRankSourceResolver() {}
+
+    /** Called once at capture admission on every PLAY path, before delayed batch completion.
+     * Uses only packet snapshots and channel state; never looks up mutable world entities. */
+    public static EntitySyncDetailCounters.Detail resolveEntitySyncDetail(
+            ChannelHandlerContext context, Packet<?> packet, byte[] packetBytes) {
+        if (context == null || context.channel() == null || packet == null) return null;
+        String name = packet.getClass().getSimpleName();
+        switch (name) {
+            case "ClientboundLoginPacket", "ClientboundRespawnPacket", "ClientboundStartConfigurationPacket",
+                    "ClientboundAddEntityPacket", "ClientboundAddPlayerPacket", "ClientboundRemoveEntitiesPacket",
+                    "ClientboundSetEntityDataPacket", "ClientboundUpdateAttributesPacket" -> { }
+            default -> { return null; }
+        }
+        var attribute = context.channel().attr(DETAILED_ENTITIES);
+        EntitySyncSourceTracker table = attribute.get();
+        if (table == null) {
+            EntitySyncSourceTracker created = new EntitySyncSourceTracker();
+            EntitySyncSourceTracker raced = attribute.setIfAbsent(created);
+            table = raced == null ? created : raced;
+        }
+        String spawnType = "ClientboundAddEntityPacket".equals(name) ? firstKey(PacketContentSourceCompat.resourceKeys(packet)) : null;
+        String type = table.observe(name, spawnType, packetBytes);
+        String kind = switch (name) {
+            case "ClientboundSetEntityDataPacket" -> "metadata";
+            case "ClientboundUpdateAttributesPacket" -> "attributes";
+            default -> null;
+        };
+        return kind == null ? null : PacketContentSourceCompat.entitySyncDetail(packet, kind, type);
+    }
 
     public static String resolveSourceKey(Packet<?> packet) {
         if (packet == null) {

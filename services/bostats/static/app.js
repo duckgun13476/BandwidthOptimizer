@@ -786,6 +786,18 @@ function renderSourceTraffic(snapshot) {
   node.querySelector('#source-traffic-order')?.addEventListener('change', event => { sourceTrafficOrder = event.target.value; pages.sources.page = 1; renderSourceTraffic(snapshot); });
   renderPagination('sources', entries.length, () => renderSourceTraffic(snapshot));
   node.insertAdjacentHTML('afterbegin', observationPeriod(snapshot));
+  node.insertAdjacentHTML('beforeend', renderEntitySyncDetails(snapshot.entitySync));
+}
+
+function renderEntitySyncDetails(detail) {
+  if (!detail) return '';
+  const labels = {
+    'zh-CN': ['实体同步字段', '仅记录字段出现次数，不代表字段字节数；metadata 为该实体类型的协议字段 ID，属性为注册 ID。累计和窗口与来源统计使用相同周期。', '类型', '实体类型', '字段 / 属性 ID', '累计次数', '窗口次数', '未知实体类型包', '遗漏字段次数', '已保留键', '导出累计 / 窗口排行并集'],
+    'en-US': ['Entity sync fields', 'Counts are field occurrences, not field bytes. Metadata uses entity-type-specific wire field IDs; attributes use registry IDs. Total and window periods match source traffic.', 'Kind', 'Entity type', 'Field / attribute ID', 'Total occurrences', 'Window occurrences', 'Unknown entity type packets', 'Omitted field occurrences', 'Retained keys', 'Exported total / window ranking union'],
+    'pt-BR': ['Campos de sincronização de entidades', 'Contagens de campos, não bytes por campo. Metadata usa IDs de protocolo por tipo de entidade; atributos usam IDs de registro. Os períodos correspondem ao tráfego por origem.', 'Tipo', 'Tipo de entidade', 'ID do campo / atributo', 'Ocorrências totais', 'Ocorrências na janela', 'Pacotes com tipo desconhecido', 'Ocorrências de campos omitidas', 'Chaves retidas', 'União dos rankings total / janela']
+  }[language] || ['Entity sync fields', 'Field occurrences, not bytes.', 'Kind', 'Entity type', 'Field / attribute ID', 'Total occurrences', 'Window occurrences', 'Unknown entity type packets', 'Omitted field occurrences', 'Retained keys', 'Exported total / window ranking union'];
+  const rows = (Array.isArray(detail.entries) ? detail.entries : []).slice(0, 200).map(entry => `<tr><td>${escapeText(entry.kind || '')}</td><td>${escapeText(entry.entityType || '<unknown>')}</td><td>${escapeText(entry.fieldId || '')}</td><td>${Number(entry.occurrences || 0)}</td><td>${Number(entry.windowOccurrences || 0)}</td></tr>`).join('');
+  return `<details><summary>${escapeText(labels[0])}</summary><p>${escapeText(labels[1])}</p><p>${escapeText(labels[7])}: ${Number(detail.unknownTypePackets || 0)} · ${escapeText(labels[8])}: ${Number(detail.omittedFields || 0)} · ${escapeText(labels[9])}: ${Number(detail.trackedKeys || 0)} / 4096 · ${escapeText(labels[10])}: ${Array.isArray(detail.entries) ? detail.entries.length : 0}</p><table><thead><tr>${labels.slice(2, 7).map(label => `<th>${escapeText(label)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></details>`;
 }
 
 function aggregateBypassSources(entries, bypass) {
