@@ -9,7 +9,7 @@ import com.PinkCats.bandwidthoptimizer.channel.algorithm.TransportAlgorithm;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.batch.KineticBatchLayer;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.mapping.KineticMapTableLayer;
 
-import java.util.Arrays;
+
 
 // streaming transport.
 public final class KineticStreaming implements TransportAlgorithm {
@@ -61,7 +61,7 @@ public final class KineticStreaming implements TransportAlgorithm {
 
         @Override
         public ChannelTransportAlgorithmSession.OperationResult encodePacketWithTelemetry(byte[] packetBytes) {
-            byte[] safePacketBytes = copyBytesOrEmpty(packetBytes);
+            byte[] safePacketBytes = bytesOrEmpty(packetBytes);
             byte[] batchBytes = safePacketBytes;
             KineticMapTableLayer.LayerResult mappingResult = encodeMappingStage(batchBytes);
             byte[] transportBodyBytes = encodeZstdStage(mappingResult.bytes());
@@ -73,7 +73,7 @@ public final class KineticStreaming implements TransportAlgorithm {
 
         @Override
         public ChannelTransportAlgorithmSession.OperationResult encodePacketWithLiteralMappingTelemetry(byte[] packetBytes) {
-            byte[] safePacketBytes = copyBytesOrEmpty(packetBytes);
+            byte[] safePacketBytes = bytesOrEmpty(packetBytes);
             KineticMapTableLayer.LayerResult mappingResult = encodeLiteralMappingStage(safePacketBytes);
             byte[] transportBodyBytes = encodeZstdStage(mappingResult.bytes());
             return new ChannelTransportAlgorithmSession.OperationResult(
@@ -84,7 +84,7 @@ public final class KineticStreaming implements TransportAlgorithm {
 
         @Override
         public ChannelTransportAlgorithmSession.OperationResult decodePacketWithTelemetry(byte[] encodedBytes) {
-            byte[] safeEncodedBytes = copyBytesOrEmpty(encodedBytes);
+            byte[] safeEncodedBytes = bytesOrEmpty(encodedBytes);
             byte[] mappingStageBytes = decodeZstdStage(safeEncodedBytes);
             KineticMapTableLayer.LayerResult mappingResult = decodeMappingStage(mappingStageBytes);
             return new ChannelTransportAlgorithmSession.OperationResult(
@@ -160,7 +160,7 @@ public final class KineticStreaming implements TransportAlgorithm {
 
 
 
-    private static byte[] copyBytesOrEmpty(byte[] sourceBytes) {
-        return sourceBytes == null ? new byte[0] : Arrays.copyOf(sourceBytes, sourceBytes.length);
+    private static byte[] bytesOrEmpty(byte[] sourceBytes) {
+        return sourceBytes == null ? new byte[0] : sourceBytes;
     }
 }

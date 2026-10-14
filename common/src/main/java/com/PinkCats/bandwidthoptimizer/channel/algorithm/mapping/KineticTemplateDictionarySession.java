@@ -59,7 +59,7 @@ final class KineticTemplateDictionarySession {
     }
 
     KineticMapTableLayer.LayerResult encodeWithTelemetry(byte[] packetBytes) {
-        byte[] safePacketBytes = copyBytes(packetBytes);
+        byte[] safePacketBytes = bytesOrEmpty(packetBytes);
         List<KineticTemplateMappingCodec.MappingRemoval> removalsToSend = new ArrayList<>(this.pendingRemovals);
         this.pendingRemovals.clear();
 
@@ -83,14 +83,14 @@ final class KineticTemplateDictionarySession {
                 new KineticTemplateMappingCodec.FrameData(
                         List.of(),
                         List.of(),
-                        KineticTemplateMappingCodec.MappingEntry.literal(copyBytes(packetBytes))
+                        KineticTemplateMappingCodec.MappingEntry.literal(bytesOrEmpty(packetBytes))
                 );
         byte[] encodedFrame = KineticTemplateMappingCodec.encodeFrame(frameData);
         return new KineticMapTableLayer.LayerResult(encodedFrame, toTelemetry(frameData));
     }
 
     KineticMapTableLayer.LayerResult decodeWithTelemetry(byte[] encodedBytes) {
-        KineticTemplateMappingCodec.FrameData frameData = KineticTemplateMappingCodec.decodeFrame(copyBytes(encodedBytes));
+        KineticTemplateMappingCodec.FrameData frameData = KineticTemplateMappingCodec.decodeFrame(bytesOrEmpty(encodedBytes));
         validateInboundFrame(frameData);
         applyRemovals(frameData.removals());
         applyAdditions(frameData.additions());
@@ -876,6 +876,12 @@ final class KineticTemplateDictionarySession {
 
     private static byte[] copyBytes(byte[] sourceBytes) {
         return sourceBytes == null ? new byte[0] : Arrays.copyOf(sourceBytes, sourceBytes.length);
+    }
+
+    // Local frame encoding/decoding does not retain borrowed input. Seeds, hashes and
+    // dictionary entries continue to use copyBytes at their actual retention boundaries.
+    private static byte[] bytesOrEmpty(byte[] sourceBytes) {
+        return sourceBytes == null ? new byte[0] : sourceBytes;
     }
 
     private void touchExact(int mappingId) {

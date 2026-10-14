@@ -93,20 +93,20 @@ public final class ChannelTransportSession implements AutoCloseable {
 
     // Telemetry
     public synchronized PacketResult encodeSinglePacketWithTelemetry(byte[] encodedPacketBytes) {
-        byte[] safeBytes = copyBytesOrEmpty(encodedPacketBytes);
+        byte[] safeBytes = bytesOrEmpty(encodedPacketBytes);
         ChannelTransportAlgorithmSession.OperationResult result = this.outboundSession.encodePacketWithTelemetry(safeBytes);
         return new PacketResult(copyBytesOrEmpty(result.bytes()), fallbackTelemetry(result.telemetry(), safeBytes.length));
     }
 
     public synchronized PacketResult encodeSinglePacketWithLiteralMappingTelemetry(byte[] encodedPacketBytes) {
-        byte[] safeBytes = copyBytesOrEmpty(encodedPacketBytes);
+        byte[] safeBytes = bytesOrEmpty(encodedPacketBytes);
         ChannelTransportAlgorithmSession.OperationResult result =
                 this.outboundSession.encodePacketWithLiteralMappingTelemetry(safeBytes);
         return new PacketResult(copyBytesOrEmpty(result.bytes()), fallbackTelemetry(result.telemetry(), safeBytes.length));
     }
 
     public synchronized PacketResult decodeSinglePacketWithTelemetry(byte[] transportBytes) {
-        byte[] safeBytes = copyBytesOrEmpty(transportBytes);
+        byte[] safeBytes = bytesOrEmpty(transportBytes);
         ChannelTransportAlgorithmSession.OperationResult result = this.inboundSession.decodePacketWithTelemetry(safeBytes);
         return new PacketResult(copyBytesOrEmpty(result.bytes()), fallbackTelemetry(result.telemetry(), safeBytes.length));
     }
@@ -133,7 +133,7 @@ public final class ChannelTransportSession implements AutoCloseable {
         if (this.streamingRecoveryState.outboundEpochClosed()) {
             throw new IllegalStateException("Cross-frame Zstd epoch is awaiting confirmation");
         }
-        byte[] safeBytes = copyBytesOrEmpty(encodedPacketBytes);
+        byte[] safeBytes = bytesOrEmpty(encodedPacketBytes);
         ChannelTransportAlgorithmSession.OperationResult result =
                 this.outboundStreamingSession.encodePacketWithLiteralMappingTelemetry(safeBytes);
         this.outboundStreamingSequence = this.outboundStreamingSequence == Integer.MAX_VALUE
@@ -179,7 +179,7 @@ public final class ChannelTransportSession implements AutoCloseable {
         if (this.inboundStreamingSession == null) {
             throw new IllegalStateException("Cross-frame Zstd is unavailable for this transport session");
         }
-        byte[] safeBytes = copyBytesOrEmpty(transportBytes);
+        byte[] safeBytes = bytesOrEmpty(transportBytes);
         ChannelTransportAlgorithmSession.OperationResult result =
                 this.inboundStreamingSession.decodePacketWithTelemetry(safeBytes);
         return new PacketResult(copyBytesOrEmpty(result.bytes()), fallbackTelemetry(result.telemetry(), safeBytes.length));
@@ -243,7 +243,7 @@ public final class ChannelTransportSession implements AutoCloseable {
     }
 
     public synchronized PacketResult encodeStreamingFallbackBatch(byte[] batchPayloadBytes) {
-        byte[] safeBytes = copyBytesOrEmpty(batchPayloadBytes);
+        byte[] safeBytes = bytesOrEmpty(batchPayloadBytes);
         return encodeIndependentPacket(safeBytes);
     }
 
@@ -252,7 +252,7 @@ public final class ChannelTransportSession implements AutoCloseable {
     }
 
     private PacketResult decodeIndependentPacket(byte[] transportBytes) {
-        byte[] safeBytes = copyBytesOrEmpty(transportBytes);
+        byte[] safeBytes = bytesOrEmpty(transportBytes);
         this.inboundRecoverySession.reset();
         try {
             ChannelTransportAlgorithmSession.OperationResult result =
@@ -380,6 +380,11 @@ public final class ChannelTransportSession implements AutoCloseable {
 
 
 
+
+    // Inputs are synchronously borrowed; public results still cross a copying boundary.
+    private static byte[] bytesOrEmpty(byte[] sourceBytes) {
+        return sourceBytes == null ? new byte[0] : sourceBytes;
+    }
 
     private static byte[] copyBytesOrEmpty(byte[] sourceBytes) {
         return sourceBytes == null ? new byte[0] : Arrays.copyOf(sourceBytes, sourceBytes.length);

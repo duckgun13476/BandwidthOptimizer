@@ -7,6 +7,7 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 
+/** Synchronously borrows input; framing/workspaces and returned bytes own their storage. */
 public final class KineticStreamingLayer implements TransportLayer, AutoCloseable {
 
     private static final int DIRECT_BUFFER_BYTES = 64 * 1024;
@@ -31,7 +32,7 @@ public final class KineticStreamingLayer implements TransportLayer, AutoCloseabl
 
     @Override
     public byte[] encode(byte[] inputBytes) {
-        byte[] safeInputBytes = copyBytesOrEmpty(inputBytes);
+        byte[] safeInputBytes = bytesOrEmpty(inputBytes);
         byte[] framedPacketBytes = ChannelStreamingPacketCodec.encodeFramedPacket(safeInputBytes);
         return compressStreaming(framedPacketBytes);
     }
@@ -39,7 +40,7 @@ public final class KineticStreamingLayer implements TransportLayer, AutoCloseabl
     @Override
     public byte[] decode(byte[] inputBytes) {
         try {
-            byte[] safeInputBytes = copyBytesOrEmpty(inputBytes);
+            byte[] safeInputBytes = bytesOrEmpty(inputBytes);
             appendDecodedBytes(decompressStreaming(safeInputBytes));
             byte[] nextPacketBatch = extractNextPacketBatch();
             if (nextPacketBatch == null) {
@@ -255,9 +256,9 @@ public final class KineticStreamingLayer implements TransportLayer, AutoCloseabl
         output.write(chunkBytes, 0, chunkBytes.length);
     }
 
-    // This function turns a nullable byte array into a private immutable working copy.
-    private static byte[] copyBytesOrEmpty(byte[] sourceBytes) {
-        return sourceBytes == null ? new byte[0] : Arrays.copyOf(sourceBytes, sourceBytes.length);
+    // Framing/workspaces consume borrowed input synchronously and own their output.
+    private static byte[] bytesOrEmpty(byte[] sourceBytes) {
+        return sourceBytes == null ? new byte[0] : sourceBytes;
     }
 
     public enum FrameTermination {

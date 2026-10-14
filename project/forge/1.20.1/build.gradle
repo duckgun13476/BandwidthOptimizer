@@ -213,6 +213,17 @@ tasks.register('runEntitySyncDetailRegression', JavaExec) {
     systemProperty 'bandwidthoptimizer.outputDirectory', rootProject.file('.tmp/entity-sync-regression').absolutePath
 }
 
+tasks.register('runSynchronousCodecOwnershipRegression', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.PinkCats.bandwidthoptimizer.channel.algorithm.zstd.SynchronousCodecOwnershipRegressionMain'
+    if (project.hasProperty('codecOwnershipBaseline')) {
+        args '--write-baseline', rootProject.file('.tmp/codec-ownership-baseline.bin').absolutePath
+    } else if (project.hasProperty('codecOwnershipCompare')) {
+        args '--compare-baseline', rootProject.file('.tmp/codec-ownership-baseline.bin').absolutePath
+    }
+}
+
 tasks.register('runOutboundQueueCapacityGuardRegression', JavaExec) {
     dependsOn testClasses
     classpath = sourceSets.test.runtimeClasspath

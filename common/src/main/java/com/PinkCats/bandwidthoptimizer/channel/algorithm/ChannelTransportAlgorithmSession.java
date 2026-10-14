@@ -2,6 +2,9 @@ package com.PinkCats.bandwidthoptimizer.channel.algorithm;
 
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportOperationTelemetry;
 
+/** Synchronous transforms borrow input read-only until return. Callers must not mutate it
+ * during the call. Retained state must copy; results own their arrays and must not alias
+ * input, dictionary state, workspaces, or later operation results. */
 public interface ChannelTransportAlgorithmSession extends AutoCloseable {
 
     byte[] encodePacket(byte[] packetBytes);

@@ -4,6 +4,8 @@ import com.PinkCats.bandwidthoptimizer.channel.algorithm.TransportLayer;
 
 import java.util.Arrays;
 
+/** Borrows read-only input synchronously and returns independently owned arrays.
+ * Dictionary retention copies at the point where data outlives the call. */
 public final class KineticMapTableLayer implements TransportLayer {
 
     private final KineticTemplateDictionarySession dictionarySession = new KineticTemplateDictionarySession();
@@ -19,17 +21,17 @@ public final class KineticMapTableLayer implements TransportLayer {
     }
 
     public LayerResult encodeWithTelemetry(byte[] inputBytes) {
-        byte[] safeBytes = copyBytesOrEmpty(inputBytes);
+        byte[] safeBytes = bytesOrEmpty(inputBytes);
         return this.dictionarySession.encodeWithTelemetry(safeBytes);
     }
 
     public LayerResult encodeLiteralWithTelemetry(byte[] inputBytes) {
-        byte[] safeBytes = copyBytesOrEmpty(inputBytes);
+        byte[] safeBytes = bytesOrEmpty(inputBytes);
         return this.dictionarySession.encodeLiteralWithTelemetry(safeBytes);
     }
 
     public LayerResult decodeWithTelemetry(byte[] inputBytes) {
-        byte[] safeBytes = copyBytesOrEmpty(inputBytes);
+        byte[] safeBytes = bytesOrEmpty(inputBytes);
         return this.dictionarySession.decodeWithTelemetry(safeBytes);
     }
 
@@ -40,6 +42,10 @@ public final class KineticMapTableLayer implements TransportLayer {
 
     private static byte[] copyBytesOrEmpty(byte[] sourceBytes) {
         return sourceBytes == null ? new byte[0] : Arrays.copyOf(sourceBytes, sourceBytes.length);
+    }
+
+    private static byte[] bytesOrEmpty(byte[] sourceBytes) {
+        return sourceBytes == null ? new byte[0] : sourceBytes;
     }
 
     public record LayerResult(byte[] bytes, MappingTelemetry telemetry) {

@@ -13,15 +13,29 @@ final class ChannelStreamingPacketCodec {
     private ChannelStreamingPacketCodec() {}
 
     static byte[] encodeFramedPacket(byte[] packetBytes) {
-        byte[] packetBatchBytes = encodeSinglePacketBatch(packetBytes);
-        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
-        try {
-            buffer.writeVarInt(packetBatchBytes.length);
-            buffer.writeBytes(packetBatchBytes);
-            return copyReadableBytes(buffer);
-        } finally {
-            buffer.release();
+        int packetLength = packetBytes.length;
+        int framedLength = framedPacketLength(packetLength);
+        int batchLength = 1 + varIntSize(packetLength) + packetLength;
+        byte[] result = new byte[framedLength];
+        int offset = writeVarInt(result, 0, batchLength);
+        result[offset++] = SINGLE_PACKET_COUNT;
+        offset = writeVarInt(result, offset, packetLength);
+        System.arraycopy(packetBytes, 0, result, offset, packetLength);
+        return result;
+    }
+
+    static int framedPacketLength(int packetLength) {
+        // Match the former ByteBuf capacity failure without wrapping int arithmetic or
+        // trying to materialize an impossible intermediate batch first.
+        long batchLength = 1L + varIntSize(packetLength) + packetLength;
+        if (packetLength < 0 || batchLength > Integer.MAX_VALUE) {
+            throw new IndexOutOfBoundsException("Channel streaming packet batch exceeds array capacity");
         }
+        long frameLength = varIntSize((int) batchLength) + batchLength;
+        if (frameLength > Integer.MAX_VALUE) {
+            throw new IndexOutOfBoundsException("Channel streaming packet frame exceeds array capacity");
+        }
+        return (int) frameLength;
     }
 
     static byte[] decodeSinglePacketBatch(byte[] packetBatchBytes) {
@@ -67,22 +81,19 @@ final class ChannelStreamingPacketCodec {
         return null;
     }
 
-    private static byte[] encodeSinglePacketBatch(byte[] packetBytes) {
-        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
-        try {
-            buffer.writeVarInt(SINGLE_PACKET_COUNT);
-            buffer.writeVarInt(packetBytes.length);
-            buffer.writeBytes(packetBytes);
-            return copyReadableBytes(buffer);
-        } finally {
-            buffer.release();
-        }
+    private static int varIntSize(int value) {
+        int size = 1;
+        while ((value & ~0x7F) != 0) { size++; value >>>= 7; }
+        return size;
     }
 
-    private static byte[] copyReadableBytes(FriendlyByteBuf buffer) {
-        byte[] bytes = new byte[buffer.readableBytes()];
-        buffer.getBytes(0, bytes);
-        return bytes;
+    private static int writeVarInt(byte[] target, int offset, int value) {
+        while ((value & ~0x7F) != 0) {
+            target[offset++] = (byte) ((value & 0x7F) | 0x80);
+            value >>>= 7;
+        }
+        target[offset++] = (byte) value;
+        return offset;
     }
 
     record VarIntRead(int value, int nextIndex) {

@@ -37,7 +37,8 @@ public final class KineticPacketIdMappingLayer {
     }
 
     private static DecodedPacketHeader decodePacketHeader(byte[] originalPacketBytes) {
-        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(copyBytesOrEmpty(originalPacketBytes)));
+        // The batch boundary already owns this array; parsing is read-only.
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(originalPacketBytes));
         try {
             int packetId = buffer.readVarInt();
             byte[] bodyBytes = new byte[buffer.readableBytes()];
@@ -52,7 +53,7 @@ public final class KineticPacketIdMappingLayer {
         FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
         try {
             buffer.writeVarInt(localId);
-            buffer.writeBytes(copyBytesOrEmpty(bodyBytes));
+            buffer.writeBytes(bodyBytes);
             byte[] encodedBytes = new byte[buffer.readableBytes()];
             buffer.getBytes(0, encodedBytes);
             return encodedBytes;
@@ -62,7 +63,7 @@ public final class KineticPacketIdMappingLayer {
     }
 
     private static DecodedMappedEntry decodeMappedEntry(int[] packetIdTable, byte[] mappedEntryBytes) {
-        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(copyBytesOrEmpty(mappedEntryBytes)));
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(mappedEntryBytes));
         try {
             int localId = buffer.readVarInt();
             if (localId < 0 || localId >= packetIdTable.length) {
@@ -81,7 +82,7 @@ public final class KineticPacketIdMappingLayer {
         FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
         try {
             buffer.writeVarInt(packetId);
-            buffer.writeBytes(copyBytesOrEmpty(bodyBytes));
+            buffer.writeBytes(bodyBytes);
             byte[] packetBytes = new byte[buffer.readableBytes()];
             buffer.getBytes(0, packetBytes);
             return packetBytes;
