@@ -84,6 +84,9 @@ public final class ChannelTransportPacketRankSourceResolver {
 
         String payloadChannel = CustomPayloadPacketCompat.payloadChannel(packet);
         if (payloadChannel != null && !payloadChannel.isBlank()) {
+            if (LightmansCurrencySourceDetail.CHANNEL.equals(payloadChannel)) {
+                return LightmansCurrencySourceDetail.resolve(CustomPayloadPacketCompat.payloadObject(packet));
+            }
             return "custom_payload:" + payloadChannel;
         }
 

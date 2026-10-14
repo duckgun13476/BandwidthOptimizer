@@ -52,3 +52,16 @@ for (const language of ['en-US', 'zh-CN', 'pt-BR']) {
 }
 assert.equal(context.renderEntitySyncDetails(null), '');
 console.log('Entity sync field rendering passed (three languages, legacy reports, escaping).');
+for (const language of ['en-US', 'zh-CN', 'pt-BR']) {
+  context.language = language;
+  const bank = 'custom_payload:lightmanscurrency:s_sync_custom_data/bank/account_update';
+  const notification = 'custom_payload:lightmanscurrency:s_sync_custom_data/trader/notification_append';
+  assert.notEqual(context.currencySourceName(bank), bank);
+  assert.notEqual(context.currencySourceName(notification), notification);
+  context.renderSourceTraffic({ ...report, entries: [{ ...report.entries[0], sourceKey: bank }, { ...report.entries[1], sourceKey: notification }] });
+  assert.match(node.innerHTML, /LightmansCurrency/);
+  assert.doesNotMatch(node.innerHTML, /NaN|undefined|\/bank\/account_update/);
+  assert.equal(context.currencySourceName('custom_payload:lightmanscurrency:s_sync_custom_data'), 'custom_payload:lightmanscurrency:s_sync_custom_data');
+  assert.equal(context.currencySourceName('custom_payload:lightmanscurrency:s_sync_custom_data/<script>/unknown'), 'custom_payload:lightmanscurrency:s_sync_custom_data/<script>/unknown');
+}
+console.log('Currency source detail rendering passed (three languages, old reports, whole-packet labels).');

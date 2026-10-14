@@ -1,5 +1,11 @@
 def configureTestJavaExecTask = project.ext.configureTestJavaExecTask
 
+tasks.register('runLightmansCurrencySourceDetailRegression', JavaExec) {
+    configureTestJavaExecTask(delegate, 'verification',
+            'Verifies read-only bounded optional currency payload source attribution and report totals.',
+            'com.PinkCats.bandwidthoptimizer.report.LightmansCurrencySourceDetailRegressionMain')
+}
+
 tasks.register('runSifterSyncTransactionRegression', JavaExec) {
     configureTestJavaExecTask(delegate, 'verification',
             'Verifies bounded synchronous optional CreateSifter sync transactions and report counters.',

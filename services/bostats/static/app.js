@@ -779,6 +779,31 @@ const sourceDetailLabels = {
   'pt-BR': { title: 'Detalhes de tráfego por origem', note: 'Totais desta execução; a janela é a última observação periódica. Bytes de transporte atribuem quadros BO com estimativas para lotes compartilhados, não medições de rede por origem. Inclui apenas origens de saída observadas.', totalRaw: 'Total bruto', totalActual: 'Total transporte (inclui estimativas)', windowRaw: 'Janela bruta', windowActual: 'Janela transporte (inclui estimativas)', estimated: 'Pacotes estimados', chunk: 'Pacotes do protocolo de chunks', ratio: 'Transporte / bruto', observed: 'Observado em', unavailable: 'Indisponível no relatório antigo', window: 'Janela', coverage: 'Cobertura das origens listadas' }
 };
 let sourceTrafficOrder = 'rawBytes';
+const currencySourceLabels = {
+  'zh-CN': {
+    bank: '银行账户', trader: '交易机', notifications: '玩家通知', teams: '团队', tax: '税务', tickets: '票券', ejection: '物品退还', rewards: '奖励', other: '其他类型',
+    account_update: '完整账户更新', selection: '账户选择', clear: '清空同步', delete: '删除同步', snapshot: '完整快照', inventory: '库存更新', money: '余额更新', statistics: '统计更新', notification_append: '追加通知', notification_update: '通知列表更新', other_update: '其他字段更新', mixed: '混合更新', unknown: '未分类操作',
+    note: 'LightmansCurrency 子项统计整包字节，不是字段字节；未知格式保留通道级统计，每个包仅计入一个来源。'
+  },
+  'en-US': {
+    bank: 'Bank accounts', trader: 'Traders', notifications: 'Player notifications', teams: 'Teams', tax: 'Tax', tickets: 'Tickets', ejection: 'Item returns', rewards: 'Rewards', other: 'Other types',
+    account_update: 'Full account update', selection: 'Account selection', clear: 'Clear sync', delete: 'Delete sync', snapshot: 'Full snapshot', inventory: 'Inventory update', money: 'Balance update', statistics: 'Statistics update', notification_append: 'Append notification', notification_update: 'Notification list update', other_update: 'Other field update', mixed: 'Mixed update', unknown: 'Unclassified operation',
+    note: 'LightmansCurrency details count whole-packet bytes, not field bytes. Unknown formats retain channel-level attribution; each packet belongs to one source.'
+  },
+  'pt-BR': {
+    bank: 'Contas bancárias', trader: 'Comerciantes', notifications: 'Notificações do jogador', teams: 'Equipes', tax: 'Impostos', tickets: 'Bilhetes', ejection: 'Devolução de itens', rewards: 'Recompensas', other: 'Outros tipos',
+    account_update: 'Atualização da conta completa', selection: 'Seleção de conta', clear: 'Sincronização de limpeza', delete: 'Sincronização de exclusão', snapshot: 'Registro completo', inventory: 'Atualização de inventário', money: 'Atualização de saldo', statistics: 'Atualização de estatísticas', notification_append: 'Adicionar notificação', notification_update: 'Atualização da lista de notificações', other_update: 'Atualização de outros campos', mixed: 'Atualização mista', unknown: 'Operação não classificada',
+    note: 'Os detalhes de LightmansCurrency contam bytes do pacote inteiro, não dos campos. Formatos desconhecidos mantêm a origem do canal; cada pacote pertence a uma origem.'
+  }
+};
+function currencySourceName(key) {
+  const prefix = 'custom_payload:lightmanscurrency:s_sync_custom_data/';
+  if (typeof key !== 'string' || !key.startsWith(prefix)) return key;
+  const parts = key.slice(prefix.length).split('/');
+  const labels = currencySourceLabels[language] || currencySourceLabels['en-US'];
+  if (parts.length !== 2 || !Object.hasOwn(labels, parts[0]) || !Object.hasOwn(labels, parts[1]) || parts.includes('note')) return key;
+  return `LightmansCurrency · ${labels[parts[0]]} · ${labels[parts[1]]}`;
+}
 function renderSourceTraffic(snapshot) {
   const node = document.querySelector('#source-traffic-section');
   if (!snapshot) {
@@ -797,7 +822,7 @@ function renderSourceTraffic(snapshot) {
   const total = Number(snapshot[totalField] || 0);
   const rows = pageSlice(entries, pages.sources).map(entry => {
     const amount = Number(entry[totalField] || 0);
-    const name = entry.sourceKey || entry.packetClassName || '#unknown';
+    const name = currencySourceName(entry.sourceKey || entry.packetClassName || '#unknown');
     const detail = detailed ? `<small>${escapeText(labels.totalRaw)}: ${bytes(entry.rawBytes)} · ${escapeText(labels.totalActual)}: ${bytes(entry.actualBytes)} · ${escapeText(labels.ratio)}: ${Number(entry.rawBytes) > 0 ? (Number(entry.actualBytes) / Number(entry.rawBytes)).toFixed(3) + '×' : '—'}</small><small>${escapeText(labels.windowRaw)}: ${bytes(entry.windowRawBytes)} · ${escapeText(labels.windowActual)}: ${bytes(entry.windowActualBytes)} · ${new Intl.NumberFormat(language).format(Number(entry.windowPackets || 0))} ${escapeText(t('units').packets)}</small><small>${escapeText(labels.chunk)}: ${Number(entry.chunkWrappedPackets || 0)} · ${escapeText(labels.estimated)}: ${Number(entry.estimatedPackets || 0)}</small><small>${escapeText(entry.lastPath || '')} / ${escapeText(entry.lastFrame || '')}</small>` : '';
     return `<div class="bypass-row bypass-entry"><div class="bypass-identity"><strong>${escapeText(name)}</strong><small>${escapeText(entry.packetClassName || '')}${Number.isFinite(entry.rawPacketId) ? ' #' + entry.rawPacketId : ''}</small>${detail}</div><div class="bypass-main"><meter class="visual-track" min="0" max="100" value="${(100 * amount / maximum).toFixed(3)}"></meter><div class="bypass-values"><strong>${bytes(amount)}</strong><small>${total > 0 ? (100 * amount / total).toFixed(2) : '0.00'}%</small><small>${new Intl.NumberFormat(language).format(Number(entry.packets || 0))} ${escapeText(t('units').packets)}</small></div></div></div>`;
   }).join('') || `<div class="empty">${escapeText(t('noData'))}</div>`;
@@ -806,6 +831,9 @@ function renderSourceTraffic(snapshot) {
   node.className = 'section bypass-section';
   const controls = detailed ? `<select id="source-traffic-order" aria-label="${escapeText(labels.title)}">${Object.entries(orders).map(([key, label]) => `<option value="${key}" ${key === sourceTrafficOrder ? 'selected' : ''}>${escapeText(labels[label])}</option>`).join('')}</select>` : '';
   node.innerHTML = `<h3>${escapeText(labels.title)}</h3><p>${escapeText(detailed ? labels.note : rt('sourceNote') + ' ' + sourcePeriodLabel[language])}</p>${controls}<div class="bypass-summary"><div><small>${escapeText(labels[orders[totalField]])}</small><strong>${bytes(total)}</strong><span>${escapeText(labels.coverage)}: ${total > 0 ? (100 * listedBytes / total).toFixed(2) : '0.00'}%</span></div><div><small>${escapeText(rt('sourceKeys'))}</small><strong>${entries.length} / ${new Intl.NumberFormat(language).format(Number(snapshot.distinctKeys || 0))}</strong></div><div><small>${escapeText(t('unlistedKeys'))}</small><strong>${bytes(missingBytes)}</strong><span>${new Intl.NumberFormat(language).format(missingKeys)} ${escapeText(t('units').entries)}</span></div></div><div class="bypass-list">${rows}</div><div class="pagination" id="sources-pagination"></div>`;
+  if (entries.some(entry => String(entry.sourceKey || '').startsWith('custom_payload:lightmanscurrency:s_sync_custom_data'))) {
+    node.insertAdjacentHTML('afterbegin', `<p>${escapeText((currencySourceLabels[language] || currencySourceLabels['en-US']).note)}</p>`);
+  }
   node.querySelector('#source-traffic-order')?.addEventListener('change', event => { sourceTrafficOrder = event.target.value; pages.sources.page = 1; renderSourceTraffic(snapshot); });
   renderPagination('sources', entries.length, () => renderSourceTraffic(snapshot));
   node.insertAdjacentHTML('afterbegin', observationPeriod(snapshot));
