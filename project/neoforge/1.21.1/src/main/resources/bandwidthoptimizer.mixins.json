@@ -4,6 +4,7 @@
   "package": "com.PinkCats.bandwidthoptimizer.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "neoforge.GenericPacketSplitterMixin",
     "createsifter.SifterCycleSyncMixin",
     "createsifter.SifterSendDataMixin",
     "create.CreateControlledContraptionEntityMixin",

@@ -210,6 +210,12 @@ sourceSets {
     }
 }
 
+tasks.register('runBoundedPacketSplitterRegression', JavaExec) {
+    dependsOn 'testClasses'
+    classpath = files(sourceSets.test.runtimeClasspath, sourceSets.main.compileClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.integration.neoforge.BoundedPacketSplitterRegressionMain'
+}
+
 tasks.named('compileJava', JavaCompile).configure {
     setSource(files(
             project.fileTree('src/main/java'),

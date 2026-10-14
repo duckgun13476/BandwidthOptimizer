@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_25",
   "refmap": "bandwidthoptimizer.refmap.json",
   "mixins": [
+    "neoforge.GenericPacketSplitterMixin",
     "createsifter.SifterCycleSyncMixin",
     "createsifter.SifterSendDataMixin",
     "create.CreateControlledContraptionEntityMixin",
