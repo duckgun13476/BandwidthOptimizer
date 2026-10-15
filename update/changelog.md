@@ -1,3 +1,8 @@
+#### v5.10.32.151-release
+
+1. Silence confirmed local quits and move ordinary connection-close details to DEBUG.
+2. Save ongoing connection-failure summaries in BO's diagnostics directory, independently of detailed diagnostic sample limits, with asynchronous bounded writes and file rotation.
+
 #### v5.10.32.150-release
 
 1. Reduce chunk snapshot and synchronous transport encoding allocations while preserving packet order and payload contents.
