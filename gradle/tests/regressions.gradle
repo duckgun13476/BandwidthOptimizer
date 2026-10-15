@@ -302,6 +302,12 @@ tasks.register('runBoundedDiagnosticFileWriterRegression', JavaExec) {
     )
 }
 
+tasks.register('runConnectionFailureReportRegression', JavaExec) {
+    configureTestJavaExecTask(delegate, 'verification',
+            'Verifies persistent bounded connection failure summaries beyond diagnostic sample limits.',
+            'com.PinkCats.bandwidthoptimizer.debug.ConnectionFailureReportRegressionMain')
+}
+
 tasks.register('runConnectionDisconnectClassifierRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,

@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.connection;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 import com.PinkCats.bandwidthoptimizer.debug.DiagnosticToolRegistry;
+import com.PinkCats.bandwidthoptimizer.debug.ConnectionFailureReport;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.CustomPayloadPacketCompat;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -133,6 +134,7 @@ public final class ConnectionDisconnectClassifier {
         if (decision.category() == Category.LOCAL_DISCONNECT) {
             return decision;
         }
+        if (existing != null && existing.claimFailureReport()) ConnectionFailureReport.record(decision);
         ReconnectCandidateListener listener = reconnectCandidateListener;
         if (listener != null && existing != null && existing.isClientPlayEndpoint()
                 && isFirstPriorityReconnectCandidate(decision)) {
@@ -141,7 +143,6 @@ public final class ConnectionDisconnectClassifier {
         if (existing != null && DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CONNECTION_CLOSE)) {
             InboundEvidence inboundEvidence = existing.inboundEvidence();
             logClose(
-                    decision.category(),
                     DiagnosticToolRegistry.Tool.CONNECTION_CLOSE,
                     "v=1 domain=connection event=connection_close channel={} category={} recovery={} trigger={} packetClass={} throwable={} boStage={} evidenceAgeMs={} recentInboundSequence={} recentInboundPacketClass={} recentInboundPayload={} recentInboundAgeMs={}",
                     channel == null ? "<no-channel>" : ChannelIdentity.shortText(channel),
@@ -162,13 +163,9 @@ public final class ConnectionDisconnectClassifier {
         return decision;
     }
 
-    private static void logClose(Category category, DiagnosticToolRegistry.Tool tool,
+    private static void logClose(DiagnosticToolRegistry.Tool tool,
                                  String message, Object... args) {
-        switch (category) {
-            case BO_TRANSPORT_FAILURE, PROTOCOL_FAILURE, SECURITY_FAILURE -> DiagnosticLog.error(tool, message, args);
-            case READ_TIMEOUT, CONNECT_TIMEOUT, CONNECTION_RESET, CONNECT_FAILURE -> DiagnosticLog.warn(tool, message, args);
-            default -> DiagnosticLog.debug(tool, message, args);
-        }
+        DiagnosticLog.debug(tool, message, args);
     }
 
     public static Decision snapshot(Channel channel) {
@@ -416,6 +413,7 @@ public final class ConnectionDisconnectClassifier {
         private boolean playObserved;
         private boolean clientEndpoint;
         private boolean localDisconnect;
+        private boolean failureReported;
         private long localDisconnectAtMillis;
         private long recentInboundSequence;
         private String recentInboundPacketClass = "";
@@ -451,6 +449,12 @@ public final class ConnectionDisconnectClassifier {
         synchronized void markLocalDisconnect() {
             this.localDisconnect = true;
             this.localDisconnectAtMillis = System.currentTimeMillis();
+        }
+
+        synchronized boolean claimFailureReport() {
+            if (failureReported) return false;
+            failureReported = true;
+            return true;
         }
 
         synchronized void record(

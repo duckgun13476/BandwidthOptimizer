@@ -25,6 +25,8 @@ public final class BoundedDiagnosticFileWriter implements AutoCloseable {
     private final String outputName;
     private final ArrayBlockingQueue<QueuedLine> queue;
     private final long maxQueuedBytes;
+    private final long maxFileBytes;
+    private final int archiveCount;
     private final AtomicLong queuedBytes = new AtomicLong();
     private final AtomicLong droppedLines = new AtomicLong();
     private final AtomicBoolean workerStarted = new AtomicBoolean();
@@ -39,6 +41,11 @@ public final class BoundedDiagnosticFileWriter implements AutoCloseable {
     }
 
     BoundedDiagnosticFileWriter(Path outputPath, String outputName, int maxQueuedLines, long maxQueuedBytes) {
+        this(outputPath, outputName, maxQueuedLines, maxQueuedBytes, 0L, 0);
+    }
+
+    BoundedDiagnosticFileWriter(Path outputPath, String outputName, int maxQueuedLines, long maxQueuedBytes,
+                                long maxFileBytes, int archiveCount) {
         if (outputPath == null || maxQueuedLines <= 0 || maxQueuedBytes <= 0L) {
             throw new IllegalArgumentException("Invalid bounded diagnostic writer configuration");
         }
@@ -46,6 +53,11 @@ public final class BoundedDiagnosticFileWriter implements AutoCloseable {
         this.outputName = outputName == null || outputName.isBlank() ? outputPath.getFileName().toString() : outputName;
         this.queue = new ArrayBlockingQueue<>(maxQueuedLines);
         this.maxQueuedBytes = maxQueuedBytes;
+        if (maxFileBytes < 0 || archiveCount < 0 || archiveCount > 8) {
+            throw new IllegalArgumentException("Invalid diagnostic rotation configuration");
+        }
+        this.maxFileBytes = maxFileBytes;
+        this.archiveCount = archiveCount;
     }
 
     public boolean offer(String line) {
@@ -127,13 +139,7 @@ public final class BoundedDiagnosticFileWriter implements AutoCloseable {
             if (parent != null) {
                 Files.createDirectories(parent);
             }
-            try (BufferedWriter writer = Files.newBufferedWriter(
-                    this.outputPath,
-                    StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE
-            )) {
+            try (Output writer = new Output()) {
                 drainTo(writer);
             }
         } catch (IOException | RuntimeException exception) {
@@ -143,7 +149,7 @@ public final class BoundedDiagnosticFileWriter implements AutoCloseable {
         }
     }
 
-    private void drainTo(BufferedWriter writer) throws IOException {
+    private void drainTo(Output writer) throws IOException {
         int linesSinceFlush = 0;
         long lastFlushNanos = System.nanoTime();
         while (this.accepting.get() || !this.queue.isEmpty()) {
@@ -164,8 +170,7 @@ public final class BoundedDiagnosticFileWriter implements AutoCloseable {
             }
 
             try {
-                writer.write(queuedLine.line());
-                writer.newLine();
+                writer.line(queuedLine.line());
             } finally {
                 this.queuedBytes.addAndGet(-queuedLine.retainedBytes());
             }
@@ -178,6 +183,51 @@ public final class BoundedDiagnosticFileWriter implements AutoCloseable {
             }
         }
         writer.flush();
+    }
+
+    private final class Output implements AutoCloseable {
+        private BufferedWriter writer;
+        private long bytes;
+
+        private Output() throws IOException {
+            // Retain the previous process's capped output as an archive.
+            if (maxFileBytes > 0 && Files.exists(outputPath)) rotate();
+            open();
+        }
+
+        private void open() throws IOException {
+            writer = Files.newBufferedWriter(outputPath, StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            bytes = 0;
+        }
+
+        private void rotate() throws IOException {
+            if (writer != null) { writer.close(); writer = null; }
+            for (int index = archiveCount; index >= 1; index--) {
+                Path source = index == 1 ? outputPath : archive(index - 1);
+                if (Files.exists(source)) Files.move(source, archive(index), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
+
+        private Path archive(int index) {
+            return outputPath.resolveSibling(outputPath.getFileName() + "." + index);
+        }
+
+        private void line(String line) throws IOException {
+            long size = line.getBytes(StandardCharsets.UTF_8).length
+                    + System.lineSeparator().getBytes(StandardCharsets.UTF_8).length;
+            if (maxFileBytes > 0 && size > maxFileBytes) {
+                droppedLines.incrementAndGet();
+                return;
+            }
+            if (maxFileBytes > 0 && bytes > maxFileBytes - size) { rotate(); open(); }
+            writer.write(line);
+            writer.newLine();
+            bytes += size;
+        }
+
+        private void flush() throws IOException { writer.flush(); }
+        @Override public void close() throws IOException { if (writer != null) writer.close(); }
     }
 
     private void recordOverflow() {

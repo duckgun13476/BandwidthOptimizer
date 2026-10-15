@@ -15,7 +15,9 @@ public final class ConnectionDisconnectClassifierRegressionMain {
 
     private ConnectionDisconnectClassifierRegressionMain() {}
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
+        System.setProperty("bandwidthoptimizer.outputDirectory",
+                java.nio.file.Files.createTempDirectory("bo-close-report").toAbsolutePath().toString());
         assertNormalClosesDoNotConsumeDiagnostics();
         if (!DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CONNECTION_CLOSE)
                 || DiagnosticToolRegistry.remainingMillis(DiagnosticToolRegistry.Tool.CONNECTION_CLOSE) != 0L) {
@@ -201,8 +203,9 @@ public final class ConnectionDisconnectClassifierRegressionMain {
             EmbeddedChannel abnormal = new EmbeddedChannel();
             ConnectionDisconnectClassifier.observeException(abnormal, new java.net.SocketException("Connection reset"));
             ConnectionDisconnectClassifier.onChannelInactive(abnormal);
-            check(diagnosticEmissions("connectionClose/connection_close") == 1,
-                    "abnormal close after normal churn must retain its diagnostic allowance");
+            check(diagnosticEmissions("connectionClose/connection_close")
+                            == (com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer.LOGGER.isDebugEnabled() ? 1 : 0),
+                    "close details must follow DEBUG level without consuming disabled allowance");
             abnormal.finishAndReleaseAll();
         } finally {
             DiagnosticToolRegistry.disable(DiagnosticToolRegistry.Tool.KEEP_ALIVE_TIMEOUT);
