@@ -140,7 +140,8 @@ public final class ConnectionDisconnectClassifier {
         }
         if (existing != null && DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CONNECTION_CLOSE)) {
             InboundEvidence inboundEvidence = existing.inboundEvidence();
-            DiagnosticLog.info(
+            logClose(
+                    decision.category(),
                     DiagnosticToolRegistry.Tool.CONNECTION_CLOSE,
                     "v=1 domain=connection event=connection_close channel={} category={} recovery={} trigger={} packetClass={} throwable={} boStage={} evidenceAgeMs={} recentInboundSequence={} recentInboundPacketClass={} recentInboundPayload={} recentInboundAgeMs={}",
                     channel == null ? "<no-channel>" : ChannelIdentity.shortText(channel),
@@ -159,6 +160,15 @@ public final class ConnectionDisconnectClassifier {
         }
         KeepAliveTimeoutDiagnostic.observeClose(channel, decision);
         return decision;
+    }
+
+    private static void logClose(Category category, DiagnosticToolRegistry.Tool tool,
+                                 String message, Object... args) {
+        switch (category) {
+            case BO_TRANSPORT_FAILURE, PROTOCOL_FAILURE, SECURITY_FAILURE -> DiagnosticLog.error(tool, message, args);
+            case READ_TIMEOUT, CONNECT_TIMEOUT, CONNECTION_RESET, CONNECT_FAILURE -> DiagnosticLog.warn(tool, message, args);
+            default -> DiagnosticLog.debug(tool, message, args);
+        }
     }
 
     public static Decision snapshot(Channel channel) {

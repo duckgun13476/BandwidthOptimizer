@@ -8,6 +8,16 @@ public final class DiagnosticLogRateLimitRegressionMain {
         DiagnosticToolRegistry.enable(tool, 5);
         DiagnosticLog.resetLimitersForTest();
 
+        if (!com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer.LOGGER.isDebugEnabled()) {
+            for (int attempt = 0; attempt < 150; attempt++) {
+                DiagnosticLog.debug(tool, "event=disabled_debug_probe");
+            }
+            for (int attempt = 0; attempt < 20; attempt++) {
+                check(DiagnosticLog.shouldEmitForTest(tool, "event=disabled_debug_probe", 0L),
+                        "disabled DEBUG consumed diagnostic allowance");
+            }
+        }
+
         int emitted = 0;
         for (int window = 0; window < 6; window++) {
             long nowMillis = window * 1_000L;

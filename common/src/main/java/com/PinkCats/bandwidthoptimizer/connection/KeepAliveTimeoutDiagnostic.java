@@ -88,7 +88,7 @@ public final class KeepAliveTimeoutDiagnostic {
             return;
         }
         Snapshot snapshot = snapshot(channel, System.currentTimeMillis());
-        DiagnosticLog.info(
+        DiagnosticLog.debug(
                 DiagnosticToolRegistry.Tool.KEEP_ALIVE_TIMEOUT,
                 "v=1 domain=connection event=close_summary channel={} phase={} endpoint={} category={} recovery={} pendingChallenge={} challengeAgeMs={} lastAckAgeMs={} challenges={} acks={} exactKeepAliveBoundary={}",
                 ChannelIdentity.shortText(channel),

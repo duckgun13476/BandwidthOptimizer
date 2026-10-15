@@ -29,6 +29,14 @@ public final class DiagnosticLog {
         Bandwidthoptimizer.LOGGER.info(format(tool, message), args);
     }
 
+    public static void debug(DiagnosticToolRegistry.Tool tool, String message, Object... args) {
+        if (!Bandwidthoptimizer.LOGGER.isDebugEnabled()
+                || !shouldEmit(tool, message, System.currentTimeMillis())) {
+            return;
+        }
+        Bandwidthoptimizer.LOGGER.debug(format(tool, message), args);
+    }
+
     public static void warn(DiagnosticToolRegistry.Tool tool, String message, Object... args) {
         if (!shouldEmit(tool, message, System.currentTimeMillis())) {
             return;
