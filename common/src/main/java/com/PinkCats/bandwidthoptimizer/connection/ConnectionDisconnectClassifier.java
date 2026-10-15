@@ -128,15 +128,18 @@ public final class ConnectionDisconnectClassifier {
     public static Decision onChannelInactive(Channel channel) {
         State existing = channel == null ? null : channel.attr(STATE_KEY).get();
         Decision decision = existing == null ? unknownDecision() : existing.decision();
-        InboundEvidence inboundEvidence = existing == null
-                ? InboundEvidence.EMPTY
-                : existing.inboundEvidence();
+        // Only an observed local quit proves a normal close. A disconnect packet
+        // can be a kick; EOF or an otherwise clean socket close is not proof.
+        if (decision.category() == Category.LOCAL_DISCONNECT) {
+            return decision;
+        }
         ReconnectCandidateListener listener = reconnectCandidateListener;
         if (listener != null && existing != null && existing.isClientPlayEndpoint()
                 && isFirstPriorityReconnectCandidate(decision)) {
             listener.onReconnectCandidate(decision);
         }
         if (existing != null && DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CONNECTION_CLOSE)) {
+            InboundEvidence inboundEvidence = existing.inboundEvidence();
             DiagnosticLog.info(
                     DiagnosticToolRegistry.Tool.CONNECTION_CLOSE,
                     "v=1 domain=connection event=connection_close channel={} category={} recovery={} trigger={} packetClass={} throwable={} boStage={} evidenceAgeMs={} recentInboundSequence={} recentInboundPacketClass={} recentInboundPayload={} recentInboundAgeMs={}",

@@ -16,6 +16,7 @@ public final class ConnectionDisconnectClassifierRegressionMain {
     private ConnectionDisconnectClassifierRegressionMain() {}
 
     public static void main(String[] args) {
+        assertNormalClosesDoNotConsumeDiagnostics();
         if (!DiagnosticToolRegistry.isEnabled(DiagnosticToolRegistry.Tool.CONNECTION_CLOSE)
                 || DiagnosticToolRegistry.remainingMillis(DiagnosticToolRegistry.Tool.CONNECTION_CLOSE) != 0L) {
             throw new AssertionError("Connection-close classification must be enabled without an expiry by default");
@@ -180,6 +181,47 @@ public final class ConnectionDisconnectClassifierRegressionMain {
         }
         closedBeforeTransportWrite.finishAndReleaseAll();
         System.out.println("Connection disconnect classifier regression passed");
+    }
+
+    private static void assertNormalClosesDoNotConsumeDiagnostics() {
+        DiagnosticToolRegistry.enable(DiagnosticToolRegistry.Tool.KEEP_ALIVE_TIMEOUT, 5);
+        try {
+            for (int index = 0; index < 150; index++) {
+                EmbeddedChannel normal = new EmbeddedChannel();
+                ConnectionDisconnectClassifier.markLocalDisconnect(normal);
+                assertDecision(ConnectionDisconnectClassifier.onChannelInactive(normal),
+                        ConnectionDisconnectClassifier.Category.LOCAL_DISCONNECT,
+                        ConnectionDisconnectClassifier.RecoveryPolicy.DO_NOT_AUTO_RECONNECT);
+                normal.finishAndReleaseAll();
+            }
+            check(diagnosticEmissions("connectionClose/connection_close") == 0,
+                    "normal quits must not consume connection-close diagnostics");
+            check(diagnosticEmissions("keepAliveTimeout/close_summary") == 0,
+                    "normal quits must not emit keep-alive close summaries");
+            EmbeddedChannel abnormal = new EmbeddedChannel();
+            ConnectionDisconnectClassifier.observeException(abnormal, new java.net.SocketException("Connection reset"));
+            ConnectionDisconnectClassifier.onChannelInactive(abnormal);
+            check(diagnosticEmissions("connectionClose/connection_close") == 1,
+                    "abnormal close after normal churn must retain its diagnostic allowance");
+            abnormal.finishAndReleaseAll();
+        } finally {
+            DiagnosticToolRegistry.disable(DiagnosticToolRegistry.Tool.KEEP_ALIVE_TIMEOUT);
+        }
+    }
+
+    private static int diagnosticEmissions(String key) {
+        try {
+            java.lang.reflect.Field limiters = com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog.class
+                    .getDeclaredField("LIMITERS");
+            limiters.setAccessible(true);
+            Object limiter = ((java.util.Map<?, ?>) limiters.get(null)).get(key);
+            if (limiter == null) return 0;
+            java.lang.reflect.Field total = limiter.getClass().getDeclaredField("totalEmissions");
+            total.setAccessible(true);
+            return total.getInt(limiter);
+        } catch (ReflectiveOperationException exception) {
+            throw new AssertionError(exception);
+        }
     }
 
     private static void assertCategory(Throwable throwable, ConnectionDisconnectClassifier.Category expected) {
