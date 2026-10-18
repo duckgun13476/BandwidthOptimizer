@@ -2,6 +2,7 @@ package com.PinkCats.bandwidthoptimizer.channel.algorithm.batch;
 
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportLayerRuntimeConfig;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ExactEncoding;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.header.KineticPacketIdMappingLayer;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.TransportLayer;
 import io.netty.buffer.Unpooled;
@@ -35,35 +36,54 @@ public final class KineticBatchLayer implements TransportLayer {
     // Batch as a cargo
     public byte[] encodePacketBatch(List<byte[]> packetBytesList) {
         List<byte[]> safePacketBytesList = copyPacketBytesList(packetBytesList);
+        return encodePacketBatchBorrowed(safePacketBytesList);
+    }
+
+    /** Caller owns a stable snapshot for this synchronous call; no input is retained. */
+    public byte[] encodePacketBatchBorrowed(List<byte[]> safePacketBytesList) {
         validateOutboundBatchEntries(safePacketBytesList, "outbound batch packet");
         boolean packetIdMappingEnabled = ChannelTransportLayerRuntimeConfig.isPacketIdMappingEnabled();
-        KineticPacketIdMappingLayer.EncodedPacketIdBatch encodedPacketIdBatch = packetIdMappingEnabled
-                ? this.packetIdMappingLayer.encodeBatchPacketHeaders(safePacketBytesList)
-                : new KineticPacketIdMappingLayer.EncodedPacketIdBatch(new int[0], safePacketBytesList);
-        List<byte[]> batchEntryBytesList = packetIdMappingEnabled
-                ? encodedPacketIdBatch.mappedEntryBytesList()
-                : safePacketBytesList;
-        validateOutboundBatchEntries(batchEntryBytesList, "outbound mapped batch packet");
-        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+        KineticPacketIdMappingLayer.BatchHeaderPlan plan = packetIdMappingEnabled
+                ? this.packetIdMappingLayer.planBorrowed(safePacketBytesList) : null;
+        if (plan != null && plan.tableLength() > MAX_PACKET_ID_TABLE_ENTRIES) {
+            throw new IllegalArgumentException("packet id table size out of range: " + plan.tableLength());
+        }
+        int length = ExactEncoding.add(ExactEncoding.varIntSize(BATCH_PAYLOAD_VERSION) + 1,
+                ExactEncoding.varIntSize(safePacketBytesList.size()));
+        if (plan != null) length = ExactEncoding.add(length, plan.tableEncodedLength());
+        int totalMappedBytes = 0;
+        for (int index = 0; index < safePacketBytesList.size(); index++) {
+            int entryLength = plan == null ? safePacketBytesList.get(index).length : plan.entryLength(index);
+            if (entryLength > MAX_BATCH_ENTRY_BYTES) {
+                throw new IllegalArgumentException("outbound mapped batch packet bytes out of range: " + entryLength);
+            }
+            totalMappedBytes = ExactEncoding.add(totalMappedBytes, entryLength);
+            if (totalMappedBytes > MAX_BATCH_TOTAL_BYTES) {
+                throw new IllegalArgumentException("batch total bytes out of range: " + totalMappedBytes);
+            }
+            length = ExactEncoding.add(length, ExactEncoding.add(ExactEncoding.varIntSize(entryLength), entryLength));
+        }
+        FriendlyByteBuf buffer = ExactEncoding.buffer(length);
         try {
             buffer.writeVarInt(BATCH_PAYLOAD_VERSION);
             buffer.writeBoolean(packetIdMappingEnabled);
             if (packetIdMappingEnabled) {
-                buffer.writeVarInt(encodedPacketIdBatch.packetIdTable().length);
-                for (int packetId : encodedPacketIdBatch.packetIdTable()) {
-                    buffer.writeVarInt(packetId);
+                plan.writeTable(buffer);
+            }
+
+            buffer.writeVarInt(safePacketBytesList.size());
+            for (int index = 0; index < safePacketBytesList.size(); index++) {
+                if (plan == null) {
+                    byte[] packetBytes = safePacketBytesList.get(index);
+                    buffer.writeVarInt(packetBytes.length);
+                    buffer.writeBytes(packetBytes);
+                } else {
+                    buffer.writeVarInt(plan.entryLength(index));
+                    plan.writeEntry(buffer, index);
                 }
             }
 
-            buffer.writeVarInt(batchEntryBytesList.size());
-            for (byte[] packetBytes : batchEntryBytesList) {
-                buffer.writeVarInt(packetBytes.length);
-                buffer.writeBytes(packetBytes);
-            }
-
-            byte[] encodedBytes = new byte[buffer.readableBytes()];
-            buffer.getBytes(0, encodedBytes);
-            return encodedBytes;
+            return ExactEncoding.finish(buffer);
         } finally {
             buffer.release();
         }

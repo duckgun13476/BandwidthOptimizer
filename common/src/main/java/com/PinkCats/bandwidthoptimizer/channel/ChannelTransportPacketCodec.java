@@ -3,6 +3,7 @@ package com.PinkCats.bandwidthoptimizer.channel;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.batch.KineticBatchLayer;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits;
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportOperationTelemetry;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ExactEncoding;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
 
@@ -26,10 +27,10 @@ public final class ChannelTransportPacketCodec {
             return null;
         }
 
+        validateSinglePacketBytes(originalPacketBytes.length);
         byte[] safePacketBytes = Arrays.copyOf(originalPacketBytes, originalPacketBytes.length);
-        validateSinglePacketBytes(safePacketBytes.length);
         if (transportSession.isCrossFrameZstdEnabled()) {
-            byte[] batchPayloadBytes = BATCH_LAYER.encodePacketBatch(List.of(safePacketBytes));
+            byte[] batchPayloadBytes = BATCH_LAYER.encodePacketBatchBorrowed(List.of(safePacketBytes));
             ChannelTransportSession.StreamingPacketResult streamingResult =
                     transportSession.encodeBatchWithStreamingZstd(batchPayloadBytes);
             return wrapStreamingTransportBody(
@@ -71,7 +72,7 @@ public final class ChannelTransportPacketCodec {
         if (transportSession == null || safePacketBytesList.isEmpty()) {
             return null;
         }
-        byte[] batchPayloadBytes = BATCH_LAYER.encodePacketBatch(safePacketBytesList);
+        byte[] batchPayloadBytes = BATCH_LAYER.encodePacketBatchBorrowed(safePacketBytesList);
         ChannelTransportSession.PacketResult packetResult =
                 transportSession.encodeStreamingFallbackBatch(batchPayloadBytes);
         return wrapTransportBody(
@@ -94,7 +95,7 @@ public final class ChannelTransportPacketCodec {
         }
 
         // Batch carriers must be self-contained across session rebuilds.
-        byte[] batchPayloadBytes = BATCH_LAYER.encodePacketBatch(safePacketBytesList);
+        byte[] batchPayloadBytes = BATCH_LAYER.encodePacketBatchBorrowed(safePacketBytesList);
         if (transportSession.isCrossFrameZstdEnabled()) {
             ChannelTransportSession.StreamingPacketResult streamingResult =
                     transportSession.encodeBatchWithStreamingZstd(batchPayloadBytes);
@@ -231,21 +232,23 @@ public final class ChannelTransportPacketCodec {
             byte[] transportBodyBytes,
             ChannelTransportOperationTelemetry telemetry
     ) {
-        byte[] safeTransportBodyBytes = copyBytesOrEmpty(transportBodyBytes);
-        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+        // Session result is read only here and copied into the final owned frame.
+        int bodyLength = transportBodyBytes == null ? 0 : transportBodyBytes.length;
+        int length = ExactEncoding.add(ExactEncoding.varIntSize(MAGIC_PACKET_ID)
+                + ExactEncoding.varIntSize(BATCH_FRAME_VERSION) + ExactEncoding.varIntSize(frameKind.id()), bodyLength);
+        FriendlyByteBuf buffer = ExactEncoding.buffer(length);
         try {
             buffer.writeVarInt(MAGIC_PACKET_ID);
             buffer.writeVarInt(BATCH_FRAME_VERSION);
             buffer.writeVarInt(frameKind.id());
-            buffer.writeBytes(safeTransportBodyBytes);
-            byte[] wrappedBytes = new byte[buffer.readableBytes()];
-            buffer.getBytes(0, wrappedBytes);
+            if (bodyLength > 0) buffer.writeBytes(transportBodyBytes);
+            byte[] wrappedBytes = ExactEncoding.finish(buffer);
             return new WrappedTransportFrame(
                     frameKind,
                     wrappedBytes,
                     Math.max(originalPacketBytes, 0),
                     Math.max(originalPacketCount, 0),
-                    safeTransportBodyBytes.length,
+                    bodyLength,
                     telemetry
             );
         } finally {
@@ -263,8 +266,11 @@ public final class ChannelTransportPacketCodec {
             byte[] transportBodyBytes,
             ChannelTransportOperationTelemetry telemetry
     ) {
-        byte[] safeTransportBodyBytes = copyBytesOrEmpty(transportBodyBytes);
-        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+        int bodyLength = transportBodyBytes == null ? 0 : transportBodyBytes.length;
+        int length = ExactEncoding.add(ExactEncoding.varIntSize(MAGIC_PACKET_ID)
+                + ExactEncoding.varIntSize(STREAMING_FRAME_VERSION) + ExactEncoding.varIntSize(FrameKind.STREAM_BATCH.id())
+                + ExactEncoding.varIntSize(epoch) + ExactEncoding.varIntSize(sequence) + 1, bodyLength);
+        FriendlyByteBuf buffer = ExactEncoding.buffer(length);
         try {
             buffer.writeVarInt(MAGIC_PACKET_ID);
             buffer.writeVarInt(STREAMING_FRAME_VERSION);
@@ -273,9 +279,8 @@ public final class ChannelTransportPacketCodec {
             buffer.writeVarInt(sequence);
             int epochCompleteIndex = buffer.writerIndex();
             buffer.writeBoolean(false);
-            buffer.writeBytes(safeTransportBodyBytes);
-            byte[] wrappedBytes = new byte[buffer.readableBytes()];
-            buffer.getBytes(0, wrappedBytes);
+            if (bodyLength > 0) buffer.writeBytes(transportBodyBytes);
+            byte[] wrappedBytes = ExactEncoding.finish(buffer);
             transportSession.retainOutboundStreamingFrame(
                     epoch,
                     sequence,
@@ -290,7 +295,7 @@ public final class ChannelTransportPacketCodec {
                     wrappedBytes,
                     Math.max(originalPacketBytes, 0),
                     Math.max(originalPacketCount, 0),
-                    safeTransportBodyBytes.length,
+                    bodyLength,
                     telemetry
             );
         } finally {

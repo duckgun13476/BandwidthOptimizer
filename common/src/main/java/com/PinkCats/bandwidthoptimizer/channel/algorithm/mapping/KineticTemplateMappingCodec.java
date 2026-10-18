@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel.algorithm.mapping;
 
 import com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits;
+import com.PinkCats.bandwidthoptimizer.channel.algorithm.ExactEncoding;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
 
@@ -27,7 +28,7 @@ final class KineticTemplateMappingCodec {
 
     // Mapping frame encoding:
     static byte[] encodeFrame(FrameData frameData) {
-        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+        FriendlyByteBuf buffer = ExactEncoding.buffer(frameEncodedLength(frameData));
         try {
             buffer.writeVarInt(FRAME_VERSION);
             buffer.writeVarInt(frameData.additions().size());
@@ -42,10 +43,53 @@ final class KineticTemplateMappingCodec {
             }
 
             writeEntry(buffer, frameData.entry());
-            return copyReadableBytes(buffer);
+            return ExactEncoding.finish(buffer);
         } finally {
             buffer.release();
         }
+    }
+
+    private static int frameEncodedLength(FrameData frame) {
+        int length = ExactEncoding.varIntSize(FRAME_VERSION);
+        length = ExactEncoding.add(length, ExactEncoding.varIntSize(frame.additions().size()));
+        for (MappingAddition addition : frame.additions()) {
+            length = ExactEncoding.add(length, ExactEncoding.varIntSize(addition.kind()));
+            length = ExactEncoding.add(length, ExactEncoding.varIntSize(addition.mappingId()));
+            if (addition.kind() == ADD_EXACT) {
+                length = ExactEncoding.add(length, ExactEncoding.varIntSize(addition.exactPayload().length));
+                length = ExactEncoding.add(length, addition.exactPayload().length);
+            } else if (addition.kind() == ADD_TEMPLATE) {
+                TemplateDescription description = addition.templateDescription();
+                length = ExactEncoding.add(length, ExactEncoding.varIntSize(description.totalLength()));
+                length = ExactEncoding.add(length, ExactEncoding.varIntSize(description.segments().size()));
+                for (MappingSegment segment : description.segments()) {
+                    length = ExactEncoding.add(length, 1 + ExactEncoding.varIntSize(segment.length()));
+                    if (!segment.variable()) length = ExactEncoding.add(length, segment.literalBytes().length);
+                }
+            } else {
+                throw new IllegalArgumentException("Unknown mapping addition kind: " + addition.kind());
+            }
+        }
+        length = ExactEncoding.add(length, ExactEncoding.varIntSize(frame.removals().size()));
+        for (MappingRemoval removal : frame.removals()) {
+            length = ExactEncoding.add(length, ExactEncoding.varIntSize(removal.kind()));
+            length = ExactEncoding.add(length, ExactEncoding.varIntSize(removal.mappingId()));
+        }
+        MappingEntry entry = frame.entry();
+        length = ExactEncoding.add(length, ExactEncoding.varIntSize(entry.type()));
+        switch (entry.type()) {
+            case ENTRY_LITERAL -> {
+                length = ExactEncoding.add(length, ExactEncoding.varIntSize(entry.literalPayload().length));
+                length = ExactEncoding.add(length, entry.literalPayload().length);
+            }
+            case ENTRY_EXACT_REFERENCE -> length = ExactEncoding.add(length, ExactEncoding.varIntSize(entry.mappingId()));
+            case ENTRY_TEMPLATE_REFERENCE -> {
+                length = ExactEncoding.add(length, ExactEncoding.varIntSize(entry.mappingId()));
+                for (byte[] variable : entry.variableBytes()) length = ExactEncoding.add(length, variable.length);
+            }
+            default -> throw new IllegalArgumentException("Unknown mapping entry type: " + entry.type());
+        }
+        return length;
     }
 
     // Mapping frame decoding:
@@ -268,12 +312,6 @@ final class KineticTemplateMappingCodec {
             safeValue >>>= 7;
             size++;}
         return size;
-    }
-
-    private static byte[] copyReadableBytes(FriendlyByteBuf buffer) {
-        byte[] bytes = new byte[buffer.readableBytes()];
-        buffer.getBytes(0, bytes);
-        return bytes;
     }
 
     record FrameData(List<MappingAddition> additions, List<MappingRemoval> removals, MappingEntry entry) {

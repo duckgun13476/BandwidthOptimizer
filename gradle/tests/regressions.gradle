@@ -83,6 +83,16 @@ tasks.register('runClientboundCommandTreeDeduplicatorRegression', JavaExec) {
     )
 }
 
+tasks.register('runEncodingAllocationRegression', JavaExec) {
+    configureTestJavaExecTask(delegate, 'verification',
+            'Verifies encoder ownership, exact bytes and fixed-load allocation against optional local baseline sources.',
+            'com.PinkCats.bandwidthoptimizer.channel.algorithm.mapping.EncodingAllocationRegressionMain')
+    if (project.hasProperty('boEncodingBaselineSources')) {
+        systemProperty 'bo.encodingBaselineSources', project.property('boEncodingBaselineSources').toString()
+    }
+    maxHeapSize = '768m'
+}
+
 tasks.register('runClientboundTabListDeduplicatorRegression', JavaExec) {
     configureTestJavaExecTask(delegate, 'verification',
             'Verifies exact TAB state reuse, bounded ownership and ordered epoch admission.',
