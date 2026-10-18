@@ -1,3 +1,7 @@
+#### v5.10.32.152-release
+
+1. Reduce repeated copies and buffer growth during transport batch, packet-header and template encoding, preserving packet order, wire format and recovery ownership.
+
 #### v5.10.32.151-release
 
 1. Silence confirmed local quits and move ordinary connection-close details to DEBUG.
