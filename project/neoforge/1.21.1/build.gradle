@@ -252,6 +252,27 @@ def compactRefMemoryAgent = tasks.register('compactRefMemoryAgent', Jar) {
     }
 }
 
+tasks.register('runCoreMetadataRegression', JavaExec) {
+    group = 'verification'
+    dependsOn 'testClasses'
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.chunk.refresh.ChunkCoreMetadataRegressionMain'
+}
+['Enabled', 'Disabled'].each { mode ->
+    tasks.register('runCoreOverlayProtocol' + mode + 'Regression', JavaExec) {
+        group = 'verification'
+        dependsOn 'testClasses', compactRefMemoryAgent
+        classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+        mainClass = 'loadedrefreshregression.ChunkCoreProtocolRegressionMain'
+        systemProperty 'bandwidthoptimizer.experimental.loadedChunkRefresh', (mode == 'Enabled').toString()
+        systemProperty 'bandwidthoptimizer.outputDirectory', layout.buildDirectory.dir('core-overlay-regression').get().asFile.absolutePath
+        systemProperty 'bandwidthoptimizer.sharedOutputDirectory', layout.buildDirectory.dir('core-overlay-regression').get().asFile.absolutePath
+        jvmArgs '--add-opens=java.base/java.util=ALL-UNNAMED', '--add-opens=java.base/java.lang=ALL-UNNAMED'
+        doFirst { jvmArgs '-javaagent:' + compactRefMemoryAgent.get().archiveFile.get().asFile.absolutePath }
+        if (project.hasProperty('coreOverlayReceiptsRoot')) args file(project.property('coreOverlayReceiptsRoot')).canonicalPath
+    }
+}
+
 tasks.named('compileJava', JavaCompile).configure {
     setSource(files(
             project.fileTree('src/main/java'),

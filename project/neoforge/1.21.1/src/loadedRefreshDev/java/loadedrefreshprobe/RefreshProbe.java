@@ -24,7 +24,7 @@ public final class RefreshProbe {
     static final BlockPos TEST_BLOCK = new BlockPos(TARGET_X*16+1, FACTORY ? 200 : 63, TARGET_Z*16+1);
     private static final double START_X = FACTORY ? 161.5 : 1.5, START_Z = FACTORY ? 449.5 : 1.5;
     private static MinecraftServer server;
-    private static int ticks, stage, stageTick;
+    private static int ticks, stage, stageTick, firstPlayerTick = -1;
     private static net.minecraft.server.level.ServerPlayer beforeReconnect;
     public RefreshProbe(IEventBus ignored) {
         if (FMLEnvironment.dist == Dist.CLIENT) RefreshClient.install();
@@ -52,9 +52,10 @@ public final class RefreshProbe {
         if (server == null) return;
         ticks++;
         if (Files.exists(ROOT.resolve("client-result.json"))) { server.halt(false); return; }
-        if (ticks > 2400) { write("server-timeout.json", Map.of("stage", stage)); server.halt(false); return; }
+        if (firstPlayerTick >= 0 && ticks - firstPlayerTick > 2400) { write("server-timeout.json", Map.of("stage", stage, "ticks", ticks, "playerTicks", ticks - firstPlayerTick)); server.halt(false); return; }
         var players = server.getPlayerList().getPlayers();
         if (players.isEmpty()) return;
+        if (firstPlayerTick < 0) firstPlayerTick = ticks;
         var player = players.getFirst();
         int elapsed = ticks - stageTick;
         if (stage == 0) { player.setGameMode(net.minecraft.world.level.GameType.SPECTATOR); player.teleportTo(START_X, FACTORY ? 200 : 66, START_Z); advance(); }
@@ -67,6 +68,12 @@ public final class RefreshProbe {
             var context=channel.pipeline().firstContext();
             var peer=com.PinkCats.bandwidthoptimizer.chunk.peer.ChunkPeerStateManager.snapshotOutboundChannel(context);
             write("peer-before-return.json", com.PinkCats.bandwidthoptimizer.chunk.peer.ChunkPeerStateManager.snapshotOutboundChunk(context,peer.epoch(),com.PinkCats.bandwidthoptimizer.chunk.classify.packet.ChunkPacketCoordinate.ofChunk(TARGET_X,TARGET_Z)));
+            if(Boolean.getBoolean("refreshprobe.evictServerBaselines")) {
+                String id=com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(channel);
+                com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceStore.clearChannel(id);
+                com.PinkCats.bandwidthoptimizer.chunk.snapshot.shadow.ChunkShadowSnapshotManager.clearChannel(id);
+                write("server-baseline-evicted.json",Map.of("channel",id,"scope",peer.epoch(),"preservesPeerManifestAndRecoveryBudget",true));
+            }
             player.teleportTo(START_X, FACTORY ? 200 : 66, START_Z); advance();
         }
         else if (stage == 4 && elapsed >= 120) {

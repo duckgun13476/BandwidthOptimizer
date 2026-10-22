@@ -21,6 +21,7 @@ public final class ChunkPatchApplier {
         verifyBasePacket(chunkPatch, safeBasePacketBytes);
 
         byte[] targetPacketBytes = switch (chunkPatch.patchMode()) {
+            case CORE_OVERLAY -> com.PinkCats.bandwidthoptimizer.chunk.refresh.ChunkCoreOverlayCodec.restore(chunkPatch.patchPayloadBytes(), safeBasePacketBytes, com.PinkCats.bandwidthoptimizer.chunk.refresh.ChunkCoreWireLayout.inspect(safeBasePacketBytes));
             case GENERIC_REPLACE -> ChunkGenericReplacePatchCodec.applyPatch(chunkPatch, safeBasePacketBytes);
             case SECTION_SAME_POSITIONS -> SectionBlocksChunkPatchCodec.applyPatch(chunkPatch, safeBasePacketBytes);
             case BLOCK_ENTITY_NBT_REPLACE -> BlockEntityDataChunkPatchCodec.applyPatch(chunkPatch, safeBasePacketBytes);

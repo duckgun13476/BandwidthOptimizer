@@ -6,7 +6,9 @@
   "mixins": [
     "RefreshConnectionMixin",
     "RefreshPlannerMixin",
-    "RefreshForcedMissMixin"
+    "RefreshForcedMissMixin",
+    "RefreshCoreRestoreMixin",
+    "RefreshUpdatedReuseMixin"
   ],
   "injectors": {
     "defaultRequire": 1

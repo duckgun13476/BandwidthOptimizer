@@ -22,15 +22,31 @@ public final class ChunkPersistentClientCacheManifestBatchCodec {
 
     // Packs many manifest entries into one control payload.
     public static byte[] encode(List<ChunkPersistentClientCache.ManifestEntry> entries, String reason) {
+        return encode(entries,reason,false);
+    }
+
+    public static byte[] encode(List<ChunkPersistentClientCache.ManifestEntry> entries, String reason, boolean coreOverlay) {
         List<ChunkPersistentClientCache.ManifestEntry> safeEntries = entries == null ? List.of() : entries;
         ByteBuf byteBuf = Unpooled.buffer();
         try {
             FriendlyByteBuf friendlyByteBuf = new FriendlyByteBuf(byteBuf);
-            friendlyByteBuf.writeVarInt(BATCH_VERSION);
+            friendlyByteBuf.writeVarInt(coreOverlay ? 2 : BATCH_VERSION);
             friendlyByteBuf.writeUtf(reason == null || reason.isBlank() ? "persistent_client_cache_manifest_batch" : reason);
             friendlyByteBuf.writeVarInt(safeEntries.size());
             for (ChunkPersistentClientCache.ManifestEntry entry : safeEntries) {
                 writeEntry(friendlyByteBuf, entry);
+
+            }
+            if(coreOverlay) {
+                int claims=0;
+                for(var entry:safeEntries)if(entry!=null && com.PinkCats.bandwidthoptimizer.chunk.refresh.ChunkCoreClaims.hash(entry.coreHash()))claims++;
+                friendlyByteBuf.writeVarInt(claims);
+                for(int i=0;i<safeEntries.size();i++) {
+                    var entry=safeEntries.get(i);
+                    if(entry!=null && com.PinkCats.bandwidthoptimizer.chunk.refresh.ChunkCoreClaims.hash(entry.coreHash())) {
+                        friendlyByteBuf.writeVarInt(i);friendlyByteBuf.writeBytes(java.util.HexFormat.of().parseHex(entry.coreHash()));
+                    }
+                }
             }
             return ByteBufUtil.getBytes(byteBuf);
         } finally {
@@ -48,7 +64,7 @@ public final class ChunkPersistentClientCacheManifestBatchCodec {
         try {
             FriendlyByteBuf friendlyByteBuf = new FriendlyByteBuf(byteBuf);
             int version = friendlyByteBuf.readVarInt();
-            if (version != BATCH_VERSION) {
+            if (version != BATCH_VERSION && version != 2) {
                 throw new IllegalArgumentException("Unsupported chunk manifest batch version: " + version);
             }
             String reason = friendlyByteBuf.readUtf();
@@ -64,6 +80,19 @@ public final class ChunkPersistentClientCacheManifestBatchCodec {
             ArrayList<ChunkHotspotFrame> frames = new ArrayList<>(count);
             for (int index = 0; index < count; index++) {
                 frames.add(readEntry(friendlyByteBuf, reason));
+            }
+            if(version==2) {
+                int claims=friendlyByteBuf.readVarInt(),previous=-1;
+                if(claims<0 || claims>count)throw new IllegalArgumentException("Invalid core claim count");
+                for(int i=0;i<claims;i++) {
+                    int index=friendlyByteBuf.readVarInt();
+                    if(index<=previous || index>=count)throw new IllegalArgumentException("Invalid core claim index");
+                    previous=index;byte[] hash=new byte[32];friendlyByteBuf.readBytes(hash);
+                    var f=frames.get(index);
+                    frames.set(index,new ChunkHotspotFrame(f.protocolVersion(),f.operation(),f.epoch(),f.observedPacketCount(),
+                            f.protocolName(),f.packetClassName(),f.hotspotKind(),f.laneKind(),f.coordinate(),f.originalEncodedBytes(),
+                            f.fullSnapshotVersion(),f.laneVersion(),java.util.HexFormat.of().formatHex(hash),f.payloadHash(),f.deltaBytesSinceFullSnapshot(),f.reason()));
+                }
             }
             if (friendlyByteBuf.isReadable()) {
                 throw new IllegalArgumentException("Chunk manifest batch left extra bytes: " + friendlyByteBuf.readableBytes());

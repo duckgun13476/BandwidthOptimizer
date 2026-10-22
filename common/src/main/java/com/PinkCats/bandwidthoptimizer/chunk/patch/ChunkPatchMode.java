@@ -3,7 +3,8 @@ package com.PinkCats.bandwidthoptimizer.chunk.patch;
 public enum ChunkPatchMode {
     GENERIC_REPLACE(0, "generic_replace"),
     SECTION_SAME_POSITIONS(1, "section_same_positions"),
-    BLOCK_ENTITY_NBT_REPLACE(2, "block_entity_nbt_replace");
+    BLOCK_ENTITY_NBT_REPLACE(2, "block_entity_nbt_replace"),
+    CORE_OVERLAY(3, "core_overlay");
 
     private final int codecId;
     private final String logName;

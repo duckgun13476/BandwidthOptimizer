@@ -101,7 +101,11 @@ public final class ChunkCoreOverlayExperimentMain {
         for(String run:List.of("refresh-v7","refresh-v8")){
             Path dir=root.resolve(".tmp/"+run+"/factory-on");
             byte[] base=Files.readAllBytes(dir.resolve("captured-candidate.bin")),target=Files.readAllBytes(dir.resolve("native-full-1.bin")),initial=Files.readAllBytes(dir.resolve("native-full-0.bin"));
-            byte[] before=digest(base);Parts cached=split(base);byte[] frame=encode(target,cached.coreHash);
+            byte[] before=digest(base);Parts cached=split(base);var wireCore=com.PinkCats.bandwidthoptimizer.chunk.refresh.ChunkCoreWireLayout.inspect(base);
+            check(wireCore!=null && Arrays.equals(wireCore.hash(),cached.coreHash),"bounded wire parser agrees with native NBT reader");
+            var targetCore=com.PinkCats.bandwidthoptimizer.chunk.refresh.ChunkCoreWireLayout.inspect(target);
+            check(targetCore!=null && Arrays.equals(targetCore.hash(),split(target).coreHash),"target native boundaries");
+            byte[] frame=encode(target,cached.coreHash);
             check(frame!=null,"actual core match");check(Arrays.equals(target,restore(frame,base,cached)),"byte exact native FULL");
             check(encode(target,split(initial).coreHash)==null,"stale terrain must use FULL");
             byte[] changed=base.clone();changed[4]^=1;

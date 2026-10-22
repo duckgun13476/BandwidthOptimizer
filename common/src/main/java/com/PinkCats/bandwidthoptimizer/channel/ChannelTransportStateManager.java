@@ -44,6 +44,11 @@ public final class ChannelTransportStateManager {
 
     private ChannelTransportStateManager() {}
 
+    /** Read-only planning probe; never creates a compressor session. */
+    public static ChannelTransportSession existingSession(Channel channel) {
+        return channel == null ? null : channel.attr(TRANSPORT_SESSION_KEY).get();
+    }
+
     public static ChannelTransportSession getOrCreateSession(Channel channel) {
         if (channel == null) {
             throw new IllegalArgumentException("channel");

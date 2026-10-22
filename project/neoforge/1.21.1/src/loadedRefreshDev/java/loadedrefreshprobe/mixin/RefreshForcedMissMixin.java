@@ -19,12 +19,12 @@ public abstract class RefreshForcedMissMixin {
         if(!Boolean.getBoolean("refreshprobe.forceMiss") || done || !ChunkTransportEnvelopeCodec.looksLikeEnvelope(bytes))return;
         var envelope=ChunkTransportEnvelopeCodec.decodeEnvelope(context.channel(),bytes);
         var f=envelope.frame();
-        if(f.operation()!=ChunkHotspotFrameOp.PUBLISH_REF || !f.coordinate().present()
+        if((f.operation()!=ChunkHotspotFrameOp.PUBLISH_REF && f.operation()!=ChunkHotspotFrameOp.PUBLISH_PATCH) || !f.coordinate().present()
                 || f.coordinate().chunkX()!=loadedrefreshprobe.RefreshProbe.TARGET_X
                 || f.coordinate().chunkZ()!=loadedrefreshprobe.RefreshProbe.TARGET_Z)return;
         done=true;
-        loadedrefreshprobe.RefreshWireProbe.forcedMiss(Map.of("bytes",bytes.length,"compact",ChunkCompactReferenceCodec.isCompact(bytes),"hash",f.payloadHash(),"epoch",f.epoch(),"version",f.fullSnapshotVersion()));
-        ChunkTransportControlFrameSender.sendNack(context,f,"runtime_ref_missing_base");
+        loadedrefreshprobe.RefreshWireProbe.forcedMiss(Map.of("operation",f.operation().name(),"bytes",bytes.length,"compact",ChunkCompactReferenceCodec.isCompact(bytes),"hash",f.payloadHash(),"epoch",f.epoch(),"version",f.fullSnapshotVersion()));
+        ChunkTransportControlFrameSender.sendNack(context,f,f.operation()==ChunkHotspotFrameOp.PUBLISH_REF?"runtime_ref_missing_base":"runtime_patch_missing_full_base");
         ci.setReturnValue(ChunkInboundDecodeResult.consumeControlFrame());
     }
 }

@@ -160,6 +160,7 @@ public final class ChunkTransportDispatcher {
             return null;
         }
 
+        runtimeDecision = selectCoreOverlay(context, runtimeDecision, knownChunkSnapshot, scopeId, originalPacketBytes);
         runtimeDecision = reserveRecoveryBeforePublish(context, runtimeDecision, originalPacketBytes);
         byte[] envelopePayloadBytes = runtimeDecision.copyTransportPayloadBytes();
         byte[] encodedEnvelopeBytes = ChunkTransportEnvelopeCodec.encodeEnvelope(context == null ? null : context.channel(),
@@ -377,6 +378,7 @@ public final class ChunkTransportDispatcher {
         }
 
         hotpathStartNanos = HotpathCostProbe.start();
+        if (!forceSableInitialSyncFull) runtimeDecision = selectCoreOverlay(context, runtimeDecision, knownChunkSnapshot, scopeId, originalPacketBytes);
         runtimeDecision = reserveRecoveryBeforePublish(context, runtimeDecision, originalPacketBytes);
         HotpathCostProbe.end("chunk.rememberRecoverableFull", hotpathStartNanos);
         hotpathStartNanos = HotpathCostProbe.start();
@@ -989,6 +991,12 @@ public final class ChunkTransportDispatcher {
 
         ChunkPeerChunkStateSnapshot chunkSnapshot =
                 ChunkPeerStateManager.recordPersistentClientManifest(context, frame);
+        if (chunkSnapshot != null && context != null
+                && com.PinkCats.bandwidthoptimizer.chunk.integration.transport.envelope.ChunkCoreOverlayCapability.supported(context.channel())) {
+            com.PinkCats.bandwidthoptimizer.chunk.refresh.ChunkCoreClaims.put(readChannelId(context),chunkSnapshot.epoch(),
+                    frame.coordinate().chunkX(),frame.coordinate().chunkZ(),frame.payloadHash(),frame.baseSnapshotHash());
+        }
+
         if (logEachEntry && BO_Diag_cacheManifestSync()) {
             DiagnosticLog.info(DiagnosticToolRegistry.Tool.CACHE_MANIFEST_SYNC, "event=recv channel={}, chunk={}, hash={}, state={}",
                     readChannelId(context),
@@ -1792,6 +1800,40 @@ public final class ChunkTransportDispatcher {
                 && frame.hotspotKind() == ChunkHotspotKind.FULL_CHUNK
                 && runtimeFullBasePacketBytes != null
                 && runtimeFullBasePacketBytes.length > 0;
+    }
+
+    private static RuntimeChunkTransportDecision selectCoreOverlay(
+            ChannelHandlerContext context, RuntimeChunkTransportDecision original,
+            ChunkPeerChunkStateSnapshot known, long scope, byte[] full) {
+        if (context==null || original==null || known==null || known.epoch()!=scope
+                || !known.persistentClientManifestCandidate()
+                || original.operation()==ChunkHotspotFrameOp.PUBLISH_REF
+                || original.frame().hotspotKind()!=ChunkHotspotKind.FULL_CHUNK
+                || !com.PinkCats.bandwidthoptimizer.chunk.integration.transport.envelope.ChunkCoreOverlayCapability.supported(context.channel())
+                || !com.PinkCats.bandwidthoptimizer.chunk.integration.transport.envelope.ChunkCoreOverlayCapability.independentCompression(context.channel())) return original;
+        var f=original.frame();
+        var claim=com.PinkCats.bandwidthoptimizer.chunk.refresh.ChunkCoreClaims.get(readChannelId(context),scope,
+                f.coordinate().chunkX(),f.coordinate().chunkZ(),known.persistentClientManifestCandidateHash());
+        if(claim==null || claim.baselineHash().equals(f.payloadHash()))return original;
+        var core=com.PinkCats.bandwidthoptimizer.chunk.refresh.ChunkCoreWireLayout.inspect(full);
+        if(core==null)return original;
+        byte[] overlay=com.PinkCats.bandwidthoptimizer.chunk.refresh.ChunkCoreOverlayCodec.encode(full,core,java.util.HexFormat.of().parseHex(claim.coreHash()));
+        if(overlay==null)return original;
+        byte[] patch=new com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatch(
+                com.PinkCats.bandwidthoptimizer.chunk.patch.ChunkPatchMode.CORE_OVERLAY,"full_chunk",claim.baselineHash(),full.length,overlay).encode();
+        // Strong raw margin, including the per-entry manifest extension. Exact
+        // REF and any smaller existing PATCH always keep precedence.
+        if(patch.length+128>=full.length/2 || patch.length>=original.transportPayloadBytes().length)return original;
+        String reason=ChunkLocalCacheReuseStats.PERSISTENT_MANIFEST_PATCH_REASON;
+        var frame=new ChunkHotspotFrame(f.protocolVersion(),ChunkHotspotFrameOp.PUBLISH_PATCH,f.epoch(),f.observedPacketCount(),
+                f.protocolName(),f.packetClassName(),f.hotspotKind(),f.laneKind(),f.coordinate(),f.originalEncodedBytes(),
+                f.fullSnapshotVersion(),f.laneVersion(),claim.baselineHash(),f.payloadHash(),f.deltaBytesSinceFullSnapshot(),reason);
+        ChunkPlanDecision d=original.decision();
+        var decision=new ChunkPlanDecision(ChunkPlanDecisionKind.PUBLISH_PATCH,reason,d.knownSnapshotPublished(),d.fullSnapshotVersion(),
+                d.mutationVersion(),d.laneVersion(),d.deltaPacketCountSinceFullSnapshot(),d.deltaBytesSinceFullSnapshot(),d.reusedGlobalSnapshot(),
+                d.globalObservationCount(),claim.baselineHash(),shortenHash(claim.baselineHash()),d.currentPayloadHash(),d.currentPayloadShortHash(),
+                d.laneName(),d.chunkText(),d.encodedBytes(),d.bypassBytes(),d.fullTransportBytes(),d.refTransportBytes(),patch.length,patch.length);
+        return new RuntimeChunkTransportDecision(ChunkHotspotFrameOp.PUBLISH_PATCH,frame,patch,decision);
     }
 
     private static RuntimeChunkTransportDecision reserveRecoveryBeforePublish(

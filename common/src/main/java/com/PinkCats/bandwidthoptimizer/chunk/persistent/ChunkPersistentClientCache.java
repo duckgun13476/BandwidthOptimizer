@@ -615,6 +615,8 @@ public final class ChunkPersistentClientCache {
             mutation.setProperty(keyPrefix + "deltaHash", deltaHash);
             store.appendIndexEntry(keyPrefix, mutation);
 
+            String refreshedCoreHash = com.PinkCats.bandwidthoptimizer.chunk.refresh.UpdatedChunkCacheStats.STORE_REASON.equals(frame.reason())
+                    ? loadedCoreHash(restoredPacketBytes) : "";
             synchronized (LOCK) {
                 ZipCacheSnapshot cacheSnapshot = cachedZipCacheSnapshot();
                 applyIndexEntry(cacheSnapshot.index(), keyPrefix, mutation);
@@ -631,6 +633,7 @@ public final class ChunkPersistentClientCache {
                         frame.coordinate(),
                         fingerprint.hashHex(),
                         mutation,
+                        refreshedCoreHash,
                         evictedHashes
                 );
             }
@@ -969,7 +972,7 @@ public final class ChunkPersistentClientCache {
         for (int startIndex = 0; startIndex < entries.size(); startIndex += batchEntries) {
             int endIndex = Math.min(startIndex + batchEntries, entries.size());
             List<ManifestEntry> batch = entries.subList(startIndex, endIndex);
-            byte[] batchPayloadBytes = ChunkPersistentClientCacheManifestBatchCodec.encode(batch, safeText(reason, "persistent_client_cache_manifest"));
+            byte[] batchPayloadBytes = ChunkPersistentClientCacheManifestBatchCodec.encode(batch, safeText(reason, "persistent_client_cache_manifest"), com.PinkCats.bandwidthoptimizer.chunk.integration.transport.envelope.ChunkCoreOverlayCapability.supported(channel));
             if (ChunkTransportControlFrameSender.sendPersistentClientCacheManifestBatch(
                     channel,
                     batchPayloadBytes,
@@ -1063,7 +1066,7 @@ public final class ChunkPersistentClientCache {
             int endIndex = Math.min(startIndex + batchEntries, entries.size());
             List<ManifestEntry> batch = entries.subList(startIndex, endIndex);
             batchPayloads.add(new ManifestBatchPayload(
-                    ChunkPersistentClientCacheManifestBatchCodec.encode(batch, safeText(reason, "persistent_client_cache_manifest_refresh")),
+                    ChunkPersistentClientCacheManifestBatchCodec.encode(batch, safeText(reason, "persistent_client_cache_manifest_refresh"), com.PinkCats.bandwidthoptimizer.chunk.integration.transport.envelope.ChunkCoreOverlayCapability.supported(channel)),
                     batch.size()
             ));
         }
@@ -1165,7 +1168,7 @@ public final class ChunkPersistentClientCache {
             int endIndex = Math.min(startIndex + batchEntries, entries.size());
             List<ManifestEntry> batch = entries.subList(startIndex, endIndex);
             batchPayloads.add(new ManifestBatchPayload(
-                    ChunkPersistentClientCacheManifestBatchCodec.encode(batch, safeText(reason, "persistent_client_cache_manifest")),
+                    ChunkPersistentClientCacheManifestBatchCodec.encode(batch, safeText(reason, "persistent_client_cache_manifest"), com.PinkCats.bandwidthoptimizer.chunk.integration.transport.envelope.ChunkCoreOverlayCapability.supported(channel)),
                     batch.size()
             ));
         }
@@ -2301,6 +2304,7 @@ public final class ChunkPersistentClientCache {
             ChunkPacketCoordinate coordinate,
             String payloadHash,
             Properties mutation,
+            String refreshedCoreHash,
             Set<String> evictedHashes
     ) {
         HashSet<String> removals = new HashSet<>();
@@ -2335,7 +2339,8 @@ public final class ChunkPersistentClientCache {
                         mutation.getProperty(keyPrefix + "packetClassName", ""),
                         readLong(mutation, keyPrefix + "fullSnapshotVersion", 1L),
                         readInt(mutation, keyPrefix + "encodedBytes", packetBytes.length),
-                        readLong(mutation, keyPrefix + "lastUsedAtMillis", 0L)
+                        readLong(mutation, keyPrefix + "lastUsedAtMillis", 0L),
+                        refreshedCoreHash
                 );
                 upsert = new LoadedCacheEntry(payloadHash, packetBytes, manifestEntry);
             }
@@ -3625,6 +3630,15 @@ public final class ChunkPersistentClientCache {
     ) {
     }
 
+    private static String loadedCoreHash(byte[] bytes) {
+        if (!com.PinkCats.bandwidthoptimizer.chunk.refresh.UpdatedChunkCacheStats.ENABLED) return "";
+        synchronized(LOCK) {
+            if(!com.PinkCats.bandwidthoptimizer.chunk.integration.transport.envelope.ChunkCoreOverlayCapability.supported(activeManifestRefreshChannel))return "";
+        }
+        var core=com.PinkCats.bandwidthoptimizer.chunk.refresh.ChunkCoreWireLayout.inspect(bytes);
+        return core==null?"":java.util.HexFormat.of().formatHex(core.hash());
+    }
+
     public record ManifestEntry(
             ChunkPacketCoordinate coordinate,
             String payloadHash,
@@ -3632,8 +3646,12 @@ public final class ChunkPersistentClientCache {
             String packetClassName,
             long fullSnapshotVersion,
             int encodedBytes,
-            long lastUsedAtMillis
+            long lastUsedAtMillis,
+            String coreHash
     ) {
+        public ManifestEntry(ChunkPacketCoordinate coordinate,String payloadHash,String protocolName,String packetClassName,long fullSnapshotVersion,int encodedBytes,long lastUsedAtMillis) {
+            this(coordinate,payloadHash,protocolName,packetClassName,fullSnapshotVersion,encodedBytes,lastUsedAtMillis, "");
+        }
 
         private ChunkHotspotFrame toFrame(String reason) {
             return new ChunkHotspotFrame(

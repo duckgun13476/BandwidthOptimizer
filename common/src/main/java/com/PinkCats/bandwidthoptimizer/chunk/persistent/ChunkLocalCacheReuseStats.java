@@ -68,6 +68,10 @@ public final class ChunkLocalCacheReuseStats {
             int wireFrameBytes,
             ReuseSource reuseSource
     ) {
+        if (com.PinkCats.bandwidthoptimizer.chunk.refresh.UpdatedChunkCacheStats.ENABLED && frame != null) {
+            com.PinkCats.bandwidthoptimizer.chunk.refresh.UpdatedChunkCacheStats.referenceRestored(
+                    ChunkPersistentClientCache.loadedUpdateScopeToken(), frame.coordinate(), frame.baseSnapshotHash());
+        }
         long savedBytes = savedBytes(restoredPacketBytes, wireFrameBytes);
         if (reuseSource == ReuseSource.OFFLINE_PERSISTENT_CACHE) {
             OFFLINE_REUSE_PACKETS.incrementAndGet();

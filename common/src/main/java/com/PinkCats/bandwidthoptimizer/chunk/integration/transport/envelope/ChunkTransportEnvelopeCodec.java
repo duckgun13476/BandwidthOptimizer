@@ -26,7 +26,7 @@ public final class ChunkTransportEnvelopeCodec {
     public static byte[] encodeEnvelope(Channel channel, ChunkTransportEnvelope envelope) {
         if (envelope == null) throw new IllegalArgumentException("envelope must not be null");
         byte[] compact = ChunkCompactReferenceCodec.tryEncode(channel, envelope);
-        return compact != null ? compact : encodeLegacy(envelope, ChunkCompactReferenceCodec.advertise(channel, envelope.frame()));
+        return compact != null ? compact : encodeLegacy(envelope, ChunkCompactReferenceCodec.advertise(channel, ChunkCoreOverlayCapability.advertise(channel, envelope.frame())));
     }
 
     private static byte[] encodeLegacy(ChunkTransportEnvelope envelope, ChunkHotspotFrame frame) {
@@ -54,7 +54,7 @@ public final class ChunkTransportEnvelopeCodec {
 
     public static ChunkTransportEnvelope decodeEnvelope(Channel channel, byte[] bytes) {
         if (ChunkCompactReferenceCodec.isCompact(bytes)) return ChunkCompactReferenceCodec.decode(channel, bytes);
-        return ChunkCompactReferenceCodec.acceptCapability(channel, decodeEnvelope(bytes));
+        return ChunkCoreOverlayCapability.accept(channel, ChunkCompactReferenceCodec.acceptCapability(channel, decodeEnvelope(bytes)));
     }
 
     public static ChunkTransportEnvelope decodeEnvelope(byte[] encodedEnvelopeBytes) {
