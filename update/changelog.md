@@ -1,3 +1,8 @@
+#### v5.10.33.153-release
+
+1. Reduce repeated chunk-cache reference metadata with acknowledged, connection-scoped compact IDs and bounded bindings, preserving exact FULL fallback and recovery. Actual wire savings depend on workload and compression.
+2. Require BandwidthOptimizer with a matching network protocol on both client and server across all supported loaders; reject missing or incompatible peers during connection setup.
+
 #### v5.10.32.152-release
 
 1. Reduce repeated copies and buffer growth during transport batch, packet-header and template encoding, preserving packet order, wire format and recovery ownership.
