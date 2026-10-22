@@ -28,6 +28,9 @@
     "minecraft.ServerKeepAliveTimeoutBoundaryMixin"
   ],
   "client": [
+    "minecraft.LoadedChunkCacheRefreshMixin",
+    "minecraft.ChunkSnapshotDataAccessor",
+    "minecraft.ChunkSnapshotLightAccessor",
     "minecraft.RequiredPeerLoginAccessor",
     "minecraft.PauseScreenDisconnectMixin"
   ],

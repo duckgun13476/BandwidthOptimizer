@@ -39,6 +39,7 @@ final class BandwidthOptimizerHudOverlayCore {
     }
 
     static void onLoggingOut(String reason) {
+        com.PinkCats.bandwidthoptimizer.client.cache.LoadedChunkCacheRefresh.clear();
         ChunkPersistentClientCache.flushAsync(reason);
     }
 
@@ -152,6 +153,10 @@ final class BandwidthOptimizerHudOverlayCore {
                 + "  (" + formatFlow(snapshot.effectiveTotalRawBytes(), snapshot.effectiveTotalSentBytes()) + ")");
         lines.add(buildChunkCacheLine(snapshot));
         lines.add(buildChunkCacheSourceLine(snapshot));
+        if (com.PinkCats.bandwidthoptimizer.chunk.refresh.UpdatedChunkCacheStats.ENABLED) {
+            lines.add("  " + text("hud.bandwidthoptimizer.metric.updated_cache") + " "
+                    + formatCount(com.PinkCats.bandwidthoptimizer.chunk.refresh.UpdatedChunkCacheStats.reuses()));
+        }
         lines.add("  " + text("hud.bandwidthoptimizer.local_cache") + " " + formatBytes(snapshot.localCacheBytes())
                 + "/" + formatBytes(ClientChunkCacheConfig.chunkCacheMaxMemoryBytes())
                 + " | " + text("hud.bandwidthoptimizer.metric.pkt") + " " + formatCount(snapshot.localCachePacketCount())

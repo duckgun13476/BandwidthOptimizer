@@ -11,6 +11,14 @@ public final class ClientboundPlayPacketCodec {
 
     private ClientboundPlayPacketCodec() {}
 
+    public static byte[] encodePacket(Packet<?> packet, net.minecraft.core.RegistryAccess registryAccess) {
+        return encodePacket(packet);
+    }
+
+    public static java.util.function.Function<Packet<?>, byte[]> encoderForRegistry(net.minecraft.core.RegistryAccess registryAccess) {
+        return ClientboundPlayPacketCodec::encodePacket;
+    }
+
     public static byte[] encodePacket(Packet<?> packet) {
         FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
         try {
@@ -27,8 +35,16 @@ public final class ClientboundPlayPacketCodec {
         }
     }
 
+    public static java.util.function.Function<byte[], Packet<ClientGamePacketListener>> decoderForRegistry(net.minecraft.core.RegistryAccess registryAccess) {
+        return bytes -> decodePacket(bytes, true);
+    }
+
     public static Packet<ClientGamePacketListener> decodePacket(byte[] bytes) {
-        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(bytes));
+        return decodePacket(bytes, false);
+    }
+
+    private static Packet<ClientGamePacketListener> decodePacket(byte[] bytes, boolean readOnly) {
+        FriendlyByteBuf buffer = new FriendlyByteBuf(readOnly ? Unpooled.wrappedBuffer(bytes).asReadOnly() : Unpooled.wrappedBuffer(bytes));
         try {
             int packetId = buffer.readVarInt();
             Packet<?> packet = ConnectionProtocol.PLAY.createPacket(PacketFlow.CLIENTBOUND, packetId, buffer);

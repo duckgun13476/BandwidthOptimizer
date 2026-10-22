@@ -216,6 +216,15 @@ tasks.register('runBoundedPacketSplitterRegression', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.integration.neoforge.BoundedPacketSplitterRegressionMain'
 }
 
+tasks.register('runLoadedRefreshMemoryRegression', JavaExec) {
+    group = 'verification'
+    dependsOn testClasses, 'compactRefMemoryAgent'
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'loadedrefreshregression.LoadedRefreshMemoryRegressionMain'
+    jvmArgs '--add-opens=java.base/java.util=ALL-UNNAMED', '--add-opens=java.base/java.lang=ALL-UNNAMED'
+    doFirst { jvmArgs '-javaagent:' + tasks.named('compactRefMemoryAgent').get().archiveFile.get().asFile.absolutePath }
+}
+
 tasks.register('runRequiredPeerHandshakeRegression', JavaExec) {
     group = 'verification'
     dependsOn 'testClasses'

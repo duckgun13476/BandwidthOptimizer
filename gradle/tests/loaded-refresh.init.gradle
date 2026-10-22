@@ -1,0 +1,49 @@
+// Explicit opt-in native client/server experiment, isolated from normal artifacts.
+gradle.beforeProject { p ->
+    if (p.path != ':neoforge-1.21.1') return
+    p.afterEvaluate {
+        def root = gradle.rootProject.projectDir
+        def enabled = (gradle.startParameter.projectProperties['refreshExperimentEnabled'] ?: 'true').toBoolean()
+        def factory = (gradle.startParameter.projectProperties['refreshExperimentFactory'] ?: 'false').toBoolean()
+        def base = new File(root, (factory ? '.tmp/loaded-refresh-factory/' : '.tmp/loaded-refresh-native/') + (enabled ? 'on' : 'off'))
+        if (gradle.startParameter.projectProperties['refreshExperimentBase']) {
+            def selected = new File(gradle.startParameter.projectProperties['refreshExperimentBase'])
+            base = selected.isAbsolute() ? selected : new File(root, selected.path)
+        }
+        base = base.canonicalFile
+        if (!base.toPath().startsWith(root.canonicalFile.toPath())) throw new GradleException('Fixture outside repository')
+        def fixture = p.sourceSets.create('loadedRefreshDev')
+        fixture.java.setSrcDirs([new File(root, 'common/src/test/java'), new File(p.projectDir, 'src/loadedRefreshDev/java')])
+        fixture.java.include('**/LoadedChunkRefreshRegressionMain.java', 'loadedrefreshprobe/**/*.java')
+        fixture.resources.setSrcDirs([new File(p.projectDir, 'src/loadedRefreshDev/resources')])
+        fixture.compileClasspath += p.sourceSets.main.compileClasspath + p.sourceSets.main.output
+        fixture.runtimeClasspath += p.sourceSets.main.runtimeClasspath
+        p.extensions.getByName('neoForge').mods.create('loadedrefreshprobe') { sourceSet fixture }
+        ['server', 'client'].each { name ->
+            def run = p.extensions.getByName('neoForge').runs.getByName(name)
+            run.gameDirectory.set(new File(base, name))
+            run.systemProperty('refreshprobe.root', base.absolutePath)
+            run.systemProperty('refreshprobe.factory', factory.toString())
+            run.systemProperty('refreshprobe.chest', gradle.startParameter.projectProperties['refreshExperimentChest'] ?: 'false')
+            run.systemProperty('refreshprobe.returnDelay', gradle.startParameter.projectProperties['refreshReturnDelay'] ?: '320')
+            run.systemProperty('refreshprobe.lifecycle', gradle.startParameter.projectProperties['refreshLifecycle'] ?: 'false')
+            run.systemProperty('refreshprobe.forceMiss', gradle.startParameter.projectProperties['refreshForceMiss'] ?: 'false')
+            run.systemProperty('bandwidthoptimizer.compactChunkReferences', gradle.startParameter.projectProperties['compactRefsEnabled'] ?: 'true')
+            run.systemProperty('bandwidthoptimizer.experimental.loadedChunkRefresh', enabled.toString())
+            run.systemProperty('bandwidthoptimizer.outputDirectory', new File(base, name + '/bandwidthoptimizer-native').absolutePath)
+            run.systemProperty('bandwidthoptimizer.sharedOutputDirectory', new File(base, name + '/bandwidthoptimizer-native').absolutePath)
+            run.systemProperty('bandwidthoptimizer.report.uploadEndpoint', '')
+            run.jvmArgument('-Xmx2G')
+        }
+        def client = p.extensions.getByName('neoForge').runs.getByName('client')
+        client.systemProperty('bandwidthoptimizer.experient.enabled', 'true')
+        client.systemProperty('bandwidthoptimizer.experient.autoConnectAddress', '127.0.0.1:25849')
+        client.systemProperty('bandwidthoptimizer.experient.autoConnectName', 'Loaded refresh probe')
+        client.programArguments.addAll('--username', 'RefreshProbe')
+        p.tasks.register('runNativeLoadedRefreshRegression', JavaExec) {
+            dependsOn p.tasks.named('loadedRefreshDevClasses')
+            classpath = fixture.runtimeClasspath
+            mainClass = 'loadedrefreshregression.LoadedChunkRefreshRegressionMain'
+        }
+    }
+}

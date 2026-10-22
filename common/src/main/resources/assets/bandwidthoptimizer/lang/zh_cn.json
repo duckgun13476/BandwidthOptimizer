@@ -1,4 +1,5 @@
 {
+  "hud.bandwidthoptimizer.metric.updated_cache": "更新缓存",
   "hud.bandwidthoptimizer.title": "带宽优化",
   "hud.bandwidthoptimizer.client": "客户端统计",
   "hud.bandwidthoptimizer.server": "服务器会话",

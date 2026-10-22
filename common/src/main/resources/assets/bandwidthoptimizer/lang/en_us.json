@@ -1,4 +1,5 @@
 {
+  "hud.bandwidthoptimizer.metric.updated_cache": "Updated cache",
   "hud.bandwidthoptimizer.title": "Bandwidth Optimizer",
   "hud.bandwidthoptimizer.client": "Client local",
   "hud.bandwidthoptimizer.server": "Server session",

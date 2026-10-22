@@ -32,6 +32,9 @@
     "watut.WatutPlayerStatusManagerServerMixin"
   ],
   "client": [
+    "minecraft.LoadedChunkCacheRefreshMixin",
+    "minecraft.ChunkSnapshotDataAccessor",
+    "minecraft.ChunkSnapshotLightAccessor",
     "minecraft.ClientPacketListenerChunkHandleMixin",
     "minecraft.PauseScreenDisconnectMixin",
     "watut.WatutPlayerStatusManagerClientMixin"

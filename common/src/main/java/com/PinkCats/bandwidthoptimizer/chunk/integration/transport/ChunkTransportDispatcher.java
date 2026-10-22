@@ -1707,7 +1707,8 @@ public final class ChunkTransportDispatcher {
         if (decision == null) {
             return "";
         }
-        if (decision.decisionKind() == ChunkPlanDecisionKind.PUBLISH_FULL) {
+        if (decision.decisionKind() == ChunkPlanDecisionKind.PUBLISH_FULL
+                || decision.decisionKind() == ChunkPlanDecisionKind.PUBLISH_REF) {
             return decision.currentPayloadHash();
         }
         return decision.knownSnapshotHash();

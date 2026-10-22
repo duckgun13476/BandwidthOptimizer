@@ -17,11 +17,25 @@ public final class ClientboundPlayPacketCodec {
     private ClientboundPlayPacketCodec() {}
 
     public static byte[] encodePacket(Packet<?> packet) {
-        RegistryFriendlyByteBuf buffer = new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY, ConnectionType.OTHER);
+        return encodePacket(packet, RegistryAccess.EMPTY, CLIENTBOUND_PLAY_PROTOCOL);
+    }
+
+    public static byte[] encodePacket(Packet<?> packet, RegistryAccess registryAccess) {
+        return encoderForRegistry(registryAccess).apply(packet);
+    }
+
+    public static java.util.function.Function<Packet<?>, byte[]> encoderForRegistry(RegistryAccess registryAccess) {
+        var protocol = registryAccess == RegistryAccess.EMPTY ? CLIENTBOUND_PLAY_PROTOCOL
+                : GameProtocols.CLIENTBOUND_TEMPLATE.bind(RegistryFriendlyByteBuf.decorator(registryAccess, ConnectionType.OTHER));
+        return packet -> encodePacket(packet, registryAccess, protocol);
+    }
+
+    private static byte[] encodePacket(Packet<?> packet, RegistryAccess registryAccess, ProtocolInfo<ClientGamePacketListener> protocol) {
+        RegistryFriendlyByteBuf buffer = new RegistryFriendlyByteBuf(Unpooled.buffer(), registryAccess, ConnectionType.OTHER);
         try {
             @SuppressWarnings("unchecked")
             Packet<ClientGamePacketListener> typedPacket = (Packet<ClientGamePacketListener>) packet;
-            CLIENTBOUND_PLAY_PROTOCOL.codec().encode(buffer, typedPacket);
+            protocol.codec().encode(buffer, typedPacket);
             byte[] bytes = new byte[buffer.readableBytes()];
             buffer.getBytes(0, bytes);
             return bytes;
@@ -32,10 +46,20 @@ public final class ClientboundPlayPacketCodec {
         }
     }
 
+    public static java.util.function.Function<byte[], Packet<ClientGamePacketListener>> decoderForRegistry(RegistryAccess registryAccess) {
+        var protocol = registryAccess == RegistryAccess.EMPTY ? CLIENTBOUND_PLAY_PROTOCOL
+                : GameProtocols.CLIENTBOUND_TEMPLATE.bind(RegistryFriendlyByteBuf.decorator(registryAccess, ConnectionType.OTHER));
+        return bytes -> decodePacket(bytes, registryAccess, protocol, true);
+    }
+
     public static Packet<ClientGamePacketListener> decodePacket(byte[] bytes) {
-        RegistryFriendlyByteBuf buffer = new RegistryFriendlyByteBuf(Unpooled.wrappedBuffer(bytes), RegistryAccess.EMPTY, ConnectionType.OTHER);
+        return decodePacket(bytes, RegistryAccess.EMPTY, CLIENTBOUND_PLAY_PROTOCOL, false);
+    }
+
+    private static Packet<ClientGamePacketListener> decodePacket(byte[] bytes, RegistryAccess registryAccess, ProtocolInfo<ClientGamePacketListener> protocol, boolean readOnly) {
+        RegistryFriendlyByteBuf buffer = new RegistryFriendlyByteBuf((readOnly ? Unpooled.wrappedBuffer(bytes).asReadOnly() : Unpooled.wrappedBuffer(bytes)), registryAccess, ConnectionType.OTHER);
         try {
-            Packet<?> packet = CLIENTBOUND_PLAY_PROTOCOL.codec().decode(buffer);
+            Packet<?> packet = protocol.codec().decode(buffer);
             if (packet == null) {
                 throw new IllegalStateException("Failed to decode clientbound play packet");
             }

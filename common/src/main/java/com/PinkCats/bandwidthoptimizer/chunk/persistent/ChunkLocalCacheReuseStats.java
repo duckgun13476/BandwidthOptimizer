@@ -31,6 +31,7 @@ public final class ChunkLocalCacheReuseStats {
 
 
     public static void reset() {
+        com.PinkCats.bandwidthoptimizer.chunk.refresh.UpdatedChunkCacheStats.reset();
         TEMPORARY_REUSE_PACKETS.set(0L);
         TEMPORARY_REUSE_SAVED_BYTES.set(0L);
         OFFLINE_REUSE_PACKETS.set(0L);
@@ -47,6 +48,10 @@ public final class ChunkLocalCacheReuseStats {
             int wireFrameBytes,
             ReuseSource reuseSource
     ) {
+        if (com.PinkCats.bandwidthoptimizer.chunk.refresh.UpdatedChunkCacheStats.ENABLED && frame != null) {
+            com.PinkCats.bandwidthoptimizer.chunk.refresh.UpdatedChunkCacheStats.referenceRestored(
+                    ChunkPersistentClientCache.loadedUpdateScopeToken(), frame.coordinate(), frame.payloadHash());
+        }
         long savedBytes = savedBytes(restoredPacketBytes, wireFrameBytes);
         if (reuseSource == ReuseSource.OFFLINE_PERSISTENT_CACHE) {
             OFFLINE_REUSE_PACKETS.incrementAndGet();

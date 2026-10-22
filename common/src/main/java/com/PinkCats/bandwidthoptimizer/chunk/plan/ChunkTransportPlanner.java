@@ -96,6 +96,20 @@ public final class ChunkTransportPlanner {
             long nextFullSnapshotVersion
     ) {
 
+        // A refreshed manifest is still only a candidate: the authoritative FULL
+        // fingerprint must match before it can satisfy a watch-boundary replay.
+        if (com.PinkCats.bandwidthoptimizer.chunk.refresh.UpdatedChunkCacheStats.ENABLED
+                && requiresFullReplayBeforeDelta(chunkSnapshot)
+                && shouldUsePersistentManifestCandidateReference(chunkSnapshot, snapshotFingerprint)
+                && costEstimate.refTransportBytes() > 0
+                && costEstimate.refTransportBytes() < costEstimate.fullTransportBytes()) {
+            return buildDecision(
+                    ChunkPlanDecisionKind.PUBLISH_REF,
+                    ChunkLocalCacheReuseStats.PERSISTENT_MANIFEST_REF_REASON,
+                    descriptor, snapshotFingerprint, chunkSnapshot, storeObservation,
+                    nextFullSnapshotVersion, costEstimate);
+        }
+
         if (shouldUseWatchBoundaryReuseProbe(chunkSnapshot, snapshotFingerprint, costEstimate)) {
             return buildDecision(
                     ChunkPlanDecisionKind.PUBLISH_REF,

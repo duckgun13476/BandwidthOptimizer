@@ -634,6 +634,14 @@ public final class ChunkPersistentClientCache {
                         evictedHashes
                 );
             }
+            if (com.PinkCats.bandwidthoptimizer.chunk.refresh.UpdatedChunkCacheStats.ENABLED
+                    && com.PinkCats.bandwidthoptimizer.chunk.refresh.UpdatedChunkCacheStats.STORE_REASON.equals(frame.reason())
+                    && !fingerprint.hashHex().equals(previousHash)
+                    && serverScopeHash.equals(loadedHotPathSnapshot.serverScopeHash())
+                    && scopeGeneration == loadedHotPathSnapshot.scopeGeneration()) {
+                com.PinkCats.bandwidthoptimizer.chunk.refresh.UpdatedChunkCacheStats.candidate(
+                        serverScopeHash + ":" + scopeGeneration, frame.coordinate(), fingerprint.hashHex());
+            }
             logStore(frame, restoredPacketBytes.length, cacheRoot());
         } catch (IOException exception) {
             if (shouldLogCacheDiagnose()) {
@@ -655,6 +663,18 @@ public final class ChunkPersistentClientCache {
                 ""
         );
         return hotPathMutation;
+    }
+
+    /** Read-only bytes already charged to the existing hot cache. No disk read,
+     * clone, extra retention or new server-side snapshot is introduced. */
+    public static byte[] loadedRefreshBase(String token, int x, int z) {
+        if (!com.PinkCats.bandwidthoptimizer.chunk.refresh.UpdatedChunkCacheStats.ENABLED || !isEnabled()) return null;
+        LoadedHotPathSnapshot snapshot = loadedHotPathSnapshot;
+        if (!token.equals(snapshot.serverScopeHash() + ":" + snapshot.scopeGeneration())) return null;
+        LoadedCacheEntry entry = snapshot.entriesByKeyPrefix().get(
+                entryPrefix(snapshot.serverScopeHash(), ChunkPacketCoordinate.ofChunk(x, z)));
+        if (entry == null || entry.packetBytes().length == 0 || entry.packetBytes().length > 1024 * 1024) return null;
+        return entry.packetBytes();
     }
 
     public static byte[] findLoadedPacketBytes(ChunkHotspotFrame frame) {
@@ -2679,6 +2699,22 @@ public final class ChunkPersistentClientCache {
         synchronized (LOCK) {
             return activeServerScopeHash == null ? "" : activeServerScopeHash;
         }
+    }
+
+    private static volatile LoadedUpdateScopeIdentity loadedUpdateIdentity = new LoadedUpdateScopeIdentity("", -1L, "");
+    private record LoadedUpdateScopeIdentity(String scope, long generation, String token) {}
+
+    /** Lock-free identity; token allocation occurs only when the scope changes. */
+    public static String loadedUpdateScopeToken() {
+        LoadedHotPathSnapshot snapshot = loadedHotPathSnapshot;
+        if (!isSafeScopeHash(snapshot.serverScopeHash())) return "";
+        LoadedUpdateScopeIdentity identity = loadedUpdateIdentity;
+        if (!identity.scope().equals(snapshot.serverScopeHash()) || identity.generation() != snapshot.scopeGeneration()) {
+            identity = new LoadedUpdateScopeIdentity(snapshot.serverScopeHash(), snapshot.scopeGeneration(),
+                    snapshot.serverScopeHash() + ":" + snapshot.scopeGeneration());
+            loadedUpdateIdentity = identity;
+        }
+        return identity.token();
     }
 
     private static long currentManifestGateGeneration(Channel channel) {
