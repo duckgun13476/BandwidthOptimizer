@@ -13,6 +13,7 @@ public final class ChannelTransportClientReceiver {
             return;
         }
         registered = true;
+        RequiredPeerClient.register();
         ClientPlayNetworking.registerGlobalReceiver(ChannelTransportBytePayload.TYPE, (payload, context) -> {
             // Transport carriers are consumed by the Netty decode hook before play dispatch.
         });

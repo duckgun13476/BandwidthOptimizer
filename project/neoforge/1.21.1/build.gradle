@@ -216,6 +216,13 @@ tasks.register('runBoundedPacketSplitterRegression', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.integration.neoforge.BoundedPacketSplitterRegressionMain'
 }
 
+tasks.register('runRequiredPeerHandshakeRegression', JavaExec) {
+    group = 'verification'
+    dependsOn 'testClasses'
+    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+    mainClass = 'com.PinkCats.bandwidthoptimizer.test.RequiredPeerHandshakeRegressionMain'
+}
+
 tasks.named('compileJava', JavaCompile).configure {
     setSource(files(
             project.fileTree('src/main/java'),

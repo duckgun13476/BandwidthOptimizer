@@ -26,6 +26,7 @@
     "minecraft.ServerKeepAliveTimeoutBoundaryMixin"
   ],
   "client": [
+    "minecraft.RequiredPeerLoginAccessor",
     "minecraft.PauseScreenDisconnect26Mixin"
   ],
   "injectors": {

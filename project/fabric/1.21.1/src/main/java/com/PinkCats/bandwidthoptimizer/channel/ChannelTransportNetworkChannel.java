@@ -21,6 +21,7 @@ public final class ChannelTransportNetworkChannel {
         }
 
         registered = true;
+        RequiredPeerServer.register();
         PayloadTypeRegistry.playS2C().register(ChannelTransportBytePayload.TYPE, ChannelTransportBytePayload.STREAM_CODEC);
         PayloadTypeRegistry.playC2S().register(ChannelTransportBytePayload.TYPE, ChannelTransportBytePayload.STREAM_CODEC);
         Bandwidthoptimizer.LOGGER.info(

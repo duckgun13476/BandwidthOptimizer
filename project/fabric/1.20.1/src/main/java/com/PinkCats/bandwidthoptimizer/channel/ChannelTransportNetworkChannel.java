@@ -21,6 +21,7 @@ public final class ChannelTransportNetworkChannel {
         }
 
         registered = true;
+        RequiredPeerServer.register();
         TorqueLayer.platform().network().registerAcceptedPayloadChannel(
                 com.pinkcats.torque.layer.net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(
                         TRANSPORT_PAYLOAD_ID.getNamespace(),
