@@ -223,6 +223,26 @@ tasks.register('runRequiredPeerHandshakeRegression', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.test.RequiredPeerHandshakeRegressionMain'
 }
 
+def compactRefMemoryAgent = tasks.register('compactRefMemoryAgent', Jar) {
+    dependsOn 'testClasses'
+    archiveClassifier = 'compact-ref-test-agent'
+    from(sourceSets.test.output) { include 'compactrefregression/CompactReferenceMemoryAgent.class' }
+    manifest { attributes 'Premain-Class': 'compactrefregression.CompactReferenceMemoryAgent' }
+}
+['Enabled', 'Disabled'].each { mode ->
+    tasks.register('runCompactChunkReference' + mode + 'Regression', JavaExec) {
+        group = 'verification'
+        dependsOn 'testClasses'
+        classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
+        mainClass = 'compactrefregression.CompactReferenceRegressionMain'
+        systemProperty 'bandwidthoptimizer.compactChunkReferences', (mode == 'Enabled').toString()
+        dependsOn compactRefMemoryAgent
+        jvmArgs '--add-opens=java.base/java.util=ALL-UNNAMED', '--add-opens=java.base/java.lang=ALL-UNNAMED'
+        doFirst { jvmArgs '-javaagent:' + compactRefMemoryAgent.get().archiveFile.get().asFile.absolutePath }
+        if (mode == 'Disabled') args 'disabled'
+    }
+}
+
 tasks.named('compileJava', JavaCompile).configure {
     setSource(files(
             project.fileTree('src/main/java'),

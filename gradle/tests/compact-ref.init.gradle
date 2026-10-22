@@ -1,0 +1,41 @@
+// Explicit local native regression; this source set is never a release mod.
+gradle.beforeProject { p ->
+    if (p.path != ':neoforge-1.21.1') return
+    p.afterEvaluate {
+        def root = gradle.rootProject.projectDir
+        def base = new File(root, '.tmp/compact-ref-native/' + (gradle.startParameter.projectProperties['compactScenario'] ?: 'enabled'))
+        def fixture = p.sourceSets.create('compactRefDev')
+        fixture.java.setSrcDirs([new File(p.projectDir, 'src/compactRefDev/java')])
+        fixture.resources.setSrcDirs([new File(p.projectDir, 'src/compactRefDev/resources')])
+        fixture.compileClasspath += p.sourceSets.main.compileClasspath + p.sourceSets.main.output
+        fixture.runtimeClasspath += p.sourceSets.main.runtimeClasspath
+        p.extensions.getByName('neoForge').mods.create('compactrefprobe') { sourceSet fixture }
+        ['server', 'client'].each { name ->
+            def run = p.extensions.getByName('neoForge').runs.getByName(name)
+            run.gameDirectory.set(new File(base, name))
+            run.systemProperty('compactrefprobe.root', base.absolutePath)
+            run.systemProperty('compactrefprobe.forceMiss', gradle.startParameter.projectProperties['compactForceMiss'] ?: 'true')
+            run.systemProperty('bandwidthoptimizer.compactChunkReferences', gradle.startParameter.projectProperties[name + 'CompactRefs'] ?: 'true')
+            run.systemProperty('bandwidthoptimizer.outputDirectory', new File(base, name + '/bandwidthoptimizer-native').absolutePath)
+            run.systemProperty('bandwidthoptimizer.sharedOutputDirectory', new File(base, name + '/bandwidthoptimizer-native').absolutePath)
+            run.systemProperty('bandwidthoptimizer.report.uploadEndpoint', '')
+            run.systemProperty('bandwidthoptimizer.experient.enabled', 'true')
+            run.systemProperty('bandwidthoptimizer.channelJsonlCaptureEnabled', 'true')
+            run.systemProperty('bandwidthoptimizer.test.streamingZstd', 'true')
+            run.jvmArgument('-Xmx2G')
+        }
+        def client = p.extensions.getByName('neoForge').runs.getByName('client')
+        client.systemProperty('bandwidthoptimizer.experient.autoConnectAddress', '127.0.0.1:25850')
+        client.systemProperty('bandwidthoptimizer.experient.autoConnectName', 'Compact REF regression')
+        client.programArguments.addAll('--username', 'CompactRefProbe')
+        p.tasks.register('compareCompactRefCapture', JavaExec) {
+            dependsOn p.tasks.named('testClasses')
+            classpath = p.files(p.sourceSets.test.output, p.sourceSets.main.runtimeClasspath, p.sourceSets.test.runtimeClasspath)
+            mainClass = 'com.PinkCats.bandwidthoptimizer.test.ChannelJsonlCompareMain'
+            def down = (gradle.startParameter.projectProperties['compactCompareDirection'] ?: 'down') == 'down'
+            args new File(base, (down ? 'server' : 'client') + '/bandwidthoptimizer-native/packet-stream-send.jsonl').absolutePath,
+                    new File(base, (down ? 'client' : 'server') + '/bandwidthoptimizer-native/packet-stream-receive.jsonl').absolutePath
+            systemProperty 'bandwidthoptimizer.compare.allowTrailingPacketStreamFrames', 'true'
+        }
+    }
+}
