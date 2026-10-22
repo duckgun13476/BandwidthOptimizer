@@ -1,5 +1,23 @@
 def configureTestJavaExecTask = project.ext.configureTestJavaExecTask
 
+def compactRefMemoryAgent = tasks.register('compactRefMemoryAgent', Jar) {
+    dependsOn tasks.named('testClasses')
+    archiveClassifier = 'compact-ref-test-agent'
+    from(sourceSets.test.output) { include 'compactrefregression/CompactReferenceMemoryAgent.class' }
+    manifest { attributes 'Premain-Class': 'compactrefregression.CompactReferenceMemoryAgent' }
+}
+['Enabled', 'Disabled'].each { mode ->
+    tasks.register('runCompactChunkReference' + mode + 'Regression', JavaExec) {
+        configureTestJavaExecTask(delegate, 'verification', 'Verifies compact chunk REF negotiation, bounded lifecycle and exact restoration.',
+                'compactrefregression.CompactReferenceRegressionMain')
+        systemProperty 'bandwidthoptimizer.compactChunkReferences', (mode == 'Enabled').toString()
+        dependsOn compactRefMemoryAgent
+        jvmArgs '--add-opens=java.base/java.util=ALL-UNNAMED', '--add-opens=java.base/java.lang=ALL-UNNAMED'
+        doFirst { jvmArgs '-javaagent:' + compactRefMemoryAgent.get().archiveFile.get().asFile.absolutePath }
+        if (mode == 'Disabled') args 'disabled'
+    }
+}
+
 tasks.register('runCurrencyBankSyncTransactionRegression', JavaExec) {
     configureTestJavaExecTask(delegate, 'verification', 'Verifies adjacent full bank snapshots and ordering barriers.',
             'com.PinkCats.bandwidthoptimizer.integration.lightmanscurrency.CurrencyBankSyncTransactionRegressionMain')

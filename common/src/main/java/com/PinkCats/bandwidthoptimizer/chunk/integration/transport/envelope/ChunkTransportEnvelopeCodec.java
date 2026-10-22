@@ -7,6 +7,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
+import io.netty.channel.Channel;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -19,24 +20,41 @@ public final class ChunkTransportEnvelopeCodec {
     private ChunkTransportEnvelopeCodec() {}
 
     public static byte[] encodeEnvelope(ChunkTransportEnvelope envelope) {
+        return encodeLegacy(envelope, envelope == null ? null : envelope.frame());
+    }
+
+    public static byte[] encodeEnvelope(Channel channel, ChunkTransportEnvelope envelope) {
+        if (envelope == null) throw new IllegalArgumentException("envelope must not be null");
+        byte[] compact = ChunkCompactReferenceCodec.tryEncode(channel, envelope);
+        return compact != null ? compact : encodeLegacy(envelope, ChunkCompactReferenceCodec.advertise(channel, envelope.frame()));
+    }
+
+    private static byte[] encodeLegacy(ChunkTransportEnvelope envelope, ChunkHotspotFrame frame) {
         if (envelope == null) {
             throw new IllegalArgumentException("envelope must not be null");
         }
 
-        byte[] frameBytes = ChunkHotspotFrameCodec.encodeFrame(envelope.frame());
-        byte[] originalPacketBytes = envelope.copyOriginalPacketBytes();
         ByteBuf byteBuf = Unpooled.buffer();
         try {
             FriendlyByteBuf friendlyByteBuf = new FriendlyByteBuf(byteBuf);
             friendlyByteBuf.writeBytes(MAGIC_PREFIX);
-            friendlyByteBuf.writeVarInt(frameBytes.length);
-            friendlyByteBuf.writeBytes(frameBytes);
-            friendlyByteBuf.writeVarInt(originalPacketBytes.length);
-            friendlyByteBuf.writeBytes(originalPacketBytes);
+            writeBody(friendlyByteBuf, envelope, frame);
             return ByteBufUtil.getBytes(byteBuf);
         } finally {
             byteBuf.release();
         }
+    }
+
+    static void writeBody(FriendlyByteBuf buffer, ChunkTransportEnvelope envelope, ChunkHotspotFrame frame) {
+        byte[] frameBytes = ChunkHotspotFrameCodec.encodeFrame(frame);
+        byte[] payload = envelope.copyOriginalPacketBytes();
+        buffer.writeVarInt(frameBytes.length); buffer.writeBytes(frameBytes);
+        buffer.writeVarInt(payload.length); buffer.writeBytes(payload);
+    }
+
+    public static ChunkTransportEnvelope decodeEnvelope(Channel channel, byte[] bytes) {
+        if (ChunkCompactReferenceCodec.isCompact(bytes)) return ChunkCompactReferenceCodec.decode(channel, bytes);
+        return ChunkCompactReferenceCodec.acceptCapability(channel, decodeEnvelope(bytes));
     }
 
     public static ChunkTransportEnvelope decodeEnvelope(byte[] encodedEnvelopeBytes) {
@@ -48,6 +66,13 @@ public final class ChunkTransportEnvelopeCodec {
         try {
             FriendlyByteBuf friendlyByteBuf = new FriendlyByteBuf(byteBuf);
             verifyMagic(friendlyByteBuf);
+            return readBody(friendlyByteBuf);
+        } finally {
+            byteBuf.release();
+        }
+    }
+
+    static ChunkTransportEnvelope readBody(FriendlyByteBuf friendlyByteBuf) {
             byte[] frameBytes = readBoundedBytes(friendlyByteBuf, MAX_FRAME_BYTES, "frame");
             ChunkHotspotFrame frame = ChunkHotspotFrameCodec.decodeFrame(frameBytes);
             byte[] originalPacketBytes = readBoundedBytes(
@@ -59,9 +84,6 @@ public final class ChunkTransportEnvelopeCodec {
                 throw new IllegalArgumentException("Chunk transport envelope left extra bytes: " + friendlyByteBuf.readableBytes());
             }
             return new ChunkTransportEnvelope(frame, originalPacketBytes);
-        } finally {
-            byteBuf.release();
-        }
     }
 
     public static boolean looksLikeEnvelope(byte[] packetBytes) {

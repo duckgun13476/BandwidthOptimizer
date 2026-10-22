@@ -162,7 +162,7 @@ public final class ChunkTransportDispatcher {
 
         runtimeDecision = reserveRecoveryBeforePublish(context, runtimeDecision, originalPacketBytes);
         byte[] envelopePayloadBytes = runtimeDecision.copyTransportPayloadBytes();
-        byte[] encodedEnvelopeBytes = ChunkTransportEnvelopeCodec.encodeEnvelope(
+        byte[] encodedEnvelopeBytes = ChunkTransportEnvelopeCodec.encodeEnvelope(context == null ? null : context.channel(),
                 new ChunkTransportEnvelope(runtimeDecision.frame(), envelopePayloadBytes)
         );
         ChunkHotspotStats.recordOutboundFrame(
@@ -381,7 +381,7 @@ public final class ChunkTransportDispatcher {
         HotpathCostProbe.end("chunk.rememberRecoverableFull", hotpathStartNanos);
         hotpathStartNanos = HotpathCostProbe.start();
         long envelopeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
-        byte[] encodedEnvelopeBytes = ChunkTransportEnvelopeCodec.encodeEnvelope(
+        byte[] encodedEnvelopeBytes = ChunkTransportEnvelopeCodec.encodeEnvelope(context == null ? null : context.channel(),
                 new ChunkTransportEnvelope(runtimeDecision.frame(), runtimeDecision.copyTransportPayloadBytes())
         );
         HotpathCostProbe.end("chunk.encodeEnvelope", hotpathStartNanos);
@@ -449,7 +449,7 @@ public final class ChunkTransportDispatcher {
         long envelopeDecodeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
         final ChunkTransportEnvelope envelope;
         try {
-            envelope = ChunkTransportEnvelopeCodec.decodeEnvelope(packetBytes);
+            envelope = ChunkTransportEnvelopeCodec.decodeEnvelope(context == null ? null : context.channel(), packetBytes);
         } catch (RuntimeException failure) {
             try {
                 ChunkTransportEnvelopeRejectionReporter.report(context, packetBytes, failure);

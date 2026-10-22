@@ -588,7 +588,7 @@ public final class ChunkTransportControlFrameSender {
         try {
             long totalStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
             long envelopeStartNanos = ChunkLoadDelayProbe.isEnabled() ? System.nanoTime() : 0L;
-            byte[] encodedEnvelopeBytes = ChunkTransportEnvelopeCodec.encodeEnvelope(
+            byte[] encodedEnvelopeBytes = ChunkTransportEnvelopeCodec.encodeEnvelope(channel,
                     new ChunkTransportEnvelope(frame, safePayloadBytes)
             );
             ChunkLoadDelayProbe.logStage(
