@@ -7,7 +7,8 @@ import java.util.concurrent.atomic.AtomicLong;
 /** Bounded provenance, not a cache or a replacement for the persistent hash index. */
 public final class UpdatedChunkCacheStats {
     public static final String STORE_REASON = "loaded_chunk_updated_cache";
-    public static final boolean ENABLED = Boolean.getBoolean("bandwidthoptimizer.experimental.loadedChunkRefresh");
+    public static final boolean ENABLED = Boolean.parseBoolean(
+            System.getProperty("bandwidthoptimizer.experimental.loadedChunkRefresh", "true"));
     private static final int MAX_ENTRIES = 4096;
     private static final LinkedHashMap<Long, String> CANDIDATES = new LinkedHashMap<>();
     private static String scope = "";
