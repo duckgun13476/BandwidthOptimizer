@@ -30,14 +30,18 @@ public final class LoadedChunkUpdateTracker {
     }
     public int size() { return loaded.size(); }
     public void captureDirty(long nowTick, java.util.function.LongConsumer capture) {
+        captureDirtyWhenReady(nowTick, key -> { capture.accept(key); return true; });
+    }
+    /** Unready captures remain dirty until another view change or final forget.
+     * Scan each entry at most once and share the final-forget attempt budget. */
+    public void captureDirtyWhenReady(long nowTick, java.util.function.LongPredicate capture) {
         if (tick != nowTick) { tick = nowTick; captured = 0; }
         var iterator = loaded.long2BooleanEntrySet().fastIterator();
         while (iterator.hasNext() && captured < capturesPerTick) {
             var entry = iterator.next();
             if (!entry.getBooleanValue()) continue;
-            entry.setValue(false);
             captured++;
-            capture.accept(entry.getLongKey());
+            if (capture.test(entry.getLongKey())) entry.setValue(false);
         }
     }
     public void clear() { loaded.clear(); tick = Long.MIN_VALUE; captured = 0; }

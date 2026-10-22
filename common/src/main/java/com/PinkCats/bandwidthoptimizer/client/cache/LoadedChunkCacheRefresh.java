@@ -37,32 +37,38 @@ public final class LoadedChunkCacheRefresh {
     }
     public static void beforeViewCenterChange() {
         if (!UpdatedChunkCacheStats.ENABLED || !ready()) return;
-        TRACKER.captureDirty(Minecraft.getInstance().level.getGameTime(), key -> capture((int) (key >> 32), (int) key));
+        // Light readiness applies to the whole client engine. Do not consume
+        // coordinates or attempt budgets while every capture would be rejected.
+        if (Minecraft.getInstance().level.getLightEngine().hasLightWork()) return;
+        TRACKER.captureDirtyWhenReady(Minecraft.getInstance().level.getGameTime(), key -> capture((int) (key >> 32), (int) key));
     }
-    private static void capture(int x, int z) {
+    private static boolean capture(int x, int z) {
         Minecraft mc = Minecraft.getInstance();
         try {
             // ClientLevel.hasChunk can report availability without a readable
             // in-range chunk. Never serialize the shared EmptyLevelChunk.
             var chunk = mc.level.getChunkSource().getChunk(x, z, false);
             if (chunk == null || com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.x(chunk.getPos()) != x
-                    || com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.z(chunk.getPos()) != z) return;
+                    || com.PinkCats.bandwidthoptimizer.integration.minecraft.ChunkCoordinateCompat.z(chunk.getPos()) != z) return true;
+            if (mc.level.getLightEngine().hasLightWork()) return false;
             // Preserve wire-derived BE tags from the existing bounded cache.
             // Never invoke mod update-tag writers to construct a candidate.
             byte[] base = ChunkPersistentClientCache.loadedRefreshBase(scope, x, z);
             var packet = LoadedChunkPacketRebuilder.rebuild(base, chunk, mc.level.getLightEngine(), decoder);
-            if (packet == null) return;
+            if (packet == null) return true;
             byte[] bytes = encoder.apply(packet);
             if (bytes == null || bytes.length == 0 || bytes.length > 1024 * 1024) {
                 UpdatedChunkCacheStats.captureFailed();
-                return;
+                return true;
             }
             ChunkPersistentClientCache.storeInboundFullChunkAsync("PLAY", 1L, packet.getClass().getName(),
                     ChunkHotspotKind.FULL_CHUNK, ChunkLaneKind.FULL, ChunkPacketCoordinate.ofChunk(x, z), bytes,
                     UpdatedChunkCacheStats.STORE_REASON);
+            return true;
         } catch (ReflectiveOperationException | RuntimeException failure) {
             // Only this optional cache capture failed. Native unload still runs.
             UpdatedChunkCacheStats.captureFailed();
+            return true;
         }
     }
     private static boolean ready() {
