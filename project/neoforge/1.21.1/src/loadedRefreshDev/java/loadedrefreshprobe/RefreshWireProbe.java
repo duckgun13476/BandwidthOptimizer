@@ -26,6 +26,10 @@ public final class RefreshWireProbe {
         if(ROWS.size()>=16) return;
         byte[] bytes=ClientboundPlayPacketCodec.encodePacket(packet,net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer().registryAccess());
         if(bytes==null) { RefreshProbe.write("native-encode-failure.json",Map.of("targetX",packet.getX(),"targetZ",packet.getZ())); return; }
+        if (ROWS.size() < 2 && bytes.length <= 1024 * 1024) {
+            try { java.nio.file.Files.write(RefreshProbe.ROOT.resolve("native-full-" + ROWS.size() + ".bin"), bytes); }
+            catch (java.io.IOException failure) { throw new RuntimeException(failure); }
+        }
         ROWS.add(Map.of("hash",ChunkSnapshotFingerprintService.fingerprintOutboundPacket(bytes).hashHex(),"bytes",bytes.length));
         RefreshProbe.write("native-full-sends.json",ROWS);
     }

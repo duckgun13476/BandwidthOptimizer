@@ -18,9 +18,9 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 @Mod("loadedrefreshprobe")
 public final class RefreshProbe {
-    static final Path ROOT = Path.of(System.getProperty("refreshprobe.root"));
+    public static final Path ROOT = Path.of(System.getProperty("refreshprobe.root"));
     static final boolean FACTORY = Boolean.getBoolean("refreshprobe.factory");
-    static final int TARGET_X = FACTORY ? 11 : 1, TARGET_Z = FACTORY ? 28 : 0;
+    public static final int TARGET_X = FACTORY ? 11 : 1, TARGET_Z = FACTORY ? 28 : 0;
     static final BlockPos TEST_BLOCK = new BlockPos(TARGET_X*16+1, FACTORY ? 200 : 63, TARGET_Z*16+1);
     private static final double START_X = FACTORY ? 161.5 : 1.5, START_Z = FACTORY ? 449.5 : 1.5;
     private static MinecraftServer server;

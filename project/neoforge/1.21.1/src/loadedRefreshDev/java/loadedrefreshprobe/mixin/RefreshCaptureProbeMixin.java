@@ -22,6 +22,16 @@ public class RefreshCaptureProbeMixin {
   try {value=original.call(base,chunk,light,decoder);} finally {loadedrefreshprobe.RefreshWireProbe.rebuilding=false;}
   if(base!=null && !Arrays.equals(before,sha(base)))throw new AssertionError("Mutated original cache body");
   if(value!=null)results++;
+  if(value!=null && chunk.getPos().x==loadedrefreshprobe.RefreshProbe.TARGET_X && chunk.getPos().z==loadedrefreshprobe.RefreshProbe.TARGET_Z
+          && !java.nio.file.Files.exists(loadedrefreshprobe.RefreshProbe.ROOT.resolve("captured-candidate.bin"))) {
+   byte[] candidate=com.PinkCats.bandwidthoptimizer.chunk.packet.ClientboundPlayPacketCodec.encoderForRegistry(chunk.getLevel().registryAccess()).apply(value);
+   if(candidate==null || candidate.length>1024*1024)throw new AssertionError("Invalid captured candidate");
+   try {
+    loadedrefreshprobe.RefreshClientBEProbe.atCapture();
+    java.nio.file.Files.write(loadedrefreshprobe.RefreshProbe.ROOT.resolve("captured-base.bin"),base);
+    java.nio.file.Files.write(loadedrefreshprobe.RefreshProbe.ROOT.resolve("captured-candidate.bin"),candidate);
+   } catch(java.io.IOException failure){throw new RuntimeException(failure);}
+  }
   if(value!=null && !java.nio.file.Files.exists(java.nio.file.Path.of(System.getProperty("refreshprobe.root"),"capture-cost.json"))) {
    var encoder=com.PinkCats.bandwidthoptimizer.chunk.packet.ClientboundPlayPacketCodec.encoderForRegistry(chunk.getLevel().registryAccess());
    var bean=(com.sun.management.ThreadMXBean)java.lang.management.ManagementFactory.getThreadMXBean();
