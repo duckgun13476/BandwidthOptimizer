@@ -47,9 +47,9 @@ public final class ChunkCoreProtocolRegressionMain {
         check(received.frame().reason().equals("scope") && ChunkCoreOverlayCapability.supported(server),"ordered acceptance");
         String hash="a".repeat(64),coreHash="b".repeat(64);
         var entry=new ChunkPersistentClientCache.ManifestEntry(ChunkPacketCoordinate.ofChunk(12,28),hash,"PLAY","full",1,80000,1,coreHash);
-        var legacy=ChunkPersistentClientCacheManifestBatchCodec.decode(ChunkPersistentClientCacheManifestBatchCodec.encode(List.of(entry),"test"),"test").getFirst();
+        var legacy=ChunkPersistentClientCacheManifestBatchCodec.decode(ChunkPersistentClientCacheManifestBatchCodec.encode(List.of(entry),"test"),"test").get(0);
         check(legacy.baseSnapshotHash().equals(hash),"legacy manifest byte semantics");
-        var modern=ChunkPersistentClientCacheManifestBatchCodec.decode(ChunkPersistentClientCacheManifestBatchCodec.encode(List.of(entry),"test",true),"test").getFirst();
+        var modern=ChunkPersistentClientCacheManifestBatchCodec.decode(ChunkPersistentClientCacheManifestBatchCodec.encode(List.of(entry),"test",true),"test").get(0);
         check(modern.baseSnapshotHash().equals(coreHash) && modern.payloadHash().equals(hash),"core identity and baseline distinct");
         Path root=args.length==0?null:Path.of(args[0]);
         for(String run:root==null?List.<String>of():List.of("refresh-v7","refresh-v8")) {

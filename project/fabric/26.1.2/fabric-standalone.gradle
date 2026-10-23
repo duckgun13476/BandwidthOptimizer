@@ -29,7 +29,7 @@ group = mod_group_id
 version = mod_version
 
 ext.bo_publish_artifact_task_name = 'jar'
-ext.bo_publish_artifact_relative_path = "../26.1.2/build/libs/${package_name}-${mod_version}-fabric-26.1.2.jar"
+ext.bo_publish_artifact_relative_path = new File(boArtifactOutputDirectory, "${package_name}-${mod_version}-fabric-26.1.2.jar").absolutePath
 ext.bo_publish_loader_id = 'fabric'
 ext.bo_publish_curseforge_loaders = ['Fabric']
 ext.bo_publish_modrinth_loaders = ['fabric']

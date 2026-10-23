@@ -1,0 +1,44 @@
+// Small shared acceptance source set: compile only feature fixtures on each native target.
+pluginManager.withPlugin('java') {
+    def fixtures = sourceSets.create('loadedRefreshAcceptance')
+    fixtures.java.srcDir new File(boArtifactRepositoryRoot, 'common/src/test/java')
+    fixtures.java.include '**/LoadedChunkRefreshRegressionMain.java', '**/ChunkCoreMetadataRegressionMain.java',
+            'loadedrefreshregression/ChunkCoreProtocolRegressionMain.java',
+            'loadedrefreshregression/LoadedRefreshMemoryRegressionMain.java',
+            'loadedrefreshregression/LoadedRefreshNativeHooksRegressionMain.java',
+            'compactrefregression/CompactReferenceMemoryAgent.java'
+    fixtures.compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+    fixtures.runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    def agent = tasks.register('loadedRefreshAcceptanceAgent', Jar) {
+        dependsOn tasks.named(fixtures.classesTaskName)
+        archiveClassifier = 'loaded-refresh-test-agent'
+        from(fixtures.output) { include 'compactrefregression/CompactReferenceMemoryAgent.class' }
+        manifest { attributes 'Premain-Class': 'compactrefregression.CompactReferenceMemoryAgent' }
+    }
+    def checks = [
+            NativeHooks: 'loadedrefreshregression.LoadedRefreshNativeHooksRegressionMain',
+            Tracker: 'loadedrefreshregression.LoadedChunkRefreshRegressionMain',
+            Metadata: 'com.PinkCats.bandwidthoptimizer.chunk.refresh.ChunkCoreMetadataRegressionMain',
+            Memory: 'loadedrefreshregression.LoadedRefreshMemoryRegressionMain',
+            ProtocolEnabled: 'loadedrefreshregression.ChunkCoreProtocolRegressionMain',
+            ProtocolDisabled: 'loadedrefreshregression.ChunkCoreProtocolRegressionMain']
+    checks.each { label, entry ->
+        tasks.register('runLoadedRefreshAcceptance' + label, JavaExec) {
+            group = 'verification'
+            dependsOn tasks.named(fixtures.classesTaskName), agent
+            classpath = fixtures.runtimeClasspath
+            javaLauncher = javaToolchains.launcherFor(java.toolchain)
+            mainClass = entry
+            systemProperty 'bandwidthoptimizer.experimental.loadedChunkRefresh', (label != 'ProtocolDisabled').toString()
+            systemProperty 'bandwidthoptimizer.outputDirectory', layout.buildDirectory.dir('loaded-refresh-acceptance').get().asFile.absolutePath
+            systemProperty 'bandwidthoptimizer.sharedOutputDirectory', layout.buildDirectory.dir('loaded-refresh-acceptance').get().asFile.absolutePath
+            jvmArgs '--add-opens=java.base/java.util=ALL-UNNAMED', '--add-opens=java.base/java.lang=ALL-UNNAMED'
+            doFirst { jvmArgs '-javaagent:' + agent.get().archiveFile.get().asFile.absolutePath }
+        }
+    }
+    tasks.register('runLoadedRefreshAcceptance') {
+        group = 'verification'
+        description = 'Verifies loaded refresh tracker/HUD, native layout bounds, metadata ownership and negotiated recovery codec.'
+        dependsOn checks.keySet().collect { 'runLoadedRefreshAcceptance' + it }
+    }
+}

@@ -34,6 +34,13 @@ File sharedGradleProperties = findSharedGradleProperties()
 loadGradleProperties(sharedGradleProperties)
 loadGradleProperties(project.file('gradle.properties'))
 
+if (sharedGradleProperties == null) {
+    throw new GradleException("Cannot locate gradle/bo-common.properties for ${project.path}")
+}
+ext.boArtifactRepositoryRoot = sharedGradleProperties.parentFile.parentFile
+apply from: new File(boArtifactRepositoryRoot, 'gradle/bo-artifact-output.gradle')
+apply from: new File(boArtifactRepositoryRoot, 'gradle/tests/loaded-refresh-regressions.gradle')
+
 ext {
     loadGradleProperties = this.&loadGradleProperties as MethodClosure
 }

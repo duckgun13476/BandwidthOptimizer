@@ -62,6 +62,7 @@ if (standaloneFabricBuild) {
     }
 
     [
+            ['runLoadedRefreshAcceptance', 'verification', 'Runs loaded cache refresh acceptance against the Fabric target.'],
             ['compileJava', 'build', 'Compiles the Fabric 1.21.1 standalone source set.'],
             ['compileTestJava', 'build', 'Compiles the Fabric 1.21.1 standalone test source set.'],
             ['classes', 'build', 'Builds the Fabric 1.21.1 standalone main classes.'],

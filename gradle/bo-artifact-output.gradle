@@ -1,0 +1,23 @@
+// BDC-style repository-owned final output; intermediate/dev/test jars stay in build/.
+File repositoryRoot = project.ext.boArtifactRepositoryRoot
+File outputDirectory = new File(repositoryRoot, "output/${project.findProperty('mod_version')}")
+project.ext.boArtifactOutputDirectory = outputDirectory
+
+afterEvaluate {
+    String finalTask = (project.findProperty('bo_publish_artifact_task_name') ?: 'jar').toString()
+    // ForgeGradle reobfuscates the main Jar in place.
+    String jarTask = finalTask == 'reobfJar' ? 'jar' : finalTask
+    tasks.named(jarTask).configure {
+        destinationDirectory.set(outputDirectory)
+    }
+    tasks.named('verifyPublishArtifact').configure {
+        doLast {
+            File produced = tasks.named(jarTask).get().archiveFile.get().asFile.canonicalFile
+            File published = project.ext.boReadPublishArtifactFile.call().canonicalFile
+            if (produced != published || produced.parentFile != outputDirectory.canonicalFile) {
+                throw new GradleException("Final artifact/output resolver mismatch: ${produced} vs ${published}")
+            }
+            println "Verified final output layout: ${published.absolutePath}"
+        }
+    }
+}

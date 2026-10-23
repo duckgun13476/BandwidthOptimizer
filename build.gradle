@@ -61,6 +61,12 @@ tasks.register('verifyAllVersions') {
     dependsOn boVersionProjectPaths.collect { "${it}:runCrossFrameZstdRegression" }
 }
 
+tasks.register('verifyLoadedRefreshAllVersions') {
+    group = 'verification'
+    description = 'Runs the loaded-cache refresh acceptance suite against all supported native targets.'
+    dependsOn boVersionProjectPaths.collect { "${it}:runLoadedRefreshAcceptance" }
+}
+
 tasks.register('runClientAllVersions') {
     group = 'Development'
     description = 'Root aggregate placeholder for version-specific client runs.'
