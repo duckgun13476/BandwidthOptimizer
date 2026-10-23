@@ -42,8 +42,12 @@ public final class LoadedChunkPacketRebuilder {
         try {
             ClientboundLevelChunkPacketData.extractChunkData(sections, chunk);
             if (sections.readableBytes() > 1024 * 1024) return null;
-            byte[] bytes = new byte[sections.readableBytes()];
-            sections.getBytes(0, bytes);
+            // Match the native packet's zero-initialized getSerializedSize()
+            // array, including unused tail capacity (notably legacy Forge).
+            // Copy only written bytes: Netty's unwritten pooled storage is not
+            // guaranteed to be zero and must never enter a cache candidate.
+            byte[] bytes = new byte[(int) sectionBytes];
+            sections.getBytes(0, bytes, 0, sections.readableBytes());
             ((ChunkSnapshotDataAccessor) packet.getChunkData()).bandwidthoptimizer$replaceBuffer(bytes);
         } finally { sections.release(); }
         Object heightmaps = packet.getChunkData().getHeightmaps();
