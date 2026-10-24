@@ -25,6 +25,7 @@ public final class ChannelTransportNetworkChannel {
         }
 
         registered = true;
+        com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbePackets.register();
         versionGateChannel = NetworkRegistry.newSimpleChannel(
                 VERSION_GATE_CHANNEL_ID,
                 () -> PROTOCOL_VERSION,

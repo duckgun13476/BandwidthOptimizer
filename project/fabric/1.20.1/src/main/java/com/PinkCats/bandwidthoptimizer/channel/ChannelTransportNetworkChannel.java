@@ -21,6 +21,7 @@ public final class ChannelTransportNetworkChannel {
         }
 
         registered = true;
+        com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbePackets.register();
         RequiredPeerServer.register();
         TorqueLayer.platform().network().registerAcceptedPayloadChannel(
                 com.pinkcats.torque.layer.net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(
@@ -37,6 +38,7 @@ public final class ChannelTransportNetworkChannel {
     }
 
     public static void registerServerReceiver() {
+        ServerPlayNetworking.registerGlobalReceiver(com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbePackets.ID, (server, player, handler, buffer, responseSender) -> {});
         ServerPlayNetworking.registerGlobalReceiver(TRANSPORT_PAYLOAD_ID, (server, player, handler, buffer, responseSender) -> {
             // Transport carriers are consumed by the Netty decode hook before play dispatch.
         });

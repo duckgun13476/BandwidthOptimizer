@@ -1,0 +1,7 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="MIT"
+[[mods]]
+modId="networkprobeacceptance"
+version="1.0"
+displayName="Isolated network diagnostic acceptance"

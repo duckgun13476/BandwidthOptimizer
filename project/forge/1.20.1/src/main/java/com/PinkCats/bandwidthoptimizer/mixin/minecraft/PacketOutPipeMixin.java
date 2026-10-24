@@ -115,6 +115,7 @@ public abstract class PacketOutPipeMixin<T extends PacketListener> implements Pa
 
     @Inject(method = "encode*", at = @At("RETURN"))
     private void bandwidthoptimizer$captureAndMaybeWrap(ChannelHandlerContext context, Packet<T> packet, ByteBuf out, CallbackInfo ci) {
+        if (com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbePackets.isProbe(packet)) return;
         if (ChannelTransportHooks.isInternalTransportCarrierPacket(packet)) {
             com.PinkCats.bandwidthoptimizer.channel.ChannelOutboundBurstWarning.recordWireFrame(context, this.flow, out.writerIndex() - this.bandwidthoptimizer$writerIndexBefore, true);
             return;

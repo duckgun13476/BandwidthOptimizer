@@ -21,6 +21,7 @@ public final class ChannelTransportNetworkChannel {
         }
 
         registered = true;
+        com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbePackets.register();
         RequiredPeerServer.register();
         PayloadTypeRegistry.clientboundPlay().register(ChannelTransportBytePayload.TYPE, ChannelTransportBytePayload.STREAM_CODEC);
         PayloadTypeRegistry.serverboundPlay().register(ChannelTransportBytePayload.TYPE, ChannelTransportBytePayload.STREAM_CODEC);
@@ -32,6 +33,7 @@ public final class ChannelTransportNetworkChannel {
     }
 
     public static void registerServerReceiver() {
+        ServerPlayNetworking.registerGlobalReceiver(com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbeBytePayload.TYPE, (payload, context) -> {});
         ServerPlayNetworking.registerGlobalReceiver(ChannelTransportBytePayload.TYPE, (payload, context) -> {
             // Transport carriers are consumed by the Netty decode hook before play dispatch.
         });

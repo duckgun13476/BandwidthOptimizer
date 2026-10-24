@@ -19,8 +19,8 @@ public final class BandwidthOptimizerCommandTreeRegressionMain {
         BandwidthOptimizerCommand.register(dispatcher);
 
         CommandNode<CommandSourceStack> root = requireChild(dispatcher.getRoot(), "bandwidthoptimizer");
-        check(childNames(root).equals(Set.of("stats", "reload", "proxy", "debug")),
-                "server command root must contain only stats, reload, proxy, and debug; hud is client-side");
+        check(childNames(root).equals(Set.of("stats", "reload", "proxy", "debug", "network")),
+                "server command root includes bounded network tests; hud is client-side");
 
         CommandNode<CommandSourceStack> alias = requireChild(dispatcher.getRoot(), "bo");
         check(alias.getRedirect() == root, "bo must redirect to the full bandwidthoptimizer command tree");

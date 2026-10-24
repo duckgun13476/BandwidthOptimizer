@@ -229,6 +229,11 @@ public final class DiagnosticToolRegistry {
                 "Connection close cause and recovery-policy classification",
                 true
         ),
+        NETWORK_PROBE(
+                "networkProbe",
+                Cost.MEDIUM,
+                "Bounded real-game-connection network test reports"
+        ),
         KEEP_ALIVE_TIMEOUT(
                 "keepAliveTimeout",
                 Cost.SMALL,

@@ -24,6 +24,7 @@ public abstract class ConnectionBandwidthStatsMixin {
             return;
         }
 
+        com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbeService.install(activeChannel);
         ServerBandwidthStatsRegistry.getOrCreate(activeChannel);
         if (activeChannel.pipeline().get(ServerBandwidthWireMonitorHandler.HANDLER_NAME) != null) {
             return;

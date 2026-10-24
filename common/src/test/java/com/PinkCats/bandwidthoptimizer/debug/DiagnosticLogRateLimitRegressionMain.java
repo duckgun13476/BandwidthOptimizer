@@ -41,6 +41,20 @@ public final class DiagnosticLogRateLimitRegressionMain {
                         10_000L),
                 "disabled diagnostic tool emitted output");
         DiagnosticToolRegistry.disable(tool);
+        DiagnosticToolRegistry.enable(DiagnosticToolRegistry.Tool.NETWORK_PROBE, 5);
+        int fileGrants = 0;
+        for (int attempt = 0; attempt < 150; attempt++) {
+            if (DiagnosticLog.acquireFileEvent(DiagnosticToolRegistry.Tool.NETWORK_PROBE,
+                    "v=1 domain=network event=network_probe_summary")) fileGrants++;
+        }
+        check(fileGrants <= DiagnosticLog.MAX_TOTAL_PER_EVENT,
+                "file diagnostic bypassed the process limit");
+        check(fileGrants <= 20,
+                "file diagnostic bypassed the rolling-second limit");
+        DiagnosticToolRegistry.disable(DiagnosticToolRegistry.Tool.NETWORK_PROBE);
+        check(!DiagnosticLog.acquireFileEvent(DiagnosticToolRegistry.Tool.NETWORK_PROBE,
+                        "v=1 domain=network event=network_probe_summary"),
+                "disabled file diagnostic emitted output");
         System.out.println("Diagnostic log rate-limit regression passed");
     }
 

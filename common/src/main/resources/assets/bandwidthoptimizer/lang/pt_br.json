@@ -80,5 +80,8 @@
   "hud.bandwidthoptimizer.metric.sent": "enviado",
   "command.bandwidthoptimizer.help": "Comandos do BandwidthOptimizer:\n/bandwidthoptimizer hud - Alterna o HUD de estatísticas local\n/bandwidthoptimizer stats - Envia as estatísticas e cria um relatório na web\n/bandwidthoptimizer debug - Ferramentas de diagnóstico e depuração para OPs",
   "hud.bandwidthoptimizer.idle_player.light": "Ausência leve",
-  "hud.bandwidthoptimizer.idle_player.deep": "Ausência profunda"
+  "hud.bandwidthoptimizer.idle_player.deep": "Ausência profunda",
+  "command.bandwidthoptimizer.network.unavailable": "Teste de rede indisponível: cliente incompatível ou conexão fechada.",
+  "command.bandwidthoptimizer.network.notice": "O teste adiciona tráfego à conexão do jogo e pode aumentar a latência temporariamente. Resultados: BO diagnostics/network/probes.jsonl.",
+  "command.bandwidthoptimizer.network.result": "Teste de rede BO: %s"
 }

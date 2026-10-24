@@ -80,5 +80,8 @@
   "hud.bandwidthoptimizer.metric.sent": "sent",
   "command.bandwidthoptimizer.help": "BandwidthOptimizer commands:\n/bandwidthoptimizer hud - Toggle the local statistics HUD\n/bandwidthoptimizer stats - Upload bandwidth statistics and create a web report\n/bandwidthoptimizer debug - OP debugging and diagnostic tools",
   "hud.bandwidthoptimizer.idle_player.light": "Light idle",
-  "hud.bandwidthoptimizer.idle_player.deep": "Deep idle"
+  "hud.bandwidthoptimizer.idle_player.deep": "Deep idle",
+  "command.bandwidthoptimizer.network.unavailable": "Network test unavailable: unsupported peer or closed connection.",
+  "command.bandwidthoptimizer.network.notice": "Network testing adds traffic to this game connection and may temporarily increase latency. Results: BO diagnostics/network/probes.jsonl.",
+  "command.bandwidthoptimizer.network.result": "BO network test: %s"
 }

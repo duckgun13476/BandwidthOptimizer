@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "source_hash_normalization": "utf8_lf",
+  "architecture": "windows-x86_64",
+  "dll_sha256": "d4da492926e655127679c21f67ae017a6e9226a2570e2dffb42a194b4c7fa4ac",
+  "source_sha256": "18f25361e0240b3c0d6904c576910bce35307f83c4ab8ed080191f57e7b47487",
+  "compiler": "MSVC 14.50.35717",
+  "sdk": "10.0.26100.0",
+  "jni": "1.8 ABI",
+  "scope": "read-only SIO_TCP_INFO v0; no socket options, send, close or connection table scans",
+  "guarded_java_features": [
+    17,
+    21,
+    25
+  ]
+}

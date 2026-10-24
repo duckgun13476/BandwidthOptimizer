@@ -1,5 +1,19 @@
 def configureTestJavaExecTask = project.ext.configureTestJavaExecTask
 
+tasks.register('runNetworkProbeRegression', JavaExec) {
+    configureTestJavaExecTask(delegate, 'verification', 'Verifies bounded independent network test lifecycle and evidence semantics.',
+            'com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbeRegressionMain')
+}
+
+tasks.register('runNetworkProbeTcpRegression', JavaExec) {
+    configureTestJavaExecTask(delegate, 'verification', 'Verifies production probe state over actual loopback TCP without game or proxy acceptance claims.',
+            'com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbeTcpRegressionMain')
+    systemProperty 'bandwidthoptimizer.outputDirectory', rootProject.file('.tmp/network-probe-tests/' + project.name).absolutePath
+    if(project.hasProperty('networkProbeJavaHome')) {
+        executable = new File(project.property('networkProbeJavaHome').toString(), 'bin/java.exe').absolutePath
+    }
+}
+
 def compactRefMemoryAgent = tasks.register('compactRefMemoryAgent', Jar) {
     dependsOn tasks.named('testClasses')
     archiveClassifier = 'compact-ref-test-agent'

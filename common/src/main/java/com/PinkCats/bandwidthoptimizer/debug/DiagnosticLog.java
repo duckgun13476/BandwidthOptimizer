@@ -55,6 +55,10 @@ public final class DiagnosticLog {
         return shouldEmit(tool, message, nowMillis);
     }
 
+    static boolean acquireFileEvent(DiagnosticToolRegistry.Tool tool, String message) {
+        return shouldEmit(tool, message, System.currentTimeMillis());
+    }
+
     static void resetLimitersForTest() {
         synchronized (LIMITERS_LOCK) {
             LIMITERS.clear();

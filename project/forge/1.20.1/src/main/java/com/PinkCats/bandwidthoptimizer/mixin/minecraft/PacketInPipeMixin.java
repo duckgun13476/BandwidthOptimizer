@@ -75,6 +75,7 @@ public abstract class PacketInPipeMixin<T extends PacketListener> implements Pac
     // 替换只调整 PacketDecoder 本次输出队列的内容和顺序，不直接调用 packet.handle(...)。
     @Inject(method = "decode", at = @At("RETURN"))
     private void bandwidthoptimizer$finishDecodeFrame(ChannelHandlerContext context, ByteBuf in, List<Object> out, CallbackInfo ci) throws Exception {
+        com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbePackets.consume(context, out, this.bandwidthoptimizer$outputSizeBeforeDecode);
         ConnectionInternetProbeGuard.markMinecraftPacketDecoded(context);
         if (ChannelTransportHooks.expandDecodedTransportCarrierPackets(
                 context,

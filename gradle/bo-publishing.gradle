@@ -22,6 +22,28 @@ def boResolvePublishingRepositoryRoot = {
 
 def boPublishingRepositoryRootDir = boResolvePublishingRepositoryRoot()
 
+// Owned JNI resource; no third-party download or compiler execution during ordinary builds.
+def manifest = new File(boPublishingRepositoryRootDir, 'native/network-probe/manifest.json')
+def nativeProbeFile = new File(boPublishingRepositoryRootDir, 'common/src/main/resources/META-INF/bandwidthoptimizer/native/bo-tcp-info-windows-x86_64.dll')
+def nativeProbeSource = new File(boPublishingRepositoryRootDir, 'native/network-probe/windows-tcp-info.c')
+def nativeProbeLoader = new File(boPublishingRepositoryRootDir, 'common/src/main/java/com/PinkCats/bandwidthoptimizer/networkprobe/WindowsTcpInfo.java')
+def nativeProbeCheck = tasks.register('verifyNetworkProbeNative') {
+    group = 'verification'
+    description = 'Verifies owned network diagnostic native resource, source digest and loader pin.'
+    inputs.files(manifest, nativeProbeFile, nativeProbeSource, nativeProbeLoader)
+    doLast {
+        def meta = new JsonSlurper().parse(manifest)
+        def sha = { File file -> MessageDigest.getInstance('SHA-256').digest(file.bytes).encodeHex().toString() }
+        if(nativeProbeFile.length() <= 0 || nativeProbeFile.length() > 256 * 1024
+                || sha(nativeProbeFile) != meta.dll_sha256
+                || MessageDigest.getInstance('SHA-256').digest(nativeProbeSource.getText('UTF-8').replace('\r\n', '\n').getBytes('UTF-8')).encodeHex().toString() != meta.source_sha256
+                || !nativeProbeLoader.getText('UTF-8').contains('SHA256="' + meta.dll_sha256 + '"')) {
+            throw new GradleException('Network probe native source/resource/loader pin mismatch')
+        }
+    }
+}
+tasks.named('processResources').configure { dependsOn nativeProbeCheck }
+
 ext.boReadPublishingProperties = {
     def propertiesFile = new File(boPublishingRepositoryRootDir, 'api.properties')
     if (!propertiesFile.exists()) {

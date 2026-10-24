@@ -29,6 +29,7 @@ public final class ChannelTransportNetworkChannel {
         }
 
         registered = true;
+        com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbePackets.register(modEventBus);
         if (modEventBus != null) {
             CustomPacketPayload.Type<ChannelTransportBytePayload> type = ChannelTransportBytePayload.TYPE;
             StreamCodec<RegistryFriendlyByteBuf, ChannelTransportBytePayload> codec = ChannelTransportBytePayload.STREAM_CODEC;

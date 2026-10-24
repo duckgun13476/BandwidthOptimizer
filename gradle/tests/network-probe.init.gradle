@@ -1,0 +1,29 @@
+// Isolated, opt-in native game acceptance. Fixture classes never enter the main jar.
+gradle.beforeProject { p ->
+    if(p.path != ':neoforge-1.21.1') return
+    p.afterEvaluate {
+        def root=gradle.rootProject.projectDir.canonicalFile
+        def base=root.toPath().resolve(gradle.startParameter.projectProperties['networkProbeExperimentBase'] ?: '.tmp/network-probe-native').toFile().canonicalFile
+        if(!base.toPath().startsWith(root.toPath())) throw new GradleException('Outside fixture root')
+        def fixture=p.sourceSets.create('networkProbeDev')
+        fixture.java.setSrcDirs([new File(p.projectDir,'src/networkProbeDev/java')])
+        fixture.resources.setSrcDirs([new File(p.projectDir,'src/networkProbeDev/resources')])
+        fixture.compileClasspath += p.sourceSets.main.compileClasspath + p.sourceSets.main.output
+        fixture.runtimeClasspath += p.sourceSets.main.runtimeClasspath
+        p.extensions.getByName('neoForge').mods.create('networkprobeacceptance') { sourceSet fixture }
+        ['server','client'].each { side ->
+            def run=p.extensions.getByName('neoForge').runs.getByName(side)
+            run.gameDirectory.set(new File(base,side))
+            run.systemProperty('networkprobe.root',base.absolutePath)
+            run.systemProperty('bandwidthoptimizer.outputDirectory',new File(base,side+'/bandwidthoptimizer-native').absolutePath)
+            run.systemProperty('bandwidthoptimizer.sharedOutputDirectory',new File(base,side+'/bandwidthoptimizer-native').absolutePath)
+            run.systemProperty('bandwidthoptimizer.report.uploadEndpoint','')
+            run.jvmArgument('-Xmx2G')
+        }
+        def client=p.extensions.getByName('neoForge').runs.getByName('client')
+        client.systemProperty('bandwidthoptimizer.experient.enabled','true')
+        client.systemProperty('bandwidthoptimizer.experient.autoConnectAddress','127.0.0.1:25853')
+        client.systemProperty('bandwidthoptimizer.experient.autoConnectName','BO network probe acceptance')
+        client.programArguments.addAll('--username','NetProbe')
+    }
+}

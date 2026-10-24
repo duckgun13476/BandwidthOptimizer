@@ -14,6 +14,7 @@ public final class ChannelTransportClientReceiver {
         }
 
         registered = true;
+        ClientPlayNetworking.registerGlobalReceiver(com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbePackets.ID, (client, handler, buffer, responseSender) -> {});
         RequiredPeerClient.register();
         ClientPlayNetworking.registerGlobalReceiver(ChannelTransportNetworkChannel.TRANSPORT_PAYLOAD_ID, (client, handler, buffer, responseSender) -> {
             // Transport carriers are consumed by the Netty decode hook before play dispatch.
