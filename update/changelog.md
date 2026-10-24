@@ -1,3 +1,9 @@
+#### v5.10.33.154-release
+
+1. Fix compact chunk-reference dictionary conflicts when a proxy replaces the backend while keeping the client connection. Scope bindings to the backend session and prevent delayed acknowledgements from confirming unrelated IDs.
+2. Refresh eligible loaded chunk-cache entries after updates and show successful updated-cache reuse in the HUD, with bounded metadata and exact FULL recovery.
+3. Preserve native section-buffer padding when rebuilding cache entries, restoring exact cache matches on affected versions.
+
 #### v5.10.33.153-release
 
 1. Reduce repeated chunk-cache reference metadata with acknowledged, connection-scoped compact IDs and bounded bindings, preserving exact FULL fallback and recovery. Actual wire savings depend on workload and compression.
