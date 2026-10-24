@@ -19,11 +19,12 @@ import java.nio.charset.StandardCharsets;
 /**
  * Negotiated wire metadata dictionary. IDs are connection-local names, not hash
  * truncations. Never retains packet bodies or world objects, and never recycles
- * an ID while the connection is alive (including across transport epochs).
+ * an ID within a sender session (including across transport epochs). A proxy
+ * backend replacement negotiates a new session on the surviving client socket.
  */
 public final class ChunkCompactReferenceCodec {
     private static final boolean ENABLED = Boolean.parseBoolean(System.getProperty("bandwidthoptimizer.compactChunkReferences", "true"));
-    private static final String CAPABILITY = "|bo_compact_ref_1";
+    private static final String CAPABILITY = "|bo_compact_ref_2=";
     private static final String ACK_ID = "|bo_ref_id=";
     private static final String FULL_CLASS = "net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket";
     private static final byte[] MAGIC = {'B','O','C','H','K','E','N','V'};
@@ -46,6 +47,10 @@ public final class ChunkCompactReferenceCodec {
     private static final class State {
         volatile boolean peer;
         boolean offerSent;
+        final java.util.UUID offerNonce = java.util.UUID.randomUUID();
+        final String offerSession = offerNonce.toString();
+        String acceptedSession;
+        java.util.UUID acceptedNonce;
         final Map<Identity, Integer> outbound = new HashMap<>();
         final Identity[] outboundIdentities = new Identity[LIMIT];
         final BitSet acknowledged = new BitSet(LIMIT);
@@ -81,15 +86,20 @@ public final class ChunkCompactReferenceCodec {
                 && frame.operation() != ChunkHotspotFrameOp.CLIENT_CACHE_BLOOM)) return frame;
         // A Bloom response is an acceptance, not an unsolicited offer: the
         // server must know that its own offer was already received in order.
+        String session;
         if(frame.operation()==ChunkHotspotFrameOp.CLIENT_CACHE_BLOOM) {
             State s=channel==null?null:channel.attr(STATE).get();
-            if(s==null || !s.peer)return frame;
+            if(s==null)return frame;
+            synchronized(s) {
+                if(!s.peer || s.acceptedSession==null)return frame;
+                session=s.acceptedSession;
+            }
         } else {
             State s = state(channel);
             if (s == null) return frame;
-            synchronized (s) { s.offerSent = true; }
+            synchronized (s) { s.offerSent = true; session=s.offerSession; }
         }
-        return reason(frame, (frame.reason()==null?"":frame.reason()) + CAPABILITY);
+        return reason(frame, (frame.reason()==null?"":frame.reason()) + CAPABILITY + session);
     }
     public static ChunkTransportEnvelope acceptCapability(Channel channel, ChunkTransportEnvelope envelope) {
         var frame = envelope.frame();
@@ -110,18 +120,37 @@ public final class ChunkCompactReferenceCodec {
                 }
             }
         }
+        int capability = frame.reason()==null?-1:frame.reason().lastIndexOf(CAPABILITY);
+        String session=capability<0?null:frame.reason().substring(capability+CAPABILITY.length());
         if ((frame.operation() == ChunkHotspotFrameOp.SERVER_CACHE_SCOPE || frame.operation() == ChunkHotspotFrameOp.CLIENT_CACHE_BLOOM)
-                && frame.reason() != null && frame.reason().endsWith(CAPABILITY)) {
+                && validSession(session)) {
             if (ENABLED) {
                 State s = state(channel);
                 if (s != null) synchronized (s) {
-                    // Bloom is a response to our offer, never an unsolicited offer.
-                    if (frame.operation() == ChunkHotspotFrameOp.SERVER_CACHE_SCOPE || s.offerSent) s.peer = true;
+                    if (frame.operation() == ChunkHotspotFrameOp.SERVER_CACHE_SCOPE) {
+                        // A proxy can replace the backend without closing this socket.
+                        // Only a new sender session invalidates its ordered dictionary.
+                        if (!session.equals(s.acceptedSession)) {
+                            s.inboundIds.clear(); java.util.Arrays.fill(s.inbound,null);
+                            s.needsAckId.clear(); s.acceptedSession=session;
+                            s.acceptedNonce=java.util.UUID.fromString(session);
+                        }
+                        s.peer=true;
+                    } else if(s.offerSent && session.equals(s.offerSession)) s.peer=true;
                 }
             }
-            return new ChunkTransportEnvelope(reason(frame, frame.reason().substring(0, frame.reason().length()-CAPABILITY.length())), envelope.copyOriginalPacketBytes());
+            return new ChunkTransportEnvelope(reason(frame, frame.reason().substring(0, capability)), envelope.copyOriginalPacketBytes());
+        }
+        if(frame.operation()==ChunkHotspotFrameOp.SERVER_CACHE_SCOPE) {
+            State s=channel==null?null:channel.attr(STATE).get();
+            if(s!=null)synchronized(s){s.peer=false;}
         }
         return envelope;
+    }
+    private static boolean validSession(String value) {
+        if(value==null || value.length()!=36)return false;
+        try { return java.util.UUID.fromString(value).toString().equals(value); }
+        catch(IllegalArgumentException invalid){return false;}
     }
     private static ChunkHotspotFrame reason(ChunkHotspotFrame f, String reason) {
         return new ChunkHotspotFrame(f.protocolVersion(),f.operation(),f.epoch(),f.observedPacketCount(),f.protocolName(),f.packetClassName(),
@@ -167,6 +196,9 @@ public final class ChunkCompactReferenceCodec {
                 b.writeBytes(MAGIC); b.writeVarInt(0);
                 b.writeByte(ack?BINDING_ACK:define?DEFINE_REF:id==null?LITERAL_REF:REF);
                 if(nextId>=0)b.writeShort(nextId);
+                // Echo the negotiated sender session: old ACKs must never
+                // resolve their ID against a replacement backend's dictionary.
+                if(ack){b.writeLong(s.acceptedNonce.getMostSignificantBits());b.writeLong(s.acceptedNonce.getLeastSignificantBits());}
                 if(!ack && (define || id==null))writeIdentity(b,identity);
                 b.writeVarLong(f.observedPacketCount());b.writeVarLong(f.fullSnapshotVersion());
                 b.writeVarLong(f.laneVersion());b.writeVarLong(f.deltaBytesSinceFullSnapshot());b.writeByte(reason);
@@ -204,7 +236,11 @@ public final class ChunkCompactReferenceCodec {
     public static ChunkTransportEnvelope decode(Channel channel, byte[] bytes) {
         if(!isCompact(bytes))throw new IllegalArgumentException("Invalid compact reference magic");
         State s=channel==null?null:channel.attr(STATE).get();
-        if(!ENABLED || s==null || !s.peer)throw new IllegalArgumentException("Unnegotiated compact reference");
+        boolean bindingAck=bytes.length>9 && bytes[9]==BINDING_ACK;
+        // A retired backend's ACK may arrive even before the new offer is
+        // accepted. It may be consumed, but must not activate negotiation.
+        if(s==null && bindingAck)s=state(channel);
+        if(s==null || ((!ENABLED || !s.peer) && !bindingAck))throw new IllegalArgumentException("Unnegotiated compact reference");
         FriendlyByteBuf b=new FriendlyByteBuf(Unpooled.wrappedBuffer(bytes));
         try {
             b.skipBytes(9);int kind=b.readUnsignedByte();
@@ -214,17 +250,24 @@ public final class ChunkCompactReferenceCodec {
             synchronized(s) {
                 Identity identity;ChunkTransportEnvelope result;
                 {
+                    long ackMost=kind==BINDING_ACK?b.readLong():0L,ackLeast=kind==BINDING_ACK?b.readLong():0L;
+                    boolean staleAck=kind==BINDING_ACK && (s.offerNonce.getMostSignificantBits()!=ackMost || s.offerNonce.getLeastSignificantBits()!=ackLeast);
+                    if(kind==BINDING_ACK && !staleAck && (!ENABLED || !s.peer))throw new IllegalArgumentException("Unnegotiated compact ACK");
                     identity=kind==BINDING_ACK?s.outboundIdentities[id]:kind==REF?s.inbound[id]:readIdentity(b);
-                    if(identity==null)throw new IllegalArgumentException("Unknown compact reference ID");
+                    if(identity==null && !staleAck)throw new IllegalArgumentException("Unknown compact reference ID");
                     long count=positive(b.readVarLong()),version=positive(b.readVarLong()),lane=positive(b.readVarLong()),delta=positive(b.readVarLong());
                     String[] reasons=kind==BINDING_ACK?ACK_REASONS:REASONS;
                     int reason=b.readUnsignedByte();if(reason>=reasons.length)throw new IllegalArgumentException("Unknown compact reference reason");
+                    if(b.isReadable())throw new IllegalArgumentException("Trailing compact reference bytes");
+                    // Fully validated, but belongs to a retired backend. This
+                    // control has no authority in this session and is consumed.
+                    if(staleAck)return null;
                     result=new ChunkTransportEnvelope(new ChunkHotspotFrame(1,kind==BINDING_ACK?ChunkHotspotFrameOp.ACK:ChunkHotspotFrameOp.PUBLISH_REF,identity.epoch(),count,"PLAY",FULL_CLASS,
                             ChunkHotspotKind.FULL_CHUNK,ChunkLaneKind.FULL,ChunkPacketCoordinate.ofChunk(identity.x(),identity.z()),0,
                             version,lane,identity.hash(),identity.hash(),delta,reasons[reason]),new byte[0]);
                 }
                 if(b.isReadable())throw new IllegalArgumentException("Trailing compact reference bytes");
-                if(kind==BINDING_ACK)s.acknowledged.set(id);
+                if(kind==BINDING_ACK && identity.equals(s.outboundIdentities[id]))s.acknowledged.set(id);
                 if(kind==DEFINE_REF) {
                     Identity previous=s.inbound[id];
                     if(previous!=null && !previous.equals(identity))throw new IllegalArgumentException("Compact reference ID cannot be rebound");

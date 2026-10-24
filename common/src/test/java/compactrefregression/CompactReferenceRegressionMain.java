@@ -50,6 +50,7 @@ public final class CompactReferenceRegressionMain {
                 System.out.println("Compact REF disabled regression PASS");return;
             }
             negotiate(server,client);
+            verifyBackendReplacement();
             verifyMixedPeers();
             CompactReferenceWireCost.verify();
             byte[] definition=ChunkTransportEnvelopeCodec.encodeEnvelope(server,ref);
@@ -125,6 +126,68 @@ public final class CompactReferenceRegressionMain {
         } finally {server.finishAndReleaseAll();client.finishAndReleaseAll();}
     }
 
+    static void verifyBackendReplacement() {
+        var first=new EmbeddedChannel();
+        var next=new EmbeddedChannel(new io.netty.channel.ChannelInboundHandlerAdapter());
+        var client=new EmbeddedChannel();
+        try {
+            negotiate(first,client);
+            var a=envelope(frame(ChunkHotspotFrameOp.PUBLISH_REF,1,1,0,HASH,"reuse_persistent_client_cache_manifest"));
+            equal(a,ChunkTransportEnvelopeCodec.decodeEnvelope(client,ChunkTransportEnvelopeCodec.encodeEnvelope(first,a)));
+            var ackA=envelope(frame(ChunkHotspotFrameOp.ACK,1,1,0,HASH,"runtime_ref_reused_after_persistent_manifest"));
+            byte[] delayedAck=ChunkTransportEnvelopeCodec.encodeEnvelope(client,ackA);
+            var bloom=envelope(frame(ChunkHotspotFrameOp.CLIENT_CACHE_BLOOM,0,0,0,HASH,"bloom"));
+            byte[] delayedBloom=ChunkTransportEnvelopeCodec.encodeEnvelope(client,bloom);
+            acknowledge(first,client,a.frame());
+            first.close(); // proxy replaces backend, not the client TCP connection
+            reject(()->ChunkTransportEnvelopeCodec.decodeEnvelope(next,Arrays.copyOf(delayedAck,delayedAck.length-1)));
+            reject(()->ChunkTransportEnvelopeCodec.decodeEnvelope(next,Arrays.copyOf(delayedAck,delayedAck.length+1)));
+            check(ChunkTransportEnvelopeCodec.decodeEnvelope(next,delayedAck)==null,"old ACK before new negotiation is harmless");
+            var consumed=com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportDispatcher.tryDecodeInboundPacket(next.pipeline().firstContext(),delayedAck);
+            check(consumed.consumeAsChunkControlFrame() && !consumed.shouldDecodeVanillaPacket(),"dispatcher consumes retired ACK without vanilla replay");
+            ChunkTransportEnvelopeCodec.decodeEnvelope(next,delayedBloom);
+            check(Arrays.equals(ChunkTransportEnvelopeCodec.encodeEnvelope(a),ChunkTransportEnvelopeCodec.encodeEnvelope(next,a)),"old unsolicited acceptance cannot activate replacement");
+            negotiate(next,client);
+            var b=envelope(frame(ChunkHotspotFrameOp.PUBLISH_REF,1,2,0,OTHER,a.frame().reason()));
+            equal(b,ChunkTransportEnvelopeCodec.decodeEnvelope(client,ChunkTransportEnvelopeCodec.encodeEnvelope(next,b)));
+            check(ChunkTransportEnvelopeCodec.decodeEnvelope(next,delayedAck)==null,"retired backend ACK is consumed");
+            check(ChunkTransportEnvelopeCodec.encodeEnvelope(next,b)[9]==2,"old ACK cannot confirm reused ID with different identity");
+            acknowledge(next,client,b.frame());
+            equal(b,ChunkTransportEnvelopeCodec.decodeEnvelope(client,ChunkTransportEnvelopeCodec.encodeEnvelope(next,b)));
+            negotiate(next,client); // repeated scope offer must not discard confirmed IDs
+            byte[] repeated=ChunkTransportEnvelopeCodec.encodeEnvelope(next,b);
+            check(repeated[9]==3,"same backend keeps confirmed ID across repeated scope");
+            equal(b,ChunkTransportEnvelopeCodec.decodeEnvelope(client,repeated));
+            // A delayed response to a different offer cannot negotiate a fresh sender.
+            var pending=new EmbeddedChannel();
+            try {
+                var scope=envelope(frame(ChunkHotspotFrameOp.SERVER_CACHE_SCOPE,0,0,0,HASH,"scope"));
+                ChunkTransportEnvelopeCodec.encodeEnvelope(pending,scope);
+                ChunkTransportEnvelopeCodec.decodeEnvelope(pending,delayedBloom);
+                check(Arrays.equals(ChunkTransportEnvelopeCodec.encodeEnvelope(a),ChunkTransportEnvelopeCodec.encodeEnvelope(pending,a)),"stale acceptance cannot match fresh offer");
+            } finally {pending.finishAndReleaseAll();}
+            // Old peers must stay on the legacy envelope rather than negotiate v2 by accident.
+            var oldScope=envelope(frame(ChunkHotspotFrameOp.SERVER_CACHE_SCOPE,0,0,0,HASH,"scope|bo_compact_ref_1"));
+            ChunkTransportEnvelopeCodec.decodeEnvelope(client,ChunkTransportEnvelopeCodec.encodeEnvelope(oldScope));
+            check(Arrays.equals(ChunkTransportEnvelopeCodec.encodeEnvelope(bloom),ChunkTransportEnvelopeCodec.encodeEnvelope(client,bloom)),"old backend cannot enable v2 on retained client");
+            for(int n=0;n<32;n++) {
+                var replacement=new EmbeddedChannel();
+                try {
+                    negotiate(replacement,client);
+                    var f=envelope(frame(ChunkHotspotFrameOp.PUBLISH_REF,1,n,3,HASH,a.frame().reason()));
+                    equal(f,ChunkTransportEnvelopeCodec.decodeEnvelope(client,ChunkTransportEnvelopeCodec.encodeEnvelope(replacement,f)));
+                    acknowledge(replacement,client,f.frame());
+                    equal(f,ChunkTransportEnvelopeCodec.decodeEnvelope(client,ChunkTransportEnvelopeCodec.encodeEnvelope(replacement,f)));
+                } finally {replacement.finishAndReleaseAll();}
+            }
+            try {
+                Object state=client.attr(AttributeKey.valueOf("bandwidthoptimizer.compactChunkReferences.v1")).get();
+                var inbound=state.getClass().getDeclaredField("inbound");inbound.setAccessible(true);
+                check(Arrays.stream((Object[])inbound.get(state)).filter(java.util.Objects::nonNull).count()==1,"switches retain only current sender dictionary");
+            } catch(ReflectiveOperationException failure) {throw new AssertionError(failure);}
+            System.out.println("Backend replacement retained-client regression PASS");
+        } finally {first.finishAndReleaseAll();next.finishAndReleaseAll();client.finishAndReleaseAll();}
+    }
     static void verifyMixedPeers() {
         var newer = new EmbeddedChannel(); var older = new EmbeddedChannel();
         try {
@@ -141,7 +204,7 @@ public final class CompactReferenceRegressionMain {
             // A single altered capability field cannot activate a server that never offered it.
             var unsolicited = new EmbeddedChannel();
             try {
-                var response = envelope(frame(ChunkHotspotFrameOp.CLIENT_CACHE_BLOOM,0,0,0,HASH,"bloom|bo_compact_ref_1"));
+                var response = envelope(frame(ChunkHotspotFrameOp.CLIENT_CACHE_BLOOM,0,0,0,HASH,"bloom|bo_compact_ref_2=00000000-0000-0000-0000-000000000000"));
                 ChunkTransportEnvelopeCodec.decodeEnvelope(unsolicited,ChunkTransportEnvelopeCodec.encodeEnvelope(response));
                 check(Arrays.equals(ChunkTransportEnvelopeCodec.encodeEnvelope(ref),ChunkTransportEnvelopeCodec.encodeEnvelope(unsolicited,ref)),"unsolicited acceptance cannot activate encoder");
             } finally { unsolicited.finishAndReleaseAll(); }

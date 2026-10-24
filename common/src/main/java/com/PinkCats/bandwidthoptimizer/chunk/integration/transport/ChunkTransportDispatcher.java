@@ -460,6 +460,11 @@ public final class ChunkTransportDispatcher {
             }
             throw failure;
         }
+        if (envelope == null) {
+            // A validated binding ACK for a retired proxy backend is control
+            // traffic, not an application packet or an ACK for this session.
+            return ChunkInboundDecodeResult.consumeControlFrame();
+        }
         ChunkLoadDelayProbe.logStage(
                 context,
                 envelope.frame(),

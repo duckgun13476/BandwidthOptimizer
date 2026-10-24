@@ -25,9 +25,15 @@ final class CompactReferenceWireCost {
             // FULL remains unchanged; a non-reused connection pays only one
             // capability exchange. Include the finite binding cost for reused
             // chunks, rather than claiming every compressed corpus improves.
-            if(reuses==0 && compact.carriers-legacy.carriers>64) throw new AssertionError("No-reuse cost must stay connection-constant");
-            if(compact.carriers-legacy.carriers>64*8) throw new AssertionError("Matched corpus binding cost regressed");
-            if(dynamic && reuses>=4 && compact.carriers>=legacy.carriers) throw new AssertionError("Advancing repeated reuse must save compressed bytes");
+            // v2 adds a 36-character sender-session nonce to both controls.
+            // Budget that fixed handshake explicitly, never per chunk.
+            if(reuses==0 && compact.carriers-legacy.carriers>128) throw new AssertionError("No-reuse cost must stay connection-constant");
+            if(compact.carriers-legacy.carriers>64*8+128) throw new AssertionError("Matched corpus binding cost regressed");
+            // The new session handshake can move the old four-reuse crossing.
+            // Account for its fixed budget, and still require actual total
+            // carrier savings in the established sixteen-reuse workload.
+            if(dynamic && reuses>=4 && compact.carriers-legacy.carriers>128) throw new AssertionError("Advancing reuse exceeds session handshake budget");
+            if(dynamic && reuses>=16 && compact.carriers>=legacy.carriers) throw new AssertionError("Advancing repeated reuse must save compressed bytes");
         }
     }
 

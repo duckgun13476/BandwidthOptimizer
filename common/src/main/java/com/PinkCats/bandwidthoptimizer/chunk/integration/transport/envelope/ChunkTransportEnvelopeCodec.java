@@ -52,6 +52,7 @@ public final class ChunkTransportEnvelopeCodec {
         buffer.writeVarInt(payload.length); buffer.writeBytes(payload);
     }
 
+    /** Returns null only for a validated ACK addressed to a retired sender session. */
     public static ChunkTransportEnvelope decodeEnvelope(Channel channel, byte[] bytes) {
         if (ChunkCompactReferenceCodec.isCompact(bytes)) return ChunkCompactReferenceCodec.decode(channel, bytes);
         return ChunkCoreOverlayCapability.accept(channel, ChunkCompactReferenceCodec.acceptCapability(channel, decodeEnvelope(bytes)));
