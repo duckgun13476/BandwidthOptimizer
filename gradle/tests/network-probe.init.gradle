@@ -15,6 +15,7 @@ gradle.beforeProject { p ->
             def run=p.extensions.getByName('neoForge').runs.getByName(side)
             run.gameDirectory.set(new File(base,side))
             run.systemProperty('networkprobe.root',base.absolutePath)
+            run.systemProperty('networkprobe.faultReset',gradle.startParameter.projectProperties['networkProbeFaultReset'] ?: 'false')
             run.systemProperty('bandwidthoptimizer.outputDirectory',new File(base,side+'/bandwidthoptimizer-native').absolutePath)
             run.systemProperty('bandwidthoptimizer.sharedOutputDirectory',new File(base,side+'/bandwidthoptimizer-native').absolutePath)
             run.systemProperty('bandwidthoptimizer.report.uploadEndpoint','')

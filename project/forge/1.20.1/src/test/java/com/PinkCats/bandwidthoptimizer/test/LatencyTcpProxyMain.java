@@ -14,6 +14,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Semaphore;
+import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -30,6 +32,14 @@ public final class LatencyTcpProxyMain {
         String targetHost = options.getOrDefault("target-host", "127.0.0.1");
         int targetPort = parsePort(options.getOrDefault("target-port", "25567"), "target-port");
         long delayMillis = parseNonNegativeLong(options.getOrDefault("delay-ms", "300"), "delay-ms");
+        long jitterMillis = parseNonNegativeLong(options.getOrDefault("jitter-ms", "0"), "jitter-ms");
+        long rateBytesPerSecond = parseNonNegativeLong(options.getOrDefault("rate-bytes-per-second", "0"), "rate-bytes-per-second");
+        if(jitterMillis > 60000 || rateBytesPerSecond > 100_000_000L)
+            throw new IllegalArgumentException("jitter/rate exceeds test budget");
+        for(String key: options.keySet()) if(!java.util.Set.of("listen-host","listen-port","target-host","target-port",
+                "delay-ms","jitter-ms","rate-bytes-per-second","spike-after-ms","spike-duration-ms","spike-delay-ms",
+                "reset-first-connection-after-ms","reset-connection-id").contains(key))
+            throw new IllegalArgumentException("Unknown option: "+key+"; real packet faults require tools/network-fault-lab");
         long spikeAfterMillis = parseNonNegativeLong(
                 options.getOrDefault("spike-after-ms", "0"),
                 "spike-after-ms"
@@ -50,6 +60,8 @@ public final class LatencyTcpProxyMain {
                 options.getOrDefault("reset-connection-id", "1"),
                 "reset-connection-id"
         );
+        for(long value:new long[]{delayMillis,spikeAfterMillis,spikeDurationMillis,spikeDelayMillis,resetFirstConnectionAfterMillis})
+            if(value>300000L) throw new IllegalArgumentException("Time budget exceeds five minutes");
 
         AtomicInteger connectionIds = new AtomicInteger();
         try (ServerSocket serverSocket = new ServerSocket()) {
@@ -73,6 +85,8 @@ public final class LatencyTcpProxyMain {
                                 targetHost,
                                 targetPort,
                                 delayMillis,
+                                jitterMillis,
+                                rateBytesPerSecond,
                                 spikeAfterMillis,
                                 spikeDurationMillis,
                                 spikeDelayMillis,
@@ -92,6 +106,8 @@ public final class LatencyTcpProxyMain {
             String targetHost,
             int targetPort,
             long delayMillis,
+            long jitterMillis,
+            long rateBytesPerSecond,
             long spikeAfterMillis,
             long spikeDurationMillis,
             long spikeDelayMillis,
@@ -127,6 +143,8 @@ public final class LatencyTcpProxyMain {
                             targetSocket,
                             clientToServerDelay,
                             delayMillis,
+                            jitterMillis,
+                            rateBytesPerSecond,
                             acceptedAtNanos,
                             spikeAfterMillis,
                             spikeDurationMillis,
@@ -143,6 +161,8 @@ public final class LatencyTcpProxyMain {
                             clientSocket,
                             serverToClientDelay,
                             delayMillis,
+                            jitterMillis,
+                            rateBytesPerSecond,
                             acceptedAtNanos,
                             spikeAfterMillis,
                             spikeDurationMillis,
@@ -181,6 +201,8 @@ public final class LatencyTcpProxyMain {
             Socket target,
             ScheduledExecutorService scheduler,
             long delayMillis,
+            long jitterMillis,
+            long rateBytesPerSecond,
             long acceptedAtNanos,
             long spikeAfterMillis,
             long spikeDurationMillis,
@@ -189,6 +211,11 @@ public final class LatencyTcpProxyMain {
     ) {
         byte[] buffer = new byte[16384];
         AtomicLong lastDeliveryNanos = new AtomicLong();
+        // Bound delayed data; block the reader to propagate real TCP receive-window backpressure.
+        Semaphore pendingBytes = new Semaphore(512 * 1024);
+        Semaphore pendingTasks = new Semaphore(64);
+        AtomicLong peakPendingBytes = new AtomicLong();
+        Random jitter = new Random(31L * connectionId + direction.hashCode());
         try {
             InputStream inputStream = source.getInputStream();
             OutputStream outputStream = target.getOutputStream();
@@ -197,6 +224,12 @@ public final class LatencyTcpProxyMain {
                 if (read < 0) {
                     break;
                 }
+                boolean taskReserved=false, bytesReserved=false;
+                while(!closed.get() && !(taskReserved=pendingTasks.tryAcquire(100,TimeUnit.MILLISECONDS))) { }
+                if(!taskReserved) break;
+                while(!closed.get() && !(bytesReserved=pendingBytes.tryAcquire(read,100,TimeUnit.MILLISECONDS))) { }
+                if(!bytesReserved) { pendingTasks.release(); break; }
+                peakPendingBytes.accumulateAndGet(512 * 1024 - pendingBytes.availablePermits(),Math::max);
                 byte[] packetBytes = new byte[read];
                 System.arraycopy(buffer, 0, packetBytes, 0, read);
                 long nowNanos = System.nanoTime();
@@ -206,25 +239,44 @@ public final class LatencyTcpProxyMain {
                         spikeAfterMillis,
                         spikeDurationMillis
                 ) ? spikeDelayMillis : delayMillis;
+                effectiveDelayMillis=Math.max(0,effectiveDelayMillis + (jitterMillis==0?0:
+                        jitter.nextInt((int)(2*jitterMillis+1))-jitterMillis));
                 long requestedDeliveryNanos = nowNanos + TimeUnit.MILLISECONDS.toNanos(effectiveDelayMillis);
+                long rateInterval = rateBytesPerSecond==0?1L:Math.max(1L,read*1_000_000_000L/rateBytesPerSecond);
                 long deliveryNanos = lastDeliveryNanos.updateAndGet(
-                        previous -> Math.max(requestedDeliveryNanos, previous + 1L)
+                        previous -> Math.max(requestedDeliveryNanos, previous + rateInterval)
                 );
+                final int reservedBytes=read;
                 scheduler.schedule(
-                        () -> writeDelayed(connectionId, direction, outputStream, packetBytes, closed),
+                        () -> {
+                            try { writeDelayed(connectionId, direction, outputStream, packetBytes, closed); }
+                            finally { pendingBytes.release(reservedBytes); pendingTasks.release(); }
+                            if(closed.get()) { closeQuietly(source); closeQuietly(target); }
+                        },
                         Math.max(0L, deliveryNanos - nowNanos),
                         TimeUnit.NANOSECONDS
                 );
             }
         } catch (SocketException ignored) {
+            closed.set(true); closeQuietly(source); closeQuietly(target);
         } catch (IOException exception) {
             if (!closed.get()) {
                 log("pump_error id=" + connectionId + " direction=" + direction + " error="
                         + exception.getClass().getSimpleName() + ": " + exception.getMessage());
             }
+            closed.set(true); closeQuietly(source); closeQuietly(target);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt(); closed.set(true); closeQuietly(source); closeQuietly(target);
         } finally {
-            closed.set(true);
-            scheduler.shutdown();
+            if(closed.get()) scheduler.shutdownNow(); else scheduler.shutdown();
+            try {
+                if(!scheduler.awaitTermination(Math.max(delayMillis,spikeDelayMillis)+jitterMillis+5000L,TimeUnit.MILLISECONDS)) {
+                    closed.set(true); closeQuietly(source); closeQuietly(target);
+                } else if(!closed.get()) target.shutdownOutput();
+            } catch(InterruptedException interrupted) {
+                Thread.currentThread().interrupt(); closed.set(true); closeQuietly(source); closeQuietly(target);
+            } catch(IOException expectedClose) { closeQuietly(source); closeQuietly(target); }
+            log("queue id="+connectionId+" direction="+direction+" peakPendingBytes="+peakPendingBytes.get());
         }
     }
 

@@ -1,5 +1,24 @@
 def configureTestJavaExecTask = project.ext.configureTestJavaExecTask
 
+if(project.name == 'forge-1.20.1') {
+    def linuxProbeNative = configurations.create('networkProbeLinuxNative')
+    dependencies.add(linuxProbeNative.name, 'io.netty:netty-transport-native-epoll:4.1.82.Final:linux-x86_64')
+    tasks.register('exportNetworkFaultLab', Sync) {
+        group = 'verification'
+        dependsOn tasks.named('testClasses')
+        into rootProject.file('.tmp/network-fault-lab/runtime')
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        from(sourceSets.main.output.classesDirs) { into 'classes' }
+        from(sourceSets.test.output.classesDirs) { into 'classes' }
+        from({ sourceSets.test.runtimeClasspath.files.findAll {
+            it.name.endsWith('.jar') && (it.name.startsWith('netty-') || it.name.startsWith('gson-')
+                || it.name.startsWith('log4j-') || it.name.startsWith('slf4j-'))
+        } }) { into 'lib' }
+        from({ project.hasProperty('networkProbeLinuxNativeJar')
+            ? files(project.property('networkProbeLinuxNativeJar')) : linuxProbeNative }) { into 'lib' }
+    }
+}
+
 tasks.register('runNetworkProbeRegression', JavaExec) {
     configureTestJavaExecTask(delegate, 'verification', 'Verifies bounded independent network test lifecycle and evidence semantics.',
             'com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbeRegressionMain')

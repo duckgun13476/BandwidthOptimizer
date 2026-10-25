@@ -11,7 +11,7 @@ public final class NetworkProbeRegressionMain {
     private static int checks;
     private static void check(boolean ok,String detail) { checks++; if(!ok) throw new AssertionError(detail); }
     public static void main(String[] args) {
-        frames(); lifecycle(); invalid(); pressure(); admission();
+        frames(); lifecycle(); invalid(); pressure(); admission(); closedEvidence();
         System.out.println("NETWORK_PROBE_PASS checks="+checks);
     }
     private static void frames() {
@@ -133,5 +133,26 @@ public final class NetworkProbeRegressionMain {
         check(!ProbeAdmission.acquire(two,104,true),"cooldown");
         check(ProbeAdmission.acquire(two,104+ProbeAdmission.COOLDOWN,true),"cooldown expiry");
         ProbeAdmission.release(two,105+ProbeAdmission.COOLDOWN,true);
+    }
+    private static void closedEvidence() {
+        AtomicLong time=new AtomicLong(1);
+        EmbeddedChannel channel=new EmbeddedChannel();
+        List<JsonObject> reports=new ArrayList<>();
+        NetworkProbeSession session=new NetworkProbeSession(channel,UUID.randomUUID(),true,8192,125_000,time::get,
+                f -> channel.newSucceededFuture(),reports::add);
+        JsonObject start=new JsonObject(); start.addProperty("status","supported");
+        start.addProperty("total_retransmitted_segments",10);
+        session.tcpStart=start;
+        JsonObject observed=start.deepCopy(); observed.addProperty("total_retransmitted_segments",13);
+        JsonObject window=new JsonObject(); window.addProperty("elapsed_ns",100_000_000L); window.add("tcp",observed);
+        session.samples.add(window);
+        time.addAndGet(150_000_000L); channel.close(); session.finish("connection_closed_cause_unknown");
+        JsonObject report=reports.get(0),analysis=report.getAsJsonObject("analysis");
+        check(report.getAsJsonObject("tcp_end").get("status").getAsString().equals("closed"),"raw close status retained");
+        check(analysis.get("local_tcp_retransmitted_segments_delta").getAsInt()==3,"last observed retransmissions retained");
+        check(analysis.get("tcp_delta_window_end_ns").getAsLong()==100_000_000L,"exact last-observation boundary");
+        check(analysis.get("tcp_delta_excludes_unsampled_close_tail").getAsBoolean(),"unobserved close tail explicit");
+        check(report.get("packet_loss_rate").getAsString().equals("unknown"),"no inferred closed-socket loss ratio");
+        channel.finishAndReleaseAll();
     }
 }

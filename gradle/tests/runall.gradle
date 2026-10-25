@@ -79,6 +79,8 @@ def readRunAllLatencyDelayMillis(Project projectRef) {
 def isRunAllLatencyProxyEnabled(Project projectRef) {
 
     return readRunAllLatencyDelayMillis(projectRef) > 0L
+            || project.ext.boReadRunAllLongProperty.call(projectRef, 'boRunAllLatencyJitterMillis', 0L) > 0L
+            || project.ext.boReadRunAllLongProperty.call(projectRef, 'boRunAllLatencyRateBytesPerSecond', 0L) > 0L
             || project.ext.boReadRunAllLongProperty.call(projectRef, 'boRunAllLatencySpikeDurationMillis', 0L) > 0L
             || project.ext.boReadRunAllLongProperty.call(
                     projectRef,
@@ -172,6 +174,10 @@ def startRunAllLatencyProxyProcess(Project projectRef, boolean isWindows, File o
             String.valueOf(readRunAllLatencyTargetPort(projectRef)),
             '--delay-ms',
             String.valueOf(readRunAllLatencyDelayMillis(projectRef)),
+            '--jitter-ms',
+            String.valueOf(project.ext.boReadRunAllLongProperty.call(projectRef, 'boRunAllLatencyJitterMillis', 0L)),
+            '--rate-bytes-per-second',
+            String.valueOf(project.ext.boReadRunAllLongProperty.call(projectRef, 'boRunAllLatencyRateBytesPerSecond', 0L)),
             '--spike-after-ms',
             String.valueOf(project.ext.boReadRunAllLongProperty.call(
                     projectRef,

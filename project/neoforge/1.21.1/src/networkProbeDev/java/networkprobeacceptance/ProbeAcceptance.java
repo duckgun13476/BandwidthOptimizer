@@ -20,7 +20,17 @@ public final class ProbeAcceptance {
             var server=e.getServer();
             if(!server.getPlayerList().getPlayers().isEmpty() && playerSeen<0) playerSeen=ticks;
             if(playerSeen>=0 && ticks==playerSeen+100)
-                server.getCommands().performPrefixedCommand(server.createCommandSourceStack(),"bo network test NetProbe 1 16");
+                server.getCommands().performPrefixedCommand(server.createCommandSourceStack(),
+                        Boolean.getBoolean("networkprobe.faultReset")?"bo network test NetProbe 8 8":"bo network test NetProbe 1 16");
+            if(Boolean.getBoolean("networkprobe.faultReset") && playerSeen>=0 && ticks==playerSeen+125
+                    && !server.getPlayerList().getPlayers().isEmpty()) {
+                var player=server.getPlayerList().getPlayers().get(0);
+                var connection=((com.PinkCats.bandwidthoptimizer.mixin.minecraft.ServerGamePacketListenerImplAccessor)player.connection).bandwidthoptimizer$getConnection();
+                var channel=((com.PinkCats.bandwidthoptimizer.mixin.minecraft.ConnectionAccessor)connection).bandwidthoptimizer$getChannel();
+                channel.eventLoop().execute(() -> { channel.config().setOption(io.netty.channel.ChannelOption.SO_LINGER,0); channel.close(); });
+                JsonObject injected=new JsonObject(); injected.addProperty("kind","server_socket_RST"); injected.addProperty("tick",ticks);
+                write("reset-injected.json",injected);
+            }
             if(ticks%20==0 && completeTick<0) {
                 JsonObject report=read("server");
                 if(report!=null) {

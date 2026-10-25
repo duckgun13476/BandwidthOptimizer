@@ -35,6 +35,8 @@ final class NetworkProbeSession {
     int sendSequence, receiveSequence, pingCount, pongCount;
     String lastError="";
     JsonObject tcpEnd;
+    JsonObject tcpLastObserved;
+    long tcpLastObservedElapsed;
     private final byte[] randomBlock=new byte[ProbeFrame.BLOCK];
 
     NetworkProbeSession(Channel channel, UUID id, boolean server, long budget, long rate,
@@ -218,6 +220,19 @@ final class NetworkProbeSession {
         if(done()) return;
         String finalPhase=phase.name(); phase=Phase.DONE;
         tcpEnd=TcpSocketMetrics.sample(channel);
+        tcpLastObserved=tcpEnd;
+        tcpLastObservedElapsed=clock.getAsLong()-started;
+        if(!"supported".equals(tcpEnd.get("status").getAsString())) {
+            for(int i=samples.size()-1;i>=0;i--) {
+                JsonObject window=samples.get(i).getAsJsonObject();
+                JsonObject tcp=window.getAsJsonObject("tcp");
+                if("supported".equals(tcp.get("status").getAsString())) {
+                    tcpLastObserved=tcp;
+                    tcpLastObservedElapsed=window.get("elapsed_ns").getAsLong();
+                    break;
+                }
+            }
+        }
         JsonObject report=new JsonObject();
         report.addProperty("v",1); report.addProperty("event","network_probe_summary");
         report.addProperty("test_id",id.toString()); report.addProperty("side",server?"server":"client");
@@ -250,6 +265,9 @@ final class NetworkProbeSession {
         }
         report.add("application_rtt",latency); report.add("phases",phases);
         report.add("tcp_start",tcpStart); report.add("tcp_end",tcpEnd); report.add("windows",samples);
+        report.add("tcp_last_observed",tcpLastObserved);
+        report.addProperty("tcp_last_observed_elapsed_ns",tcpLastObservedElapsed);
+        report.addProperty("tcp_terminal_sample_supported","supported".equals(tcpEnd.get("status").getAsString()));
         report.addProperty("tcp_baseline_elapsed_ns",tcpBaselineElapsed);
         report.add("analysis",analyze());
         completion.accept(report);
@@ -259,13 +277,16 @@ final class NetworkProbeSession {
         JsonObject analysis=new JsonObject();
         analysis.addProperty("local_write_backpressure_observed",blockedTicks>0);
         analysis.addProperty("qos_or_isp_throttling","not_established");
-        if(tcpStart.has("total_retransmitted_bytes") && tcpEnd.has("total_retransmitted_bytes")) {
-            long delta=tcpEnd.get("total_retransmitted_bytes").getAsLong()-tcpStart.get("total_retransmitted_bytes").getAsLong();
+        analysis.addProperty("tcp_delta_window_start_ns",tcpBaselineElapsed);
+        analysis.addProperty("tcp_delta_window_end_ns",tcpLastObservedElapsed);
+        analysis.addProperty("tcp_delta_excludes_unsampled_close_tail",!"supported".equals(tcpEnd.get("status").getAsString()));
+        if(tcpStart.has("total_retransmitted_bytes") && tcpLastObserved.has("total_retransmitted_bytes")) {
+            long delta=tcpLastObserved.get("total_retransmitted_bytes").getAsLong()-tcpStart.get("total_retransmitted_bytes").getAsLong();
             if(delta>=0) analysis.addProperty("local_tcp_retransmitted_bytes_delta",delta);
             else analysis.addProperty("retransmission_delta_status","counter_reset_or_wrap");
         }
-        if(tcpStart.has("total_retransmitted_segments") && tcpEnd.has("total_retransmitted_segments")) {
-            long delta=tcpEnd.get("total_retransmitted_segments").getAsLong()-tcpStart.get("total_retransmitted_segments").getAsLong();
+        if(tcpStart.has("total_retransmitted_segments") && tcpLastObserved.has("total_retransmitted_segments")) {
+            long delta=tcpLastObserved.get("total_retransmitted_segments").getAsLong()-tcpStart.get("total_retransmitted_segments").getAsLong();
             if(delta>=0) analysis.addProperty("local_tcp_retransmitted_segments_delta",delta);
             else analysis.addProperty("retransmission_delta_status","counter_reset_or_wrap");
         }
