@@ -6,10 +6,10 @@ import java.util.UUID;
 /** Independent, bounded PLAY payload. Never interpreted as a BO transport frame. */
 public record ProbeFrame(int kind, UUID id, int sequence, long value, byte[] body) {
     public static final int OFFER=0, READY=1, PING=2, PONG=3, DATA=4, END=5,
-            RECEIPT=6, CANCEL=7, COMPLETE=8, UPLOAD=9, DOWNLOAD=10, RESULT=11;
+            RECEIPT=6, CANCEL=7, COMPLETE=8, UPLOAD=9, DOWNLOAD=10, RESULT=11, REQUEST=12, STATUS=13;
     public static final int HEADER=34, BLOCK=8192, MAX_BYTES=HEADER+BLOCK;
     public ProbeFrame {
-        if (kind<0 || kind>RESULT || id==null || sequence<0 || body==null || body.length>BLOCK)
+        if (kind<0 || kind>STATUS || id==null || sequence<0 || body==null || body.length>BLOCK)
             throw new IllegalArgumentException("Invalid network probe frame");
         body=body.clone();
     }

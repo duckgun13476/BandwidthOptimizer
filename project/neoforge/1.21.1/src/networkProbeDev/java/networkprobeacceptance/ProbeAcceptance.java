@@ -19,7 +19,7 @@ public final class ProbeAcceptance {
             ticks++;
             var server=e.getServer();
             if(!server.getPlayerList().getPlayers().isEmpty() && playerSeen<0) playerSeen=ticks;
-            if(playerSeen>=0 && ticks==playerSeen+100)
+            if(!Boolean.getBoolean("networkprobe.clientRequest") && playerSeen>=0 && ticks==playerSeen+100)
                 server.getCommands().performPrefixedCommand(server.createCommandSourceStack(),
                         Boolean.getBoolean("networkprobe.faultReset")?"bo network test NetProbe 8 8":"bo network test NetProbe 1 16");
             if(Boolean.getBoolean("networkprobe.faultReset") && playerSeen>=0 && ticks==playerSeen+125

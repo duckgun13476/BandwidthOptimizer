@@ -16,6 +16,7 @@ gradle.beforeProject { p ->
             run.gameDirectory.set(new File(base,side))
             run.systemProperty('networkprobe.root',base.absolutePath)
             run.systemProperty('networkprobe.faultReset',gradle.startParameter.projectProperties['networkProbeFaultReset'] ?: 'false')
+            run.systemProperty('networkprobe.clientRequest',gradle.startParameter.projectProperties['networkProbeClientRequest'] ?: 'false')
             run.systemProperty('bandwidthoptimizer.outputDirectory',new File(base,side+'/bandwidthoptimizer-native').absolutePath)
             run.systemProperty('bandwidthoptimizer.sharedOutputDirectory',new File(base,side+'/bandwidthoptimizer-native').absolutePath)
             run.systemProperty('bandwidthoptimizer.report.uploadEndpoint','')

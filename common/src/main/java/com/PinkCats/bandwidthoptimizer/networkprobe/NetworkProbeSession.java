@@ -52,6 +52,7 @@ final class NetworkProbeSession {
     }
     boolean done() { return phase==Phase.DONE; }
     void start() { if(server) send(new ProbeFrame(ProbeFrame.OFFER,id,0,budget,ByteBuffer.allocate(8).putLong(rate).array())); }
+    void startRequested() { if(server) send(new ProbeFrame(ProbeFrame.OFFER,id,1,budget,ByteBuffer.allocate(8).putLong(rate).array())); }
     void acceptedOffer() { transition(Phase.WAIT_UPLOAD); send(ProbeFrame.control(ProbeFrame.READY,id)); }
 
     void accept(ProbeFrame f) {

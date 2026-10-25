@@ -17,4 +17,9 @@ final class ProbeAdmission {
         int side=server?1:0;
         if (id.equals(owners[side])) { owners[side]=null; nextStart[side]=now+COOLDOWN; }
     }
+    static synchronized boolean handover(UUID previous,UUID replacement,boolean server) {
+        int side=server?1:0;
+        if(!previous.equals(owners[side])) return false;
+        owners[side]=replacement; return true;
+    }
 }
