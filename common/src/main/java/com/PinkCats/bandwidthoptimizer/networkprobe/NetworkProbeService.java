@@ -21,6 +21,11 @@ public final class NetworkProbeService {
             channel.pipeline().addFirst(ProbeConnectionMonitor.NAME,new ProbeConnectionMonitor());
     }
     static NetworkProbeSession current(Channel channel) { return ACTIVE.get()==0?null:channel.attr(SESSION).get(); }
+    /** Identity only: no mutable event-loop session state is exposed to a future result screen. */
+    public static NetworkProbeResults.Key resultKey(Channel channel) {
+        NetworkProbeSession session=current(channel);
+        return session==null?null:new NetworkProbeResults.Key(channel.id().asLongText(),session.id,session.server);
+    }
     /** Server command is the only authority allowed to start a bulk test. */
     public static void start(Channel channel,long bytes,long bytesPerSecond,Consumer<String> feedback) {
         if(bytes<1 || bytes>NetworkProbeSession.MAX_BYTES || bytesPerSecond<125_000 || bytesPerSecond>16_000_000) {
@@ -75,8 +80,7 @@ public final class NetworkProbeService {
                     ScheduledFuture<?> task=channel.attr(TASK).getAndSet(null);
                     if(task!=null) task.cancel(false);
                     ProbeAdmission.release(id,System.nanoTime(),server);
-                    NetworkProbeReports.record(report);
-                    callback.accept(report);
+                    publishResult(new NetworkProbeResults.Key(channel.id().asLongText(),id,server),report,callback);
                 });
         ACTIVE.incrementAndGet();
         channel.attr(SESSION).set(session);
@@ -87,5 +91,10 @@ public final class NetworkProbeService {
             session.finish("scheduler_closing");
         }
         return session;
+    }
+    static void publishResult(NetworkProbeResults.Key key,JsonObject report,Consumer<JsonObject> callback) {
+        NetworkProbeResults.record(key,report);
+        try { NetworkProbeReports.record(report); }
+        finally { callback.accept(report); }
     }
 }

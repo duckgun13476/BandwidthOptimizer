@@ -14,6 +14,7 @@ public final class NetworkProbeRegressionMain {
         frames(); lifecycle(); invalid(); pressure(); admission(); closedEvidence();
         writeFailureEvidence();
         NetworkProbeFindingsRegression.run();
+        NetworkProbeResultsRegression.run();
         System.out.println("NETWORK_PROBE_PASS checks="+checks);
     }
     private static void frames() {
