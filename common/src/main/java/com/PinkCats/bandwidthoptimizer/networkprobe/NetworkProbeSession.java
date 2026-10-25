@@ -207,9 +207,17 @@ final class NetworkProbeSession {
             if(future==null) throw new IllegalStateException("Probe packet writer unavailable");
             future.addListener(result -> {
                 pending-=bytes;
-                if(!result.isSuccess() && !done()) { lastError=result.cause()==null?"write_failed":result.cause().getClass().getName(); finish("write_failed"); }
+                if(!result.isSuccess() && !done()) {
+                    lastError=result.cause()==null?"write_failed":result.cause().getClass().getName();
+                    com.PinkCats.bandwidthoptimizer.connection.ConnectionDisconnectClassifier.observeException(channel,result.cause());
+                    finish("write_failed");
+                }
             });
-        } catch(RuntimeException failure) { pending-=bytes; lastError=failure.getClass().getName(); finish("write_failed"); }
+        } catch(RuntimeException failure) {
+            pending-=bytes; lastError=failure.getClass().getName();
+            com.PinkCats.bandwidthoptimizer.connection.ConnectionDisconnectClassifier.observeException(channel,failure);
+            finish("write_failed");
+        }
     }
     void abort(String reason) {
         if(done()) return;

@@ -56,6 +56,11 @@ def verify(name, data, snapshots):
     server, client = data['server'], data['client']
     assert server['test_id'] == client['test_id']
     for report in (server, client):
+        assert report['findings_version'] == 1
+        assert len(report['findings']) <= 6
+        allowed = {'loaded_application_latency_increase', 'receive_pause_recovered',
+                   'receive_rate_below_configured_sender_rate'}
+        assert all(f['code'] in allowed and f['evidence'] for f in report['findings'])
         assert report['packet_loss_rate'] == 'unknown'
         assert not report['missing_replies_are_packet_loss']
         assert report['tcp_start']['status'] == 'supported', report['tcp_start']
@@ -91,9 +96,16 @@ def verify(name, data, snapshots):
     if name == 'rate-up':
         assert 0 < server['phases']['upload_received']['receiver_goodput_mbit_s'] <= 2.5
         assert server['analysis']['loaded_application_p95_increased_over_20ms']
+        codes = {f['code'] for f in server['findings']}
+        assert {'loaded_application_latency_increase', 'receive_rate_below_configured_sender_rate'} <= codes
+    if name == 'blackhole':
+        assert any(f['code'] == 'receive_pause_recovered' for f in server['findings'])
+    if name == 'baseline':
+        assert not server['findings'] and not client['findings'], 'Clean baseline produced findings'
     if name == 'corrupt':
         assert up + down > 0, 'Corruption profile produced no observed TCP recovery evidence'
     return {'case': name, 'status': 'PASS', 'server_outcome': server['outcome'], 'client_outcome': client['outcome'],
+            'server_findings': server['findings'], 'client_findings': client['findings'],
             'up_retransmitted_segments': up, 'down_retransmitted_segments': down, 'qdisc_max_drops': dropped,
             'baseline_app_rtt_p50_ms': None if latency is None else latency / 1e6,
             'client_disconnect_category': client['disconnect_category'],

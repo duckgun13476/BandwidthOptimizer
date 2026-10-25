@@ -12,6 +12,7 @@ public final class NetworkProbeRegressionMain {
     private static void check(boolean ok,String detail) { checks++; if(!ok) throw new AssertionError(detail); }
     public static void main(String[] args) {
         frames(); lifecycle(); invalid(); pressure(); admission(); closedEvidence();
+        writeFailureEvidence();
         NetworkProbeFindingsRegression.run();
         System.out.println("NETWORK_PROBE_PASS checks="+checks);
     }
@@ -134,6 +135,18 @@ public final class NetworkProbeRegressionMain {
         check(!ProbeAdmission.acquire(two,104,true),"cooldown");
         check(ProbeAdmission.acquire(two,104+ProbeAdmission.COOLDOWN,true),"cooldown expiry");
         ProbeAdmission.release(two,105+ProbeAdmission.COOLDOWN,true);
+    }
+    private static void writeFailureEvidence() {
+        EmbeddedChannel channel=new EmbeddedChannel();
+        List<JsonObject> reports=new ArrayList<>();
+        var promise=channel.newPromise();
+        NetworkProbeSession session=new NetworkProbeSession(channel,UUID.randomUUID(),true,8192,125_000,System::nanoTime,
+                frame -> promise,reports::add);
+        session.start();
+        promise.setFailure(new java.net.SocketException("Connection reset"));
+        check(reports.get(0).get("disconnect_category").getAsString().equals("CONNECTION_RESET"),"write callback preserves reset before pipeline exception");
+        check(reports.get(0).get("outcome").getAsString().equals("write_failed"),"write failure outcome unchanged");
+        channel.finishAndReleaseAll();
     }
     private static void closedEvidence() {
         AtomicLong time=new AtomicLong(1);
