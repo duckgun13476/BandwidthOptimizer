@@ -31,7 +31,9 @@
     "minecraft.ChunkSnapshotDataAccessor",
     "minecraft.ChunkSnapshotLightAccessor",
     "minecraft.MinecraftDisconnect26Mixin",
-    "neoforge.ClientPayloadContextMixin"
+    "neoforge.ClientPayloadContextMixin",
+    "minecraft.NetworkAnalysisTickMixin",
+    "minecraft.NetworkAnalysisMenuMixin"
   ],
   "injectors": {
     "defaultRequire": 1

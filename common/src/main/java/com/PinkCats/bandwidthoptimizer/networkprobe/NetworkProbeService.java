@@ -21,6 +21,7 @@ public final class NetworkProbeService {
     private static final AttributeKey<NetworkProbeRequest> REQUEST=AttributeKey.valueOf("bo:network_probe_request");
     private static final AttributeKey<ScheduledFuture<?>> REQUEST_TASK=AttributeKey.valueOf("bo:network_probe_request_timeout");
     private static final AttributeKey<Long> LAST_REQUEST=AttributeKey.valueOf("bo:network_probe_request_last");
+    private static final AttributeKey<Long> GENERATION=AttributeKey.valueOf("bo:network_probe_backend_generation");
     private NetworkProbeService() {}
     public static void install(Channel channel) {
         if(channel.pipeline().get(ProbeConnectionMonitor.NAME)==null)
@@ -31,6 +32,12 @@ public final class NetworkProbeService {
     public static NetworkProbeResults.Key resultKey(Channel channel) {
         NetworkProbeSession session=current(channel);
         return session==null?null:new NetworkProbeResults.Key(channel.id().asLongText(),session.id,session.server);
+    }
+    public static long generation(Channel channel) {
+        Long generation=channel.attr(GENERATION).get(); return generation==null?0:generation;
+    }
+    public static NetworkProbeProgress progress(Channel channel) {
+        NetworkProbeSession session=current(channel); return session==null?null:session.progress;
     }
     /** Client may request only the server's fixed basic profile. Caller checks optional peer capability first. */
     public static NetworkProbeRequest request(Channel channel) {
@@ -157,6 +164,7 @@ public final class NetworkProbeService {
         session.accept(frame);
     }
     public static void closed(Channel channel,String reason) {
+        if(reason.equals("backend_login_replaced_session")) channel.attr(GENERATION).set(generation(channel)+1);
         NetworkProbeSession session=current(channel);
         if(session!=null) session.finish(reason);
         NetworkProbeRequest request=channel.attr(REQUEST).get();
@@ -178,8 +186,8 @@ public final class NetworkProbeService {
                     if(task!=null) task.cancel(false);
                     ProbeAdmission.release(id,System.nanoTime(),server);
                     NetworkProbeRequest request=channel.attr(REQUEST).get();
-                    if(!server && request!=null && request.id().equals(id)) request.status(report.get("outcome").getAsString());
-                    publishResult(new NetworkProbeResults.Key(channel.id().asLongText(),id,server),report,callback);
+                    try { publishResult(new NetworkProbeResults.Key(channel.id().asLongText(),id,server),report,callback); }
+                    finally { if(!server && request!=null && request.id().equals(id)) request.status(report.get("outcome").getAsString()); }
                 });
         ACTIVE.incrementAndGet();
         channel.attr(SESSION).set(session);

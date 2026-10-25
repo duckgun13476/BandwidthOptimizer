@@ -6,15 +6,18 @@ final class ProbeClient {
     private static int ticks;
     private static boolean everLoaded;
     private static int loadedTicks;
+    private static int resultTick=-1;
     private static com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbeRequest request;
     static void install() {
+        if(!System.getProperty("networkprobe.policy","").isEmpty()) {ProbePolicy.install();return;}
+        if(Boolean.getBoolean("networkprobe.lifecycle")) {ProbeLifecycle.install();return;}
+        if(Boolean.getBoolean("networkprobe.clientRequest"))
+            com.PinkCats.bandwidthoptimizer.networkprobe.NetworkAnalysisClient.FLOW.armed(true);
         NeoForge.EVENT_BUS.addListener((ClientTickEvent.Post e) -> {
             var mc=Minecraft.getInstance();
             if(Boolean.getBoolean("networkprobe.clientRequest") && mc.level!=null && mc.player!=null && mc.getConnection()!=null
-                    && ++loadedTicks==100) {
-                var connection=mc.getConnection().getConnection();
-                var channel=((com.PinkCats.bandwidthoptimizer.mixin.minecraft.ConnectionAccessor)connection).bandwidthoptimizer$getChannel();
-                request=com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbeService.request(channel);
+                    ) {
+                request=com.PinkCats.bandwidthoptimizer.networkprobe.NetworkAnalysisClient.FLOW.ticket();
             }
             if(!everLoaded && mc.level!=null && mc.player!=null) {
                 everLoaded=true;
@@ -24,14 +27,31 @@ final class ProbeClient {
             }
             if(++ticks%20!=0) return;
             var report=ProbeAcceptance.read("client");
-            if(report!=null) {
+            if(report!=null && resultTick<0) {
                 report.addProperty("world_and_player_loaded",mc.level!=null && mc.player!=null);
                 report.addProperty("world_and_player_ever_loaded",everLoaded);
+                if(mc.getConnection()!=null) {
+                    var channel=((com.PinkCats.bandwidthoptimizer.mixin.minecraft.ConnectionAccessor)mc.getConnection().getConnection()).bandwidthoptimizer$getChannel();
+                    report.addProperty("game_connection_remote_address",channel.remoteAddress().toString());
+                }
                 if(request!=null) {
                     report.addProperty("client_request_id",request.id().toString());
                     report.addProperty("client_request_status",request.status());
+                    var flow=com.PinkCats.bandwidthoptimizer.networkprobe.NetworkAnalysisClient.FLOW;
+                    report.addProperty("automatic_flow_state",flow.state());
+                    report.addProperty("automatic_result_retained",flow.result()!=null && flow.result().key().testId().equals(request.id()));
+                    com.PinkCats.bandwidthoptimizer.networkprobe.NetworkAnalysisClient.open(mc.screen);
                 }
                 ProbeAcceptance.write("client-result.json",report);
+                resultTick=ticks;
+            }
+            if(resultTick>=0 && ticks>=resultTick+20) {
+                if(request!=null) {
+                    if(!(mc.screen instanceof com.PinkCats.bandwidthoptimizer.networkprobe.NetworkAnalysisScreen)) throw new AssertionError("Result screen not open");
+                    net.minecraft.client.Screenshot.grab(mc.gameDirectory,mc.getMainRenderTarget(),message -> {});
+                    var proof=new com.google.gson.JsonObject(); proof.addProperty("rendered_ticks",ticks-resultTick);
+                    proof.addProperty("screen",mc.screen.getClass().getName()); ProbeAcceptance.write("result-screen.json",proof);
+                }
                 mc.stop();
             }
             if(ticks>3000) mc.stop();

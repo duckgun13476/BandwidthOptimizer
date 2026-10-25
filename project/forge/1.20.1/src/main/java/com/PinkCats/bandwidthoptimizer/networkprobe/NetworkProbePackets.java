@@ -25,6 +25,7 @@ public final class NetworkProbePackets {
         if(registered) return; registered=true;
         registration=NetworkRegistry.newSimpleChannel(ID,()->"2",NetworkRegistry.acceptMissingOr("2"),NetworkRegistry.acceptMissingOr("2"));
     }
+    public static boolean canSendClient(net.minecraft.network.Connection connection) { return registration!=null && registration.isRemotePresent(connection); }
     public static boolean canSend(ServerPlayer player) { return registration!=null && registration.isRemotePresent(player.connection.connection); }
     public static boolean isProbe(Object packet) { return packet instanceof ClientboundCustomPayloadPacket c && ID.equals(c.getIdentifier())
                 || packet instanceof ServerboundCustomPayloadPacket s && ID.equals(s.getIdentifier()); }

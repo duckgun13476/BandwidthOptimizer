@@ -16,6 +16,7 @@ public final class NetworkProbeRegressionMain {
         NetworkProbeFindingsRegression.run();
         NetworkProbeResultsRegression.run();
         NetworkProbeRequestRegression.run();
+        NetworkAnalysisFlowRegression.run();
         System.out.println("NETWORK_PROBE_PASS checks="+checks);
     }
     private static void frames() {

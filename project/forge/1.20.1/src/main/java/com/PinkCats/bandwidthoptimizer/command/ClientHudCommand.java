@@ -37,6 +37,7 @@ public final class ClientHudCommand {
         dispatcher.register(Commands.literal("bandwidthoptimizer")
                 .then(Commands.literal("hud")
                         .executes(context -> toggle(context.getSource())))
+                .then(Commands.literal("networkresults").executes(context -> {com.PinkCats.bandwidthoptimizer.networkprobe.NetworkAnalysisClient.requestOpen();return 1;}))
                 .then(buildDebugCommand()));
     }
 

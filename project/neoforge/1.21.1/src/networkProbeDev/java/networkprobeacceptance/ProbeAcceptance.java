@@ -18,6 +18,14 @@ public final class ProbeAcceptance {
         NeoForge.EVENT_BUS.addListener((ServerTickEvent.Post e) -> {
             ticks++;
             var server=e.getServer();
+            if(!System.getProperty("networkprobe.policy","").isEmpty()) {
+                if(Files.exists(ROOT.resolve("policy-done.json")) || ticks>3600) server.halt(false);
+                return;
+            }
+            if(Boolean.getBoolean("networkprobe.lifecycle")) {
+                if(Files.exists(ROOT.resolve("lifecycle-done.json")) || ticks>5000) server.halt(false);
+                return;
+            }
             if(!server.getPlayerList().getPlayers().isEmpty() && playerSeen<0) playerSeen=ticks;
             if(!Boolean.getBoolean("networkprobe.clientRequest") && playerSeen>=0 && ticks==playerSeen+100)
                 server.getCommands().performPrefixedCommand(server.createCommandSourceStack(),

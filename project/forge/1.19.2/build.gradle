@@ -73,6 +73,8 @@ mixin {
 }
 
 def forge1192ExcludedForge1201Java = [
+        'com/PinkCats/bandwidthoptimizer/networkprobe/NetworkAnalysisPlatform.java',
+        'com/PinkCats/bandwidthoptimizer/networkprobe/NetworkAnalysisScreen.java',
         'com/PinkCats/bandwidthoptimizer/client/hud/BandwidthOptimizerHudOverlay.java',
         'com/PinkCats/bandwidthoptimizer/integration/create/CreateMainPayloadCompat.java',
         'com/PinkCats/bandwidthoptimizer/integration/minecraft/BlockEntityTypeKeyCompat.java',

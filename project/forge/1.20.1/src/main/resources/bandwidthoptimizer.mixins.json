@@ -37,7 +37,9 @@
     "minecraft.ChunkSnapshotLightAccessor",
     "minecraft.ClientPacketListenerChunkHandleMixin",
     "minecraft.PauseScreenDisconnectMixin",
-    "watut.WatutPlayerStatusManagerClientMixin"
+    "watut.WatutPlayerStatusManagerClientMixin",
+    "minecraft.NetworkAnalysisTickMixin",
+    "minecraft.NetworkAnalysisMenuMixin"
   ],
   "injectors": {
     "defaultRequire": 1

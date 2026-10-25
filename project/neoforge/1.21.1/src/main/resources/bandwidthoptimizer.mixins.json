@@ -32,7 +32,9 @@
     "minecraft.ChunkSnapshotLightAccessor",
     "minecraft.PauseScreenDisconnectMixin",
     "neoforge.ClientPayloadContextMixin",
-    "watut.WatutPlayerStatusManagerClientMixin"
+    "watut.WatutPlayerStatusManagerClientMixin",
+    "minecraft.NetworkAnalysisTickMixin",
+    "minecraft.NetworkAnalysisMenuMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -31,7 +31,9 @@
     "minecraft.ChunkSnapshotDataAccessor",
     "minecraft.ChunkSnapshotLightAccessor",
     "minecraft.RequiredPeerLoginAccessor",
-    "minecraft.PauseScreenDisconnectMixin"
+    "minecraft.PauseScreenDisconnectMixin",
+    "minecraft.NetworkAnalysisTickMixin",
+    "minecraft.NetworkAnalysisMenuMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -36,6 +36,7 @@ final class NetworkProbeSession {
     String lastError="";
     JsonObject tcpEnd;
     JsonObject peerSummary;
+    volatile NetworkProbeProgress progress;
     JsonObject tcpLastObserved;
     long tcpLastObservedElapsed;
     private final byte[] randomBlock=new byte[ProbeFrame.BLOCK];
@@ -48,6 +49,7 @@ final class NetworkProbeSession {
         this.clock=clock; this.sender=sender; this.completion=completion;
         this.started=clock.getAsLong(); this.phaseStart=started; this.lastPump=started;
         this.lastSample=started; this.nextPing=started; this.tcpStart=TcpSocketMetrics.sample(channel);
+        progress=new NetworkProbeProgress(id,phase.name(),0,0,budget,0);
         new Random(id.getLeastSignificantBits()).nextBytes(randomBlock);
     }
     boolean done() { return phase==Phase.DONE; }
@@ -168,6 +170,7 @@ final class NetworkProbeSession {
         if(scheduling>SECOND/2) { abort("local_event_loop_stall"); return; }
         if(now-started>=MAX_TIME || now-phaseStart>=12*SECOND) { abort("test_deadline_not_packet_loss"); return; }
         if(now-lastSample>=SECOND/10 && samples.size()<350) {
+            progress=new NetworkProbeProgress(id,phase.name(),sent,received,budget,now-started);
             JsonObject sample=new JsonObject();
             sample.addProperty("elapsed_ns",now-started); sample.addProperty("phase",phase.name());
             sample.addProperty("netty_in_bytes",nettyInbound); sample.addProperty("netty_out_bytes",nettyOutbound);
