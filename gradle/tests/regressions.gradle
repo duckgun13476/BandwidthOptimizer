@@ -22,6 +22,8 @@ if(project.name == 'forge-1.20.1') {
 tasks.register('runNetworkProbeRegression', JavaExec) {
     configureTestJavaExecTask(delegate, 'verification', 'Verifies bounded independent network test lifecycle and evidence semantics.',
             'com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbeRegressionMain')
+    if(project.hasProperty('networkProbeEvidenceRoot'))
+        systemProperty 'networkProbeEvidenceRoot', project.property('networkProbeEvidenceRoot')
 }
 
 tasks.register('runNetworkProbeTcpRegression', JavaExec) {

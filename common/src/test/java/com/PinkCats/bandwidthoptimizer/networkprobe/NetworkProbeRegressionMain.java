@@ -12,6 +12,7 @@ public final class NetworkProbeRegressionMain {
     private static void check(boolean ok,String detail) { checks++; if(!ok) throw new AssertionError(detail); }
     public static void main(String[] args) {
         frames(); lifecycle(); invalid(); pressure(); admission(); closedEvidence();
+        NetworkProbeFindingsRegression.run();
         System.out.println("NETWORK_PROBE_PASS checks="+checks);
     }
     private static void frames() {

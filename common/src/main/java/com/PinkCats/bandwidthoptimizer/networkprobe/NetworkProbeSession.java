@@ -270,6 +270,9 @@ final class NetworkProbeSession {
         report.addProperty("tcp_terminal_sample_supported","supported".equals(tcpEnd.get("status").getAsString()));
         report.addProperty("tcp_baseline_elapsed_ns",tcpBaselineElapsed);
         report.add("analysis",analyze());
+        report.addProperty("findings_version",1);
+        report.addProperty("findings_scope","observed_test_effects_only; absence_is_not_proof_of_health");
+        report.add("findings",NetworkProbeFindings.detect(report));
         completion.accept(report);
     }
 
