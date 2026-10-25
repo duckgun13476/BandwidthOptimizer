@@ -53,6 +53,25 @@ final class NetworkProbeFindingsRegression {
         check(NetworkProbeFindings.detect(r).isEmpty(),"short transfer cannot establish rate deficit");
         measured.addProperty("receiver_phase_ns",1_000_000_000L); measured.addProperty("verified_bytes",700_000);
         check(NetworkProbeFindings.detect(r).isEmpty(),"exact ratio threshold rejected");
+        r=report(); rtt(r,"BASELINE",10,20); rtt(r,"RECEIVE_UPLOAD",5,60);
+        for(int i=0;i<=6;i++) window(r,i*100,100,"RECEIVE_UPLOAD");
+        window(r,700,200,"RECEIVE_UPLOAD");
+        measured=new JsonObject(); measured.addProperty("verified_bytes",250_000);
+        measured.addProperty("receiver_phase_ns",1_000_000_000L);
+        r.getAsJsonObject("phases").add("upload_received",measured);
+        JsonObject receipt=new JsonObject(); receipt.addProperty("peer_verified_bytes",250_000);
+        receipt.addProperty("peer_receive_phase_ns",1_000_000_000L);
+        r.getAsJsonObject("phases").add("download_peer_receipt",receipt);
+        r.addProperty("side","server"); r.addProperty("outcome","completed");
+        r.addProperty("started_at_epoch_ms",1); r.addProperty("elapsed_ns",3_000_000_000L);
+        r.addProperty("budget_bytes_per_direction",250_000);
+        JsonArray all=NetworkProbeFindings.detect(r); r.add("findings",all);
+        JsonArray decoded=ProbeResultSummary.decode(ProbeResultSummary.encode(r)).getAsJsonArray("findings");
+        check(all.size()==3 && decoded.size()==3,"all three findings survive summary codec");
+        for(int i=0;i<all.size();i++) {
+            check(all.get(i).getAsJsonObject().get("code").equals(decoded.get(i).getAsJsonObject().get("code")),"finding code roundtrip");
+            check(all.get(i).getAsJsonObject().get("evidence").equals(decoded.get(i).getAsJsonObject().get("evidence")),"finding evidence roundtrip");
+        }
         String root=System.getProperty("networkProbeEvidenceRoot");
         if(root!=null) replay(Path.of(root));
         System.out.println("NETWORK_PROBE_FINDINGS_PASS checks="+checks);

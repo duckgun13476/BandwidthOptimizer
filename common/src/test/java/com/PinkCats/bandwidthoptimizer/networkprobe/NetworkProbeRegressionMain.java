@@ -57,6 +57,39 @@ public final class NetworkProbeRegressionMain {
         check(server.done() && client.done(),"both complete");
         check(serverReports.size()==1 && clientReports.size()==1,"one report each");
         JsonObject sr=serverReports.get(0),cr=clientReports.get(0);
+        check(cr.get("peer_summary_status").getAsString().equals("received"),"server summary received before completion");
+        byte[] summary=ProbeResultSummary.encode(sr);
+        check(summary.length<=2048,"bounded summary");
+        check(ProbeResultSummary.decode(summary).equals(cr.getAsJsonObject("peer_summary")),"exact peer summary");
+        for(byte[] bad:List.of(new byte[0],Arrays.copyOf(summary,summary.length-1),Arrays.copyOf(summary,summary.length+1),new byte[2049])) {
+            boolean rejected=false; try { ProbeResultSummary.decode(bad); } catch(IllegalArgumentException expected) { rejected=true; }
+            check(rejected,"summary framing rejected");
+        }
+        byte[] badVersion=summary.clone(); badVersion[0]=99;
+        boolean summaryRejected=false; try { ProbeResultSummary.decode(badVersion); } catch(IllegalArgumentException expected) { summaryRejected=true; }
+        check(summaryRejected,"summary version rejected");
+        byte[] missingDuration=summary.clone(); ByteBuffer.wrap(missingDuration).putLong(1+5*8,-1);
+        summaryRejected=false; try { ProbeResultSummary.decode(missingDuration); } catch(IllegalArgumentException expected) { summaryRejected=true; }
+        check(summaryRejected,"summary requires transfer duration");
+        client.accept(new ProbeFrame(ProbeFrame.RESULT,id,0,0,summary));
+        check(clientReports.size()==1 && cr.get("outcome").getAsString().equals("completed"),"late result cannot replace completed report");
+        for(boolean mismatch:new boolean[]{false,true}) {
+            List<JsonObject> rejectedReports=new ArrayList<>();
+            NetworkProbeSession candidate=new NetworkProbeSession(clientChannel,id,false,256_000,2_000_000,time::get,
+                    f -> clientChannel.newSucceededFuture(),rejectedReports::add);
+            candidate.phase=NetworkProbeSession.Phase.WAIT_DOWNLOAD; candidate.sent=candidate.received=256_000;
+            candidate.phases.add("upload_peer_receipt",client.phases.get("upload_peer_receipt").deepCopy());
+            candidate.phases.add("download_received",client.phases.get("download_received").deepCopy());
+            byte[] payload=summary.clone();
+            if(mismatch) ByteBuffer.wrap(payload).putLong(1+5*8,1);
+            candidate.accept(new ProbeFrame(ProbeFrame.RESULT,id,0,0,payload));
+            if(!mismatch) {
+                check(!candidate.done() && candidate.peerSummary!=null,"valid summary waits for COMPLETE");
+                candidate.accept(new ProbeFrame(ProbeFrame.RESULT,id,0,0,payload));
+            }
+            check(candidate.done() && rejectedReports.size()==1 && clientChannel.isActive(),
+                    mismatch?"mismatched receipt duration rejected":"duplicate summary rejected without closing game");
+        }
         check(sr.get("outcome").getAsString().equals("completed"),sr.toString());
         check(cr.get("outcome").getAsString().equals("completed"),cr.toString());
         check(sr.getAsJsonObject("phases").getAsJsonObject("upload_received").get("verified_bytes").getAsLong()==256_000,"upload exact");
@@ -76,6 +109,12 @@ public final class NetworkProbeRegressionMain {
                 f -> channel.newSucceededFuture(),reports::add);
         s.accept(ProbeFrame.control(ProbeFrame.READY,UUID.randomUUID()));
         check(s.phase==NetworkProbeSession.Phase.NEGOTIATING,"foreign session ignored");
+        NetworkProbeSession early=new NetworkProbeSession(channel,UUID.randomUUID(),false,8192,125_000,time::get,
+                f -> channel.newSucceededFuture(),r -> {});
+        early.accept(new ProbeFrame(ProbeFrame.RESULT,UUID.randomUUID(),0,0,new byte[0]));
+        check(!early.done(),"foreign result ignored");
+        early.accept(new ProbeFrame(ProbeFrame.RESULT,early.id,0,0,new byte[0]));
+        check(early.done() && channel.isActive(),"premature result aborts test only");
         s.accept(ProbeFrame.control(ProbeFrame.READY,id)); advance(s,time,101);
         s.accept(new ProbeFrame(ProbeFrame.DATA,id,1,0,new byte[1]));
         check(s.done() && reports.get(0).get("outcome").getAsString().equals("data_sequence_or_budget"),"sequence failure");

@@ -35,6 +35,7 @@ final class NetworkProbeSession {
     int sendSequence, receiveSequence, pingCount, pongCount;
     String lastError="";
     JsonObject tcpEnd;
+    JsonObject peerSummary;
     JsonObject tcpLastObserved;
     long tcpLastObservedElapsed;
     private final byte[] randomBlock=new byte[ProbeFrame.BLOCK];
@@ -86,8 +87,26 @@ final class NetworkProbeSession {
             case ProbeFrame.END -> receiveEnd(f);
             case ProbeFrame.RECEIPT -> receipt(f);
             case ProbeFrame.COMPLETE -> {
-                if(server || phase!=Phase.WAIT_DOWNLOAD || !empty(f)) { abort("unexpected_complete"); return; }
+                if(server || phase!=Phase.WAIT_DOWNLOAD || !empty(f) || peerSummary==null) { abort("unexpected_complete"); return; }
                 finish("completed");
+            }
+            case ProbeFrame.RESULT -> {
+                if(server || phase!=Phase.WAIT_DOWNLOAD || !phases.has("download_received") || !phases.has("upload_peer_receipt")
+                        || peerSummary!=null || f.sequence()!=0 || f.value()!=0) {
+                    abort("unexpected_result"); return;
+                }
+                try {
+                    JsonObject decoded=ProbeResultSummary.decode(f.body());
+                    JsonObject metrics=decoded.getAsJsonObject("metrics");
+                    if(metrics.get("budget_bytes_per_direction").getAsLong()!=budget
+                            || metrics.get("rate_limit_bytes_s").getAsLong()!=rate
+                            || metrics.get("upload_verified_bytes").getAsLong()!=sent
+                              || metrics.get("download_verified_bytes").getAsLong()!=received
+                              || metrics.get("upload_receive_ns").getAsLong()!=phases.getAsJsonObject("upload_peer_receipt").get("peer_receive_phase_ns").getAsLong()
+                              || metrics.get("download_receive_ns").getAsLong()!=phases.getAsJsonObject("download_received").get("receiver_phase_ns").getAsLong())
+                        throw new IllegalArgumentException("Peer result does not match verified transfer");
+                    peerSummary=decoded;
+                } catch(IllegalArgumentException bad) { abort("invalid_result_summary"); }
             }
             default -> abort("unexpected_frame");
         }
@@ -137,7 +156,7 @@ final class NetworkProbeSession {
             catch(RuntimeException bad) { abort("receipt_tcp_format"); return; }
         }
         phases.add(server?"download_peer_receipt":"upload_peer_receipt",measured);
-        if(server) { send(ProbeFrame.control(ProbeFrame.COMPLETE,id)); finish("completed"); }
+        if(server) { finish("completed"); }
         else transition(Phase.WAIT_DOWNLOAD);
     }
     void tick() {
@@ -281,6 +300,18 @@ final class NetworkProbeSession {
         report.addProperty("findings_version",1);
         report.addProperty("findings_scope","observed_test_effects_only; absence_is_not_proof_of_health");
         report.add("findings",NetworkProbeFindings.detect(report));
+        if(!server) {
+            report.addProperty("peer_summary_status",peerSummary==null?"not_received":"received");
+            if(peerSummary!=null) report.add("peer_summary",peerSummary);
+        }
+        if(server && outcome.equals("completed")) {
+            try {
+                sender.apply(new ProbeFrame(ProbeFrame.RESULT,id,0,0,ProbeResultSummary.encode(report)));
+                sender.apply(ProbeFrame.control(ProbeFrame.COMPLETE,id));
+            } catch(RuntimeException unavailable) {
+                report.addProperty("peer_summary_delivery","not_queued");
+            }
+        }
         completion.accept(report);
     }
 

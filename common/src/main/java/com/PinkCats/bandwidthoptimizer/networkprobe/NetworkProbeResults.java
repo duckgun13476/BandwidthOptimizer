@@ -34,7 +34,7 @@ public final class NetworkProbeResults {
                     "write_backpressure_ticks","max_event_loop_scheduling_delay_ns","last_error_class",
                     "disconnect_category","tcp_start","tcp_end","tcp_last_observed","tcp_last_observed_elapsed_ns",
                     "tcp_terminal_sample_supported","tcp_baseline_elapsed_ns","analysis","phases",
-                    "findings_version","findings_scope","findings"};
+                    "findings_version","findings_scope","findings","peer_summary_status","peer_summary"};
             for(String field:fields) if(localReport.has(field)) summary.add(field,localReport.get(field).deepCopy());
             String text=summary.toString();
             if(text.getBytes(StandardCharsets.UTF_8).length>MAX_SUMMARY_BYTES) {

@@ -51,12 +51,16 @@ public final class NetworkProbeTcpRegressionMain {
                     throw new AssertionError("Unsupported NIO must not invent TCP counters");
             }
             if(delayedReply) {
+                // The exact report must survive the real socket as a bounded binary summary.
                 JsonObject baseline=sr.get().getAsJsonObject("analysis").getAsJsonObject("application_rtt_by_phase").getAsJsonObject("BASELINE");
                 if(baseline.get("samples").getAsInt()<3 || baseline.get("p50_ns").getAsLong()<60_000_000L)
                     throw new AssertionError("Injected application delay not observed: "+baseline);
                 if(!sr.get().get("packet_loss_rate").getAsString().equals("unknown"))
                     throw new AssertionError("Application delay must not be called packet loss");
             }
+            if(!"received".equals(cr.get().get("peer_summary_status").getAsString())
+                    || !ProbeResultSummary.decode(ProbeResultSummary.encode(sr.get())).equals(cr.get().getAsJsonObject("peer_summary")))
+                throw new AssertionError("Server summary did not round-trip exactly");
             System.out.println("NETWORK_PROBE_TCP_PASS java="+Runtime.version()+" delayed_application_reply="+delayedReply+" upload="+
                     sr.get().getAsJsonObject("phases").getAsJsonObject("upload_received")+
                     " download="+sr.get().getAsJsonObject("phases").getAsJsonObject("download_peer_receipt"));

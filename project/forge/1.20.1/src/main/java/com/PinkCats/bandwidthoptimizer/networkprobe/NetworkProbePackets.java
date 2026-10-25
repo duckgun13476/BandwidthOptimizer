@@ -17,13 +17,13 @@ import net.minecraftforge.network.simple.SimpleChannel;
 
 /** Only native PLAY framing; diagnostic data bypasses BO optimization, not MC encryption. */
 public final class NetworkProbePackets {
-    public static final ResourceLocation ID=ResourceLocation.fromNamespaceAndPath(Bandwidthoptimizer.MODID,"network_probe_v1");
+    public static final ResourceLocation ID=ResourceLocation.fromNamespaceAndPath(Bandwidthoptimizer.MODID,"network_probe_v2");
     private static boolean registered;
     private NetworkProbePackets() {}
     private static SimpleChannel registration;
     public static synchronized void register() {
         if(registered) return; registered=true;
-        registration=NetworkRegistry.newSimpleChannel(ID,()->"1",NetworkRegistry.acceptMissingOr("1"),NetworkRegistry.acceptMissingOr("1"));
+        registration=NetworkRegistry.newSimpleChannel(ID,()->"2",NetworkRegistry.acceptMissingOr("2"),NetworkRegistry.acceptMissingOr("2"));
     }
     public static boolean canSend(ServerPlayer player) { return registration!=null && registration.isRemotePresent(player.connection.connection); }
     public static boolean isProbe(Object packet) { return packet instanceof ClientboundCustomPayloadPacket c && ID.equals(c.getIdentifier())
