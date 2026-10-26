@@ -24,6 +24,7 @@ public final class NetworkProbeService {
     private static final AttributeKey<Long> GENERATION=AttributeKey.valueOf("bo:network_probe_backend_generation");
     private NetworkProbeService() {}
     public static void install(Channel channel) {
+        LinuxTcpInfo.prepare();
         if(channel.pipeline().get(ProbeConnectionMonitor.NAME)==null)
             channel.pipeline().addFirst(ProbeConnectionMonitor.NAME,new ProbeConnectionMonitor());
     }

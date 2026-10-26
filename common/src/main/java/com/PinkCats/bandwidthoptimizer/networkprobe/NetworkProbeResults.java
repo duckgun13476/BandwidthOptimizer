@@ -36,6 +36,7 @@ public final class NetworkProbeResults {
                     "tcp_terminal_sample_supported","tcp_baseline_elapsed_ns","analysis","phases",
                     "findings_version","findings_scope","findings","peer_summary_status","peer_summary"};
             for(String field:fields) if(localReport.has(field)) summary.add(field,localReport.get(field).deepCopy());
+            summary.add("trace",NetworkProbeTrace.build(localReport));
             String text=summary.toString();
             if(text.getBytes(StandardCharsets.UTF_8).length>MAX_SUMMARY_BYTES) {
                 // Retain an explicitly incomplete result, never turn missing details into a clean bill of health.

@@ -12,9 +12,13 @@ import java.time.format.DateTimeFormatter;
 /** Shared layout and product text; version adapters implement only rendering and widget construction. */
 public abstract class NetworkAnalysisScreenBase extends Screen {
     protected record TextAt(FormattedCharSequence text,int x,int y) {}
+    protected record RectAt(int x1,int y1,int x2,int y2,int color) {}
     private final Screen parent;
     private int page,ticks;
-    private boolean details;
+    private boolean details,charts;
+    private JsonObject chartReport;
+    private NetworkAnalysisChart.Plot plot;
+    private int plotPage=-1,plotWidth,plotHeight;
     private List<Component> text=List.of();
     private Button action,previous,next,detailsToggle;
     protected NetworkAnalysisScreenBase(Screen parent){super(Component.translatable("bo.network.title"));this.parent=parent;}
@@ -29,9 +33,11 @@ public abstract class NetworkAnalysisScreenBase extends Screen {
             if(NetworkAnalysisClient.FLOW.active()) NetworkAnalysisClient.cancel(); else NetworkAnalysisClient.retry();
             refresh();
         }));
-        previous=addRenderableWidget(NetworkAnalysisPlatform.button(x,height-48,w,Component.literal("<"),()->page=Math.max(0,page-1)));
-        detailsToggle=addRenderableWidget(NetworkAnalysisPlatform.button(x+w+4,height-48,w,Component.translatable("bo.network.details"),()->{details=!details;page=0;refresh();}));
-        next=addRenderableWidget(NetworkAnalysisPlatform.button(x+2*w+8,height-48,w,Component.literal(">"),()->page++));
+        int tabW=Math.max(45,Math.min(82,(width-40-12)/4)),tabX=(width-tabW*4-12)/2;
+        previous=addRenderableWidget(NetworkAnalysisPlatform.button(tabX,height-48,tabW,Component.literal("<"),()->page=Math.max(0,page-1)));
+        addRenderableWidget(NetworkAnalysisPlatform.button(tabX+tabW+4,height-48,tabW,Component.translatable("bo.network.charts"),()->{charts=!charts;details=false;page=0;refresh();}));
+        detailsToggle=addRenderableWidget(NetworkAnalysisPlatform.button(tabX+2*tabW+8,height-48,tabW,Component.translatable("bo.network.details"),()->{details=!details;charts=false;page=0;refresh();}));
+        next=addRenderableWidget(NetworkAnalysisPlatform.button(tabX+3*tabW+12,height-48,tabW,Component.literal(">"),()->page++));
         refresh();
     }
     @Override public void tick(){if(++ticks%10==0) refresh();}
@@ -42,7 +48,7 @@ public abstract class NetworkAnalysisScreenBase extends Screen {
         NetworkAnalysisFlow flow=NetworkAnalysisClient.FLOW;
         ArrayList<Component> lines=new ArrayList<>(); lines.add(title);
         String state=flow.state(); String known=switch(state){
-            case "idle","waiting_world","stabilizing","queued","waiting_for_authorization","running","completed","cancelled","connection_changed","unsupported","world_not_ready","server_busy_or_cooldown","server_disabled","authorization_timeout","busy_or_cooldown","already_running" -> state;
+            case "idle","waiting_multiplayer","waiting_world","stabilizing","queued","waiting_for_authorization","running","completed","cancelled","connection_changed","unsupported","world_not_ready","server_busy_or_cooldown","server_disabled","authorization_timeout","busy_or_cooldown","already_running" -> state;
             default -> "failed";
         };
         lines.add(Component.translatable("bo.network.state."+known));
@@ -52,8 +58,10 @@ public abstract class NetworkAnalysisScreenBase extends Screen {
             lines.add(Component.translatable("bo.network.progress",number(progress.sentBytes()/1e6),number(progress.receivedBytes()/1e6),number(progress.budgetBytes()/1e6)));
         }
         var saved=flow.result();
+        chartReport=null;plot=null;
         if(saved!=null) {
             JsonObject report=saved.json();
+            chartReport=report;
             if(report.has("result_status")) lines.add(Component.translatable("bo.network.incomplete"));
             else {
                 if(report.has("outcome") && !report.get("outcome").getAsString().equals("completed") && report.has("disconnect_category")) {
@@ -65,15 +73,18 @@ public abstract class NetworkAnalysisScreenBase extends Screen {
                     };
                     if(observed!=null) lines.add(Component.translatable(observed));
                 }
-                for(String key:NetworkAnalysisOverview.keys(report)) lines.add(Component.translatable(key));
+                for(var row:NetworkAnalysisOverview.rows(report)) {
+                    Object[] args=row.args().stream().map(arg->arg instanceof String key && key.startsWith("bo.network.")?Component.translatable(key):arg).toArray();
+                    lines.add(Component.translatable(row.key(),args));
+                }
                 if(details) appendDetails(lines,report);
             }
         } else if(state.equals("completed")) lines.add(Component.translatable("bo.network.incomplete"));
         if(details) lines.add(Component.translatable("bo.network.scope"));
         text=List.copyOf(lines);
         detailsToggle.setMessage(Component.translatable(details?"bo.network.overview":"bo.network.details"));
-        action.setMessage(Component.translatable(flow.active()?"bo.network.cancel":"bo.network.retry"));
-        action.active=flow.active() || NetworkAnalysisClient.endpoint()!=null;
+        action.setMessage(Component.translatable(flow.active()?"bo.network.cancel":flow.result()==null?"bo.network.start":"bo.network.retry"));
+        action.active=true;
     }
     private void appendDetails(List<Component> lines,JsonObject report) {
         if(report.has("started_at_epoch_ms")) lines.add(Component.translatable("bo.network.started",DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(report.get("started_at_epoch_ms").getAsLong()))));
@@ -121,6 +132,11 @@ public abstract class NetworkAnalysisScreenBase extends Screen {
         }
     }
     protected List<TextAt> layout(){
+        if(charts) {
+            preparePlot();ArrayList<TextAt> labels=new ArrayList<>();
+            for(var label:plot.labels()) labels.add(new TextAt(Component.translatable(label.key(),label.args().toArray()).getVisualOrderText(),label.x(),label.y()));
+            return labels;
+        }
         ArrayList<FormattedCharSequence> wrapped=new ArrayList<>();
         for(Component line:text) wrapped.addAll(font.split(line,Math.max(80,width-40)));
         int perPage=Math.max(1,(height-70)/12),pages=Math.max(1,(wrapped.size()+perPage-1)/perPage);
@@ -128,6 +144,16 @@ public abstract class NetworkAnalysisScreenBase extends Screen {
         previous.active=page>0;next.active=page<pages-1;next.setMessage(Component.literal((page+1)+"/"+pages+" >"));
         for(int i=page*perPage;i<Math.min(wrapped.size(),(page+1)*perPage);i++) drawn.add(new TextAt(wrapped.get(i),20,12+(i-page*perPage)*12));
         return drawn;
+    }
+    private void preparePlot(){
+        page=Math.max(0,Math.min(2,page));previous.active=page>0;next.active=page<2;next.setMessage(Component.literal((page+1)+"/3 >"));
+        if(plot==null || plotPage!=page || plotWidth!=width || plotHeight!=height) {
+            plot=NetworkAnalysisChart.plot(chartReport,page,width,height);plotPage=page;plotWidth=width;plotHeight=height;
+        }
+    }
+    protected List<RectAt> chartRects(){
+        if(!charts) return List.of();preparePlot();
+        return plot.boxes().stream().map(b->new RectAt(b.x1(),b.y1(),b.x2(),b.y2(),b.color())).toList();
     }
     @Override public void onClose(){NetworkAnalysisPlatform.screen(parent);}
     @Override public boolean isPauseScreen(){return false;}

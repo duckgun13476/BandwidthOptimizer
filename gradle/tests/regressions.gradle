@@ -10,6 +10,10 @@ if(project.name == 'forge-1.20.1') {
         duplicatesStrategy = DuplicatesStrategy.EXCLUDE
         from(sourceSets.main.output.classesDirs) { into 'classes' }
         from(sourceSets.test.output.classesDirs) { into 'classes' }
+        from(rootProject.file('common/src/main/resources/META-INF/bandwidthoptimizer/native')) {
+            include 'bo-tcp-info-linux-x86_64.so'
+            into 'classes/META-INF/bandwidthoptimizer/native'
+        }
         from({ sourceSets.test.runtimeClasspath.files.findAll {
             it.name.endsWith('.jar') && (it.name.startsWith('netty-') || it.name.startsWith('gson-')
                 || it.name.startsWith('log4j-') || it.name.startsWith('slf4j-'))

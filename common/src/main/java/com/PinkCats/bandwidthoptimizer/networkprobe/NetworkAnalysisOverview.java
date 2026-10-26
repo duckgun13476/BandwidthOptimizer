@@ -5,6 +5,7 @@ import java.util.*;
 
 /** Player-facing observations only; never turns TCP retransmissions into a packet-loss percentage. */
 final class NetworkAnalysisOverview {
+    record Row(String key,List<Object> args) {}
     private NetworkAnalysisOverview() {}
 
     static List<String> keys(JsonObject report) {
@@ -20,6 +21,52 @@ final class NetworkAnalysisOverview {
             issues.add("bo.network.incomplete");
         if(issues.isEmpty()) issues.add("bo.network.summary.no_issues");
         return List.copyOf(issues);
+    }
+
+    static List<Row> rows(JsonObject report) {
+        ArrayList<Row> rows=new ArrayList<>();
+        for(String key:keys(report)) {
+            if(key.equals("bo.network.summary.retransmission")) {
+                appendRetransmission(rows,report.getAsJsonObject("analysis"),false);
+                JsonObject peer=report.getAsJsonObject("peer_summary");
+                if(peer!=null) appendRetransmission(rows,peer.getAsJsonObject("metrics"),true);
+            } else if(key.startsWith("bo.network.summary.") && (key.endsWith("_latency") || key.endsWith("_rate") || key.endsWith("_pause"))) {
+                JsonObject evidence=evidence(report,key);
+                if(evidence==null) {rows.add(new Row("bo.network.summary.other",List.of()));continue;}
+                // Keep normal measurements in details; overview uses the same player thresholds as charts.
+                if(key.endsWith("_latency") && number(evidence,"loaded_p95_ns")<200_000_000) continue;
+                if(key.endsWith("_rate") && number(evidence,"receiver_goodput_bytes_s")>200_000) continue;
+                List<Object> args=key.endsWith("_latency")?List.of(format(number(evidence,"baseline_p95_ns")/1e6),format(number(evidence,"loaded_p95_ns")/1e6),format((number(evidence,"loaded_p95_ns")-number(evidence,"baseline_p95_ns"))/1e6)):
+                        key.endsWith("_pause")?List.of(format(number(evidence,"no_progress_duration_ns")/1e6)):
+                        List.of(format(number(evidence,"receiver_goodput_bytes_s")/1000),format(number(evidence,"configured_sender_rate_bytes_s")/1000));
+                rows.add(new Row(key,args));
+            } else rows.add(new Row(key,List.of()));
+        }
+        if(rows.isEmpty()) rows.add(new Row("bo.network.summary.no_issues",List.of()));
+        return List.copyOf(rows);
+    }
+    private static void appendRetransmission(List<Row> rows,JsonObject metrics,boolean server) {
+        if(metrics==null) return;
+        String prefix=server?"tcp_":"local_tcp_",suffix=server?"":"_delta";
+        boolean bytes=positive(metrics,prefix+"retransmitted_bytes"+suffix);
+        double retrans=number(metrics,prefix+"retransmitted_"+(bytes?"bytes":"segments")+suffix);
+        if(!(retrans>0)) return;
+        double sent=number(metrics,prefix+"sent_"+(bytes?"bytes":"segments")+suffix);
+        String fraction=sent>=retrans && sent>0?format(100*retrans/sent)+"%":"bo.network.rate_unavailable";
+        rows.add(new Row(server?"bo.network.summary.server_retransmission":"bo.network.summary.client_retransmission",List.of(format(retrans),bytes?"bo.network.unit.bytes":"bo.network.unit.segments",fraction)));
+    }
+    private static String format(double value) {return String.format(Locale.ROOT,"%.2f",value);}
+    private static double number(JsonObject o,String key) {return o!=null && o.has(key)?o.get(key).getAsDouble():Double.NaN;}
+    private static JsonObject evidence(JsonObject report,String key) {
+        JsonObject peer=report.getAsJsonObject("peer_summary");
+        for(JsonArray findings:new JsonArray[]{peer==null?null:peer.getAsJsonArray("findings"),report.getAsJsonArray("findings")}) {
+            if(findings==null) continue;
+            for(JsonElement element:findings) {
+                JsonArray single=new JsonArray();single.add(element);Set<String> found=new HashSet<>();append(found,single);
+                if(found.contains(key)) return element.getAsJsonObject().getAsJsonObject("evidence");
+            }
+        }
+        return null;
     }
 
     private static boolean retransmitted(JsonObject metrics,String prefix) {

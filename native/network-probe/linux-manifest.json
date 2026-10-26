@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "architecture": "linux-x86_64",
+  "so_sha256": "6e69fd5e8c5310f22d1d30c02003d74e9cbe2cda3ad2910542c65fe4df98fdb1",
+  "source_sha256": "e0ff94bbb36ecfb064dfe1a6496c041bbc254ea6373922aa5010f5a7ca8780dd",
+  "compiler": "Debian GCC12.2.0",
+  "jni": "OpenJDK17 JNI ABI",
+  "scope": "read-only getsockopt TCP_INFO over exact owned epoll fd; data-segment denominator; no socket creation/options/send/close or scans"
+}

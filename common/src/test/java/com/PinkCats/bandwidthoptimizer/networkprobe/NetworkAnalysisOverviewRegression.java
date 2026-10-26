@@ -13,6 +13,24 @@ final class NetworkAnalysisOverviewRegression {
         check(NetworkAnalysisOverview.keys(report).equals(List.of("bo.network.summary.retransmission")),"Linux sender retransmissions remain visible despite client zero");
         report.getAsJsonObject("analysis").addProperty("local_tcp_retransmitted_bytes_delta",3000);
         check(NetworkAnalysisOverview.keys(report).size()==1,"both endpoints deduplicate retransmission issue without loss percentage");
+        JsonObject numeric=JsonParser.parseString("{\"outcome\":\"completed\",\"analysis\":{\"local_tcp_retransmitted_bytes_delta\":1250,\"local_tcp_sent_bytes_delta\":50000},\"peer_summary\":{\"metrics\":{\"tcp_retransmitted_segments\":5,\"tcp_sent_segments\":100}},\"findings\":[]}").getAsJsonObject();
+        expectRow(numeric,"bo.network.summary.client_retransmission",List.of("1250.00","bo.network.unit.bytes","2.50%"),"Windows byte retransmission rate uses sent-byte denominator");
+        expectRow(numeric,"bo.network.summary.server_retransmission",List.of("5.00","bo.network.unit.segments","5.00%"),"Linux segment retransmission rate uses sent-segment denominator");
+        numeric.getAsJsonObject("analysis").remove("local_tcp_sent_bytes_delta");
+        numeric.getAsJsonObject("peer_summary").getAsJsonObject("metrics").remove("tcp_sent_segments");
+        expectRow(numeric,"bo.network.summary.client_retransmission",List.of("1250.00","bo.network.unit.bytes","bo.network.rate_unavailable"),"missing Windows denominator does not fabricate a rate");
+        expectRow(numeric,"bo.network.summary.server_retransmission",List.of("5.00","bo.network.unit.segments","bo.network.rate_unavailable"),"missing Linux denominator does not fabricate a rate");
+
+        JsonObject measured=JsonParser.parseString("{\"outcome\":\"completed\",\"analysis\":{},\"peer_summary\":{\"metrics\":{},\"findings\":[]},\"findings\":[]}").getAsJsonObject();
+        measured.getAsJsonArray("findings").add(findingWithEvidence("loaded_application_latency_increase","RECEIVE_DOWNLOAD",40_000_000L,250_000_000L,0,0));
+        measured.getAsJsonArray("findings").add(findingWithEvidence("receive_rate_below_configured_sender_rate","download_received",0,0,510_000,1_000_000));
+        expectRow(measured,"bo.network.summary.download_latency",List.of("40.00","250.00","210.00"),"latency row reports actual, baseline, and increase");
+        check(NetworkAnalysisOverview.rows(measured).stream().noneMatch(row->row.key().equals("bo.network.summary.download_rate")),"510 KB/s above the green threshold is omitted from overview rows");
+        measured.getAsJsonArray("findings").get(1).getAsJsonObject().getAsJsonObject("evidence").addProperty("receiver_goodput_bytes_s",150_000);
+        expectRow(measured,"bo.network.summary.download_rate",List.of("150.00","1000.00"),"low rate row reports measured receive rate and configured target");
+        JsonObject ordinaryLatency=JsonParser.parseString("{\"outcome\":\"completed\",\"analysis\":{},\"peer_summary\":{\"metrics\":{},\"findings\":[]},\"findings\":[]}").getAsJsonObject();
+        ordinaryLatency.getAsJsonArray("findings").add(findingWithEvidence("loaded_application_latency_increase","RECEIVE_DOWNLOAD",40_000_000L,60_000_000L,0,0));
+        check(NetworkAnalysisOverview.rows(ordinaryLatency).stream().noneMatch(row->row.key().equals("bo.network.summary.download_latency")),"normal 60 ms loaded latency stays out of overview regardless of baseline increase");
         JsonArray findings=new JsonArray();
         findings.add(finding("loaded_application_latency_increase","SEND_DOWNLOAD"));
         report.getAsJsonObject("peer_summary").add("findings",findings.deepCopy());
@@ -46,5 +64,14 @@ final class NetworkAnalysisOverviewRegression {
         JsonObject finding=new JsonObject(),evidence=new JsonObject();
         finding.addProperty("code",code); evidence.addProperty("phase",phase); finding.add("evidence",evidence);
         return finding;
+    }
+    private static JsonObject findingWithEvidence(String code,String phase,long baseline,long loaded,long received,long configured) {
+        JsonObject finding=finding(code,phase),evidence=finding.getAsJsonObject("evidence");
+        evidence.addProperty("baseline_p95_ns",baseline); evidence.addProperty("loaded_p95_ns",loaded);
+        evidence.addProperty("receiver_goodput_bytes_s",received); evidence.addProperty("configured_sender_rate_bytes_s",configured);
+        return finding;
+    }
+    private static void expectRow(JsonObject report,String key,List<?> expected,String message) {
+        check(NetworkAnalysisOverview.rows(report).stream().anyMatch(row->row.key().equals(key)&&row.args().equals(expected)),message);
     }
 }

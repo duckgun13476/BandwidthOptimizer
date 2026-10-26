@@ -34,6 +34,7 @@ public final class TcpSocketMetrics {
             read(info,result,"unacked","unacked_segments");
             read(info,result,"retrans","currently_retransmitted_segments");
             read(info,result,"totalRetrans","total_retransmitted_segments");
+            LinuxTcpInfo.append(channel,result);
         } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
             result.addProperty("status","unavailable");
             result.addProperty("reason",failure.getClass().getSimpleName());

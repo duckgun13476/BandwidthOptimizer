@@ -126,7 +126,7 @@ def run_case(name):
             command(['tc', 'filter', 'add', 'dev', 'lo', 'parent', '1:', 'protocol', 'ip', 'prio', str(band),
                      'u32', 'match', 'ip', field, str(PORT), '0xffff', 'flowid', f'1:{band}'])
         with (root / 'java.log').open('w') as log:
-            proc = subprocess.Popen(['java', '-Xmx256m', '-cp', '/runtime/classes:/runtime/lib/*',
+            proc = subprocess.Popen(['java', '-Xmx256m', '-Dbandwidthoptimizer.outputDirectory='+str(root/'native-output'), '-cp', '/runtime/classes:/runtime/lib/*',
                                      'com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbeFaultRegressionMain',
                                      str(root), name], stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
             wait_for(root / 'ready', proc)

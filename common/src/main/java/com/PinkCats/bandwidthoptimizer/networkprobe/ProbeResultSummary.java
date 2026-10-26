@@ -8,7 +8,7 @@ final class ProbeResultSummary {
     private static final String[] METRICS={"started_at_epoch_ms","elapsed_ns","budget_bytes_per_direction","rate_limit_bytes_s",
             "upload_verified_bytes","upload_receive_ns","download_verified_bytes","download_receive_ns",
             "baseline_p50_ns","baseline_p95_ns","upload_p50_ns","upload_p95_ns","download_p50_ns","download_p95_ns",
-            "tcp_retransmitted_bytes","tcp_retransmitted_segments","tcp_delta_window_start_ns","tcp_delta_window_end_ns"};
+            "tcp_retransmitted_bytes","tcp_retransmitted_segments","tcp_delta_window_start_ns","tcp_delta_window_end_ns","tcp_sent_bytes","tcp_sent_segments"};
     private static final String[] CODES={"loaded_application_latency_increase","receive_pause_recovered","receive_rate_below_configured_sender_rate"};
     private static final String[] PHASES={"RECEIVE_UPLOAD","SEND_DOWNLOAD","upload_received"};
     private static final String[] VALUES={"baseline_samples","loaded_samples","baseline_p95_ns","loaded_p95_ns",
@@ -36,9 +36,11 @@ final class ProbeResultSummary {
         copy(metrics,"tcp_retransmitted_segments",analysis,"local_tcp_retransmitted_segments_delta");
         copy(metrics,"tcp_delta_window_start_ns",analysis,"tcp_delta_window_start_ns");
         copy(metrics,"tcp_delta_window_end_ns",analysis,"tcp_delta_window_end_ns");
+        copy(metrics,"tcp_sent_bytes",analysis,"local_tcp_sent_bytes_delta");
+        copy(metrics,"tcp_sent_segments",analysis,"local_tcp_sent_segments_delta");
         try {
             ByteArrayOutputStream bytes=new ByteArrayOutputStream(); DataOutputStream out=new DataOutputStream(bytes);
-            out.writeByte(1);
+            out.writeByte(2);
             for(String key:METRICS) out.writeLong(metrics.has(key)?metrics.get(key).getAsLong():-1);
             JsonArray findings=report.getAsJsonArray("findings");
             if(findings.size()>6) throw new IllegalArgumentException("Too many findings");
@@ -49,6 +51,7 @@ final class ProbeResultSummary {
                 out.writeByte(index(PHASES,evidence.get("phase").getAsString()));
                 for(String key:VALUES) out.writeDouble(evidence.has(key)?evidence.get(key).getAsDouble():-1);
             }
+            NetworkProbeTrace.write(out,NetworkProbeTrace.build(report));
             out.flush(); byte[] data=bytes.toByteArray();
             decode(data); // Local output must obey the same schema as remote input.
             return data;
@@ -58,9 +61,10 @@ final class ProbeResultSummary {
         if(bytes.length>2048) throw new IllegalArgumentException("Oversized summary");
         try {
             DataInputStream in=new DataInputStream(new ByteArrayInputStream(bytes));
-            if(in.readUnsignedByte()!=1) throw new IllegalArgumentException("Summary version");
+            int version=in.readUnsignedByte();if(version!=1 && version!=2) throw new IllegalArgumentException("Summary version");
             JsonObject metrics=new JsonObject();
             for(String key:METRICS) {
+                if(version==1 && (key.equals("tcp_sent_bytes") || key.equals("tcp_sent_segments"))) continue;
                 long value=in.readLong(); if(value< -1) throw new IllegalArgumentException("Invalid metric");
                 if(value>=0) metrics.addProperty(key,value);
             }
@@ -94,10 +98,11 @@ final class ProbeResultSummary {
                 for(String key:requiredEvidence[code]) if(!evidence.has(key)) throw new IllegalArgumentException("Incomplete finding evidence");
                 finding.add("evidence",evidence); findings.add(finding);
             }
+            JsonObject trace=version==2?NetworkProbeTrace.read(in):null;
             if(in.available()!=0) throw new IllegalArgumentException("Trailing summary data");
             JsonObject result=new JsonObject(); result.addProperty("v",1); result.addProperty("side","server");
             result.addProperty("outcome","completed"); result.addProperty("scope","peer_report; TCP counters cover server local socket only");
-            result.add("metrics",metrics); result.add("findings",findings); return result;
+            result.add("metrics",metrics); result.add("findings",findings);if(trace!=null) result.add("trace",trace);return result;
         } catch(IOException failure) { throw new IllegalArgumentException("Incomplete summary",failure); }
     }
     private static long required(JsonObject object,String key) {

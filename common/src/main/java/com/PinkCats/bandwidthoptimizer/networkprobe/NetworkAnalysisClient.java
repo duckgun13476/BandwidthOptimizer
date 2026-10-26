@@ -38,6 +38,8 @@ public final class NetworkAnalysisClient {
             // inspecting the old/new connection. Never restart a test while waiting.
             if(FLOW.ticket()!=null && FLOW.result()==null) resultPollTicks=100;
             NetworkAnalysisPlatform.finished();
+            if(FLOW.state().equals("completed") && Minecraft.getInstance().getConnection()!=null
+                    && !(NetworkAnalysisPlatform.screen() instanceof NetworkAnalysisScreenBase)) openRequested=true;
         }
         if(FLOW.result()!=null) resultPollTicks=0;
         wasActive=FLOW.active();
@@ -45,7 +47,7 @@ public final class NetworkAnalysisClient {
     }
     public static void requestOpen(){openRequested=true;}
     public static void open(Screen parent){NetworkAnalysisPlatform.screen(new NetworkAnalysisScreen(parent));}
-    public static void retry(){FLOW.retry(endpoint(),System.nanoTime());}
+    public static void retry(){FLOW.start(endpoint(),System.nanoTime());wasActive=FLOW.active();}
     public static void cancel(){FLOW.cancel(endpoint());}
     public static Component toggleLabel(){return Component.translatable(FLOW.armed()?"bo.network.selected":"bo.network.unselected");}
     public static Component compactToggleLabel(){return Component.literal(FLOW.armed()?"+":"-").withStyle(FLOW.armed()?net.minecraft.ChatFormatting.GREEN:net.minecraft.ChatFormatting.GRAY);}

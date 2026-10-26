@@ -13,7 +13,7 @@ import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 
 /** Only native PLAY framing; diagnostic data bypasses BO optimization, not MC encryption. */
 public final class NetworkProbePackets {
-    public static final ResourceLocation ID=ResourceLocation.fromNamespaceAndPath(Bandwidthoptimizer.MODID,"network_probe_v2");
+    public static final ResourceLocation ID=ResourceLocation.fromNamespaceAndPath(Bandwidthoptimizer.MODID,"network_probe_v3");
     private static boolean registered;
     private NetworkProbePackets() {}
     public static synchronized void register() {

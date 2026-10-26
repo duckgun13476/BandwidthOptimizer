@@ -16,13 +16,13 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 
 /** Only native PLAY framing; diagnostic data bypasses BO optimization, not MC encryption. */
 public final class NetworkProbePackets {
-    public static final ResourceLocation ID=new ResourceLocation(Bandwidthoptimizer.MODID,"network_probe_v2");
+    public static final ResourceLocation ID=new ResourceLocation(Bandwidthoptimizer.MODID,"network_probe_v3");
     private static boolean registered;
     private NetworkProbePackets() {}
     public static synchronized void register() {
         if(registered) return; registered=true;
         com.pinkcats.torque.layer.TorqueLayer.platform().network().registerAcceptedPayloadChannel(
-                com.pinkcats.torque.layer.net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(ID.getNamespace(),ID.getPath()),"2");
+                com.pinkcats.torque.layer.net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(ID.getNamespace(),ID.getPath()),"3");
     }
     public static boolean canSend(ServerPlayer player) { return ServerPlayNetworking.canSend(player,ID); }
     public static boolean isProbe(Object packet) { return packet instanceof ClientboundCustomPayloadPacket c && ID.equals(c.getIdentifier())

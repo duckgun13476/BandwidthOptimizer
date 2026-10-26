@@ -6,6 +6,7 @@ public final class NetworkAnalysisScreen extends NetworkAnalysisScreenBase {
  @Override public void extractRenderState(GuiGraphicsExtractor g,int mouseX,int mouseY,float delta) {
   g.fill(0,0,width,height,0xE0101820);
   super.extractRenderState(g,mouseX,mouseY,delta);
+  for(var rect:chartRects()) g.fill(rect.x1(),rect.y1(),rect.x2(),rect.y2(),rect.color());
   for(var line:layout()) g.textRenderer().accept(line.x(),line.y(),line.text());
  }
 }

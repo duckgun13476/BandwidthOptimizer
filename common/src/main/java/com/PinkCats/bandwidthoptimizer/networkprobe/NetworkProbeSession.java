@@ -336,6 +336,13 @@ final class NetworkProbeSession {
             if(delta>=0) analysis.addProperty("local_tcp_retransmitted_segments_delta",delta);
             else analysis.addProperty("retransmission_delta_status","counter_reset_or_wrap");
         }
+        for(String unit:new String[]{"bytes","segments"}) {
+            String key=unit.equals("bytes")?"total_bytes_out":"total_sent_segments";
+            if(tcpStart.has(key) && tcpLastObserved.has(key)) {
+                long delta=tcpLastObserved.get(key).getAsLong()-tcpStart.get(key).getAsLong();
+                if(delta>=0) analysis.addProperty("local_tcp_sent_"+unit+"_delta",delta);
+            }
+        }
         JsonObject quantiles=new JsonObject();
         for(Phase p:Phase.values()) {
             long[] values=new long[pingCount]; int n=0;

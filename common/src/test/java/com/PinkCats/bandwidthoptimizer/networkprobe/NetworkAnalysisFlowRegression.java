@@ -53,6 +53,16 @@ final class NetworkAnalysisFlowRegression {
         NetworkProbeResults.record(new NetworkProbeResults.Key(peer.channel,peer.ticket.id(),false),report);
         flow.tick(null,215_000_000_000L);
         check(flow.result()!=null && flow.state().equals("cancelled") && !flow.active(),"late partial result collected without an endpoint or reactivation");
+        flow=new NetworkAnalysisFlow();peer=new Peer();
+        flow.start(null,0);check(flow.armed() && flow.active() && flow.state().equals("waiting_multiplayer"),"start at menu waits for multiplayer");
+        flow.tick(null,10_000_000_000L);check(flow.armed() && peer.requests==0,"menu waiting does not send");
+        flow.tick(peer,11_000_000_000L);peer.ready=true;flow.tick(peer,12_000_000_000L);flow.tick(peer,17_000_000_000L);
+        check(peer.requests==1 && !flow.armed(),"join automatically consumes queued sample once");
+        flow.cancel(peer);flow.start(peer,18_000_000_000L);
+        check(peer.requests==2,"explicit in-world resample starts immediately");
+        flow.start(peer,19_000_000_000L);check(peer.requests==2,"double click cannot start duplicate probe");
+        flow.cancel(peer);flow.start(null,20_000_000_000L);flow.cancel(null);flow.tick(peer,21_000_000_000L);
+        check(!flow.armed() && peer.requests==2,"cancelled menu request cannot start on join");
         System.out.println("NETWORK_ANALYSIS_FLOW_PASS checks="+checks);
     }
 }

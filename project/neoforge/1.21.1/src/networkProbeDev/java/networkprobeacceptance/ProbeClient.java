@@ -13,7 +13,7 @@ final class ProbeClient {
         if(!System.getProperty("networkprobe.policy","").isEmpty()) {ProbePolicy.install();return;}
         if(Boolean.getBoolean("networkprobe.lifecycle")) {ProbeLifecycle.install();return;}
         if(Boolean.getBoolean("networkprobe.clientRequest"))
-            com.PinkCats.bandwidthoptimizer.networkprobe.NetworkAnalysisClient.FLOW.armed(true);
+            com.PinkCats.bandwidthoptimizer.networkprobe.NetworkAnalysisClient.FLOW.start(null,System.nanoTime());
         NeoForge.EVENT_BUS.addListener((ClientTickEvent.Post e) -> {
             var mc=Minecraft.getInstance();
             if(Boolean.getBoolean("networkprobe.clientRequest") && mc.level!=null && mc.player!=null && mc.getConnection()!=null
@@ -29,6 +29,7 @@ final class ProbeClient {
             if(++ticks%20!=0) return;
             var report=ProbeAcceptance.read("client");
             if(report!=null && resultTick<0) {
+                if(Boolean.getBoolean("networkprobe.clientRequest") && !com.PinkCats.bandwidthoptimizer.networkprobe.NetworkAnalysisClient.FLOW.state().equals("completed")) return;
                 report.addProperty("world_and_player_loaded",mc.level!=null && mc.player!=null);
                 report.addProperty("world_and_player_ever_loaded",everLoaded);
                 if(mc.getConnection()!=null) {
@@ -41,7 +42,8 @@ final class ProbeClient {
                     var flow=com.PinkCats.bandwidthoptimizer.networkprobe.NetworkAnalysisClient.FLOW;
                     report.addProperty("automatic_flow_state",flow.state());
                     report.addProperty("automatic_result_retained",flow.result()!=null && flow.result().key().testId().equals(request.id()));
-                    com.PinkCats.bandwidthoptimizer.networkprobe.NetworkAnalysisClient.open(mc.screen);
+                    if(!(mc.screen instanceof com.PinkCats.bandwidthoptimizer.networkprobe.NetworkAnalysisScreen)) throw new AssertionError("Completed automatic sample did not open its result screen");
+                    report.addProperty("automatic_result_screen_opened",true);
                 }
                 ProbeAcceptance.write("client-result.json",report);
                 resultTick=ticks;

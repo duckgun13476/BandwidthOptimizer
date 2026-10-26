@@ -44,6 +44,23 @@ def nativeProbeCheck = tasks.register('verifyNetworkProbeNative') {
 }
 tasks.named('processResources').configure { dependsOn nativeProbeCheck }
 
+def linuxProbeManifest = new File(boPublishingRepositoryRootDir, 'native/network-probe/linux-manifest.json')
+def linuxProbeSource = new File(boPublishingRepositoryRootDir, 'native/network-probe/linux-tcp-info.c')
+def linuxProbeResource = new File(boPublishingRepositoryRootDir, 'common/src/main/resources/META-INF/bandwidthoptimizer/native/bo-tcp-info-linux-x86_64.so')
+def linuxProbeLoader = new File(boPublishingRepositoryRootDir, 'common/src/main/java/com/PinkCats/bandwidthoptimizer/networkprobe/LinuxTcpInfo.java')
+nativeProbeCheck.configure {
+    inputs.files(linuxProbeManifest,linuxProbeSource,linuxProbeResource,linuxProbeLoader)
+    doLast {
+        def meta = new JsonSlurper().parse(linuxProbeManifest)
+        def sha = { byte[] bytes -> MessageDigest.getInstance('SHA-256').digest(bytes).encodeHex().toString() }
+        if(linuxProbeResource.length()<=0 || linuxProbeResource.length()>256*1024
+                || sha(linuxProbeResource.bytes)!=meta.so_sha256
+                || sha(linuxProbeSource.getText('UTF-8').replace('\r\n','\n').getBytes('UTF-8'))!=meta.source_sha256
+                || !linuxProbeLoader.getText('UTF-8').contains('SHA256="'+meta.so_sha256+'"'))
+            throw new GradleException('Linux TCP info source/resource/loader pin mismatch')
+    }
+}
+
 ext.boReadPublishingProperties = {
     def propertiesFile = new File(boPublishingRepositoryRootDir, 'api.properties')
     if (!propertiesFile.exists()) {

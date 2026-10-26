@@ -8,6 +8,7 @@ import io.netty.channel.epoll.*;
 import io.netty.handler.codec.*;
 import java.net.InetSocketAddress;
 import java.nio.file.*;
+import java.lang.reflect.Field;
 import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
@@ -15,6 +16,7 @@ import java.util.concurrent.atomic.AtomicReference;
 /** Linux-only isolated kernel fault experiment. Production probe session and real epoll TCP_INFO. */
 public final class NetworkProbeFaultRegressionMain {
     public static void main(String[] args) throws Exception {
+        requireLinuxTcpInfoLoaded();
         if(!Epoll.isAvailable()) throw new IllegalStateException("epoll required",Epoll.unavailabilityCause());
         Path root=Path.of(args[0]).toAbsolutePath().normalize();
         if(!Files.isDirectory(root) || Files.exists(root.resolve("result.json"))) throw new IllegalArgumentException("Fresh output required");
@@ -68,8 +70,30 @@ public final class NetworkProbeFaultRegressionMain {
                 Thread.sleep(10);
             }
             if(finished.getCount()!=0) throw new AssertionError("Probe did not terminate");
+            long serverRetrans=assertLinuxTcpInfo(sr.get(),"server",scenario);
+            long clientRetrans=assertLinuxTcpInfo(cr.get(),"client",scenario);
+            if(scenario.startsWith("loss") && serverRetrans+clientRetrans<=0)
+                throw new AssertionError("Injected loss produced no TCP retransmission on either exact probe socket");
+            JsonObject peerSummary=cr.get().getAsJsonObject("peer_summary");
+            JsonObject encoded=null;
+            if("completed".equals(sr.get().get("outcome").getAsString()) && "completed".equals(cr.get().get("outcome").getAsString())) {
+                if(peerSummary==null || !"received".equals(cr.get().get("peer_summary_status").getAsString()))
+                    throw new AssertionError("Client did not decode the server result summary");
+                assertLinuxTrace(peerSummary.getAsJsonObject("trace"),"peer summary");
+                encoded=ProbeResultSummary.decode(ProbeResultSummary.encode(sr.get()));
+                assertLinuxTrace(encoded.getAsJsonObject("trace"),"summary encode/decode round trip");
+            }
+            NetworkProbeResults.Store retained=new NetworkProbeResults.Store();
+            UUID testId=UUID.fromString(sr.get().get("test_id").getAsString());
+            NetworkProbeResults.Key key=new NetworkProbeResults.Key("fault-fixture",testId,true);
+            retained.record(key,sr.get());
+            JsonObject localTrace=retained.find(key).json().getAsJsonObject("trace");
+            assertLinuxTrace(localTrace,"local retained results");
             JsonObject result=new JsonObject(); result.addProperty("scenario",scenario);
             result.add("server",sr.get()); result.add("client",cr.get());
+            result.add("server_peer_summary",peerSummary);
+            result.add("server_summary_round_trip",encoded);
+            result.add("server_retained_trace",localTrace);
             Files.writeString(root.resolve("result.json"),result.toString(),StandardOpenOption.CREATE_NEW);
             System.out.println("FAULT_PROBE_FINISHED "+scenario);
         } finally {
@@ -79,6 +103,37 @@ public final class NetworkProbeFaultRegressionMain {
             acceptor.shutdownGracefully(0,2,TimeUnit.SECONDS).syncUninterruptibly();
             workers.shutdownGracefully(0,2,TimeUnit.SECONDS).syncUninterruptibly();
         }
+    }
+    private static void requireLinuxTcpInfoLoaded() throws Exception {
+        if(!System.getProperty("os.name","").equals("Linux")) throw new AssertionError("Linux required");
+        LinuxTcpInfo.prepare();
+        Field loaded=LinuxTcpInfo.class.getDeclaredField("loaded");
+        loaded.setAccessible(true);
+        long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(3);
+        while(!loaded.getBoolean(null) && System.nanoTime()<deadline) Thread.sleep(10);
+        if(!loaded.getBoolean(null)) throw new AssertionError("LinuxTcpInfo JNI loader did not load within 3s");
+    }
+    private static long assertLinuxTcpInfo(JsonObject report,String role,String scenario) {
+        for(String key:new String[]{"tcp_start","tcp_last_observed"}) {
+            JsonObject sample=report.getAsJsonObject(key);
+            if(sample==null || !sample.has("total_sent_segments") || !sample.has("total_retransmitted_segments")
+                    || !sample.has("retransmission_rate_basis")
+                    || !sample.get("retransmission_rate_basis").getAsString().equals("data_segments_including_retransmissions"))
+                throw new AssertionError(role+" missing Linux TCP_INFO counters at "+key+": "+sample);
+        }
+        JsonObject analysis=report.getAsJsonObject("analysis");
+        if(analysis==null || !analysis.has("local_tcp_sent_segments_delta")
+                || analysis.get("local_tcp_sent_segments_delta").getAsLong()<=0)
+            throw new AssertionError(role+" has no positive sent-segment delta: "+analysis);
+        long retrans=analysis.has("local_tcp_retransmitted_segments_delta")
+                ? analysis.get("local_tcp_retransmitted_segments_delta").getAsLong() : 0;
+        if(scenario.equals("baseline") && retrans!=0)
+            throw new AssertionError(role+" baseline retransmissions expected 0, got "+retrans);
+        return retrans;
+    }
+    private static void assertLinuxTrace(JsonObject trace,String source) {
+        if(trace==null || trace.get("tcp_unit").getAsInt()!=2 || trace.getAsJsonArray("points").isEmpty())
+            throw new AssertionError(source+" missing segment-based trace: "+trace);
     }
     private static void install(Channel ch,UUID id,boolean server,AtomicReference<JsonObject> report,
                                 CountDownLatch finished,AtomicReference<NetworkProbeSession> state) {
