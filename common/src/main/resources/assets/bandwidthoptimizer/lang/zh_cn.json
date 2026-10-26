@@ -193,5 +193,5 @@
   "bo.network.chart.no_data": "未采集此指标；不能将其视为 0。",
   "bo.network.chart.bytes": "单位：每个时间窗重传字节数",
   "bo.network.chart.segments": "单位：每个时间窗重传段数",
-  "bo.network.chart.speed_legend": "大点：服务器接收上传；小点：客户端接收下载"
+  "bo.network.chart.speed_legend": "上传：服务器接收；下载：客户端接收"
 }

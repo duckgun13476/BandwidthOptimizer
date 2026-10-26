@@ -16,11 +16,10 @@ final class NetworkAnalysisChart {
         ArrayList<Box> boxes=new ArrayList<>();ArrayList<Label> labels=new ArrayList<>();
         JsonObject peer=report==null?null:report.getAsJsonObject("peer_summary"),local=report==null?null:report.getAsJsonObject("trace");
         JsonObject remote=peer==null?null:peer.getAsJsonObject("trace");
-        int x=45,y=58,w=Math.max(30,width-65),h=Math.max(25,height-133);
+        int w=Math.max(30,Math.min(300,width-90)),h=Math.max(25,Math.min(75,height-140));
+        int x=(width-w)/2,y=48;
         String key=switch(kind){case 0->"bo.network.chart.latency";case 1->"bo.network.chart.speed";default->"bo.network.chart.retransmissions";};
-        labels.add(new Label(key,20,12,List.of()));
-        labels.add(new Label("bo.network.chart.stages",20,26,List.of()));
-        labels.add(new Label("bo.network.chart.thresholds."+kind,20,40,List.of()));
+        labels.add(new Label(key,x,24,List.of()));
         JsonObject primary=remote!=null?remote:local;
         List<JsonObject> traces=kind==1?Arrays.asList(remote,local):Collections.singletonList(primary);
         double duration=1,max=kind==0?300:kind==1?200:1;boolean measured=false;
@@ -42,17 +41,26 @@ final class NetworkAnalysisChart {
             }
         }
         boxes.add(new Box(x,y,x+1,y+h+1,0xFFBBC5CC));boxes.add(new Box(x,y+h,x+w,y+h+1,0xFFBBC5CC));
-        double[] thresholds=kind==0?new double[]{200,300}:kind==1?new double[]{100,200}:new double[0];
-        for(double threshold:thresholds) {int py=y+h-(int)(h*threshold/max);boxes.add(new Box(x,py,x+w,py+1,threshold==(kind==0?300:100)?0xFF884848:0xFF8A7845));}
         for(int s=0;s<traces.size();s++) {
             JsonObject trace=traces.get(s);if(trace==null) continue;
+            int previousX=-1,previousY=0;double previousValue=0;
             for(JsonElement element:trace.getAsJsonArray("points")) {
-                JsonArray row=element.getAsJsonArray();double value=row.get(column).getAsDouble();if(value<0) continue;if(kind==1)value/=1000;
-                int px=x+(int)(w*row.get(0).getAsDouble()/duration),py=y+h-(int)(h*value/max),size=traces.size()>1 && s==0?2:1;
-                boxes.add(new Box(px-size,py-size,px+size+1,py+size+1,color(kind,value)));
+                JsonArray row=element.getAsJsonArray();double value=row.get(column).getAsDouble();
+                if(value<0){previousX=-1;continue;}if(kind==1)value/=1000;
+                int px=x+(int)(w*row.get(0).getAsDouble()/duration),py=y+h-(int)(h*value/max);
+                if(previousX>=0) {
+                    int span=Math.max(1,px-previousX),lastY=previousY;
+                    for(int step=0;step<=span;step++) {
+                        double fraction=(double)step/span;
+                        int lineX=Math.min(px,previousX+step),lineY=previousY+(int)Math.round((py-previousY)*fraction);
+                        boxes.add(new Box(lineX,Math.min(lastY,lineY),lineX+1,Math.max(lastY,lineY)+1,color(kind,previousValue+(value-previousValue)*fraction)));
+                        lastY=lineY;
+                    }
+                }
+                previousX=px;previousY=py;previousValue=value;
             }
         }
-        labels.add(new Label("bo.network.chart.scale",4,y,List.of(String.format(Locale.ROOT,"%.0f",max))));
+        labels.add(new Label("bo.network.chart.scale",Math.max(4,x-42),y-12,List.of(String.format(Locale.ROOT,"%.0f",max))));
         labels.add(new Label("bo.network.chart.time",x,y+h+5,List.of(String.format(Locale.ROOT,"%.1f",duration/1000))));
         if(!measured) labels.add(new Label("bo.network.chart.no_data",x+4,y+8,List.of()));
         if(kind==2 && primary!=null) labels.add(new Label(primary.get("tcp_unit").getAsInt()==1?"bo.network.chart.bytes":"bo.network.chart.segments",x,y+h+17,List.of()));

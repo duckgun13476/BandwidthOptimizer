@@ -193,5 +193,5 @@
   "bo.network.chart.no_data": "Esta métrica não foi amostrada; não a considere como zero.",
   "bo.network.chart.bytes": "Unidade: bytes retransmitidos por intervalo",
   "bo.network.chart.segments": "Unidade: segmentos retransmitidos por intervalo",
-  "bo.network.chart.speed_legend": "Pontos grandes: recebimento do envio no servidor; pontos pequenos: recebimento do download no cliente"
+  "bo.network.chart.speed_legend": "Envio: recebido pelo servidor; download: recebido pelo cliente"
 }

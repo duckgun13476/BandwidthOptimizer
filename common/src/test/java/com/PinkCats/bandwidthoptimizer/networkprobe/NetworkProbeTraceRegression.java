@@ -25,7 +25,12 @@ final class NetworkProbeTraceRegression {
         check(NetworkAnalysisChart.color(0,199)==NetworkAnalysisChart.GREEN,"latency green");check(NetworkAnalysisChart.color(0,200)==NetworkAnalysisChart.YELLOW,"latency yellow start");check(NetworkAnalysisChart.color(0,300)==NetworkAnalysisChart.YELLOW,"latency yellow end");check(NetworkAnalysisChart.color(0,301)==NetworkAnalysisChart.RED,"latency red");
         check(NetworkAnalysisChart.color(1,99)==NetworkAnalysisChart.RED,"speed red");check(NetworkAnalysisChart.color(1,100)==NetworkAnalysisChart.YELLOW,"speed yellow start");check(NetworkAnalysisChart.color(1,200)==NetworkAnalysisChart.YELLOW,"speed yellow end");check(NetworkAnalysisChart.color(1,201)==NetworkAnalysisChart.GREEN,"speed green");check(NetworkAnalysisChart.color(2,1)==NetworkAnalysisChart.RED,"retransmission red");
         JsonObject saved=new JsonObject(),peer=new JsonObject();peer.add("trace",trace);saved.add("peer_summary",peer);
-        var plot=NetworkAnalysisChart.plot(saved,0,427,240);check(plot.boxes().stream().anyMatch(b->b.color()==NetworkAnalysisChart.RED),"actual spike chart paints red");check(plot.boxes().size()<256,"bounded chart geometry");
+        var plot=NetworkAnalysisChart.plot(saved,0,427,240);check(plot.boxes().stream().anyMatch(b->b.color()==NetworkAnalysisChart.RED),"actual spike chart paints red");check(plot.boxes().size()<1024,"bounded line geometry");
+        check(plot.labels().stream().noneMatch(l->l.key().contains("thresholds") || l.key().equals("bo.network.chart.stages")),"no color explanation clutter");
+        check(plot.boxes().stream().filter(b->b.color()==NetworkAnalysisChart.RED || b.color()==NetworkAnalysisChart.YELLOW || b.color()==NetworkAnalysisChart.GREEN).allMatch(b->b.x2()-b.x1()==1),"lines have no enlarged dot markers");
+        JsonObject gap=JsonParser.parseString("{\"duration_ms\":300,\"points\":[[100,1,40,-1,-1,0],[200,1,-1,-1,-1,0],[300,1,400,-1,-1,0]]}").getAsJsonObject();
+        JsonObject gapReport=new JsonObject();gapReport.add("trace",gap);
+        check(NetworkAnalysisChart.plot(gapReport,0,427,240).boxes().stream().noneMatch(b->b.color()==NetworkAnalysisChart.RED || b.color()==NetworkAnalysisChart.YELLOW || b.color()==NetworkAnalysisChart.GREEN),"missing sample breaks line without isolated dots");
         System.out.println("NETWORK_TRACE_PASS checks="+checks);
     }
 }

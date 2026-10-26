@@ -193,5 +193,5 @@
   "bo.network.chart.no_data": "This metric was not sampled; it is not zero.",
   "bo.network.chart.bytes": "Unit: retransmitted bytes per window",
   "bo.network.chart.segments": "Unit: retransmitted segments per window",
-  "bo.network.chart.speed_legend": "Large dots: server upload receive; small dots: client download receive"
+  "bo.network.chart.speed_legend": "Upload: server receive; download: client receive"
 }
