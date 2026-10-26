@@ -9,6 +9,7 @@ final class ProbeClient {
     private static int resultTick=-1;
     private static com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbeRequest request;
     static void install() {
+        if(Boolean.getBoolean("networkprobe.overviewReplay")) {ProbeOverviewReplay.install();return;}
         if(!System.getProperty("networkprobe.policy","").isEmpty()) {ProbePolicy.install();return;}
         if(Boolean.getBoolean("networkprobe.lifecycle")) {ProbeLifecycle.install();return;}
         if(Boolean.getBoolean("networkprobe.clientRequest"))

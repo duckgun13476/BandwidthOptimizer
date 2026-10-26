@@ -159,5 +159,18 @@
   "bo.network.phase.WAIT_DOWNLOAD_RECEIPT": "等待下载回执",
   "bo.network.connection_reset": "本次检测期间，本地 TCP 连接被重置。",
   "bo.network.broken_pipe": "本地套接字写入失败：连接已关闭。",
-  "bo.network.read_timeout": "本次检测期间发生读取超时。"
+  "bo.network.read_timeout": "本次检测期间发生读取超时。",
+  "bo.network.overview": "返回概览",
+  "bo.network.summary.retransmission": "可能存在丢包；本次无法准确测得丢包率。",
+  "bo.network.summary.no_issues": "本次检测未发现可识别的网络异常。",
+  "bo.network.summary.other": "检测到其他异常，请查看详细信息。",
+  "bo.network.summary.upload_latency": "上传时往返延迟明显升高，可能造成卡顿。",
+  "bo.network.summary.upload_pause": "上传时出现短暂停顿，随后恢复。",
+  "bo.network.summary.upload_rate": "上传时速度未达到本次测试设定，尚不能据此判断宽带限速。",
+  "bo.network.summary.download_latency": "下载时往返延迟明显升高，可能造成卡顿。",
+  "bo.network.summary.download_pause": "下载时出现短暂停顿，随后恢复。",
+  "bo.network.summary.download_rate": "下载时速度未达到本次测试设定，尚不能据此判断宽带限速。",
+  "bo.network.summary.transfer_latency": "传输数据时往返延迟明显升高，可能造成卡顿。",
+  "bo.network.summary.transfer_pause": "传输数据时出现短暂停顿，随后恢复。",
+  "bo.network.summary.transfer_rate": "传输数据时速度未达到本次测试设定，尚不能据此判断宽带限速。"
 }

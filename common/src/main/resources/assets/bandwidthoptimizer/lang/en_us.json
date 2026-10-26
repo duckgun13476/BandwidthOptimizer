@@ -159,5 +159,18 @@
   "bo.network.phase.WAIT_DOWNLOAD_RECEIPT": "Waiting for download receipt",
   "bo.network.connection_reset": "The local TCP connection was reset during this test.",
   "bo.network.broken_pipe": "A local socket write failed because the connection was closed.",
-  "bo.network.read_timeout": "A read timeout was observed during this test."
+  "bo.network.read_timeout": "A read timeout was observed during this test.",
+  "bo.network.overview": "Overview",
+  "bo.network.summary.retransmission": "Possible packet loss; the packet-loss rate cannot be measured accurately in this test.",
+  "bo.network.summary.no_issues": "No identifiable network problems were found in this test.",
+  "bo.network.summary.other": "Another abnormal observation was recorded. See details.",
+  "bo.network.summary.upload_latency": "Uploading significantly increases latency and may cause lag.",
+  "bo.network.summary.upload_pause": "Uploading briefly stalled, then recovered.",
+  "bo.network.summary.upload_rate": "Uploading did not reach the rate configured for this test; this does not establish your connection speed limit.",
+  "bo.network.summary.download_latency": "Downloading significantly increases latency and may cause lag.",
+  "bo.network.summary.download_pause": "Downloading briefly stalled, then recovered.",
+  "bo.network.summary.download_rate": "Downloading did not reach the rate configured for this test; this does not establish your connection speed limit.",
+  "bo.network.summary.transfer_latency": "Transferring data significantly increases latency and may cause lag.",
+  "bo.network.summary.transfer_pause": "Transferring data briefly stalled, then recovered.",
+  "bo.network.summary.transfer_rate": "Transferring data did not reach the rate configured for this test; this does not establish your connection speed limit."
 }

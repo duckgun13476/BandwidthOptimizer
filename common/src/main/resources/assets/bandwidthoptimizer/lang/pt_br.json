@@ -159,5 +159,18 @@
   "bo.network.phase.WAIT_DOWNLOAD_RECEIPT": "Aguardando confirmação do recebimento",
   "bo.network.connection_reset": "A conexão TCP local foi redefinida durante o teste.",
   "bo.network.broken_pipe": "A escrita no socket local falhou porque a conexão foi fechada.",
-  "bo.network.read_timeout": "Foi observado um tempo limite de leitura durante o teste."
+  "bo.network.read_timeout": "Foi observado um tempo limite de leitura durante o teste.",
+  "bo.network.overview": "Visão geral",
+  "bo.network.summary.retransmission": "Possível perda de pacotes; não é possível medir com precisão a taxa de perda neste teste.",
+  "bo.network.summary.no_issues": "Nenhum problema de rede identificável foi encontrado neste teste.",
+  "bo.network.summary.other": "Outra observação anormal foi registrada. Consulte os detalhes.",
+  "bo.network.summary.upload_latency": "Durante o envio, a latência aumenta significativamente e pode causar atrasos.",
+  "bo.network.summary.upload_pause": "Durante o envio, houve uma breve pausa, seguida de recuperação.",
+  "bo.network.summary.upload_rate": "Durante o envio, a velocidade ficou abaixo da configurada neste teste; isso não determina o limite da conexão.",
+  "bo.network.summary.download_latency": "Durante o download, a latência aumenta significativamente e pode causar atrasos.",
+  "bo.network.summary.download_pause": "Durante o download, houve uma breve pausa, seguida de recuperação.",
+  "bo.network.summary.download_rate": "Durante o download, a velocidade ficou abaixo da configurada neste teste; isso não determina o limite da conexão.",
+  "bo.network.summary.transfer_latency": "Durante a transferência, a latência aumenta significativamente e pode causar atrasos.",
+  "bo.network.summary.transfer_pause": "Durante a transferência, houve uma breve pausa, seguida de recuperação.",
+  "bo.network.summary.transfer_rate": "Durante a transferência, a velocidade ficou abaixo da configurada neste teste; isso não determina o limite da conexão."
 }

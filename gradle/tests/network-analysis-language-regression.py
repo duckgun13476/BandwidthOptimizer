@@ -15,6 +15,9 @@ for phase in re.findall(r'\b[A-Z_]+\b',phases):assert 'bo.network.phase.'+phase 
 screen=(pkg/'NetworkAnalysisScreenBase.java').read_text(encoding='utf-8')
 for key in re.findall(r'"(bo\.network\.[a-zA-Z_][a-zA-Z_.]+)"',screen):
  if not key.endswith('.'):assert key in sets[0],key
+for direction in ('upload','download','transfer'):
+ for symptom in ('latency','pause','rate'):
+  assert 'bo.network.summary.'+direction+'_'+symptom in sets[0]
 states=re.search(r'case (.*?) -> state;',screen,re.S).group(1)
 for state in re.findall(r'"([a-z_]+)"',states):assert 'bo.network.state.'+state in sets[0],state
 print(f'NETWORK_ANALYSIS_LANGUAGES_PASS languages=3 keys={len(sets[0])} all_session_phases=true all_screen_states=true placeholder_contract=true')

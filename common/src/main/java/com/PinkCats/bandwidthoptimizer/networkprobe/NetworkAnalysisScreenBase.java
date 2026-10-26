@@ -16,7 +16,7 @@ public abstract class NetworkAnalysisScreenBase extends Screen {
     private int page,ticks;
     private boolean details;
     private List<Component> text=List.of();
-    private Button action,previous,next;
+    private Button action,previous,next,detailsToggle;
     protected NetworkAnalysisScreenBase(Screen parent){super(Component.translatable("bo.network.title"));this.parent=parent;}
     @Override protected void init(){
         int w=Math.max(60,Math.min(110,(width-40)/3)),x=(width-w*3-8)/2;
@@ -30,7 +30,7 @@ public abstract class NetworkAnalysisScreenBase extends Screen {
             refresh();
         }));
         previous=addRenderableWidget(NetworkAnalysisPlatform.button(x,height-48,w,Component.literal("<"),()->page=Math.max(0,page-1)));
-        addRenderableWidget(NetworkAnalysisPlatform.button(x+w+4,height-48,w,Component.translatable("bo.network.details"),()->{details=!details;page=0;refresh();}));
+        detailsToggle=addRenderableWidget(NetworkAnalysisPlatform.button(x+w+4,height-48,w,Component.translatable("bo.network.details"),()->{details=!details;page=0;refresh();}));
         next=addRenderableWidget(NetworkAnalysisPlatform.button(x+2*w+8,height-48,w,Component.literal(">"),()->page++));
         refresh();
     }
@@ -65,37 +65,39 @@ public abstract class NetworkAnalysisScreenBase extends Screen {
                     };
                     if(observed!=null) lines.add(Component.translatable(observed));
                 }
-                if(report.has("started_at_epoch_ms")) lines.add(Component.translatable("bo.network.started",DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(report.get("started_at_epoch_ms").getAsLong()))));
-                if(report.has("finished_at_epoch_ms")) lines.add(Component.translatable("bo.network.finished_at",DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(report.get("finished_at_epoch_ms").getAsLong()))));
-                if(report.has("elapsed_ns")) lines.add(metric("bo.network.duration",value(report,"elapsed_ns")/1e9,"s"));
-                lines.add(metric("bo.network.budget",value(report,"budget_bytes_per_direction")/1e6,"MB"));
-                lines.add(metric("bo.network.rate",value(report,"rate_limit_bytes_s")*8/1e6,"Mbit/s"));
-                JsonObject phases=report.getAsJsonObject("phases"),analysis=report.getAsJsonObject("analysis");
-                if(phases!=null) {
-                    JsonObject up=phases.getAsJsonObject("upload_peer_receipt"),down=phases.getAsJsonObject("download_received");
-                    lines.add(metric("bo.network.upload",value(up,"peer_receive_goodput_mbit_s"),"Mbit/s"));
-                    lines.add(metric("bo.network.download",value(down,"receiver_goodput_mbit_s"),"Mbit/s"));
-                }
-                if(analysis!=null) {
-                    appendTcpMetrics(lines,analysis,"local_tcp_retransmitted_bytes_delta","local_tcp_retransmitted_segments_delta",false);
-                }
-                appendFindings(lines,report.getAsJsonArray("findings"),"bo.network.local");
-                JsonObject peer=report.getAsJsonObject("peer_summary");
-                if(peer!=null) appendFindings(lines,peer.getAsJsonArray("findings"),"bo.network.server");
-                else lines.add(Component.translatable("bo.network.peer_missing"));
-                if(peer!=null) {
-                    JsonObject metrics=peer.getAsJsonObject("metrics");
-                    lines.add(metric("bo.network.server_baseline",value(metrics,"baseline_p95_ns")/1e6,"ms"));
-                    lines.add(metric("bo.network.server_upload_rtt",value(metrics,"upload_p95_ns")/1e6,"ms"));
-                    lines.add(metric("bo.network.server_download_rtt",value(metrics,"download_p95_ns")/1e6,"ms"));
-                    appendTcpMetrics(lines,metrics,"tcp_retransmitted_bytes","tcp_retransmitted_segments",true);
-                }
+                for(String key:NetworkAnalysisOverview.keys(report)) lines.add(Component.translatable(key));
+                if(details) appendDetails(lines,report);
             }
         } else if(state.equals("completed")) lines.add(Component.translatable("bo.network.incomplete"));
-        lines.add(Component.translatable("bo.network.scope"));
+        if(details) lines.add(Component.translatable("bo.network.scope"));
         text=List.copyOf(lines);
+        detailsToggle.setMessage(Component.translatable(details?"bo.network.overview":"bo.network.details"));
         action.setMessage(Component.translatable(flow.active()?"bo.network.cancel":"bo.network.retry"));
         action.active=flow.active() || NetworkAnalysisClient.endpoint()!=null;
+    }
+    private void appendDetails(List<Component> lines,JsonObject report) {
+        if(report.has("started_at_epoch_ms")) lines.add(Component.translatable("bo.network.started",DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(report.get("started_at_epoch_ms").getAsLong()))));
+        if(report.has("finished_at_epoch_ms")) lines.add(Component.translatable("bo.network.finished_at",DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(report.get("finished_at_epoch_ms").getAsLong()))));
+        if(report.has("elapsed_ns")) lines.add(metric("bo.network.duration",value(report,"elapsed_ns")/1e9,"s"));
+        lines.add(metric("bo.network.budget",value(report,"budget_bytes_per_direction")/1e6,"MB"));
+        lines.add(metric("bo.network.rate",value(report,"rate_limit_bytes_s")*8/1e6,"Mbit/s"));
+        JsonObject phases=report.getAsJsonObject("phases"),analysis=report.getAsJsonObject("analysis");
+        if(phases!=null) {
+            JsonObject up=phases.getAsJsonObject("upload_peer_receipt"),down=phases.getAsJsonObject("download_received");
+            lines.add(metric("bo.network.upload",value(up,"peer_receive_goodput_mbit_s"),"Mbit/s"));
+            lines.add(metric("bo.network.download",value(down,"receiver_goodput_mbit_s"),"Mbit/s"));
+        }
+        if(analysis!=null) appendTcpMetrics(lines,analysis,"local_tcp_retransmitted_bytes_delta","local_tcp_retransmitted_segments_delta",false);
+        appendFindings(lines,report.getAsJsonArray("findings"),"bo.network.local");
+        JsonObject peer=report.getAsJsonObject("peer_summary");
+        if(peer!=null) {
+            appendFindings(lines,peer.getAsJsonArray("findings"),"bo.network.server");
+            JsonObject metrics=peer.getAsJsonObject("metrics");
+            lines.add(metric("bo.network.server_baseline",value(metrics,"baseline_p95_ns")/1e6,"ms"));
+            lines.add(metric("bo.network.server_upload_rtt",value(metrics,"upload_p95_ns")/1e6,"ms"));
+            lines.add(metric("bo.network.server_download_rtt",value(metrics,"download_p95_ns")/1e6,"ms"));
+            appendTcpMetrics(lines,metrics,"tcp_retransmitted_bytes","tcp_retransmitted_segments",true);
+        }
     }
     private static void appendTcpMetrics(List<Component> lines,JsonObject metrics,String bytesKey,String segmentsKey,boolean server){
         if(metrics==null || !metrics.has(segmentsKey) || metrics.has(bytesKey))
