@@ -51,6 +51,16 @@ final class ProbeClient {
                     net.minecraft.client.Screenshot.grab(mc.gameDirectory,mc.getMainRenderTarget(),message -> {});
                     var proof=new com.google.gson.JsonObject(); proof.addProperty("rendered_ticks",ticks-resultTick);
                     proof.addProperty("screen",mc.screen.getClass().getName()); ProbeAcceptance.write("result-screen.json",proof);
+                    try {
+                        var field=com.PinkCats.bandwidthoptimizer.networkprobe.NetworkAnalysisScreenBase.class.getDeclaredField("text");
+                        field.setAccessible(true);
+                        var text=new com.google.gson.JsonArray();
+                        for(Object row:(java.util.List<?>)field.get(mc.screen)) {
+                            if(text.size()>=256) throw new AssertionError("Unbounded result text");
+                            text.add(((net.minecraft.network.chat.Component)row).getString());
+                        }
+                        proof.add("text",text);ProbeAcceptance.write("result-screen.json",proof);
+                    } catch(ReflectiveOperationException failure) {throw new AssertionError(failure);}
                 }
                 mc.stop();
             }

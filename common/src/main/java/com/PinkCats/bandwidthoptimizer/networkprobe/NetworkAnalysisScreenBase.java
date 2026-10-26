@@ -77,7 +77,7 @@ public abstract class NetworkAnalysisScreenBase extends Screen {
                     lines.add(metric("bo.network.download",value(down,"receiver_goodput_mbit_s"),"Mbit/s"));
                 }
                 if(analysis!=null) {
-                    lines.add(metric("bo.network.retransmitted",value(analysis,"local_tcp_retransmitted_bytes_delta"),"B"));
+                    appendTcpMetrics(lines,analysis,"local_tcp_retransmitted_bytes_delta","local_tcp_retransmitted_segments_delta",false);
                 }
                 appendFindings(lines,report.getAsJsonArray("findings"),"bo.network.local");
                 JsonObject peer=report.getAsJsonObject("peer_summary");
@@ -88,7 +88,7 @@ public abstract class NetworkAnalysisScreenBase extends Screen {
                     lines.add(metric("bo.network.server_baseline",value(metrics,"baseline_p95_ns")/1e6,"ms"));
                     lines.add(metric("bo.network.server_upload_rtt",value(metrics,"upload_p95_ns")/1e6,"ms"));
                     lines.add(metric("bo.network.server_download_rtt",value(metrics,"download_p95_ns")/1e6,"ms"));
-                    if(details) lines.add(metric("bo.network.server_retransmitted",value(metrics,"tcp_retransmitted_bytes"),"B"));
+                    appendTcpMetrics(lines,metrics,"tcp_retransmitted_bytes","tcp_retransmitted_segments",true);
                 }
             }
         } else if(state.equals("completed")) lines.add(Component.translatable("bo.network.incomplete"));
@@ -96,6 +96,14 @@ public abstract class NetworkAnalysisScreenBase extends Screen {
         text=List.copyOf(lines);
         action.setMessage(Component.translatable(flow.active()?"bo.network.cancel":"bo.network.retry"));
         action.active=flow.active() || NetworkAnalysisClient.endpoint()!=null;
+    }
+    private static void appendTcpMetrics(List<Component> lines,JsonObject metrics,String bytesKey,String segmentsKey,boolean server){
+        if(metrics==null || !metrics.has(segmentsKey) || metrics.has(bytesKey))
+            lines.add(metric(server?"bo.network.server_retransmitted":"bo.network.retransmitted",value(metrics,bytesKey),"B"));
+        if(metrics!=null && metrics.has(segmentsKey))
+            lines.add(metric(server?"bo.network.server_retransmitted_segments":"bo.network.retransmitted_segments",value(metrics,segmentsKey),""));
+        if(value(metrics,bytesKey)>0 || value(metrics,segmentsKey)>0)
+            lines.add(Component.translatable("bo.network.retransmission_observed"));
     }
     private void appendFindings(List<Component> lines,JsonArray findings,String source){
         lines.add(Component.translatable(source));

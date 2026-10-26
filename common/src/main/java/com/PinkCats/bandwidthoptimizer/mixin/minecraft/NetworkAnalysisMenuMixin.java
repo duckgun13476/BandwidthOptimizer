@@ -19,10 +19,10 @@ public abstract class NetworkAnalysisMenuMixin extends Screen {
         Screen self=(Screen)(Object)this;
         if(self instanceof JoinMultiplayerScreen) {
             // Rebuild the label through the button callback without retaining this menu in product state.
-            Button toggle=NetworkAnalysisPlatform.toggle(6,2,150);
+            Button toggle=NetworkAnalysisPlatform.toggle(width-42,2,18);
             addRenderableWidget(toggle);
         }
-        Button results=NetworkAnalysisPlatform.button(width-156,2,150,16,Component.translatable("bo.network.open"),()->NetworkAnalysisClient.open(self));
+        Button results=NetworkAnalysisPlatform.menuButton(width-22,2,18,Component.literal("N"),Component.translatable("bo.network.open"),()->NetworkAnalysisClient.open(self));
         addRenderableWidget(results);
     }
 }

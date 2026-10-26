@@ -48,4 +48,5 @@ public final class NetworkAnalysisClient {
     public static void retry(){FLOW.retry(endpoint(),System.nanoTime());}
     public static void cancel(){FLOW.cancel(endpoint());}
     public static Component toggleLabel(){return Component.translatable(FLOW.armed()?"bo.network.selected":"bo.network.unselected");}
+    public static Component compactToggleLabel(){return Component.literal(FLOW.armed()?"+":"-").withStyle(FLOW.armed()?net.minecraft.ChatFormatting.GREEN:net.minecraft.ChatFormatting.GRAY);}
 }
