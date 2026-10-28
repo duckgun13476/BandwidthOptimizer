@@ -1,0 +1,87 @@
+import org.gradle.api.artifacts.repositories.MavenArtifactRepository
+import org.gradle.util.GradleVersion
+
+// Optional, owner-local Nexus routing. The checkout keeps all official repos.
+// The URL is supplied by the build launcher, never embedded in this template.
+def rawBase = System.getenv('MC_NEXUS_BASE_URL')
+def bypass = System.getenv('MC_NEXUS_BYPASS')?.toBoolean() ?: false
+// Repository content filters are required for safe per-repository routing;
+// Gradle introduced them in 5.1. Older nested wrappers keep official repos.
+if (rawBase && !bypass && GradleVersion.current() >= GradleVersion.version('5.1')) {
+    def base = new URI(rawBase)
+    if (base.userInfo || !(base.scheme in ['http', 'https']) || base.query || base.fragment) {
+        throw new GradleException('Invalid MC_NEXUS_BASE_URL: require http(s), no userinfo/query/fragment')
+    }
+    def root = rawBase.replaceAll('/+$', '') + '/'
+    def routes = [
+        [name:'MC_NEXUS_FORGE', path:'forge', groups:['net\\.minecraftforge(\\..*)?']],
+        [name:'MC_NEXUS_NEOFORGE', path:'neoforge-releases', groups:['net\\.neoforged(\\..*)?','de\\.oceanlabs\\.mcp(\\..*)?','org\\.parchmentmc(\\..*)?']],
+        [name:'MC_NEXUS_FABRIC', path:'fabric', groups:['net\\.fabricmc(\\..*)?']],
+        [name:'MC_NEXUS_CREATE', path:'createmod', groups:['com\\.simibubi\\.create','net\\.createmod(\\..*)?','dev\\.engine-room(\\..*)?']],
+        [name:'MC_NEXUS_CENTRAL', path:'maven-central', groups:['.*']],
+        [name:'MC_NEXUS_PLUGIN_PORTAL', path:'gradle-plugin-portal', groups:['.*']]
+    ]
+    def addRoute = { repositories, route ->
+        if (repositories == null || repositories.findByName(route.name) != null) return
+        repositories.maven { MavenArtifactRepository repo ->
+            repo.name = route.name
+            repo.url = URI.create(root + route.path + '/')
+            if (repo.hasProperty('allowInsecureProtocol')) repo.allowInsecureProtocol = base.scheme == 'http'
+            repo.metadataSources {
+                if (GradleVersion.current() >= GradleVersion.version('5.3')) gradleMetadata()
+                mavenPom()
+                artifact()
+            }
+            if (route.path == 'maven-central') {
+                repo.content {
+                    excludeGroup('de.oceanlabs.mcp')
+                    excludeGroupByRegex('org\\.parchmentmc(\\..*)?')
+                    excludeGroupByRegex('net\\.minecraftforge(\\..*)?')
+                    excludeGroupByRegex('net\\.neoforged(\\..*)?')
+                    excludeGroupByRegex('net\\.fabricmc(\\..*)?')
+                    excludeGroup('com.simibubi.create')
+                    excludeGroupByRegex('net\\.createmod(\\..*)?')
+                    excludeGroupByRegex('dev\\.engine-room(\\..*)?')
+                }
+            } else if (route.path != 'gradle-plugin-portal') {
+                repo.content {
+                    route.groups.each { pattern -> includeGroupByRegex(pattern) }
+                }
+            }
+        }
+    }
+    def attachAll = { repositories -> routes.each { route -> addRoute(repositories, route) } }
+    def attachProject = { repositories -> routes.findAll { it.path != 'gradle-plugin-portal' }.each { route -> addRoute(repositories, route) } }
+
+    // Gradle 6+ supports beforeSettings. Old wrappers use settingsEvaluated;
+    // project/buildscript injection remains available on both generations.
+    try {
+        gradle.beforeSettings { settings ->
+            attachAll(settings.pluginManagement.repositories)
+            try { attachProject(settings.dependencyResolutionManagement.repositories) }
+            catch (MissingPropertyException ignored) { }
+        }
+    } catch (MissingMethodException ignored) {
+        gradle.settingsEvaluated { settings ->
+            try { attachAll(settings.pluginManagement.repositories) }
+            catch (MissingPropertyException ignored2) { }
+            try { attachProject(settings.dependencyResolutionManagement.repositories) }
+            catch (MissingPropertyException ignored2) { }
+        }
+    }
+    gradle.beforeProject { project ->
+        attachAll(project.buildscript.repositories)
+        boolean settingsOwnsRepositories = false
+        try {
+            def mode = project.gradle.settings.dependencyResolutionManagement.repositoriesMode.orNull
+            settingsOwnsRepositories = mode != null && mode.toString() != 'PREFER_PROJECT'
+        } catch (MissingPropertyException ignored) {
+            // Older Gradle versions do not expose dependencyResolutionManagement.
+        } catch (MissingMethodException ignored) {
+            // Older Gradle versions may not expose the nullable .orNull accessor.
+        }
+        if (!settingsOwnsRepositories) attachProject(project.repositories)
+    }
+} else if (rawBase && !bypass) {
+    println "WARNING: Nexus routing is disabled for Gradle ${GradleVersion.current()}; Gradle 5.1+ is required for safe repository content filters. Official repositories remain unchanged."
+}

@@ -8,6 +8,24 @@
 
 # BandwidthOptimizer
 
+## Building
+
+Use `build.cmd` on Windows or `./build.sh` on POSIX to package all supported
+versions; both default to `packageAllVersions`. An optional owner-local config
+at `~/.gradle/nexus-build.properties` may contain only:
+
+```properties
+baseUrl=https://nexus.example.org/repository
+```
+
+Without that file, the build uses the project's official repositories. A Nexus
+dependency-transfer failure may fall back online once; `--offline` never goes
+online. Use the native Gradle wrapper directly for `publish`, `run*`, or `test`
+tasks. Nested Gradle processes require the owner's machine-level init bridge;
+third-party checkouts without it are not promised full Nexus routing for child
+processes. Per-repository routing requires Gradle 5.1+; older child wrappers
+continue using their official repositories.
+
 BandwidthOptimizer is a client-and-server network optimization mod for heavily
 modded Minecraft servers. It reduces repeated PLAY traffic while restoring the
 original encoded packet stream before normal Minecraft packet handling.
