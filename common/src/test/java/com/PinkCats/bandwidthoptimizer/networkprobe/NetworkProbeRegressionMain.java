@@ -13,6 +13,7 @@ public final class NetworkProbeRegressionMain {
     public static void main(String[] args) {
         frames(); lifecycle(); invalid(); pressure(); admission(); closedEvidence();
         writeFailureEvidence();
+        commandFeedback();
         NetworkProbeFindingsRegression.run();
         NetworkProbeResultsRegression.run();
         NetworkProbeRequestRegression.run();
@@ -38,6 +39,38 @@ public final class NetworkProbeRegressionMain {
         encoded[0]=99; boolean rejected=false;
         try { ProbeFrame.decode(encoded); } catch(IllegalArgumentException expected) { rejected=true; }
         check(rejected,"version rejected");
+    }
+    private static void commandFeedback() {
+        String[][] cases={{"started","started"},{"completed","completed"},{"invalid_budget","invalid_budget"},
+                {"connection_closed","connection_closed"},{"connection_closed_cause_unknown","connection_closed"},
+                {"already_running","already_running"},{"busy_or_cooldown","busy_or_cooldown"},
+                {"operator_cancelled","cancelled"},{"peer_cancelled","cancelled"},{"write_failed","write_failed"},
+                {"local_event_loop_stall","local_event_loop_stall"},{"test_deadline_not_packet_loss","timeout"},
+                {"unexpected_ready","failed"},{"future_failure","failed"}};
+        for(String[] entry:cases) {
+            var feedback=new NetworkProbeService.Feedback(entry[0],null);
+            var client=NetworkProbeCommandMessages.feedback(feedback,true);
+            check(client.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents contents
+                    && contents.getKey().equals("command.bandwidthoptimizer.network."+entry[1]),"client retains translation key "+entry[0]);
+            var console=NetworkProbeCommandMessages.feedback(feedback,false);
+            check(!(console.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents)
+                    && console.getString().startsWith(entry[1].equals("already_running")?"A network":"Network"),"console receives readable English "+entry[0]);
+        }
+        UUID id=UUID.randomUUID();
+        var withId=NetworkProbeCommandMessages.feedback(new NetworkProbeService.Feedback("completed",id),true);
+        check(withId.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents contents
+                && contents.getKey().endsWith(".with_id") && contents.getArgs()[0] instanceof net.minecraft.network.chat.Component nested
+                && nested.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents
+                && contents.getArgs()[1].equals(id.toString()),"nested client translation and test identity preserved");
+        check(NetworkProbeCommandMessages.feedback(new NetworkProbeService.Feedback("completed",id),false).getString()
+                .equals("Network test completed. (test ID: "+id+")"),"console completion preserves test identity");
+        check(NetworkProbeCommandMessages.text("cancel_requested",true).getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents,"cancel request remains translatable");
+        List<NetworkProbeService.Feedback> rejected=new ArrayList<>();
+        EmbeddedChannel channel=new EmbeddedChannel();
+        NetworkProbeService.start(channel,0,125_000,rejected::add);
+        check(rejected.equals(List.of(new NetworkProbeService.Feedback("invalid_budget",null))),"actual invalid-budget entry publishes typed failure");
+        check(channel.readOutbound()==null,"feedback does not send probe data for rejected budget");
+        channel.finishAndReleaseAll();
     }
     private static void lifecycle() {
         AtomicLong time=new AtomicLong(1);

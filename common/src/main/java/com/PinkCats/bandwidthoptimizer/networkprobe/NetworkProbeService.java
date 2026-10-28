@@ -75,18 +75,19 @@ public final class NetworkProbeService {
         ProbeAdmission.release(request.id(),System.nanoTime(),false);
     }
     /** Operator can separately authorize a larger bounded profile. */
-    public static void start(Channel channel,long bytes,long bytesPerSecond,Consumer<String> feedback) {
+    public record Feedback(String status,UUID testId) {}
+    public static void start(Channel channel,long bytes,long bytesPerSecond,Consumer<Feedback> feedback) {
         if(bytes<1 || bytes>NetworkProbeSession.MAX_BYTES || bytesPerSecond<125_000 || bytesPerSecond>16_000_000) {
-            feedback.accept("invalid_budget"); return;
+            feedback.accept(new Feedback("invalid_budget",null)); return;
         }
         channel.eventLoop().execute(() -> {
-            if(!channel.isActive()) { feedback.accept("connection_closed"); return; }
-            if(current(channel)!=null) { feedback.accept("already_running"); return; }
+            if(!channel.isActive()) { feedback.accept(new Feedback("connection_closed",null)); return; }
+            if(current(channel)!=null) { feedback.accept(new Feedback("already_running",null)); return; }
             UUID id=UUID.randomUUID();
-            if(!ProbeAdmission.acquire(id,System.nanoTime(),true)) { feedback.accept("busy_or_cooldown"); return; }
+            if(!ProbeAdmission.acquire(id,System.nanoTime(),true)) { feedback.accept(new Feedback("busy_or_cooldown",null)); return; }
             NetworkProbeSession session=create(channel,id,true,bytes,bytesPerSecond,
-                    report -> feedback.accept(report.get("outcome").getAsString()+" test="+id));
-            feedback.accept("started test="+id);
+                    report -> feedback.accept(new Feedback(report.get("outcome").getAsString(),id)));
+            feedback.accept(new Feedback("started",id));
             session.start();
         });
     }

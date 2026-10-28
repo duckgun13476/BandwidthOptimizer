@@ -29,17 +29,19 @@ public final class NetworkProbeCommand {
                         .executes(c -> {
                             Channel channel=channel(EntityArgument.getPlayer(c,"player"));
                             if(channel!=null) NetworkProbeService.cancel(channel);
+                            CommandSourceCompat.sendSuccess(c.getSource(),NetworkProbeCommandMessages.text("cancel_requested",c.getSource().getEntity() instanceof ServerPlayer),false);
                             return 1;
                         })));
     }
     private static int run(CommandSourceStack source,ServerPlayer player,int mb,int mbps) {
         Channel channel=channel(player);
-        if(channel==null || !NetworkProbePackets.canSend(player)) { source.sendFailure(Component.translatable("command.bandwidthoptimizer.network.unavailable")); return 0; }
-        CommandSourceCompat.sendSuccess(source,Component.translatable("command.bandwidthoptimizer.network.notice"),false);
+        boolean playerSource=source.getEntity() instanceof ServerPlayer;
+        if(channel==null || !NetworkProbePackets.canSend(player)) { source.sendFailure(NetworkProbeCommandMessages.text("unavailable",playerSource)); return 0; }
+        CommandSourceCompat.sendSuccess(source,NetworkProbeCommandMessages.text("notice",playerSource),false);
         player.sendSystemMessage(Component.translatable("command.bandwidthoptimizer.network.notice"));
         NetworkProbeService.start(channel,mb*1_000_000L,mbps*125_000L,
-                text -> source.getServer().execute(() ->
-                        CommandSourceCompat.sendSuccess(source,Component.translatable("command.bandwidthoptimizer.network.result",text),false)));
+                feedback -> source.getServer().execute(() ->
+                        CommandSourceCompat.sendSuccess(source,NetworkProbeCommandMessages.feedback(feedback,playerSource),false)));
         return 1;
     }
     private static Channel channel(ServerPlayer player) {
