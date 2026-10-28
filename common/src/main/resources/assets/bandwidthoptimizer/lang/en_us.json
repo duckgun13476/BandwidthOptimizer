@@ -162,7 +162,9 @@
   "bo.network.read_timeout": "A read timeout was observed during this test.",
   "bo.network.overview": "Overview",
   "bo.network.summary.retransmission": "Possible packet loss; the packet-loss rate cannot be measured accurately in this test.",
-  "bo.network.summary.no_issues": "No identifiable network problems were found in this test.",
+  "bo.network.summary.no_issues": "No issues detected",
+  "bo.network.summary.problems": "Problems detected",
+  "bo.network.summary.severe": "Severe issues detected",
   "bo.network.summary.other": "Another abnormal observation was recorded. See details.",
   "bo.network.summary.upload_latency": "Idle %s ms → upload load %s ms (increase %s ms)",
   "bo.network.summary.upload_pause": "Upload receive paused for %s ms, then resumed.",
@@ -193,5 +195,15 @@
   "bo.network.chart.no_data": "This metric was not sampled; it is not zero.",
   "bo.network.chart.bytes": "Unit: retransmitted bytes per window",
   "bo.network.chart.segments": "Unit: retransmitted segments per window",
-  "bo.network.chart.speed_legend": "Upload: server receive; download: client receive"
+  "bo.network.chart.speed_legend": "Upload: server receive; download: client receive",
+  "bo.network.chart.peak": "Peak: %s %s (window through %s s)",
+  "bo.network.chart.sample": "Sample window through %s s: %s %s",
+  "bo.network.chart.source_phase": "%s · %s",
+  "bo.network.chart.mixed": "Stage boundary",
+  "bo.network.chart.tail": "Wrap-up",
+  "bo.network.chart.unit_segments": "segments",
+  "bo.network.chart.phase.1": "Idle",
+  "bo.network.chart.phase.2": "Upload",
+  "bo.network.chart.phase.4": "Pause",
+  "bo.network.chart.phase.8": "Download"
 }

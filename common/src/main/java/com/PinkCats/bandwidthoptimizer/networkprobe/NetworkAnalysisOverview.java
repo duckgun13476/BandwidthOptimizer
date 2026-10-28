@@ -5,8 +5,29 @@ import java.util.*;
 
 /** Player-facing observations only; never turns TCP retransmissions into a packet-loss percentage. */
 final class NetworkAnalysisOverview {
-    record Row(String key,List<Object> args) {}
+    enum Severity {
+        NORMAL(0x55FF55), UNKNOWN(0xAAAAAA), WARNING(0xFFFF55), SEVERE(0xFF5555);
+        final int color;
+        Severity(int color) {this.color=color;}
+    }
+    record Row(String key,List<Object> args,Severity severity) {
+        Row(String key,List<Object> args) {
+            this(key,args,key.equals("bo.network.summary.no_issues")?Severity.NORMAL:
+                    key.equals("bo.network.peer_missing") || key.equals("bo.network.incomplete")?Severity.UNKNOWN:Severity.WARNING);
+        }
+    }
     private NetworkAnalysisOverview() {}
+
+    static Row conclusion(List<Row> rows) {
+        Severity severity=rows.stream().map(Row::severity).max(Comparator.naturalOrder()).orElse(Severity.UNKNOWN);
+        String key=switch(severity) {
+            case NORMAL -> "bo.network.summary.no_issues";
+            case UNKNOWN -> "bo.network.incomplete";
+            case WARNING -> "bo.network.summary.problems";
+            case SEVERE -> "bo.network.summary.severe";
+        };
+        return new Row(key,List.of(),severity);
+    }
 
     static List<String> keys(JsonObject report) {
         LinkedHashSet<String> issues=new LinkedHashSet<>();
@@ -53,7 +74,8 @@ final class NetworkAnalysisOverview {
         if(!(retrans>0)) return;
         double sent=number(metrics,prefix+"sent_"+(bytes?"bytes":"segments")+suffix);
         String fraction=sent>=retrans && sent>0?format(100*retrans/sent)+"%":"bo.network.rate_unavailable";
-        rows.add(new Row(server?"bo.network.summary.server_retransmission":"bo.network.summary.client_retransmission",List.of(format(retrans),bytes?"bo.network.unit.bytes":"bo.network.unit.segments",fraction)));
+        Severity severity=Double.isFinite(sent) && sent>=retrans && retrans/sent>0.5?Severity.SEVERE:Severity.WARNING;
+        rows.add(new Row(server?"bo.network.summary.server_retransmission":"bo.network.summary.client_retransmission",List.of(format(retrans),bytes?"bo.network.unit.bytes":"bo.network.unit.segments",fraction),severity));
     }
     private static String format(double value) {return String.format(Locale.ROOT,"%.2f",value);}
     private static double number(JsonObject o,String key) {return o!=null && o.has(key)?o.get(key).getAsDouble():Double.NaN;}

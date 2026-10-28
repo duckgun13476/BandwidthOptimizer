@@ -8,15 +8,28 @@ final class NetworkAnalysisChart {
     static final int GREEN=0xFF62CD81,YELLOW=0xFFFFCF55,RED=0xFFFF6666;
     record Box(int x1,int y1,int x2,int y2,int color) {}
     record Label(String key,int x,int y,List<Object> args) {}
-    record Plot(List<Box> boxes,List<Label> labels) {}
+    record Sample(int x,int y,int timeMs,double value,String unit,String source,String phase) {}
+    record Plot(List<Box> boxes,List<Label> labels,List<Sample> samples,int left,int top,int right,int bottom) {
+        Sample hover(int mouseX,int mouseY) {
+            if(mouseX<left || mouseX>right || mouseY<top || mouseY>bottom) return null;
+            Sample nearest=null;long best=Long.MAX_VALUE;
+            for(Sample sample:samples) {
+                int dx=Math.abs(sample.x()-mouseX);
+                if(dx>10) continue;
+                long distance=dx*dx+(long)(sample.y()-mouseY)*(sample.y()-mouseY);
+                if(distance<best){nearest=sample;best=distance;}
+            }
+            return nearest;
+        }
+    }
     static int color(int kind,double value) {
         return kind==0?(value>300?RED:value>=200?YELLOW:GREEN):kind==1?(value<100?RED:value<=200?YELLOW:GREEN):(value>0?RED:GREEN);
     }
     static Plot plot(JsonObject report,int kind,int width,int height) {
-        ArrayList<Box> boxes=new ArrayList<>();ArrayList<Label> labels=new ArrayList<>();
+        ArrayList<Box> boxes=new ArrayList<>();ArrayList<Label> labels=new ArrayList<>();ArrayList<Sample> samples=new ArrayList<>();
         JsonObject peer=report==null?null:report.getAsJsonObject("peer_summary"),local=report==null?null:report.getAsJsonObject("trace");
         JsonObject remote=peer==null?null:peer.getAsJsonObject("trace");
-        int w=Math.max(30,Math.min(300,width-90)),h=Math.max(25,Math.min(75,height-140));
+        int w=Math.max(30,Math.min(300,width-90)),h=Math.max(25,Math.min(75,height-160));
         int x=(width-w)/2,y=48;
         String key=switch(kind){case 0->"bo.network.chart.latency";case 1->"bo.network.chart.speed";default->"bo.network.chart.retransmissions";};
         labels.add(new Label(key,x,24,List.of()));
@@ -48,6 +61,17 @@ final class NetworkAnalysisChart {
                 JsonArray row=element.getAsJsonArray();double value=row.get(column).getAsDouble();
                 if(value<0){previousX=-1;continue;}if(kind==1)value/=1000;
                 int px=x+(int)(w*row.get(0).getAsDouble()/duration),py=y+h-(int)(h*value/max);
+                boolean server=trace==remote;
+                String phase=switch(row.get(1).getAsInt()) {
+                    case 1->"bo.network.phase.BASELINE";
+                    case 2->server?"bo.network.phase.RECEIVE_UPLOAD":"bo.network.phase.SEND_UPLOAD";
+                    case 4->"bo.network.phase.REST";
+                    case 8->server?"bo.network.phase.SEND_DOWNLOAD":"bo.network.phase.RECEIVE_DOWNLOAD";
+                    case 0->"bo.network.chart.tail";
+                    default->"bo.network.chart.mixed";
+                };
+                String unit=kind==0?"ms":kind==1?"KB/s":trace.get("tcp_unit").getAsInt()==1?"B":"bo.network.chart.unit_segments";
+                samples.add(new Sample(px,py,row.get(0).getAsInt(),value,unit,server?"bo.network.server":"bo.network.local",phase));
                 if(previousX>=0) {
                     int span=Math.max(1,px-previousX),lastY=previousY;
                     for(int step=0;step<=span;step++) {
@@ -65,6 +89,15 @@ final class NetworkAnalysisChart {
         if(!measured) labels.add(new Label("bo.network.chart.no_data",x+4,y+8,List.of()));
         if(kind==2 && primary!=null) labels.add(new Label(primary.get("tcp_unit").getAsInt()==1?"bo.network.chart.bytes":"bo.network.chart.segments",x,y+h+17,List.of()));
         if(kind==1) labels.add(new Label("bo.network.chart.speed_legend",x,y+h+17,List.of()));
-        return new Plot(List.copyOf(boxes),List.copyOf(labels));
+        Sample peak=null;
+        for(Sample sample:samples) if(peak==null || sample.value()>peak.value()) peak=sample;
+        if(peak!=null) labels.add(new Label("bo.network.chart.peak",x,y+h+29,List.of(format(peak.value()),peak.unit(),format(peak.timeMs()/1000.0))));
+        return new Plot(List.copyOf(boxes),List.copyOf(labels),List.copyOf(samples),x,y,x+w,y+h);
+    }
+    private static String format(double value){return String.format(Locale.ROOT,"%.2f",value);}
+    static List<Label> hoverLabels(Plot plot,int mouseX,int mouseY) {
+        Sample sample=plot.hover(mouseX,mouseY);if(sample==null) return List.of();
+        return List.of(new Label("bo.network.chart.sample",plot.left(),plot.bottom()+41,List.of(format(sample.timeMs()/1000.0),format(sample.value()),sample.unit())),
+                new Label("bo.network.chart.source_phase",plot.left(),plot.bottom()+53,List.of(sample.source(),sample.phase())));
     }
 }

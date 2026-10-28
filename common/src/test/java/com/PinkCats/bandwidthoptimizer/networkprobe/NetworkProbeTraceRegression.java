@@ -28,6 +28,15 @@ final class NetworkProbeTraceRegression {
         var plot=NetworkAnalysisChart.plot(saved,0,427,240);check(plot.boxes().stream().anyMatch(b->b.color()==NetworkAnalysisChart.RED),"actual spike chart paints red");check(plot.boxes().size()<1024,"bounded line geometry");
         check(plot.labels().stream().noneMatch(l->l.key().contains("thresholds") || l.key().equals("bo.network.chart.stages")),"no color explanation clutter");
         check(plot.boxes().stream().filter(b->b.color()==NetworkAnalysisChart.RED || b.color()==NetworkAnalysisChart.YELLOW || b.color()==NetworkAnalysisChart.GREEN).allMatch(b->b.x2()-b.x1()==1),"lines have no enlarged dot markers");
+        var maximum=plot.samples().stream().max(java.util.Comparator.comparingDouble(NetworkAnalysisChart.Sample::value)).orElseThrow();
+        check(maximum.value()==473 && maximum.unit().equals("ms") && maximum.source().equals("bo.network.server"),"peak retains measured value unit and source");
+        check(plot.labels().stream().anyMatch(l->l.key().equals("bo.network.chart.peak") && l.args().get(0).equals("473.00") && l.args().get(2).equals(String.format(java.util.Locale.ROOT,"%.2f",maximum.timeMs()/1000.0))),"peak annotation uses actual trace window timestamp");
+        check(plot.hover(maximum.x(),maximum.y()).equals(maximum),"hover selects real peak sample");
+        check(NetworkAnalysisChart.hoverLabels(plot,maximum.x(),maximum.y()).get(0).args().get(1).equals("473.00"),"hover label retains actual measurement");
+        check(plot.hover(plot.left()-1,plot.top())==null && plot.hover(plot.left(),plot.bottom()+1)==null,"outside chart has no hover");
+        check(plot.samples().size()<=32,"hover model bounded by trace bins");
+        JsonObject emptyReport=new JsonObject();
+        check(NetworkAnalysisChart.plot(emptyReport,0,427,240).labels().stream().noneMatch(l->l.key().equals("bo.network.chart.peak")),"unmeasured has no invented peak");
         JsonObject gap=JsonParser.parseString("{\"duration_ms\":300,\"points\":[[100,1,40,-1,-1,0],[200,1,-1,-1,-1,0],[300,1,400,-1,-1,0]]}").getAsJsonObject();
         JsonObject gapReport=new JsonObject();gapReport.add("trace",gap);
         check(NetworkAnalysisChart.plot(gapReport,0,427,240).boxes().stream().noneMatch(b->b.color()==NetworkAnalysisChart.RED || b.color()==NetworkAnalysisChart.YELLOW || b.color()==NetworkAnalysisChart.GREEN),"missing sample breaks line without isolated dots");

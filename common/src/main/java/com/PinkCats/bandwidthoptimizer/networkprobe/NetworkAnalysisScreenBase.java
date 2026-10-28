@@ -73,9 +73,13 @@ public abstract class NetworkAnalysisScreenBase extends Screen {
                     };
                     if(observed!=null) lines.add(Component.translatable(observed));
                 }
-                for(var row:NetworkAnalysisOverview.rows(report)) {
+                var overview=NetworkAnalysisOverview.rows(report);
+                var conclusion=NetworkAnalysisOverview.conclusion(overview);
+                lines.add(Component.translatable(conclusion.key()).withStyle(style->style.withColor(conclusion.severity().color)));
+                for(var row:overview) {
+                    if(row.key().equals(conclusion.key())) continue;
                     Object[] args=row.args().stream().map(arg->arg instanceof String key && key.startsWith("bo.network.")?Component.translatable(key):arg).toArray();
-                    lines.add(Component.translatable(row.key(),args));
+                    lines.add(Component.translatable(row.key(),args).withStyle(style->style.withColor(row.severity().color)));
                 }
                 if(details) appendDetails(lines,report);
             }
@@ -131,10 +135,15 @@ public abstract class NetworkAnalysisScreenBase extends Screen {
             }
         }
     }
-    protected List<TextAt> layout(){
+    protected List<TextAt> layout(int mouseX,int mouseY){
         if(charts) {
             preparePlot();ArrayList<TextAt> labels=new ArrayList<>();
-            for(var label:plot.labels()) labels.add(new TextAt(Component.translatable(label.key(),label.args().toArray()).getVisualOrderText(),label.x(),label.y()));
+            ArrayList<NetworkAnalysisChart.Label> chartLabels=new ArrayList<>(plot.labels());
+            chartLabels.addAll(NetworkAnalysisChart.hoverLabels(plot,mouseX,mouseY));
+            for(var label:chartLabels) {
+                Object[] args=label.args().stream().map(arg->arg instanceof String key && key.startsWith("bo.network.")?Component.translatable(key):arg).toArray();
+                labels.add(new TextAt(Component.translatable(label.key(),args).getVisualOrderText(),label.x(),label.y()));
+            }
             return labels;
         }
         ArrayList<FormattedCharSequence> wrapped=new ArrayList<>();

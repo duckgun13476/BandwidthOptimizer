@@ -162,7 +162,9 @@
   "bo.network.read_timeout": "Foi observado um tempo limite de leitura durante o teste.",
   "bo.network.overview": "Visão geral",
   "bo.network.summary.retransmission": "Possível perda de pacotes; não é possível medir com precisão a taxa de perda neste teste.",
-  "bo.network.summary.no_issues": "Nenhum problema de rede identificável foi encontrado neste teste.",
+  "bo.network.summary.no_issues": "Nenhuma anomalia detectada",
+  "bo.network.summary.problems": "Problemas detectados",
+  "bo.network.summary.severe": "Anomalias graves detectadas",
   "bo.network.summary.other": "Outra observação anormal foi registrada. Consulte os detalhes.",
   "bo.network.summary.upload_latency": "Ocioso %s ms → envio sob carga %s ms (aumento de %s ms)",
   "bo.network.summary.upload_pause": "O recebimento do envio pausou por %s ms e depois foi retomado.",
@@ -193,5 +195,15 @@
   "bo.network.chart.no_data": "Esta métrica não foi amostrada; não a considere como zero.",
   "bo.network.chart.bytes": "Unidade: bytes retransmitidos por intervalo",
   "bo.network.chart.segments": "Unidade: segmentos retransmitidos por intervalo",
-  "bo.network.chart.speed_legend": "Envio: recebido pelo servidor; download: recebido pelo cliente"
+  "bo.network.chart.speed_legend": "Envio: recebido pelo servidor; download: recebido pelo cliente",
+  "bo.network.chart.peak": "Pico: %s %s (janela até %s s)",
+  "bo.network.chart.sample": "Janela da amostra até %s s: %s %s",
+  "bo.network.chart.source_phase": "%s · %s",
+  "bo.network.chart.mixed": "Limite entre etapas",
+  "bo.network.chart.tail": "Finalização",
+  "bo.network.chart.unit_segments": "segmentos",
+  "bo.network.chart.phase.1": "Ocioso",
+  "bo.network.chart.phase.2": "Envio",
+  "bo.network.chart.phase.4": "Pausa",
+  "bo.network.chart.phase.8": "Download"
 }

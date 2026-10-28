@@ -9,6 +9,7 @@ final class NetworkAnalysisOverviewRegression {
     static void run() {
         JsonObject report=JsonParser.parseString("{\"outcome\":\"completed\",\"analysis\":{\"local_tcp_retransmitted_bytes_delta\":0},\"peer_summary\":{\"metrics\":{\"tcp_retransmitted_segments\":0}}}").getAsJsonObject();
         check(NetworkAnalysisOverview.keys(report).equals(List.of("bo.network.summary.no_issues")),"healthy overview is one plain conclusion");
+        check(NetworkAnalysisOverview.conclusion(NetworkAnalysisOverview.rows(report)).severity()==NetworkAnalysisOverview.Severity.NORMAL,"complete normal result is green");
         report.getAsJsonObject("peer_summary").getAsJsonObject("metrics").addProperty("tcp_retransmitted_segments",37);
         check(NetworkAnalysisOverview.keys(report).equals(List.of("bo.network.summary.retransmission")),"Linux sender retransmissions remain visible despite client zero");
         report.getAsJsonObject("analysis").addProperty("local_tcp_retransmitted_bytes_delta",3000);
@@ -16,6 +17,16 @@ final class NetworkAnalysisOverviewRegression {
         JsonObject numeric=JsonParser.parseString("{\"outcome\":\"completed\",\"analysis\":{\"local_tcp_retransmitted_bytes_delta\":1250,\"local_tcp_sent_bytes_delta\":50000},\"peer_summary\":{\"metrics\":{\"tcp_retransmitted_segments\":5,\"tcp_sent_segments\":100}},\"findings\":[]}").getAsJsonObject();
         expectRow(numeric,"bo.network.summary.client_retransmission",List.of("1250.00","bo.network.unit.bytes","2.50%"),"Windows byte retransmission rate uses sent-byte denominator");
         expectRow(numeric,"bo.network.summary.server_retransmission",List.of("5.00","bo.network.unit.segments","5.00%"),"Linux segment retransmission rate uses sent-segment denominator");
+        check(NetworkAnalysisOverview.conclusion(NetworkAnalysisOverview.rows(numeric)).key().equals("bo.network.summary.problems"),"ordinary retransmission has explicit yellow problems heading");
+        JsonObject severityReport=numeric.deepCopy();
+        JsonObject severityMetrics=severityReport.getAsJsonObject("peer_summary").getAsJsonObject("metrics");
+        severityMetrics.addProperty("tcp_retransmitted_segments",50);
+        check(NetworkAnalysisOverview.conclusion(NetworkAnalysisOverview.rows(severityReport)).severity()==NetworkAnalysisOverview.Severity.WARNING,"exactly 50 percent stays yellow");
+        severityMetrics.addProperty("tcp_retransmitted_segments",51);
+        check(NetworkAnalysisOverview.conclusion(NetworkAnalysisOverview.rows(severityReport)).key().equals("bo.network.summary.severe"),"above 50 percent has severe heading");
+        check(NetworkAnalysisOverview.rows(severityReport).stream().filter(row->row.key().endsWith("client_retransmission")).allMatch(row->row.severity()==NetworkAnalysisOverview.Severity.WARNING),"severe server row does not recolor normal client warning");
+        severityMetrics.remove("tcp_sent_segments");
+        check(NetworkAnalysisOverview.conclusion(NetworkAnalysisOverview.rows(severityReport)).severity()==NetworkAnalysisOverview.Severity.WARNING,"missing denominator cannot invent severe percentage");
         numeric.getAsJsonObject("analysis").remove("local_tcp_sent_bytes_delta");
         numeric.getAsJsonObject("peer_summary").getAsJsonObject("metrics").remove("tcp_sent_segments");
         expectRow(numeric,"bo.network.summary.client_retransmission",List.of("1250.00","bo.network.unit.bytes","bo.network.rate_unavailable"),"missing Windows denominator does not fabricate a rate");
@@ -25,6 +36,8 @@ final class NetworkAnalysisOverviewRegression {
         measured.getAsJsonArray("findings").add(findingWithEvidence("loaded_application_latency_increase","RECEIVE_DOWNLOAD",40_000_000L,250_000_000L,0,0));
         measured.getAsJsonArray("findings").add(findingWithEvidence("receive_rate_below_configured_sender_rate","download_received",0,0,510_000,1_000_000));
         expectRow(measured,"bo.network.summary.download_latency",List.of("40.00","250.00","210.00"),"latency row reports actual, baseline, and increase");
+        measured.getAsJsonArray("findings").get(0).getAsJsonObject().getAsJsonObject("evidence").addProperty("loaded_p95_ns",426_811_334);
+        check(NetworkAnalysisOverview.conclusion(NetworkAnalysisOverview.rows(measured)).severity()==NetworkAnalysisOverview.Severity.WARNING,"loaded latency stays yellow rather than using baseline percentage increase");
         check(NetworkAnalysisOverview.rows(measured).stream().noneMatch(row->row.key().equals("bo.network.summary.download_rate")),"510 KB/s above the green threshold is omitted from overview rows");
         measured.getAsJsonArray("findings").get(1).getAsJsonObject().getAsJsonObject("evidence").addProperty("receiver_goodput_bytes_s",150_000);
         expectRow(measured,"bo.network.summary.download_rate",List.of("150.00","1000.00"),"low rate row reports measured receive rate and configured target");
@@ -47,6 +60,7 @@ final class NetworkAnalysisOverviewRegression {
         check(NetworkAnalysisOverview.keys(report).contains("bo.network.incomplete"),"partial report is explicit");
         report=new JsonObject();
         check(!NetworkAnalysisOverview.keys(report).contains("bo.network.summary.no_issues"),"empty report not healthy");
+        check(NetworkAnalysisOverview.conclusion(NetworkAnalysisOverview.rows(report)).severity()==NetworkAnalysisOverview.Severity.UNKNOWN,"missing evidence stays unknown not green");
         if(System.getProperty("networkProbeOverviewReport")!=null) {
             try {
                 String raw=java.nio.file.Files.readAllLines(java.nio.file.Path.of(System.getProperty("networkProbeOverviewReport"))).stream().filter(s->s.contains("\"peer_summary\"")).reduce((a,b)->b).orElseThrow();

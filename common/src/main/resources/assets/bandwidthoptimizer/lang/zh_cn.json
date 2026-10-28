@@ -162,7 +162,9 @@
   "bo.network.read_timeout": "本次检测期间发生读取超时。",
   "bo.network.overview": "返回概览",
   "bo.network.summary.retransmission": "可能存在丢包；本次无法准确测得丢包率。",
-  "bo.network.summary.no_issues": "本次检测未发现可识别的网络异常。",
+  "bo.network.summary.no_issues": "未发现异常",
+  "bo.network.summary.problems": "发现问题",
+  "bo.network.summary.severe": "发现严重异常",
   "bo.network.summary.other": "检测到其他异常，请查看详细信息。",
   "bo.network.summary.upload_latency": "空载 %s ms → 上传负载 %s ms（增加 %s ms）",
   "bo.network.summary.upload_pause": "上传接收暂停 %s ms 后恢复。",
@@ -193,5 +195,15 @@
   "bo.network.chart.no_data": "未采集此指标；不能将其视为 0。",
   "bo.network.chart.bytes": "单位：每个时间窗重传字节数",
   "bo.network.chart.segments": "单位：每个时间窗重传段数",
-  "bo.network.chart.speed_legend": "上传：服务器接收；下载：客户端接收"
+  "bo.network.chart.speed_legend": "上传：服务器接收；下载：客户端接收",
+  "bo.network.chart.peak": "峰值：%s %s（窗口截至 %s s）",
+  "bo.network.chart.sample": "采样窗口截至 %s s：%s %s",
+  "bo.network.chart.source_phase": "%s · %s",
+  "bo.network.chart.mixed": "阶段交界",
+  "bo.network.chart.tail": "收尾",
+  "bo.network.chart.unit_segments": "段",
+  "bo.network.chart.phase.1": "空载",
+  "bo.network.chart.phase.2": "上传",
+  "bo.network.chart.phase.4": "间歇",
+  "bo.network.chart.phase.8": "下载"
 }
