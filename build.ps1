@@ -1,12 +1,24 @@
-param(
-    [string]$DefaultTask = 'packageAllVersions',
-    [string[]]$AllowRetryTasks = @('build','assemble','jar','jarAllVersions','buildAllVersions','compileJava','compileTestJava','compileJavaAllVersions','packageAllVersions','allworkPackageAllVersions'),
-    [string]$WrapperPath = ''
-)
-
+$DefaultTask = 'packageAllVersions'
+$AllowRetryTasks = @('clean','build','assemble','jar','jarAllVersions','buildAllVersions','compileJava','compileTestJava','compileJavaAllVersions','compileAllVersions','packageAllVersions','allworkPackageAllVersions')
+$WrapperPath = ''
+$hasDefaultTaskOverride = $false
+$rawArguments = @($args)
+$GradleArguments = @()
+for ($index = 0; $index -lt $rawArguments.Count; $index++) {
+    $arg = $rawArguments[$index]
+    if ($arg -eq '-DefaultTask') {
+        if ($index + 1 -ge $rawArguments.Count) { throw '-DefaultTask requires a task name.' }
+        $DefaultTask = $rawArguments[++$index]
+        $hasDefaultTaskOverride = $true
+    } elseif ($arg -eq '-WrapperPath') {
+        if ($index + 1 -ge $rawArguments.Count) { throw '-WrapperPath requires a path.' }
+        $WrapperPath = $rawArguments[++$index]
+    } else {
+        $GradleArguments += $arg
+    }
+}
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
-$GradleArguments = @($args)
 $root = $PSScriptRoot
 if (-not $WrapperPath) {
     $wrapperCandidates = if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
@@ -32,7 +44,7 @@ for ($index = 0; $index -lt $GradleArguments.Count; $index++) {
     $cliTasks += $arg
 }
 $allArguments = @(
-    if ($PSBoundParameters.ContainsKey('DefaultTask') -or $cliTasks.Count -eq 0) { @($DefaultTask) + @($GradleArguments) }
+    if ($hasDefaultTaskOverride -or $cliTasks.Count -eq 0) { @($DefaultTask) + @($GradleArguments) }
     else { @($GradleArguments) }
 )
 $offline = $allArguments -contains '--offline' -or $allArguments -contains '--offline=true'
@@ -115,7 +127,7 @@ try {
             $text = ($attemptLogs | ForEach-Object { Get-Content -LiteralPath $_ -Raw }) -join "`n"
             $isCompilationFailure = $text -match '(?im)(Compilation failed|\berror: |There were failing tests|tests? failed)'
             $resolverContext = $text -match '(?is)(Could not resolve|Could not get (?:resource|.* for)|Could not (?:GET|HEAD)|Failed to resolve|artifact.*(?:transfer|download)|Could not determine artifacts)'
-            $transport = $text -match '(?i)(Remote host terminated the handshake|SSLHandshakeException|TLS handshake|ConnectTimeoutException|SocketTimeoutException|Read timed out|connect timed out|Connection reset|Connection refused|UnknownHostException|No such host is known|Could not resolve host|Received status code (502|503|504)|status code (502|503|504))'
+            $transport = $text -match '(?i)(Remote host terminated the handshake|SSLHandshakeException|TLS handshake|ConnectTimeoutException|SocketTimeoutException|Read timed out|connect timed out|Connection reset|Connection refused|UnknownHostException|No such host is known|Could not resolve host|Received status code (500|502|503|504)|status code (500|502|503|504))'
             $ordinaryMissing = $text -match '(?i)(status code 404|HTTP 404|resource not found|Could not find .* in https?://)'
             if ($resolverContext -and $transport -and -not $ordinaryMissing -and -not $isCompilationFailure) { continue }
         }
