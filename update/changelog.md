@@ -1,3 +1,17 @@
+#### v5.10.33.155-release
+
+Changes since the last public release, v5.10.32.140, including test builds 141–154. Install the same BO version on both client and server.
+
+1. Add opt-in in-game network analysis with automatic sampling after joining, measured speeds and latency, TCP retransmission statistics, localized results, and compact charts with peak and hover readouts. TCP observations cover the measured socket segment, not the entire proxy path or an exact physical packet-loss rate.
+2. Reduce repeated chunk-reference metadata with acknowledged compact IDs, and fix reference conflicts when proxies replace backends while keeping the client connection. Preserve exact FULL fallback and recovery.
+3. Refresh eligible loaded chunk-cache entries after updates, preserve native section-buffer padding, and show successful updated-cache reuse in the HUD with bounded metadata.
+4. Require compatible BO on both client and server across all supported loaders, rejecting missing or incompatible peers during connection setup.
+5. Reduce chunk snapshot and transport encoding allocations, and avoid redundant NeoForge splitter encoding for verified vanilla movement packets while retaining custom-codec fallback.
+6. Reuse identical complete WATUT GUI images and replay them safely to fresh viewers, with bounded caches and separate client/server savings counters.
+7. Skip unchanged TAB headers and footers, combine redundant CreateSifter updates, and combine adjacent complete LightmansCurrency bank snapshots within supported trades while preserving final state and packet ordering.
+8. Add finer entity and LightmansCurrency traffic breakdowns, optimization counters, localized reports, and explicit observation periods.
+9. Silence confirmed local quits, move ordinary connection-close details to DEBUG, and retain bounded asynchronous failure summaries independently of detailed diagnostic sample limits.
+
 #### v5.10.33.154-release
 
 1. Fix compact chunk-reference dictionary conflicts when a proxy replaces the backend while keeping the client connection. Scope bindings to the backend session and prevent delayed acknowledgements from confirming unrelated IDs.
