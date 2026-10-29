@@ -218,5 +218,13 @@
   "bo.network.chart.phase.1": "Idle",
   "bo.network.chart.phase.2": "Upload",
   "bo.network.chart.phase.4": "Pause",
-  "bo.network.chart.phase.8": "Download"
+  "bo.network.chart.phase.8": "Download",
+  "bo.network.server_failure": "Server ended the probe: %s; stage: %s (%s s)",
+  "bo.network.server_failure.deadline": "Probe reached its time limit",
+  "bo.network.server_failure.local_stall": "Server probe thread scheduling stalled",
+  "bo.network.server_failure.cancelled": "Probe was cancelled",
+  "bo.network.server_failure.failed": "Probe failed",
+  "bo.network.partial_upload": "Upload received by server: %s / %s KB (incomplete transfer; integrity not verified)",
+  "bo.network.partial_download": "Download committed by server: %s / %s KB (does not mean the client received it completely)",
+  "bo.network.observed_latency": "Server application round-trip latency p95 during %s: %s ms"
 }

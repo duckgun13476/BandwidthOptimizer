@@ -63,8 +63,35 @@ final class NetworkAnalysisOverview {
                 rows.add(new Row(key,args));
             } else rows.add(new Row(key,List.of()));
         }
+        appendPartialFailure(rows,report.getAsJsonObject("peer_summary"));
         if(rows.isEmpty()) rows.add(new Row("bo.network.summary.no_issues",List.of()));
         return List.copyOf(rows);
+    }
+    private static void appendPartialFailure(List<Row> rows,JsonObject peer) {
+        if(peer==null || !peer.has("last_phase") || !peer.has("outcome") || "completed".equals(peer.get("outcome").getAsString())) return;
+        JsonObject metrics=peer.getAsJsonObject("metrics");
+        String reason=switch(peer.get("outcome").getAsString()) {
+            case "test_deadline_not_packet_loss" -> "deadline";
+            case "local_event_loop_stall" -> "local_stall";
+            case "operator_cancelled","peer_cancelled" -> "cancelled";
+            default -> "failed";
+        };
+        rows.add(new Row("bo.network.server_failure",List.of("bo.network.server_failure."+reason,
+                "bo.network.phase."+peer.get("last_phase").getAsString(),format(number(metrics,"phase_elapsed_ns")/1e9))));
+        if(!metrics.has("upload_verified_bytes"))
+            rows.add(new Row("bo.network.partial_upload",List.of(format(number(metrics,"upload_received_bytes")/1000),
+                    format(number(metrics,"budget_bytes_per_direction")/1000))));
+        if(!metrics.has("download_verified_bytes") && number(metrics,"download_sent_bytes")>0)
+            rows.add(new Row("bo.network.partial_download",List.of(format(number(metrics,"download_sent_bytes")/1000),
+                    format(number(metrics,"budget_bytes_per_direction")/1000))));
+        String[] prefixes={"baseline","upload","download"},phases={"BASELINE","RECEIVE_UPLOAD","SEND_DOWNLOAD"};
+        for(int i=0;i<prefixes.length;i++) {
+            String prefix=prefixes[i];
+            double latency=number(metrics,prefix+"_p95_ns");
+            // An observed percentile remains useful when too few samples establish an increase finding.
+            if(latency>=200_000_000 && rows.stream().noneMatch(row -> row.key().equals("bo.network.summary."+prefix+"_latency")))
+                rows.add(new Row("bo.network.observed_latency",List.of("bo.network.phase."+phases[i],format(latency/1e6))));
+        }
     }
     private static void appendRetransmission(List<Row> rows,JsonObject metrics,boolean server) {
         if(metrics==null) return;

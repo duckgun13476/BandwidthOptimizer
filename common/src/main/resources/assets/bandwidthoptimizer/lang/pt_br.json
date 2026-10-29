@@ -218,5 +218,13 @@
   "bo.network.chart.phase.1": "Ocioso",
   "bo.network.chart.phase.2": "Envio",
   "bo.network.chart.phase.4": "Pausa",
-  "bo.network.chart.phase.8": "Download"
+  "bo.network.chart.phase.8": "Download",
+  "bo.network.server_failure": "O servidor encerrou o teste: %s; etapa: %s (%s s)",
+  "bo.network.server_failure.deadline": "O teste atingiu o limite de tempo",
+  "bo.network.server_failure.local_stall": "O agendamento da thread de teste do servidor parou",
+  "bo.network.server_failure.cancelled": "O teste foi cancelado",
+  "bo.network.server_failure.failed": "Ocorreu um erro no teste",
+  "bo.network.partial_upload": "Upload recebido pelo servidor: %s / %s KB (transferência incompleta; integridade não verificada)",
+  "bo.network.partial_download": "Download enviado à fila pelo servidor: %s / %s KB (isso não significa que o cliente o recebeu por completo)",
+  "bo.network.observed_latency": "Latência p95 de ida e volta da aplicação do servidor durante %s: %s ms"
 }

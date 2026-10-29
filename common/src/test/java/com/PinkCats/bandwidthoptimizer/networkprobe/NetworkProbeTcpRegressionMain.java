@@ -15,10 +15,11 @@ import java.util.concurrent.atomic.AtomicReference;
 /** Actual loopback TCP and production session state machine; NOT a native Minecraft/Velocity acceptance test. */
 public final class NetworkProbeTcpRegressionMain {
     public static void main(String[] args) throws Exception {
-        runCase(false);
-        runCase(true);
+        runCase(false,false);
+        runCase(true,false);
+        runCase(false,true);
     }
-    private static void runCase(boolean delayedReply) throws Exception {
+    private static void runCase(boolean delayedReply,boolean abortUpload) throws Exception {
         EventLoopGroup acceptor=new NioEventLoopGroup(1), workers=new NioEventLoopGroup(2);
         Channel listener=null,client=null;
         AtomicReference<Channel> backend=new AtomicReference<>();
@@ -28,14 +29,25 @@ public final class NetworkProbeTcpRegressionMain {
         try {
             listener=new ServerBootstrap().group(acceptor,workers).channel(NioServerSocketChannel.class)
                     .childHandler(new ChannelInitializer<Channel>() {
-                        @Override protected void initChannel(Channel ch) { backend.set(ch); install(ch,id,true,sr,finished,delayedReply); }
+                        @Override protected void initChannel(Channel ch) { backend.set(ch); install(ch,id,true,sr,finished,delayedReply,abortUpload); }
                     }).bind("127.0.0.1",0).sync().channel();
             int port=((InetSocketAddress)listener.localAddress()).getPort();
             client=new Bootstrap().group(workers).channel(NioSocketChannel.class)
                     .handler(new ChannelInitializer<Channel>() {
-                        @Override protected void initChannel(Channel ch) { install(ch,id,false,cr,finished,delayedReply); }
+                        @Override protected void initChannel(Channel ch) { install(ch,id,false,cr,finished,delayedReply,abortUpload); }
                     }).connect("127.0.0.1",port).sync().channel();
             if(!finished.await(15,TimeUnit.SECONDS)) throw new AssertionError("TCP deadline");
+            if(abortUpload) {
+                JsonObject peer=cr.get().getAsJsonObject("peer_summary");
+                if(!cr.get().get("outcome").getAsString().equals("server_test_deadline_not_packet_loss")
+                        || peer==null || !ProbeResultSummary.decode(ProbeResultSummary.encode(sr.get())).equals(peer)
+                        || peer.getAsJsonObject("metrics").get("upload_received_bytes").getAsLong()<1
+                        || peer.getAsJsonObject("metrics").has("upload_verified_bytes")
+                        || !client.isActive() || !backend.get().isActive())
+                    throw new AssertionError("TCP partial failure evidence/connection: "+cr.get());
+                System.out.println("NETWORK_PROBE_TCP_PARTIAL_FAILURE_PASS");
+                return;
+            }
             for(JsonObject report:new JsonObject[]{sr.get(),cr.get()}) {
                 if(report==null || !report.get("outcome").getAsString().equals("completed"))
                     throw new AssertionError(String.valueOf(report));
@@ -72,7 +84,7 @@ public final class NetworkProbeTcpRegressionMain {
             workers.shutdownGracefully(0,2,TimeUnit.SECONDS).syncUninterruptibly();
         }
     }
-    private static void install(Channel channel,UUID id,boolean server,AtomicReference<JsonObject> report,CountDownLatch finished,boolean delayedReply) {
+    private static void install(Channel channel,UUID id,boolean server,AtomicReference<JsonObject> report,CountDownLatch finished,boolean delayedReply,boolean abortUpload) {
         AtomicReference<NetworkProbeSession> state=new AtomicReference<>();
         channel.pipeline().addLast("wire",new ChannelDuplexHandler() {
             @Override public void channelRead(ChannelHandlerContext ctx,Object msg) throws Exception {
@@ -102,7 +114,11 @@ public final class NetworkProbeTcpRegressionMain {
                 if(!server && frame.kind()==ProbeFrame.OFFER) state.get().acceptedOffer();
                 else if(!server && delayedReply && frame.kind()==ProbeFrame.PING)
                     ctx.executor().schedule(() -> state.get().accept(frame),80,TimeUnit.MILLISECONDS);
-                else state.get().accept(frame);
+                else {
+                    state.get().accept(frame);
+                    if(server && abortUpload && frame.kind()==ProbeFrame.DATA && !state.get().done())
+                        state.get().abort("test_deadline_not_packet_loss");
+                }
             }
             @Override public void channelInactive(ChannelHandlerContext ctx) {
                 if(tick!=null) tick.cancel(false);

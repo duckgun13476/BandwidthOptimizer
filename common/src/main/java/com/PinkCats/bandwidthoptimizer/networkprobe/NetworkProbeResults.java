@@ -31,6 +31,7 @@ public final class NetworkProbeResults {
             // Raw windows and per-ping history remain in diagnostics, not retained UI state.
             String[] fields={"v","test_id","side","outcome","last_phase","started_at_epoch_ms","finished_at_epoch_ms",
                     "elapsed_ns","budget_bytes_per_direction","rate_limit_bytes_s","test_path","window",
+                    "upload_received_bytes","download_sent_bytes","phase_elapsed_ns",
                     "write_backpressure_ticks","max_event_loop_scheduling_delay_ns","last_error_class",
                     "disconnect_category","tcp_start","tcp_end","tcp_last_observed","tcp_last_observed_elapsed_ns",
                     "tcp_terminal_sample_supported","tcp_baseline_elapsed_ns","analysis","phases",

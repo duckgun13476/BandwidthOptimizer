@@ -59,7 +59,32 @@ final class NetworkProbeSession {
 
     void accept(ProbeFrame f) {
         if(done() || !id.equals(f.id())) return;
-        if(f.kind()==ProbeFrame.CANCEL) { finish("peer_cancelled"); return; }
+        if(f.kind()==ProbeFrame.CANCEL) {
+            if(empty(f)) { finish("peer_cancelled"); return; }
+            if(server || f.sequence()!=1 || f.value()!=0) { abort("invalid_failure_summary"); return; }
+            try {
+                JsonObject decoded=ProbeResultSummary.decode(f.body()),metrics=decoded.getAsJsonObject("metrics");
+                if("completed".equals(decoded.get("outcome").getAsString()) || peerSummary!=null
+                        || metrics.get("budget_bytes_per_direction").getAsLong()!=budget
+                        || metrics.get("rate_limit_bytes_s").getAsLong()!=rate
+                        || metrics.get("upload_received_bytes").getAsLong()>sent
+                        || metrics.get("download_sent_bytes").getAsLong()<received)
+                    throw new IllegalArgumentException("Failure summary owner/progress");
+                if(phases.has("upload_peer_receipt")) {
+                    JsonObject receipt=phases.getAsJsonObject("upload_peer_receipt");
+                    if(!metrics.has("upload_verified_bytes") || metrics.get("upload_verified_bytes").getAsLong()!=sent
+                            || metrics.get("upload_receive_ns").getAsLong()!=receipt.get("peer_receive_phase_ns").getAsLong())
+                        throw new IllegalArgumentException("Failure upload receipt mismatch");
+                }
+                if(metrics.has("download_verified_bytes")) {
+                    if(!phases.has("download_received") || metrics.get("download_verified_bytes").getAsLong()!=received
+                            || metrics.get("download_receive_ns").getAsLong()!=phases.getAsJsonObject("download_received").get("receiver_phase_ns").getAsLong())
+                        throw new IllegalArgumentException("Failure download receipt mismatch");
+                }
+                peerSummary=decoded;
+            } catch(IllegalArgumentException | IllegalStateException | NullPointerException bad) { abort("invalid_failure_summary"); return; }
+            finish("server_"+peerSummary.get("outcome").getAsString()); return;
+        }
         if(f.kind()==ProbeFrame.PING) {
             if(server || f.sequence()>=350 || f.body().length!=0) { abort("invalid_ping"); return; }
             // At most 10 replies per second, independent of the peer's requested timestamp.
@@ -101,7 +126,8 @@ final class NetworkProbeSession {
                 try {
                     JsonObject decoded=ProbeResultSummary.decode(f.body());
                     JsonObject metrics=decoded.getAsJsonObject("metrics");
-                    if(metrics.get("budget_bytes_per_direction").getAsLong()!=budget
+                    if(!"completed".equals(decoded.get("outcome").getAsString())
+                            || metrics.get("budget_bytes_per_direction").getAsLong()!=budget
                             || metrics.get("rate_limit_bytes_s").getAsLong()!=rate
                             || metrics.get("upload_verified_bytes").getAsLong()!=sent
                               || metrics.get("download_verified_bytes").getAsLong()!=received
@@ -244,7 +270,9 @@ final class NetworkProbeSession {
     }
     void abort(String reason) {
         if(done()) return;
-        send(ProbeFrame.control(ProbeFrame.CANCEL,id));
+        // Server failure and observations travel atomically in one bounded cancellation frame.
+        // Old peers still recognize CANCEL; a client never supplies a server summary.
+        if(!server) send(ProbeFrame.control(ProbeFrame.CANCEL,id));
         finish(reason);
     }
     void finish(String outcome) {
@@ -275,6 +303,11 @@ final class NetworkProbeSession {
         report.addProperty("window","this_test_only");
         report.addProperty("elapsed_ns",clock.getAsLong()-started);
         report.addProperty("budget_bytes_per_direction",budget); report.addProperty("rate_limit_bytes_s",rate);
+        if(server) {
+            report.addProperty("upload_received_bytes",received);
+            report.addProperty("download_sent_bytes",sent);
+            report.addProperty("phase_elapsed_ns",Math.max(0,clock.getAsLong()-phaseStart));
+        }
         report.addProperty("netty_in_bytes_including_game",nettyInbound);
         report.addProperty("netty_out_bytes_including_game",nettyOutbound);
         report.addProperty("netty_boundary","probe_monitor; not_tcp_ack_or_nic");
@@ -314,6 +347,15 @@ final class NetworkProbeSession {
                 sender.apply(ProbeFrame.control(ProbeFrame.COMPLETE,id));
             } catch(RuntimeException unavailable) {
                 report.addProperty("peer_summary_delivery","not_queued");
+            }
+        } else if(server && channel.isActive()) {
+            try {
+                sender.apply(new ProbeFrame(ProbeFrame.CANCEL,id,1,0,ProbeResultSummary.encode(report)));
+            } catch(RuntimeException unavailable) {
+                report.addProperty("peer_summary_delivery","not_queued");
+                // Preserve the termination signal even if local observations cannot be encoded.
+                try { sender.apply(ProbeFrame.control(ProbeFrame.CANCEL,id)); }
+                catch(RuntimeException ignored) { /* The report still records unavailable delivery. */ }
             }
         }
         completion.accept(report);

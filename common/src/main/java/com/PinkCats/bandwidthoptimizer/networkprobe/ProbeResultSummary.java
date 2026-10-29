@@ -10,6 +10,10 @@ final class ProbeResultSummary {
             "baseline_p50_ns","baseline_p95_ns","upload_p50_ns","upload_p95_ns","download_p50_ns","download_p95_ns",
             "tcp_retransmitted_bytes","tcp_retransmitted_segments","tcp_delta_window_start_ns","tcp_delta_window_end_ns","tcp_sent_bytes","tcp_sent_segments"};
     private static final String[] CODES={"loaded_application_latency_increase","receive_pause_recovered","receive_rate_below_configured_sender_rate"};
+    private static final String[] FAILURES={"test_deadline_not_packet_loss","local_event_loop_stall","sender_no_progress",
+            "write_failed","operator_cancelled","peer_cancelled","connection_closed_cause_unknown",
+            "backend_login_replaced_session","scheduler_closing","protocol_error"};
+    private static final String[] PARTIAL={"upload_received_bytes","download_sent_bytes","phase_elapsed_ns"};
     private static final String[] PHASES={"RECEIVE_UPLOAD","SEND_DOWNLOAD","upload_received"};
     private static final String[] VALUES={"baseline_samples","loaded_samples","baseline_p95_ns","loaded_p95_ns",
             "minimum_increase_ns","minimum_ratio","no_progress_start_ns","no_progress_end_ns","resumed_by_ns",
@@ -18,8 +22,8 @@ final class ProbeResultSummary {
             "achieved_to_configured_ratio","maximum_ratio"};
     private ProbeResultSummary() {}
     static byte[] encode(JsonObject report) {
-        if(!"server".equals(report.get("side").getAsString()) || !"completed".equals(report.get("outcome").getAsString()))
-            throw new IllegalArgumentException("Only completed server summaries");
+        if(!"server".equals(report.get("side").getAsString())) throw new IllegalArgumentException("Only server summaries");
+        boolean completed="completed".equals(report.get("outcome").getAsString());
         JsonObject metrics=new JsonObject();
         for(String key:new String[]{"started_at_epoch_ms","elapsed_ns","budget_bytes_per_direction","rate_limit_bytes_s"})
             metrics.add(key,report.get(key));
@@ -40,7 +44,14 @@ final class ProbeResultSummary {
         copy(metrics,"tcp_sent_segments",analysis,"local_tcp_sent_segments_delta");
         try {
             ByteArrayOutputStream bytes=new ByteArrayOutputStream(); DataOutputStream out=new DataOutputStream(bytes);
-            out.writeByte(2);
+            out.writeByte(completed?2:3);
+            if(!completed) {
+                String outcome=report.get("outcome").getAsString();
+                int reason=java.util.Arrays.asList(FAILURES).indexOf(outcome);
+                out.writeByte(reason<0?FAILURES.length-1:reason);
+                out.writeByte(index(new String[]{"NEGOTIATING","BASELINE","RECEIVE_UPLOAD","REST","SEND_DOWNLOAD","WAIT_DOWNLOAD_RECEIPT"},report.get("last_phase").getAsString()));
+                for(String key:PARTIAL) out.writeLong(required(report,key));
+            }
             for(String key:METRICS) out.writeLong(metrics.has(key)?metrics.get(key).getAsLong():-1);
             JsonArray findings=report.getAsJsonArray("findings");
             if(findings.size()>6) throw new IllegalArgumentException("Too many findings");
@@ -61,7 +72,16 @@ final class ProbeResultSummary {
         if(bytes.length>2048) throw new IllegalArgumentException("Oversized summary");
         try {
             DataInputStream in=new DataInputStream(new ByteArrayInputStream(bytes));
-            int version=in.readUnsignedByte();if(version!=1 && version!=2) throw new IllegalArgumentException("Summary version");
+            int version=in.readUnsignedByte();if(version<1 || version>3) throw new IllegalArgumentException("Summary version");
+            String outcome="completed",lastPhase=null;
+            JsonObject partial=new JsonObject();
+            if(version==3) {
+                int reason=in.readUnsignedByte(),stage=in.readUnsignedByte();
+                String[] stages={"NEGOTIATING","BASELINE","RECEIVE_UPLOAD","REST","SEND_DOWNLOAD","WAIT_DOWNLOAD_RECEIPT"};
+                if(reason>=FAILURES.length || stage>=stages.length) throw new IllegalArgumentException("Failure reason/phase");
+                outcome=FAILURES[reason];lastPhase=stages[stage];
+                for(String key:PARTIAL) {long value=in.readLong();if(value<0) throw new IllegalArgumentException("Negative partial progress");partial.addProperty(key,value);}
+            }
             JsonObject metrics=new JsonObject();
             for(String key:METRICS) {
                 if(version==1 && (key.equals("tcp_sent_bytes") || key.equals("tcp_sent_segments"))) continue;
@@ -71,11 +91,22 @@ final class ProbeResultSummary {
             long budget=required(metrics,"budget_bytes_per_direction"),rate=required(metrics,"rate_limit_bytes_s");
             if(budget<1 || budget>NetworkProbeSession.MAX_BYTES || rate<125000 || rate>16000000
                     || required(metrics,"elapsed_ns")>NetworkProbeSession.MAX_TIME+NetworkProbeSession.SECOND
-                    || required(metrics,"upload_verified_bytes")>budget || required(metrics,"download_verified_bytes")>budget)
+                    || metrics.has("upload_verified_bytes") && required(metrics,"upload_verified_bytes")>budget
+                    || metrics.has("download_verified_bytes") && required(metrics,"download_verified_bytes")>budget)
                 throw new IllegalArgumentException("Summary budget");
             required(metrics,"started_at_epoch_ms");
-            for(String key:new String[]{"upload_verified_bytes","download_verified_bytes","upload_receive_ns","download_receive_ns"})
-                if(required(metrics,key)<1) throw new IllegalArgumentException("Incomplete transfer summary");
+            for(String[] pair:new String[][]{{"upload_verified_bytes","upload_receive_ns"},{"download_verified_bytes","download_receive_ns"}}) {
+                if(version<3 || metrics.has(pair[0]) || metrics.has(pair[1]))
+                    if(required(metrics,pair[0])<1 || required(metrics,pair[1])<1) throw new IllegalArgumentException("Incomplete transfer summary");
+            }
+            if(version==3) {
+                if(required(partial,"upload_received_bytes")>budget || required(partial,"download_sent_bytes")>budget
+                        || required(partial,"phase_elapsed_ns")>required(metrics,"elapsed_ns")
+                        || metrics.has("upload_verified_bytes") && required(metrics,"upload_verified_bytes")!=required(partial,"upload_received_bytes")
+                        || metrics.has("download_verified_bytes") && required(metrics,"download_verified_bytes")!=required(partial,"download_sent_bytes"))
+                    throw new IllegalArgumentException("Partial progress bounds");
+                for(String key:PARTIAL) metrics.add(key,partial.get(key));
+            }
             for(String key:METRICS) if((key.endsWith("_ns") || key.equals("elapsed_ns")) && metrics.has(key)
                     && metrics.get(key).getAsLong()>NetworkProbeSession.MAX_TIME+NetworkProbeSession.SECOND)
                 throw new IllegalArgumentException("Summary duration");
@@ -98,10 +129,11 @@ final class ProbeResultSummary {
                 for(String key:requiredEvidence[code]) if(!evidence.has(key)) throw new IllegalArgumentException("Incomplete finding evidence");
                 finding.add("evidence",evidence); findings.add(finding);
             }
-            JsonObject trace=version==2?NetworkProbeTrace.read(in):null;
+            JsonObject trace=version>=2?NetworkProbeTrace.read(in):null;
             if(in.available()!=0) throw new IllegalArgumentException("Trailing summary data");
             JsonObject result=new JsonObject(); result.addProperty("v",1); result.addProperty("side","server");
-            result.addProperty("outcome","completed"); result.addProperty("scope","peer_report; TCP counters cover server local socket only");
+            result.addProperty("outcome",outcome);if(lastPhase!=null)result.addProperty("last_phase",lastPhase);
+            result.addProperty("scope","peer_report; TCP counters cover server local socket only");
             result.add("metrics",metrics); result.add("findings",findings);if(trace!=null) result.add("trace",trace);return result;
         } catch(IOException failure) { throw new IllegalArgumentException("Incomplete summary",failure); }
     }

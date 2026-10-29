@@ -218,5 +218,13 @@
   "bo.network.chart.phase.1": "空载",
   "bo.network.chart.phase.2": "上传",
   "bo.network.chart.phase.4": "间歇",
-  "bo.network.chart.phase.8": "下载"
+  "bo.network.chart.phase.8": "下载",
+  "bo.network.server_failure": "服务器中止原因：%s；阶段：%s（%s 秒）",
+  "bo.network.server_failure.deadline": "检测达到时间上限",
+  "bo.network.server_failure.local_stall": "服务器检测线程调度停顿",
+  "bo.network.server_failure.cancelled": "检测被取消",
+  "bo.network.server_failure.failed": "检测发生错误",
+  "bo.network.partial_upload": "服务器收到上传：%s / %s KB（不完整传输尚未通过完整性校验）",
+  "bo.network.partial_download": "服务器已提交下载：%s / %s KB（不代表客户端完整收到）",
+  "bo.network.observed_latency": "%s期间服务器应用往返延迟 p95：%s ms"
 }
