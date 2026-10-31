@@ -4,7 +4,6 @@ import com.PinkCats.bandwidthoptimizer.debug.DiagnosticLog;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportStateManager;
-import com.PinkCats.bandwidthoptimizer.channel.algorithm.batch.ChannelTransportBatchManager;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelCapturedFrame;
 import com.PinkCats.bandwidthoptimizer.chunk.budget.ChunkClientCacheBudgetManager;
 import com.PinkCats.bandwidthoptimizer.chunk.budget.ChunkClientTrimmedFullBaseStore;
@@ -57,7 +56,7 @@ public final class ChunkInboundObservationService {
                 continue;
             }
 
-            resetVelocityServerSwitchStateIfNeeded(context, protocolName, packet);
+            resetWorldStateForLoginIfNeeded(context, protocolName, packet);
             ChunkTransportBoundaryController.observeInboundPacket(context, protocolName, packet);
             long epoch = readCurrentEpoch(context);
             ChunkPacketDescriptor descriptor = ChunkPacketClassifier.classifyOutboundPlayPacket(protocolName, packet);
@@ -104,8 +103,7 @@ public final class ChunkInboundObservationService {
         });
     }
 
-    // clear and save hash chunk
-    private static void resetVelocityServerSwitchStateIfNeeded(
+    private static void resetWorldStateForLoginIfNeeded(
             ChannelHandlerContext context,
             String protocolName,
             Packet<?> packet
@@ -114,11 +112,17 @@ public final class ChunkInboundObservationService {
             return;
         }
 
+        resetWorldStateForLogin(context, protocolName);
+    }
+
+    static void resetWorldStateForLogin(ChannelHandlerContext context, String protocolName) {
+        // GameJoin invalidates world/cache state, not the peer's transport stream.
+        // Early PLAY handshakes can already have consumed streaming frames here.
+        // Keep their dictionaries, sequence numbers, batches and epoch-gated work;
+        // real transport resets belong to explicit switch/recovery/close boundaries.
         String reason = "clientbound_login_server_switch_boundary";
         String channelId = com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel());
         ChannelTransportStateManager.endProxyServerSwitchBoundary(context.channel(), reason);
-        ChannelTransportBatchManager.clearChannelState(context.channel(), reason);
-        ChannelTransportStateManager.clearSession(context.channel(), reason);
         ChunkTransportBoundaryController.resetChannelState(context, reason);
         ChunkRuntimeReferenceStore.clearChannel(channelId);
         ChunkShadowSnapshotManager.clearChannel(channelId);
@@ -129,7 +133,7 @@ public final class ChunkInboundObservationService {
             DiagnosticLog.info(DiagnosticToolRegistry.Tool.CHUNK_INBOUND_OBSERVATION, "event=velocity_switch_reset channel={}, protocol={}, packetClass={}, reason={}",
                     com.PinkCats.bandwidthoptimizer.channel.ChannelIdentity.longText(context.channel()),
                     protocolName,
-                    packet.getClass().getName(),
+                    ClientboundLoginPacket.class.getName(),
                     reason
             );
         }

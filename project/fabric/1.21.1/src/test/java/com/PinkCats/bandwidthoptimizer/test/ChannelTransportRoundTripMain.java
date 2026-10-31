@@ -37,6 +37,7 @@ public final class ChannelTransportRoundTripMain {
 
         verifyLightBatchRoundTrip();
         verifyNonTransportPassThrough(receiverSession);
+        com.PinkCats.bandwidthoptimizer.chunk.classify.ChunkLoginTransportLifecycleRegression.verify();
         System.out.println("All channel transport round trips passed.");
     }
 
