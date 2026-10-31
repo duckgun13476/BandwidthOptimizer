@@ -1,6 +1,11 @@
-#### v5.10.33.155-release
+#### v5.10.33.156-release
 
-Changes since the last public release, v5.10.32.140, including test builds 141–154. Install the same BO version on both client and server.
+1. Fix login timeouts with Polymer-based mods, including Graves, by preserving the active compression session and queued packets across GameJoin while refreshing world caches. The shared lifecycle fix applies across supported loaders.(thanks to Filipovnica)
+2. Preserve partial network-analysis evidence when a test times out, so incomplete tests can still report the observations collected.
+3. Localize network-analysis command feedback.
+4. Preserve Gradle arguments and Unix wrapper execution in build entry points.
+
+#### v5.10.33.155-release
 
 1. Add opt-in in-game network analysis with automatic sampling after joining, measured speeds and latency, TCP retransmission statistics, localized results, and compact charts with peak and hover readouts. TCP observations cover the measured socket segment, not the entire proxy path or an exact physical packet-loss rate.
 2. Reduce repeated chunk-reference metadata with acknowledged compact IDs, and fix reference conflicts when proxies replace backends while keeping the client connection. Preserve exact FULL fallback and recovery.
