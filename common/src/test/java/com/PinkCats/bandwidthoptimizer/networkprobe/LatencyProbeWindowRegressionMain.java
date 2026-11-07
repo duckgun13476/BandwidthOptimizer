@@ -59,6 +59,17 @@ public final class LatencyProbeWindowRegressionMain {
         int[] immediate={0};
         new LatencyProbeBatch<>(targets,16,(target,done) -> {immediate[0]++;done.run();},() -> immediate[0]++).start();
         check(immediate[0]==76,"synchronous failure queue does not recurse or stall");
+        var cache=new LatencyProbeTasks();
+        var task=cache.create(java.util.List.of("Alice","Bob"),start);
+        check(cache.get(task.id,start)==task && task.entries.size()==2,"task identity and entries");
+        task.entries.get(0).result=result;task.entries.get(0).status="complete";
+        check(cache.get(task.id,start+LatencyProbeTasks.RETENTION)!=null,"running tasks do not use completed retention");
+        task.finish(start+LatencyProbeTasks.RETENTION);
+        check(cache.get(task.id,start+2*LatencyProbeTasks.RETENTION-1)!=null,"completed retained for full interval");
+        check(cache.get(task.id,start+2*LatencyProbeTasks.RETENTION)==null,"completed task expires");
+        for(int i=0;i<LatencyProbeTasks.LIMIT;i++) check(cache.create(java.util.List.of("Alice"),start)!=null,"task capacity");
+        check(cache.create(java.util.List.of("Bob"),start)==null,"task capacity bounded");
+        check(cache.create(java.util.List.of("Bob"),start+LatencyProbeTasks.MAX_RUNNING)!=null,"stale running task expires");
         System.out.println("PASS latency list, fixed window, aggregate, spike intervals, timeout, duplicate and partial cases");
     }
     private static void check(boolean passed,String message) {if(!passed) throw new AssertionError(message);}

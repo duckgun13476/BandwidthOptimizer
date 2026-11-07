@@ -4,7 +4,10 @@ import com.PinkCats.bandwidthoptimizer.integration.minecraft.CommandSourceCompat
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ConnectionAccessor;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ServerGamePacketListenerImplAccessor;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
@@ -12,10 +15,13 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.stream.Collectors;
 
 public final class LatencyProbeCommand {
     private static final int BATCH_LIMIT=16;
+    private static final Map<net.minecraft.server.MinecraftServer,LatencyProbeTasks> TASKS = new WeakHashMap<>();
     private LatencyProbeCommand() {}
     public static LiteralArgumentBuilder<CommandSourceStack> buildCommand() {
         return Commands.literal("ping").executes(c -> self(c.getSource(),5,true))
@@ -23,6 +29,16 @@ public final class LatencyProbeCommand {
                         .executes(c -> all(c.getSource(),5,true)))
                 .then(Commands.argument("player",EntityArgument.player()).requires(s -> CommandSourceCompat.hasPermission(s,2))
                         .executes(c -> target(c.getSource(),EntityArgument.getPlayer(c,"player"),5,true)))
+                .then(Commands.literal("task").requires(s -> CommandSourceCompat.hasPermission(s,2))
+                        .then(Commands.literal("start")
+                                .then(Commands.literal("all").then(Commands.argument("seconds",IntegerArgumentType.integer(1,120))
+                                        .executes(c -> startTask(c.getSource(),List.copyOf(c.getSource().getServer().getPlayerList().getPlayers()),IntegerArgumentType.getInteger(c,"seconds")))))
+                                .then(Commands.argument("player",EntityArgument.player()).then(Commands.argument("seconds",IntegerArgumentType.integer(1,120))
+                                        .executes(c -> startTask(c.getSource(),List.of(EntityArgument.getPlayer(c,"player")),IntegerArgumentType.getInteger(c,"seconds"))))))
+                        .then(Commands.literal("result").then(Commands.argument("id",StringArgumentType.word())
+                                .executes(c -> taskResult(c.getSource(),StringArgumentType.getString(c,"id"),-1))
+                                .then(Commands.argument("index",IntegerArgumentType.integer(0,1023))
+                                        .executes(c -> taskResult(c.getSource(),StringArgumentType.getString(c,"id"),IntegerArgumentType.getInteger(c,"index")))))))
                 .then(Commands.literal("watch")
                         .then(Commands.argument("seconds",IntegerArgumentType.integer(1,120))
                                 .executes(c -> self(c.getSource(),IntegerArgumentType.getInteger(c,"seconds")*2,false)))
@@ -32,6 +48,51 @@ public final class LatencyProbeCommand {
                         .then(Commands.argument("player",EntityArgument.player()).requires(s -> CommandSourceCompat.hasPermission(s,2))
                                 .then(Commands.argument("seconds",IntegerArgumentType.integer(1,120))
                                         .executes(c -> target(c.getSource(),EntityArgument.getPlayer(c,"player"),IntegerArgumentType.getInteger(c,"seconds")*2,false)))));
+    }
+    private static int startTask(CommandSourceStack source,List<ServerPlayer> players,int seconds) {
+        if(players.isEmpty() || players.size()>1024) {source.sendFailure(Component.literal("BO_PING_TASK_ERROR no_players_or_too_many"));return 0;}
+        LatencyProbeTasks cache=TASKS.computeIfAbsent(source.getServer(), ignored -> new LatencyProbeTasks());
+        LatencyProbeTasks.Task task=cache.create(players.stream().map(p -> p.getName().getString()).toList(),System.nanoTime());
+        if(task==null) {source.sendFailure(Component.literal("BO_PING_TASK_ERROR cache_full"));return 0;}
+        JsonObject accepted=new JsonObject();accepted.addProperty("id",task.id);accepted.addProperty("status","running");accepted.addProperty("count",players.size());
+        send(source,Component.literal("BO_PING_TASK "+accepted));
+        List<Integer> indices=java.util.stream.IntStream.range(0,players.size()).boxed().toList();
+        new LatencyProbeBatch<>(indices,BATCH_LIMIT,(index,done) -> {
+            ServerPlayer player=players.get(index);LatencyProbeTasks.Entry entry=task.entries.get(index);
+            var connection=((ServerGamePacketListenerImplAccessor)player.connection).bandwidthoptimizer$getConnection();
+            var channel=connection==null?null:((ConnectionAccessor)connection).bandwidthoptimizer$getChannel();
+            if(channel==null || !channel.isActive() || !NetworkProbePackets.canSend(player)) {entry.status="unavailable";done.run();return;}
+            LatencyProbeService.start(channel,seconds*2,status -> source.getServer().execute(() -> {
+                if(!status.equals("started")) {entry.status=status;done.run();}
+                else entry.status="running";
+            }),result -> source.getServer().execute(() -> {entry.result=result;entry.status=result.incomplete()?"incomplete":"complete";done.run();}));
+        },() -> task.finish(System.nanoTime())).start();
+        return 1;
+    }
+    private static int taskResult(CommandSourceStack source,String id,int index) {
+        LatencyProbeTasks cache=TASKS.get(source.getServer());
+        LatencyProbeTasks.Task task=cache==null?null:cache.get(id,System.nanoTime());
+        if(task==null) {source.sendFailure(Component.literal("BO_PING_TASK_ERROR unknown_or_expired"));return 0;}
+        JsonObject json=new JsonObject();json.addProperty("id",task.id);
+        if(index<0) {
+            json.addProperty("status",task.finishedAt==0?"running":"complete");json.addProperty("count",task.entries.size());
+            json.addProperty("completed",task.entries.stream().filter(e -> !e.status.equals("pending") && !e.status.equals("running")).count());
+        } else {
+            if(index>=task.entries.size()) {source.sendFailure(Component.literal("BO_PING_TASK_ERROR index_out_of_range"));return 0;}
+            LatencyProbeTasks.Entry entry=task.entries.get(index);json.addProperty("index",index);json.addProperty("player",entry.name);json.addProperty("status",entry.status);
+            LatencyProbeWindow.Result r=entry.result;
+            if(r!=null) {
+                json.addProperty("sent",r.sent());json.addProperty("replies",r.replies());json.addProperty("timeouts",r.timedOut());
+                json.addProperty("pending",r.sent()-r.replies()-r.timedOut());json.addProperty("duration_ms",r.duration()/1e6);
+                if(r.replies()>0) {json.addProperty("average_ms",r.average()/1e6);json.addProperty("min_ms",r.minimum()/1e6);json.addProperty("max_ms",r.maximum()/1e6);}
+                JsonArray spikes=new JsonArray();
+                r.spikes().stream().sorted(java.util.Comparator.comparingLong(LatencyProbeWindow.Spike::peak).reversed()).limit(8).forEach(s -> {
+                    JsonObject spike=new JsonObject();spike.addProperty("from_ms",s.from()/1e6);spike.addProperty("to_ms",s.to()/1e6);spike.addProperty("peak_ms",s.peak()/1e6);spike.addProperty("samples",s.samples());spikes.add(spike);
+                });
+                json.add("spikes",spikes);json.addProperty("spike_count",r.spikes().size());
+            }
+        }
+        send(source,Component.literal("BO_PING_TASK "+json));return 1;
     }
     private static int self(CommandSourceStack source,int samples,boolean list) {
         if(!(source.getEntity() instanceof ServerPlayer player)) {source.sendFailure(text(source,"player_only"));return 0;}
