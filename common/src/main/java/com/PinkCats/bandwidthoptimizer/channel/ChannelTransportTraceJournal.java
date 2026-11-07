@@ -27,6 +27,8 @@ public final class ChannelTransportTraceJournal {
 
 
     public static void record(ChannelHandlerContext context, String kind, String countKey, String eventText) {
+        if (context != null) com.PinkCats.bandwidthoptimizer.debug.ConnectionFailureReport.observe(
+                context.channel(), kind, eventText);
         if (!isEnabled() || context == null || context.channel() == null) {
             return;
         }

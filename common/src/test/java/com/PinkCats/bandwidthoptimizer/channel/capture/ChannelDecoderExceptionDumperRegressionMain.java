@@ -20,13 +20,33 @@ public final class ChannelDecoderExceptionDumperRegressionMain {
 
     private ChannelDecoderExceptionDumperRegressionMain() {}
 
-    public static void main(String[] arguments) throws IOException {
+    public static void main(String[] arguments) throws Exception {
         Path output = Files.createTempDirectory("bo-decoder-dump-regression-");
         String previousOutput = System.getProperty(BandwidthOptimizerOutputPaths.OUTPUT_DIRECTORY_PROPERTY);
         System.setProperty(BandwidthOptimizerOutputPaths.OUTPUT_DIRECTORY_PROPERTY, output.toString());
         try {
             verifyInitialFailureDoesNotWrite(output);
             verifyEstablishedFailureUsesBoundedHistory(output);
+            var holder = Class.forName("com.PinkCats.bandwidthoptimizer.debug.ConnectionFailureReport$Holder");
+            var recorder = holder.getDeclaredField("RECORDER");
+            recorder.setAccessible(true);
+            ((AutoCloseable) recorder.get(null)).close();
+            var history = output.resolve("diagnostics/connection/failures.jsonl");
+            var lines = Files.readAllLines(history);
+            if (lines.size() != 22) throw new AssertionError("Rolling-second detail budget or recovery incorrect: " + lines.size());
+            var first = com.google.gson.JsonParser.parseString(lines.get(0)).getAsJsonObject();
+            if (!first.get("payload_hex").getAsString().equals("000203")
+                    || !first.get("event").getAsString().equals("decoder_failure_detail")) {
+                throw new AssertionError("Missing embedded decoder bytes");
+            }
+            var missing = com.google.gson.JsonParser.parseString(lines.get(20)).getAsJsonObject();
+            if (missing.get("candidate_available").getAsBoolean()) throw new AssertionError("Missing frame was fabricated");
+            var truncated = com.google.gson.JsonParser.parseString(lines.get(21)).getAsJsonObject();
+            if (truncated.get("captured_payload_bytes").getAsInt() != 2048
+                    || !truncated.get("payload_truncated").getAsBoolean()) throw new AssertionError("Payload not bounded");
+            try (var files = Files.walk(output)) {
+                if (files.filter(Files::isRegularFile).count() != 1) throw new AssertionError("Decoder created sidecar files");
+            }
             System.out.println("Channel decoder exception dumper regression passed");
         } finally {
             if (previousOutput == null) {
@@ -46,13 +66,13 @@ public final class ChannelDecoderExceptionDumperRegressionMain {
                 channel,
                 new DecoderException("initial malformed frame")
         );
-        if (Files.exists(output.resolve("decoder-exception-dump"))) {
+        if (Files.exists(output.resolve("decoder-exception-dump")) || Files.exists(output.resolve("diagnostics"))) {
             throw new AssertionError("Initial malformed handshakes must not enter persistent diagnostics");
         }
         channel.close();
     }
 
-    private static void verifyEstablishedFailureUsesBoundedHistory(Path output) throws IOException {
+    private static void verifyEstablishedFailureUsesBoundedHistory(Path output) throws IOException, InterruptedException {
         EmbeddedChannel channel = channel();
         ChannelHandlerContext context = channel.pipeline().firstContext();
         ConnectionInternetProbeGuard.markMinecraftPacketDecoded(context);
@@ -62,22 +82,18 @@ public final class ChannelDecoderExceptionDumperRegressionMain {
             ChannelDecoderExceptionDumper.dumpIfDecoderException(context, channel, failure);
         }
 
-        Path reportDirectory = output.resolve("decoder-exception-dump");
-        Path history = reportDirectory.resolve("decoder-exception-history.jsonl");
-        if (!Files.isRegularFile(reportDirectory.resolve("latest-decoder-exception.json"))
-                || !Files.isRegularFile(reportDirectory.resolve("latest-decoder-exception-payload.bin"))
-                || Files.readAllLines(history).size() != ChannelDecoderExceptionDumper.MAX_DUMPS_PER_CONNECTION) {
-            throw new AssertionError("Established decoder failures must retain the bounded per-connection history");
-        }
+        if (Files.exists(output.resolve("decoder-exception-dump"))) throw new AssertionError("Legacy sidecars created");
 
         EmbeddedChannel secondChannel = channel();
         ChannelHandlerContext secondContext = secondChannel.pipeline().firstContext();
         ConnectionInternetProbeGuard.markMinecraftPacketDecoded(secondContext);
         setCandidate(secondChannel, "PLAY", new byte[] {0x01, 0x02, 0x03});
         ChannelDecoderExceptionDumper.dumpIfDecoderException(secondContext, secondChannel, failure);
-        if (Files.readAllLines(history).size() != ChannelDecoderExceptionDumper.MAX_DUMPS_PER_CONNECTION + 1) {
-            throw new AssertionError("Decoder dump limits must be isolated per connection");
-        }
+        Thread.sleep(1100); // New rolling-second allowance, same process-wide total budget.
+        secondChannel.attr(CANDIDATE_KEY).set(null);
+        ChannelDecoderExceptionDumper.dumpIfDecoderException(secondContext, secondChannel, failure);
+        setCandidate(secondChannel, "PLAY", new byte[4096]);
+        ChannelDecoderExceptionDumper.dumpIfDecoderException(secondContext, secondChannel, failure);
         secondChannel.close();
         channel.close();
     }

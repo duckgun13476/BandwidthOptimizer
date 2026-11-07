@@ -14,6 +14,9 @@ import java.nio.channels.ClosedChannelException;
 public final class ConnectionDisconnectClassifierRegressionMain {
 
     private ConnectionDisconnectClassifierRegressionMain() {}
+    private static final class NativeIoException extends java.io.IOException {
+        NativeIoException(String message) { super(message); }
+    }
 
     public static void main(String[] args) throws Exception {
         System.setProperty("bandwidthoptimizer.outputDirectory",
@@ -27,8 +30,20 @@ public final class ConnectionDisconnectClassifierRegressionMain {
         assertCategory(new java.net.ConnectException("Connection timed out"), ConnectionDisconnectClassifier.Category.CONNECT_TIMEOUT);
         assertCategory(new java.net.ConnectException("Connection refused"), ConnectionDisconnectClassifier.Category.CONNECT_FAILURE);
         assertCategory(new java.net.SocketException("Connection reset"), ConnectionDisconnectClassifier.Category.CONNECTION_RESET);
+        assertCategory(new NativeIoException("recvAddress(..) failed: Resource temporarily unavailable"),
+                ConnectionDisconnectClassifier.Category.IO_FAILURE);
+        assertCategory(new NativeIoException("recvAddress(..) failed: Connection reset by peer"),
+                ConnectionDisconnectClassifier.Category.CONNECTION_RESET);
         assertCategory(new EOFException("end of stream"), ConnectionDisconnectClassifier.Category.REMOTE_EOF);
         assertCategory(new DecoderException("invalid packet"), ConnectionDisconnectClassifier.Category.PROTOCOL_FAILURE);
+        EmbeddedChannel responseToFailure = new EmbeddedChannel();
+        ConnectionDisconnectClassifier.observeException(responseToFailure, new DecoderException("fixture decode failure"));
+        ConnectionDisconnectClassifier.observePacketClass(responseToFailure,
+                "net.minecraft.network.protocol.common.ClientboundDisconnectPacket", "outbound-packet");
+        assertDecision(ConnectionDisconnectClassifier.snapshot(responseToFailure),
+                ConnectionDisconnectClassifier.Category.PROTOCOL_FAILURE,
+                ConnectionDisconnectClassifier.RecoveryPolicy.DO_NOT_AUTO_RECONNECT);
+        responseToFailure.finishAndReleaseAll();
         assertCategory(new SSLHandshakeException("certificate rejected"), ConnectionDisconnectClassifier.Category.SECURITY_FAILURE);
         assertCategory(
                 new IllegalStateException("wrapped", new java.net.SocketException("Connection reset")),

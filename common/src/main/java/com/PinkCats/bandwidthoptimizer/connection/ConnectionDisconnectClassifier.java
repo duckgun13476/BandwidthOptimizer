@@ -61,6 +61,10 @@ public final class ConnectionDisconnectClassifier {
             existing = state(channel);
         }
         if (existing != null) {
+            if (packetClass.contains("Login") || packetClass.contains("Respawn")
+                    || packetClass.contains("Compression")) {
+                ConnectionFailureReport.observe(channel, "inbound_packet", packetClass);
+            }
             existing.markInboundPacket(packetClass, payloadChannel);
         }
     }
@@ -79,6 +83,7 @@ public final class ConnectionDisconnectClassifier {
         if (channel == null || throwable == null) {
             return;
         }
+        ConnectionFailureReport.observeException(channel, throwable);
         ClassifiedThrowable classified = classifyThrowableChain(throwable);
         Category category = classified.category();
         if (category == Category.READ_TIMEOUT) {
@@ -99,6 +104,8 @@ public final class ConnectionDisconnectClassifier {
         if (channel == null) {
             return;
         }
+        ConnectionFailureReport.observeException(channel, throwable);
+        ConnectionFailureReport.observe(channel, "bo_close", stage);
         ClassifiedThrowable classified = classifyThrowableChain(throwable);
         if (!channel.isActive() || isExternalCloseCategory(classified.category())) {
             Category category = classified.category() == Category.UNKNOWN
@@ -134,7 +141,10 @@ public final class ConnectionDisconnectClassifier {
         if (decision.category() == Category.LOCAL_DISCONNECT) {
             return decision;
         }
-        if (existing != null && existing.claimFailureReport()) ConnectionFailureReport.record(decision);
+        if (existing != null && existing.claimFailureReport()) {
+            InboundEvidence inbound = existing.inboundEvidence();
+            ConnectionFailureReport.record(channel, decision, inbound.packetClass(), inbound.payloadChannel(), inbound.ageMillis());
+        }
         ReconnectCandidateListener listener = reconnectCandidateListener;
         if (listener != null && existing != null && existing.isClientPlayEndpoint()
                 && isFirstPriorityReconnectCandidate(decision)) {
@@ -240,7 +250,7 @@ public final class ConnectionDisconnectClassifier {
                 || message.contains("read timed out")) {
             return Category.READ_TIMEOUT;
         }
-        if (message.contains("connection reset") || className.contains("nativeioexception")) {
+        if (message.contains("connection reset")) {
             return Category.CONNECTION_RESET;
         }
         if (className.contains("eofexception")
@@ -251,6 +261,9 @@ public final class ConnectionDisconnectClassifier {
         }
         if (className.contains("connectexception") || message.contains("connection refused")) {
             return Category.CONNECT_FAILURE;
+        }
+        if (throwable instanceof java.io.IOException || className.contains("nativeioexception")) {
+            return Category.IO_FAILURE;
         }
         return Category.UNKNOWN;
     }
@@ -300,7 +313,7 @@ public final class ConnectionDisconnectClassifier {
                     RecoveryPolicy.RECONNECT_CANDIDATE;
             case EXPLICIT_DISCONNECT, LOCAL_DISCONNECT, PROTOCOL_FAILURE, SECURITY_FAILURE ->
                     RecoveryPolicy.DO_NOT_AUTO_RECONNECT;
-            case UNKNOWN -> RecoveryPolicy.MANUAL_REVIEW;
+            case IO_FAILURE, UNKNOWN -> RecoveryPolicy.MANUAL_REVIEW;
         };
     }
 
@@ -314,6 +327,7 @@ public final class ConnectionDisconnectClassifier {
             case CONNECTION_RESET -> 60;
             case READ_TIMEOUT, CONNECT_TIMEOUT -> 50;
             case REMOTE_EOF, CONNECT_FAILURE -> 40;
+            case IO_FAILURE -> 30;
             case UNEXPECTED_CLEAN_CLOSE, UNKNOWN -> 0;
         };
     }
@@ -370,6 +384,7 @@ public final class ConnectionDisconnectClassifier {
         CONNECT_FAILURE,
         PROTOCOL_FAILURE,
         SECURITY_FAILURE,
+        IO_FAILURE,
         UNEXPECTED_CLEAN_CLOSE,
         UNKNOWN
     }
@@ -466,6 +481,13 @@ public final class ConnectionDisconnectClassifier {
                 String nextBoStage,
                 int nextPriority
         ) {
+            // Minecraft sends an outbound disconnect packet in response to decoder errors.
+            // That response must not erase the already observed failure that caused it.
+            if (nextCategory == Category.EXPLICIT_DISCONNECT
+                    && "outbound-packet".equals(nextTrigger)
+                    && ConnectionFailureReport.isFailure(this.category)) {
+                return;
+            }
             if (nextPriority < this.priority) {
                 return;
             }

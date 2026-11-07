@@ -1,17 +1,10 @@
 package com.PinkCats.bandwidthoptimizer.channel.capture;
 
-import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
 import com.PinkCats.bandwidthoptimizer.connection.ConnectionInternetProbeGuard;
-import com.PinkCats.bandwidthoptimizer.util.BandwidthOptimizerOutputPaths;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.AttributeKey;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Locale;
@@ -19,11 +12,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public final class ChannelDecoderExceptionDumper {
 
-    private static final Object LOCK = new Object();
-    private static final String REPORT_DIRECTORY = "decoder-exception-dump";
-    private static final String LATEST_JSON_FILE_NAME = "latest-decoder-exception.json";
-    private static final String HISTORY_JSONL_FILE_NAME = "decoder-exception-history.jsonl";
-    private static final String LATEST_PAYLOAD_FILE_NAME = "latest-decoder-exception-payload.bin";
     static final int MAX_DUMPS_PER_CONNECTION = 50;
     private static final AttributeKey<AtomicInteger> DUMP_COUNT_KEY =
             AttributeKey.valueOf("bandwidthoptimizer:decoder_exception_dump_count");
@@ -44,42 +32,28 @@ public final class ChannelDecoderExceptionDumper {
             ChannelCaptureHooks.clearInboundDecodeCandidate(channel);
             return;
         }
-        if (frame == null) {
-            Bandwidthoptimizer.LOGGER.warn(
-                    "[DecoderExceptionDump] Decoder exception detected but no inbound candidate frame was captured. channel={}, exception={}: {}",
-                    channelId(channel),
-                    throwable == null ? "null" : throwable.getClass().getName(),
-                    throwable == null ? "" : throwable.getMessage()
-            );
-            return;
-        }
-
         try {
-            DumpPaths paths = writeDump(frame, throwable);
-            ChannelCaptureHooks.clearInboundDecodeCandidate(channel);
-            if (!ConnectionInternetProbeGuard.isKnownProbe(frame.encodedBytes())) {
-                Bandwidthoptimizer.LOGGER.warn(
-                        "[DecoderExceptionDump] Dumped decoder failure packet. channel={}, protocol={}, packetId={}, bytes={}, capturedPayloadBytes={}, truncated={}, fingerprint={}, report={}, payload={}",
-                        frame.channelId(),
-                        frame.protocolName(),
-                        frame.packetId(),
-                        frame.byteLength(),
-                        frame.encodedBytes().length,
-                        frame.encodedBytes().length < frame.byteLength(),
-                        sha256Hex(frame.encodedBytes()),
-                        paths.latestJson(),
-                        paths.latestPayload()
-                );
+            com.google.gson.JsonObject detail;
+            if (frame == null) {
+                detail = new com.google.gson.JsonObject();
+                detail.addProperty("channel_id", channelId(channel));
+            } else {
+                byte[] bytes = frame.encodedBytes();
+                ChannelCapturedFrame bounded = new ChannelCapturedFrame(frame.channelId(), frame.direction(),
+                        frame.protocolName(), frame.packetClassName(), frame.packetId(), frame.byteLength(),
+                        java.util.Arrays.copyOf(bytes, Math.min(bytes.length, 2048)), frame.capturedAtMillis());
+                detail = com.google.gson.JsonParser.parseString(toJson(bounded, throwable)).getAsJsonObject();
             }
-        } catch (RuntimeException dumpFailure) {
-            Bandwidthoptimizer.LOGGER.warn(
-                    "[DecoderExceptionDump] Failed to dump decoder failure packet. channel={}, protocol={}, packetId={}, bytes={}",
-                    frame.channelId(),
-                    frame.protocolName(),
-                    frame.packetId(),
-                    frame.byteLength(),
-                    dumpFailure
-            );
+            detail.addProperty("candidate_available", frame != null);
+            detail.addProperty("capture_boundary", "minecraft_packet_decoder_input; not pre-inflate wire bytes");
+            detail.addProperty("hash_scope", "captured_prefix");
+            detail.add("exception_chain", com.PinkCats.bandwidthoptimizer.debug.ConnectionFailureReport.causes(throwable));
+            com.PinkCats.bandwidthoptimizer.debug.ConnectionFailureReport.decoderDetail(detail);
+            ChannelCaptureHooks.clearInboundDecodeCandidate(channel);
+        } catch (RuntimeException | LinkageError dumpFailure) {
+            // Diagnostic failures must never replace the original decoder exception.
+        } finally {
+            ChannelCaptureHooks.clearInboundDecodeCandidate(channel);
         }
     }
 
@@ -118,7 +92,7 @@ public final class ChannelDecoderExceptionDumper {
 
     private static boolean isDecoderBoundaryException(Throwable throwable) {
         Throwable current = throwable;
-        while (current != null) {
+        for (int depth = 0; current != null && depth < 12; depth++) {
             String className = current.getClass().getName();
             String message = current.getMessage();
             if (className.contains("DecoderException")) {
@@ -136,45 +110,6 @@ public final class ChannelDecoderExceptionDumper {
             current = current.getCause();
         }
         return false;
-    }
-
-    private static DumpPaths writeDump(ChannelCapturedFrame frame, Throwable throwable) {
-        Path directory = BandwidthOptimizerOutputPaths.resolve(REPORT_DIRECTORY);
-        Path latestJson = directory.resolve(LATEST_JSON_FILE_NAME);
-        Path historyJsonl = directory.resolve(HISTORY_JSONL_FILE_NAME);
-        Path latestPayload = directory.resolve(LATEST_PAYLOAD_FILE_NAME);
-        String json = toJson(frame, throwable);
-        try {
-            Files.createDirectories(directory);
-            Files.writeString(
-                    latestJson,
-                    json + System.lineSeparator(),
-                    StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE
-            );
-            synchronized (LOCK) {
-                Files.writeString(
-                        historyJsonl,
-                        json + System.lineSeparator(),
-                        StandardCharsets.UTF_8,
-                        StandardOpenOption.CREATE,
-                        StandardOpenOption.APPEND,
-                        StandardOpenOption.WRITE
-                );
-            }
-            Files.write(
-                    latestPayload,
-                    frame.encodedBytes(),
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE
-            );
-            return new DumpPaths(latestJson.toAbsolutePath().normalize(), latestPayload.toAbsolutePath().normalize());
-        } catch (IOException exception) {
-            throw new IllegalStateException("Failed to write decoder exception dump", exception);
-        }
     }
 
     private static String toJson(ChannelCapturedFrame frame, Throwable throwable) {
@@ -233,7 +168,7 @@ public final class ChannelDecoderExceptionDumper {
     private static Throwable rootCause(Throwable throwable) {
         Throwable current = throwable;
         Throwable previous = null;
-        while (current != null && current != previous) {
+        for (int depth = 0; current != null && current != previous && depth < 12; depth++) {
             previous = current;
             current = current.getCause();
         }
@@ -266,6 +201,7 @@ public final class ChannelDecoderExceptionDumper {
         if (value == null) {
             return "";
         }
+        value = value.substring(0, Math.min(value.length(), 512));
         StringBuilder builder = new StringBuilder(value.length() + 16);
         for (int index = 0; index < value.length(); index++) {
             char current = value.charAt(index);
@@ -287,6 +223,4 @@ public final class ChannelDecoderExceptionDumper {
         return builder.toString();
     }
 
-    private record DumpPaths(Path latestJson, Path latestPayload) {
-    }
 }

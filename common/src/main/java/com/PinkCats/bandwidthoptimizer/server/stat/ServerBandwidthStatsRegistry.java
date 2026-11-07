@@ -87,6 +87,7 @@ public final class ServerBandwidthStatsRegistry {
         UUID playerId = player.getUUID();
         String playerName = player.getGameProfile() == null ? "<unknown-player>" : player.getName().getString();
         stats.bindPlayer(playerId, playerName);
+        com.PinkCats.bandwidthoptimizer.debug.ConnectionFailureReport.bindPlayer(channel, playerId.toString(), playerName);
         PLAYER_CHANNELS.put(playerId, ChannelIdentity.longText(channel));
         PlayerTrafficPeriodArchive.onPlayerBound(stats.snapshot());
     }

@@ -46,20 +46,37 @@ public final class ConnectionFailureReportRegressionMain {
         System.setProperty("bandwidthoptimizer.outputDirectory", integrationRoot.toString());
         EmbeddedChannel channel = new EmbeddedChannel();
         ConnectionDisconnectClassifier.observeException(channel, new java.net.SocketException("Connection reset"));
+        for (int i = 0; i < 1000; i++) ConnectionFailureReport.observe(channel, "fixture", "event-" + i);
+        ConnectionDisconnectClassifier.observeException(channel, new io.netty.handler.codec.DecoderException(
+                "decode failed", new java.util.zip.DataFormatException("uncompressed size is inaccurate")));
         ConnectionDisconnectClassifier.onChannelInactive(channel);
         ConnectionDisconnectClassifier.onChannelInactive(channel);
         channel.finishAndReleaseAll();
         Path integration = integrationRoot.resolve("diagnostics/connection/failures.jsonl");
         long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
         while ((!Files.exists(integration) || Files.size(integration) == 0) && System.nanoTime() < deadline) Thread.sleep(10);
-        var actual = JsonParser.parseString(Files.readAllLines(integration).get(0)).getAsJsonObject();
-        require(actual.getAsJsonObject("reasons").getAsJsonObject("CONNECTION_RESET")
+        HolderClose.close();
+        var records = Files.readAllLines(integration).stream().map(line -> JsonParser.parseString(line).getAsJsonObject()).toList();
+        var actual = records.stream().filter(line -> line.get("event").getAsString().equals("connection_failure_summary")).findFirst().orElseThrow();
+        require(actual.getAsJsonObject("reasons").getAsJsonObject("PROTOCOL_FAILURE")
                 .get("process_count").getAsLong() == 1, "inactive hook double counted channel");
+        var detail = records.stream().filter(line -> line.get("event").getAsString().equals("connection_failure_detail")).findFirst().orElseThrow();
+        require(detail.getAsJsonArray("recent_events").size() == 16, "event ring unbounded");
+        require(detail.getAsJsonArray("first_exception").get(0).getAsJsonObject().get("message").getAsString().equals("Connection reset"), "first cause overwritten");
+        require(detail.getAsJsonArray("last_exception").get(1).getAsJsonObject().get("message").getAsString().equals("uncompressed size is inaccurate"), "root cause missing");
         System.out.println("Connection failure summary regression passed");
     }
 
     private static Decision decision(Category category) {
         return new Decision(category, RecoveryPolicy.MANUAL_REVIEW, "test", "", "example.Failure", "fixture", 0);
+    }
+    private static final class HolderClose {
+        static void close() throws Exception {
+            var holder = Class.forName(ConnectionFailureReport.class.getName() + "$Holder");
+            var field = holder.getDeclaredField("RECORDER");
+            field.setAccessible(true);
+            ((AutoCloseable) field.get(null)).close();
+        }
     }
     private static void require(boolean value, String message) {
         if (!value) throw new AssertionError(message);
