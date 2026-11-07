@@ -1,3 +1,7 @@
+#### v5.10.33.158-release
+
+1. Add bounded latency sampling tasks that can be queried by ID, allowing RCON integrations to retrieve player results after sampling completes.
+
 #### v5.10.33.157-release
 
 1. Add player latency commands with current samples, timed averages and high-latency intervals. Operators and the server console can target a player or all online players.
