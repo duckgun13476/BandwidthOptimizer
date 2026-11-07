@@ -1,3 +1,8 @@
+#### v5.10.33.157-release
+
+1. Add player latency commands with current samples, timed averages and high-latency intervals. Operators and the server console can target a player or all online players.
+2. Expand bounded connection-failure diagnostics in `failures.jsonl` with connection, player and decoder context, and improve failure classification while preserving normal disconnect silence.
+
 #### v5.10.33.156-release
 
 1. Fix login timeouts with Polymer-based mods, including Graves, by preserving the active compression session and queued packets across GameJoin while refreshing world caches. The shared lifecycle fix applies across supported loaders.(thanks to Filipovnica)
