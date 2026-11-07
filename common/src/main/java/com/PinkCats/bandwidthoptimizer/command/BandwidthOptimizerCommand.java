@@ -42,6 +42,7 @@ public final class BandwidthOptimizerCommand {
                                                 false
                                         )))))
                 .then(DiagnosticToolCommand.buildCommand())
+                .then(com.PinkCats.bandwidthoptimizer.networkprobe.LatencyProbeCommand.buildCommand())
                 .then(com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbeCommand.buildCommand())
         );
         dispatcher.register(Commands.literal("bo").redirect(root));

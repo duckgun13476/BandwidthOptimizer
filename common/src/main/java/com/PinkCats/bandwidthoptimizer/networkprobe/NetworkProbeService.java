@@ -114,6 +114,7 @@ public final class NetworkProbeService {
         }); } catch(java.util.concurrent.RejectedExecutionException closing) { /* Closed channel owns cleanup. */ }
     }
     public static void receive(Channel channel,boolean serverSide,byte[] bytes) {
+        if (LatencyProbeService.receive(channel,serverSide,bytes)) return;
         receive(channel,serverSide,bytes,frame -> NetworkProbePackets.send(channel,serverSide,frame.encode()));
     }
     static void receive(Channel channel,boolean serverSide,byte[] bytes,Function<ProbeFrame,ChannelFuture> sender) {
@@ -166,6 +167,7 @@ public final class NetworkProbeService {
         session.accept(frame);
     }
     public static void closed(Channel channel,String reason) {
+        LatencyProbeService.closed(channel);
         if(reason.equals("backend_login_replaced_session")) channel.attr(GENERATION).set(generation(channel)+1);
         NetworkProbeSession session=current(channel);
         if(session!=null) session.finish(reason);

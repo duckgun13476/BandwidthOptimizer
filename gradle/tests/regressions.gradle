@@ -30,6 +30,11 @@ tasks.register('runNetworkProbeRegression', JavaExec) {
         systemProperty 'networkProbeEvidenceRoot', project.property('networkProbeEvidenceRoot')
 }
 
+tasks.register('runLatencyProbeRegression', JavaExec) {
+    configureTestJavaExecTask(delegate, 'verification', 'Verifies lightweight latency samples, bounded windows, spikes and timeout accounting.',
+            'com.PinkCats.bandwidthoptimizer.networkprobe.LatencyProbeWindowRegressionMain')
+}
+
 tasks.register('runNetworkProbeTcpRegression', JavaExec) {
     configureTestJavaExecTask(delegate, 'verification', 'Verifies production probe state over actual loopback TCP without game or proxy acceptance claims.',
             'com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbeTcpRegressionMain')
