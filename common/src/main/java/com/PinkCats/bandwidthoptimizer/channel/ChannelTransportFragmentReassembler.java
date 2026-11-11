@@ -10,7 +10,7 @@ public final class ChannelTransportFragmentReassembler {
 
     static final long PENDING_FRAME_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(15L);
     private static final ReassemblyBudget PROCESS_BUDGET = new ReassemblyBudget(
-            64L * 1024L * 1024L,
+            128L * 1024L * 1024L,
             65_536,
             256
     );

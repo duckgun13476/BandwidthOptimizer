@@ -99,6 +99,9 @@ public final class ChannelTransportHooks {
         String protocolName = readProtocolName(connectionProtocol);
         byte[] originalPacketBytes = ByteBufUtil.getBytes(out, startIndexInclusive, endIndexExclusive - startIndexInclusive, false);
         PacketFlow outboundPacketFlow = resolvePacketFlow(packetEncoderFlowAccess, connectionProtocol, packet);
+        if (ChannelTransportRuntimeGuard.isTransportAvailable() && shouldUseTransportForCurrentProtocol(protocolName)) {
+            LargePacketSourceWarning.inspect(packet, outboundPacketFlow, originalPacketBytes.length);
+        }
         HotpathCostProbe.end("hook.copyAndResolve", hotpathStartNanos);
         if (ChunkPersistentOutboundGate.tryQueuePendingCoordinatePacket(context, protocolName, packet, originalPacketBytes.length)) {
             out.writerIndex(startIndexInclusive);

@@ -100,6 +100,9 @@ public final class ChannelTransportHooks {
         String protocolName = readProtocolName(context);
         byte[] originalPacketBytes = ByteBufUtil.getBytes(out, startIndexInclusive, endIndexExclusive - startIndexInclusive, false);
         PacketFlow outboundPacketFlow = resolvePacketFlow(packetEncoderFlowAccess, readConnectionProtocolOrNull(context), packet);
+        if (ChannelTransportRuntimeGuard.isTransportAvailable() && shouldUseTransportForCurrentProtocol(protocolName)) {
+            LargePacketSourceWarning.inspect(packet, outboundPacketFlow, originalPacketBytes.length);
+        }
         if (ChunkPersistentOutboundGate.tryQueuePendingCoordinatePacket(context, protocolName, packet, originalPacketBytes.length)) {
             out.writerIndex(startIndexInclusive);
             return;

@@ -71,6 +71,8 @@ public final class ChannelTransportRoundTripMain {
         verifyPostWrapBypassDisabled();
         verifyAdaptiveBypassLearnsAfterSixteenUnprofitableCarriers();
         verifyOversizedBatchRejectedAtEncode();
+        verifyLargeSinglePacketRoundTrip();
+        verifyLargeFragmentFrameRoundTrip();
         verifyOversizedSinglePacketRejectedAtEncode();
         verifyOversizedInlineCarrierUsesIndependentMinecraftFrames();
         verifyFragmentedTransportReplayPreservesBytesAndOrder();
@@ -443,18 +445,58 @@ public final class ChannelTransportRoundTripMain {
 
     // Single packet limits must fail on the sender side.
     private static void verifyOversizedSinglePacketRejectedAtEncode() {
-        ChannelTransportSession senderSession = new ChannelTransportSession();
-        byte[] packetBytes = repeatedLargeBytes(ChannelTransportPayloadLimits.MAX_SINGLE_PACKET_BYTES + 1, 0x51);
-
-        try {
-            ChannelTransportPacketCodec.wrapPacket(senderSession, packetBytes);
-        } catch (IllegalArgumentException exception) {
-            if (exception.getMessage() != null && exception.getMessage().contains("single packet bytes")) {
-                return;
+        for (int size : new int[]{ChannelTransportPayloadLimits.MAX_SINGLE_PACKET_BYTES + 1}) {
+            ChannelTransportSession senderSession = new ChannelTransportSession();
+            byte[] packetBytes = repeatedLargeBytes(size, 0x51);
+            try {
+                ChannelTransportPacketCodec.wrapPacket(senderSession, packetBytes);
+            } catch (IllegalArgumentException exception) {
+                if (exception.getMessage() != null && exception.getMessage().contains("single packet bytes")) {
+                    continue;
+                }
+                throw new IllegalStateException("Oversized single packet was rejected with an unexpected message: " + exception.getMessage(), exception);
             }
-            throw new IllegalStateException("Oversized single packet was rejected with an unexpected message: " + exception.getMessage(), exception);
+            throw new IllegalStateException("Oversized single packet should be rejected by the encoder before it reaches the decoder: " + size);
         }
-        throw new IllegalStateException("Oversized single packet should be rejected by the encoder before it reaches the decoder.");
+    }
+
+    private static void verifyLargeSinglePacketRoundTrip() {
+        for (int size : new int[]{8 * 1024 * 1024 + 1, 31_502_810, ChannelTransportPayloadLimits.MAX_SINGLE_PACKET_BYTES}) {
+            byte[] original = repeatedLargeBytes(size, 0x51);
+            var wrapped = ChannelTransportPacketCodec.wrapPacket(new ChannelTransportSession(), original);
+            var decoded = ChannelTransportPacketCodec.tryUnwrapPacket(new ChannelTransportSession(), wrapped.transportFrameBytes());
+            if (decoded == null || decoded.restoredPacketBytesList().size() != 1
+                    || !java.util.Arrays.equals(original, decoded.restoredPacketBytesList().get(0))) {
+                throw new IllegalStateException("Large single packet round trip failed: " + size);
+            }
+            var batch = ChannelTransportPacketCodec.wrapBatchPacketsLight(new ChannelTransportSession(), java.util.List.of(original));
+            var decodedBatch = ChannelTransportPacketCodec.tryUnwrapPacket(new ChannelTransportSession(), batch.transportFrameBytes());
+            if (decodedBatch == null || decodedBatch.restoredPacketBytesList().size() != 1
+                    || !java.util.Arrays.equals(original, decodedBatch.restoredPacketBytesList().get(0))) {
+                throw new IllegalStateException("Large batch entry round trip failed: " + size);
+            }
+        }
+    }
+
+    private static void verifyLargeFragmentFrameRoundTrip() {
+        byte[] packet = new byte[31_502_810];
+        new java.util.Random(4021).nextBytes(packet);
+        var wrapped = ChannelTransportPacketCodec.wrapBatchPacketsLight(new ChannelTransportSession(), java.util.List.of(packet));
+        byte[] frame = wrapped.transportFrameBytes();
+        var fragments = ChannelTransportFragmentCodec.fragmentTransportFrame(frame, 32767, 17);
+        var reassembler = new ChannelTransportFragmentReassembler();
+        ChannelTransportFragmentReassembler.ReceiveResult result = null;
+        for (byte[] fragment : fragments) result = reassembler.accept(fragment);
+        if (result == null || result.kind() != ChannelTransportFragmentReassembler.ReceiveResult.Kind.COMPLETE
+                || !java.util.Arrays.equals(frame, result.transportFrameBytes())) {
+            throw new IllegalStateException("Large fragmented frame round trip failed");
+        }
+        var restored = ChannelTransportPacketCodec.tryUnwrapPacket(new ChannelTransportSession(), result.transportFrameBytes());
+        if (restored == null || restored.restoredPacketBytesList().size() != 1
+                || !java.util.Arrays.equals(packet, restored.restoredPacketBytesList().get(0))) {
+            throw new IllegalStateException("Large fragmented batch failed to restore original packet");
+        }
+        reassembler.clear();
     }
 
     // Reassembly must restore the exact completed BO frame before the stateful decoder runs.
@@ -914,7 +956,13 @@ public final class ChannelTransportRoundTripMain {
             } finally {
                 output.release();
             }
+            boolean[] largeTaskReleased = {false};
+            if (!ChannelTransportStreamingEpochGate.deferTaskIfClosed(channel,
+                    ChannelTransportPayloadLimits.MAX_SINGLE_PACKET_BYTES, () -> largeTaskReleased[0] = true)) {
+                throw new IllegalStateException("Closed epoch must defer a 64 MiB packet");
+            }
             ChannelTransportStreamingEpochGate.release(channel);
+            if (!largeTaskReleased[0]) throw new IllegalStateException("Large deferred task was not released");
             Object released = channel.readOutbound();
             if (!(released instanceof io.netty.buffer.ByteBuf releasedBytes)
                     || releasedBytes.readableBytes() != 1

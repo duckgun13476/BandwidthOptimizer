@@ -14,7 +14,9 @@ import java.util.function.Consumer;
 
 public final class ChannelTransportStreamingEpochGate {
 
-    private static final int MAX_PENDING_BYTES = 16 * 1024 * 1024;
+    private static final int MAX_PENDING_BYTES =
+            com.PinkCats.bandwidthoptimizer.channel.algorithm.ChannelTransportPayloadLimits.MAX_SINGLE_PACKET_BYTES
+                    + 16 * 1024 * 1024;
     private static final int MAX_PENDING_PACKETS = 16384;
     private static final AttributeKey<State> STATE_KEY =
             AttributeKey.valueOf("bandwidthoptimizer:streaming_epoch_gate");
