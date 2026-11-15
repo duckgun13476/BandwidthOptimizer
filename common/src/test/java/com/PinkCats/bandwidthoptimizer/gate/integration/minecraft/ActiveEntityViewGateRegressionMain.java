@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.gate.integration.minecraft;
 
+import com.PinkCats.bandwidthoptimizer.gate.PendingEntityMovementsRegression;
 import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
 
 import java.util.List;
@@ -14,6 +15,8 @@ public final class ActiveEntityViewGateRegressionMain {
         verifyOneTickExpiryAndRemoval();
         verifyBoundedRetention();
         verifyPassThroughTransition();
+        verifyClientPacketSplit();
+        PendingEntityMovementsRegression.verify();
         System.out.println("Active entity interpolation gate regression passed.");
     }
 
@@ -26,6 +29,33 @@ public final class ActiveEntityViewGateRegressionMain {
         require(ActiveEntityViewGate.snapshot().pendingEntities() == 0,
                 "Sable transition must release its global slot");
         require(state.drainExpired(12L).isEmpty(), "released packet must not replay on next tick");
+    }
+
+    private static void verifyClientPacketSplit() {
+        var movement = new ClientboundMoveEntityPacket.PosRot(33, (short) -123, (short) 7,
+                (short) 300, (byte) 25, (byte) -42, false);
+        var parts = EntityMovementPacketSplit.split(33, movement, (byte) 25, (byte) -42, true);
+        require(parts != null, "eligible movement must split");
+        require(parts.first().getXa() + parts.last().getXa() == movement.getXa()
+                        && parts.first().getYa() + parts.last().getYa() == movement.getYa()
+                        && parts.first().getZa() + parts.last().getZa() == movement.getZa(),
+                "split deltas must add exactly, including odd negative values");
+        require(!parts.first().hasRotation() && parts.first().isOnGround()
+                        && parts.last().hasRotation() && !parts.last().isOnGround(),
+                "first packet retains ground state; final packet restores rotation and ground state");
+        require(rotationByte(parts.last(), "yRot") == 25 && rotationByte(parts.last(), "xRot") == -42,
+                "final packet preserves the received rotation");
+        require(EntityMovementPacketSplit.split(33, pos(33, 8191, 0, 0), (byte) 0, (byte) 0, false) != null,
+                "movement just below two blocks must split");
+        require(EntityMovementPacketSplit.split(33, pos(33, 8192, 0, 0), (byte) 0, (byte) 0, false) == null,
+                "two blocks must pass through");
+        require(EntityMovementPacketSplit.split(33, pos(33, 6000, 6000, 0), (byte) 0, (byte) 0, false) == null,
+                "threshold uses three-dimensional distance");
+        require(EntityMovementPacketSplit.split(33, pos(33, 0, 0, 0), (byte) 0, (byte) 0, false) == null,
+                "zero displacement must pass through");
+        require(EntityMovementPacketSplit.split(33, new ClientboundMoveEntityPacket.Rot(33, (byte) 1,
+                (byte) 2, false), (byte) 1, (byte) 2, false) == null,
+                "rotation-only movement must pass through");
     }
 
     private static void verifyHalfRateAndExactDelta() {

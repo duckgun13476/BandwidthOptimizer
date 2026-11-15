@@ -20,6 +20,7 @@ public final class IdleGateClientTickHooks {
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
+            EntityMovementReconstruction.tick();
             ensureReconnectInstalled();
             ClientReconnectCoordinator.onClientTick();
             IdleGateClientController.onClientTick(Minecraft.getInstance());
