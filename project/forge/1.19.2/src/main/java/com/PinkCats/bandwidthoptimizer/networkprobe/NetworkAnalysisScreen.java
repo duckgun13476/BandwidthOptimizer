@@ -1,4 +1,5 @@
 package com.PinkCats.bandwidthoptimizer.networkprobe;
+import com.PinkCats.bandwidthoptimizer.networkprobe.ui.NetworkAnalysisScreenBase;
 import net.minecraft.client.gui.screens.Screen;
 import com.mojang.blaze3d.vertex.PoseStack;
 public final class NetworkAnalysisScreen extends NetworkAnalysisScreenBase {

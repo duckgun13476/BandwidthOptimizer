@@ -1,4 +1,8 @@
-package com.PinkCats.bandwidthoptimizer.networkprobe;
+package com.PinkCats.bandwidthoptimizer.networkprobe.ui;
+
+import com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbeProgress;
+import com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbeRequest;
+import com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbeResults;
 
 import java.util.Objects;
 import java.util.UUID;

@@ -1,5 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.report;
 
+import com.PinkCats.bandwidthoptimizer.report.integration.lightmanscurrency.LightmansCurrencySourceDetail;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.BlockEntityTypeKeyCompat;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.CustomPayloadPacketCompat;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.PacketContentSourceCompat;

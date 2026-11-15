@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.networkprobe;
 
+import com.PinkCats.bandwidthoptimizer.networkprobe.message.LatencyProbeCommandMessages;
+
 public final class LatencyProbeWindowRegressionMain {
     public static void main(String[] args) {
         long start=1_000_000_000L;
@@ -63,6 +65,28 @@ public final class LatencyProbeWindowRegressionMain {
         var task=cache.create(java.util.List.of("Alice","Bob"),start);
         check(cache.get(task.id,start)==task && task.entries.size()==2,"task identity and entries");
         task.entries.get(0).result=result;task.entries.get(0).status="complete";
+        var summaryJson=LatencyProbeTaskJson.format(task,-1);
+        check(summaryJson.get("status").getAsString().equals("running") && summaryJson.get("completed").getAsInt()==1,"task JSON summary");
+        var resultJson=LatencyProbeTaskJson.format(task,0);
+        check(resultJson.get("player").getAsString().equals("Alice") && resultJson.get("sent").getAsInt()==6
+                && resultJson.get("replies").getAsInt()==5 && resultJson.get("timeouts").getAsInt()==1
+                && resultJson.get("pending").getAsInt()==0 && resultJson.get("average_ms").getAsDouble()==220.0
+                && resultJson.getAsJsonArray("spikes").size()==2 && resultJson.get("spike_count").getAsInt()==2,"task JSON result");
+        check(!LatencyProbeTaskJson.format(task,1).has("sent"),"pending task JSON has no result");
+        var manySpikes=new java.util.ArrayList<LatencyProbeWindow.Spike>();
+        for(int i=0;i<10;i++) manySpikes.add(new LatencyProbeWindow.Spike(i,i,i*100_000_000L,1));
+        var topSpikes=LatencyProbeWindow.highestSpikes(manySpikes);
+        check(topSpikes.size()==8 && topSpikes.get(0).peak()==900_000_000L && topSpikes.get(7).peak()==200_000_000L,
+                "shared spike selection keeps highest eight in descending order");
+        task.entries.get(0).result=new LatencyProbeWindow.Result(1,java.util.List.of(1L),1,1,0,1,1,1,manySpikes,false);
+        var spikeJson=LatencyProbeTaskJson.format(task,0);
+        check(spikeJson.get("spike_count").getAsInt()==10 && spikeJson.getAsJsonArray("spikes").size()==8
+                && spikeJson.getAsJsonArray("spikes").get(0).getAsJsonObject().get("peak_ms").getAsDouble()==900.0,
+                "task JSON reports total count and highest eight peaks");
+        var translated=LatencyProbeCommandMessages.text("started",true,"2.5");
+        check(translated.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents,"player latency feedback remains translatable");
+        check(LatencyProbeCommandMessages.text("started",false,"2.5").getString().equals(
+                "Latency sampling started: 2.5 seconds, one sample every 500 ms."),"console latency feedback remains formatted English");
         check(cache.get(task.id,start+LatencyProbeTasks.RETENTION)!=null,"running tasks do not use completed retention");
         task.finish(start+LatencyProbeTasks.RETENTION);
         check(cache.get(task.id,start+2*LatencyProbeTasks.RETENTION-1)!=null,"completed retained for full interval");

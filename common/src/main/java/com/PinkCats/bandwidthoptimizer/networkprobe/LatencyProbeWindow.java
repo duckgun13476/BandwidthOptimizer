@@ -1,6 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.networkprobe;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /** Fixed-size RTT observations. All time values are monotonic nanoseconds. */
@@ -30,6 +31,12 @@ final class LatencyProbeWindow {
     }
     record Spike(long from,long to,long peak,int samples) {}
     record Result(long duration,List<Long> samples,int sent,int replies,int timedOut,long average,long minimum,long maximum,List<Spike> spikes,boolean incomplete) {}
+
+    /** Keep the eight highest peaks for both task JSON and command feedback. */
+    static List<Spike> highestSpikes(List<Spike> spikes) {
+        return spikes.stream().sorted(Comparator.comparingLong(Spike::peak).reversed()).limit(8).toList();
+    }
+
     Result result(long now,boolean incomplete) {
         List<Long> samples=new ArrayList<>(); List<Spike> spikes=new ArrayList<>();
         long total=0,min=Long.MAX_VALUE,max=0,from=0,to=0,peak=0; int replies=0,highCount=0,timeouts=0;

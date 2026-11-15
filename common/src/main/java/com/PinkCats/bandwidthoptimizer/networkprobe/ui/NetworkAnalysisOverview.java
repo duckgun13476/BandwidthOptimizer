@@ -1,16 +1,16 @@
-package com.PinkCats.bandwidthoptimizer.networkprobe;
+package com.PinkCats.bandwidthoptimizer.networkprobe.ui;
 
 import com.google.gson.*;
 import java.util.*;
 
 /** Player-facing observations only; never turns TCP retransmissions into a packet-loss percentage. */
-final class NetworkAnalysisOverview {
-    enum Severity {
+public final class NetworkAnalysisOverview {
+    public enum Severity {
         NORMAL(0x55FF55), UNKNOWN(0xAAAAAA), WARNING(0xFFFF55), SEVERE(0xFF5555);
-        final int color;
+        public final int color;
         Severity(int color) {this.color=color;}
     }
-    record Row(String key,List<Object> args,Severity severity) {
+    public record Row(String key,List<Object> args,Severity severity) {
         Row(String key,List<Object> args) {
             this(key,args,key.equals("bo.network.summary.no_issues")?Severity.NORMAL:
                     key.equals("bo.network.peer_missing") || key.equals("bo.network.incomplete")?Severity.UNKNOWN:Severity.WARNING);
@@ -18,7 +18,7 @@ final class NetworkAnalysisOverview {
     }
     private NetworkAnalysisOverview() {}
 
-    static Row conclusion(List<Row> rows) {
+    public static Row conclusion(List<Row> rows) {
         Severity severity=rows.stream().map(Row::severity).max(Comparator.naturalOrder()).orElse(Severity.UNKNOWN);
         String key=switch(severity) {
             case NORMAL -> "bo.network.summary.no_issues";
@@ -29,7 +29,7 @@ final class NetworkAnalysisOverview {
         return new Row(key,List.of(),severity);
     }
 
-    static List<String> keys(JsonObject report) {
+    public static List<String> keys(JsonObject report) {
         LinkedHashSet<String> issues=new LinkedHashSet<>();
         JsonObject peer=report.getAsJsonObject("peer_summary");
         if(retransmitted(report.getAsJsonObject("analysis"),"local_tcp_retransmitted_")
@@ -44,7 +44,7 @@ final class NetworkAnalysisOverview {
         return List.copyOf(issues);
     }
 
-    static List<Row> rows(JsonObject report) {
+    public static List<Row> rows(JsonObject report) {
         ArrayList<Row> rows=new ArrayList<>();
         for(String key:keys(report)) {
             if(key.equals("bo.network.summary.retransmission")) {

@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.networkprobe;
 
+import com.PinkCats.bandwidthoptimizer.networkprobe.message.NetworkProbeCommandMessages;
+
 import com.google.gson.JsonObject;
 import io.netty.channel.embedded.EmbeddedChannel;
 import java.nio.ByteBuffer;

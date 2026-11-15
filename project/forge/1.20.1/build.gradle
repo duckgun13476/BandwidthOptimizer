@@ -7,7 +7,7 @@ plugins {
 
 apply plugin: 'org.spongepowered.mixin'
 apply from: rootProject.file('gradle/bo-property-loader.gradle')
-apply from: rootProject.file('test.gradle')
+apply from: rootProject.file('gradle/tests/test.gradle')
 
 tasks.register('runOutboundBatchOwnershipRegression', JavaExec) {
     dependsOn testClasses

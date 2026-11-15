@@ -1,7 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.report.unified;
 
 import com.PinkCats.bandwidthoptimizer.Bandwidthoptimizer;
-import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportBypassRankCore;
+import com.PinkCats.bandwidthoptimizer.channel.bypass.ChannelTransportBypassRankCore;
 import com.PinkCats.bandwidthoptimizer.channel.capture.ChannelTransportTelemetry;
 import com.PinkCats.bandwidthoptimizer.chunk.integration.ChunkRuntimeReferenceStore;
 import com.PinkCats.bandwidthoptimizer.chunk.persistent.ChunkLocalCacheReuseStats;

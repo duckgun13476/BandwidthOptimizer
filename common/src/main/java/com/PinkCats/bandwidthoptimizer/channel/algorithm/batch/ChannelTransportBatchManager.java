@@ -1,7 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.channel.algorithm.batch;
 
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportHooks;
-import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportBypassRankLogger;
+import com.PinkCats.bandwidthoptimizer.channel.bypass.ChannelTransportBypassRankLogger;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportPacketCodec;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportRuntimeGuard;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportSession;

@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.report;
+package com.PinkCats.bandwidthoptimizer.report.integration.lightmanscurrency;
 
 import net.minecraft.nbt.CompoundTag;
 import java.lang.reflect.Field;

@@ -1,4 +1,4 @@
-package com.PinkCats.bandwidthoptimizer.channel;
+package com.PinkCats.bandwidthoptimizer.channel.bypass;
 
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.CustomPayloadPacketCompat;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankSourceResolver;

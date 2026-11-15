@@ -1,5 +1,7 @@
-package com.PinkCats.bandwidthoptimizer.report;
+package com.PinkCats.bandwidthoptimizer.report.integration.lightmanscurrency;
 
+import com.PinkCats.bandwidthoptimizer.report.ChannelTransportPacketRankSourceResolver;
+import com.PinkCats.bandwidthoptimizer.report.ChannelTransportSourceRankCore;
 import com.google.gson.Gson;
 import net.minecraft.nbt.CompoundTag;
 import java.util.HashMap;

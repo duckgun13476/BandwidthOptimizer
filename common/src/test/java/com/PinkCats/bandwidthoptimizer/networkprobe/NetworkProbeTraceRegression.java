@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.networkprobe;
 
+import com.PinkCats.bandwidthoptimizer.networkprobe.ui.NetworkAnalysisChart;
+
 import com.google.gson.*;
 import java.io.*;
 

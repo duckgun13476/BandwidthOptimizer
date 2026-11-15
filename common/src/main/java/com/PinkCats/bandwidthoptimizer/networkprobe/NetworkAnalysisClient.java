@@ -1,6 +1,8 @@
 package com.PinkCats.bandwidthoptimizer.networkprobe;
 
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ConnectionAccessor;
+import com.PinkCats.bandwidthoptimizer.networkprobe.ui.NetworkAnalysisFlow;
+import com.PinkCats.bandwidthoptimizer.networkprobe.ui.NetworkAnalysisScreenBase;
 import io.netty.channel.Channel;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;

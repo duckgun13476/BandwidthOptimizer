@@ -1,6 +1,6 @@
 package com.PinkCats.bandwidthoptimizer.report.unified;
 
-import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportBypassRankCore;
+import com.PinkCats.bandwidthoptimizer.channel.bypass.ChannelTransportBypassRankCore;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportSourceRankCore;
 
 import java.util.List;

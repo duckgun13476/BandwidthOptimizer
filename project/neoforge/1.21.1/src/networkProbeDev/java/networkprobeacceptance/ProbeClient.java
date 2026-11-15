@@ -55,7 +55,7 @@ final class ProbeClient {
                     var proof=new com.google.gson.JsonObject(); proof.addProperty("rendered_ticks",ticks-resultTick);
                     proof.addProperty("screen",mc.screen.getClass().getName()); ProbeAcceptance.write("result-screen.json",proof);
                     try {
-                        var field=com.PinkCats.bandwidthoptimizer.networkprobe.NetworkAnalysisScreenBase.class.getDeclaredField("text");
+                        var field=com.PinkCats.bandwidthoptimizer.networkprobe.ui.NetworkAnalysisScreenBase.class.getDeclaredField("text");
                         field.setAccessible(true);
                         var text=new com.google.gson.JsonArray();
                         for(Object row:(java.util.List<?>)field.get(mc.screen)) {

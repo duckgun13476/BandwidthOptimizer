@@ -24,7 +24,7 @@ apply plugin: LoomGradlePlugin
 apply plugin: MppPlugin
 
 apply from: file('../../../gradle/bo-property-loader.gradle')
-apply from: file('../../../test.gradle')
+apply from: file('../../../gradle/tests/test.gradle')
 
 group = mod_group_id
 version = mod_version

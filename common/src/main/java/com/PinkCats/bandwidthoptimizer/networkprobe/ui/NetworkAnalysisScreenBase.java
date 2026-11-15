@@ -1,4 +1,8 @@
-package com.PinkCats.bandwidthoptimizer.networkprobe;
+package com.PinkCats.bandwidthoptimizer.networkprobe.ui;
+
+import com.PinkCats.bandwidthoptimizer.networkprobe.NetworkAnalysisClient;
+import com.PinkCats.bandwidthoptimizer.networkprobe.NetworkAnalysisPlatform;
+import com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbeProgress;
 
 import com.google.gson.*;
 import net.minecraft.client.gui.components.Button;

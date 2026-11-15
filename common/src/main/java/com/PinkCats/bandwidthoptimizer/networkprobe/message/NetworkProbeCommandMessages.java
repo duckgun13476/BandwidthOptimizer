@@ -1,11 +1,12 @@
-package com.PinkCats.bandwidthoptimizer.networkprobe;
+package com.PinkCats.bandwidthoptimizer.networkprobe.message;
 
+import com.PinkCats.bandwidthoptimizer.networkprobe.NetworkProbeService;
 import net.minecraft.network.chat.Component;
 
 /** Keep translation components intact for players; consoles receive explicit English text. */
-final class NetworkProbeCommandMessages {
+public final class NetworkProbeCommandMessages {
     private NetworkProbeCommandMessages() {}
-    static Component text(String name,boolean player) {
+    public static Component text(String name,boolean player) {
         String english=switch(name) {
             case "notice" -> "Network testing adds traffic to this game connection and may temporarily increase latency. Results: BO diagnostics/network/probes.jsonl.";
             case "unavailable" -> "Network test unavailable: unsupported peer or closed connection.";
@@ -24,7 +25,7 @@ final class NetworkProbeCommandMessages {
         };
         return player?Component.translatable("command.bandwidthoptimizer.network."+name):Component.literal(english);
     }
-    static Component feedback(NetworkProbeService.Feedback feedback,boolean player) {
+    public static Component feedback(NetworkProbeService.Feedback feedback,boolean player) {
         String name=switch(feedback.status()) {
             case "started","completed","invalid_budget","already_running","busy_or_cooldown","write_failed","local_event_loop_stall" -> feedback.status();
             case "connection_closed","connection_closed_cause_unknown" -> "connection_closed";

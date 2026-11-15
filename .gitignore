@@ -24,7 +24,13 @@ logs
 /dump/
 /api.properties
 /COMPAT/
-/tools/
+/tools/*
+!/tools/network-fault-lab/
+/tools/network-fault-lab/*
+!/tools/network-fault-lab/Dockerfile
+!/tools/network-fault-lab/fault_lab.py
+!/tools/network-fault-lab/relay_regression.py
+!/tools/network-fault-lab/run_fault_lab.py
 /update/publish-ledger.json
 /update/discord-publish-ledger.json
 /project/**/bandwidthoptimizer-native/

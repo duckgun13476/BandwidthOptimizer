@@ -1,7 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.mixin.minecraft;
 
 import com.PinkCats.bandwidthoptimizer.chunk.integration.transport.ChunkTransportBoundaryController;
-import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportBypassRankLogger;
+import com.PinkCats.bandwidthoptimizer.channel.bypass.ChannelTransportBypassRankLogger;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportControlPlane;
 import com.PinkCats.bandwidthoptimizer.channel.ChannelTransportTraceJournal;
 import com.PinkCats.bandwidthoptimizer.connection.ConnectionDisconnectClassifier;

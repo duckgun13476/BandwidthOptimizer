@@ -1,5 +1,7 @@
 package com.PinkCats.bandwidthoptimizer.networkprobe;
 
+import com.PinkCats.bandwidthoptimizer.networkprobe.message.NetworkProbeCommandMessages;
+
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.CommandSourceCompat;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ConnectionAccessor;
 import com.PinkCats.bandwidthoptimizer.mixin.minecraft.ServerGamePacketListenerImplAccessor;

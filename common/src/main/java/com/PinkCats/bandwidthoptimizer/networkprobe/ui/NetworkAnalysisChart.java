@@ -1,16 +1,16 @@
-package com.PinkCats.bandwidthoptimizer.networkprobe;
+package com.PinkCats.bandwidthoptimizer.networkprobe.ui;
 
 import com.google.gson.*;
 import java.util.*;
 
 /** Bounded chart geometry shared by all render APIs. Thresholds use decimal KB/s. */
-final class NetworkAnalysisChart {
-    static final int GREEN=0xFF62CD81,YELLOW=0xFFFFCF55,RED=0xFFFF6666;
-    record Box(int x1,int y1,int x2,int y2,int color) {}
-    record Label(String key,int x,int y,List<Object> args) {}
-    record Sample(int x,int y,int timeMs,double value,String unit,String source,String phase) {}
-    record Plot(List<Box> boxes,List<Label> labels,List<Sample> samples,int left,int top,int right,int bottom) {
-        Sample hover(int mouseX,int mouseY) {
+public final class NetworkAnalysisChart {
+    public static final int GREEN=0xFF62CD81,YELLOW=0xFFFFCF55,RED=0xFFFF6666;
+    public record Box(int x1,int y1,int x2,int y2,int color) {}
+    public record Label(String key,int x,int y,List<Object> args) {}
+    public record Sample(int x,int y,int timeMs,double value,String unit,String source,String phase) {}
+    public record Plot(List<Box> boxes,List<Label> labels,List<Sample> samples,int left,int top,int right,int bottom) {
+        public Sample hover(int mouseX,int mouseY) {
             if(mouseX<left || mouseX>right || mouseY<top || mouseY>bottom) return null;
             Sample nearest=null;long best=Long.MAX_VALUE;
             for(Sample sample:samples) {
@@ -22,10 +22,10 @@ final class NetworkAnalysisChart {
             return nearest;
         }
     }
-    static int color(int kind,double value) {
+    public static int color(int kind,double value) {
         return kind==0?(value>300?RED:value>=200?YELLOW:GREEN):kind==1?(value<100?RED:value<=200?YELLOW:GREEN):(value>0?RED:GREEN);
     }
-    static Plot plot(JsonObject report,int kind,int width,int height) {
+    public static Plot plot(JsonObject report,int kind,int width,int height) {
         ArrayList<Box> boxes=new ArrayList<>();ArrayList<Label> labels=new ArrayList<>();ArrayList<Sample> samples=new ArrayList<>();
         JsonObject peer=report==null?null:report.getAsJsonObject("peer_summary"),local=report==null?null:report.getAsJsonObject("trace");
         JsonObject remote=peer==null?null:peer.getAsJsonObject("trace");
@@ -95,7 +95,7 @@ final class NetworkAnalysisChart {
         return new Plot(List.copyOf(boxes),List.copyOf(labels),List.copyOf(samples),x,y,x+w,y+h);
     }
     private static String format(double value){return String.format(Locale.ROOT,"%.2f",value);}
-    static List<Label> hoverLabels(Plot plot,int mouseX,int mouseY) {
+    public static List<Label> hoverLabels(Plot plot,int mouseX,int mouseY) {
         Sample sample=plot.hover(mouseX,mouseY);if(sample==null) return List.of();
         return List.of(new Label("bo.network.chart.sample",plot.left(),plot.bottom()+41,List.of(format(sample.timeMs()/1000.0),format(sample.value()),sample.unit())),
                 new Label("bo.network.chart.source_phase",plot.left(),plot.bottom()+53,List.of(sample.source(),sample.phase())));

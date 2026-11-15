@@ -58,7 +58,7 @@ public final class SourceTrafficDetailRegressionMain {
         sessionStart.setLong(null, 1L);
         com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry.resetAll();
         require(com.PinkCats.bandwidthoptimizer.server.stat.ServerBandwidthStatsRegistry.countersStartedAtMillis() > 1L, "server reset renews period");
-        var bypass = com.PinkCats.bandwidthoptimizer.channel.ChannelTransportBypassRankCore.snapshot(100);
+        var bypass = com.PinkCats.bandwidthoptimizer.channel.bypass.ChannelTransportBypassRankCore.snapshot(100);
         require(bypass.countersStartedAtMillis() > 0 && bypass.observedAtMillis() >= bypass.windowStartedAtMillis(), "bypass periods");
         System.out.println("Source traffic detail regression passed.");
     }
