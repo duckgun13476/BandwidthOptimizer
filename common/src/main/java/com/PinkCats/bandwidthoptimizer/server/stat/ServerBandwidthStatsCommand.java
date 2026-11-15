@@ -1,6 +1,5 @@
 package com.PinkCats.bandwidthoptimizer.server.stat;
 
-import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.ActiveEntityViewGate;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.CommandSourceCompat;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -47,7 +46,6 @@ public final class ServerBandwidthStatsCommand {
                 ServerBandwidthStatsPersistence.snapshotTotals(source.getServer());
         ServerBandwidthStatsRegistry.TotalsSnapshot sessionTotals =
                 ServerBandwidthStatsRegistry.snapshotSessionTotals();
-        ActiveEntityViewGate.Snapshot activeEntityGate = ActiveEntityViewGate.snapshot();
         CommandSourceCompat.sendSuccess(source, Component.literal(
                 "BO stats total: channels=" + totals.activeChannels()
                         + ", players=" + totals.boundPlayers()
@@ -73,11 +71,6 @@ public final class ServerBandwidthStatsCommand {
                                 sessionTotals.serverCreateGateSavedBytes(),
                                 sessionTotals.serverCreateGateObservedBytes()
                         )
-                        + ", entityInterpolation=" + activeEntityGate.observedPackets() + " observed"
-                        + "/" + activeEntityGate.coalescedPackets() + " paired"
-                        + "/" + formatBytes(activeEntityGate.coalescedSavedPayloadBytes()) + " payload reduced"
-                        + "/" + activeEntityGate.timeoutReleases() + " unpaired"
-                        + "/" + activeEntityGate.pendingEntities() + " pending"
                         + ", estRatio=" + ratioText(
                                 totals.outboundWireBytes(),
                                 totals.outboundVanillaCompressedEstimateBytes()

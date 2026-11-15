@@ -16,7 +16,6 @@
     "minecraft.ClientboundSectionBlocksUpdatePacketAccessor",
     "minecraft.ClientboundMoveEntityPacketAccessor",
     "minecraft.EntityLevelAccessor",
-    "minecraft.EntityGroundStateAccessor",
     "minecraft.ClientboundLevelChunkWithLightPacketTimingMixin",
     "minecraft.ClientboundCustomPayloadPacketAccessor",
     "minecraft.ConnectionAccessor",
@@ -33,7 +32,6 @@
     "watut.WatutPlayerStatusManagerServerMixin"
   ],
   "client": [
-    "minecraft.ClientEntityMovementReconstructionMixin",
     "minecraft.LoadedChunkCacheRefreshMixin",
     "minecraft.ChunkSnapshotDataAccessor",
     "minecraft.ChunkSnapshotLightAccessor",

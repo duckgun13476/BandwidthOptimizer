@@ -28,8 +28,6 @@
     "minecraft.ServerKeepAliveTimeoutBoundaryMixin"
   ],
   "client": [
-    "minecraft.ClientEntityMovementReconstructionMixin",
-    "minecraft.EntityGroundStateAccessor",
     "minecraft.LoadedChunkCacheRefreshMixin",
     "minecraft.ChunkSnapshotDataAccessor",
     "minecraft.ChunkSnapshotLightAccessor",

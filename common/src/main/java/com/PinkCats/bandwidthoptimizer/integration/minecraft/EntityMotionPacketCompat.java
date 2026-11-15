@@ -16,10 +16,6 @@ public final class EntityMotionPacketCompat {
         return packet.getId();
     }
 
-    public static boolean isLocallyControlled(Entity entity) {
-        return entity.isControlledByLocalInstance();
-    }
-
     public static ClientboundTeleportEntityPacket teleport(Entity entity) {
         return new ClientboundTeleportEntityPacket(entity);
     }

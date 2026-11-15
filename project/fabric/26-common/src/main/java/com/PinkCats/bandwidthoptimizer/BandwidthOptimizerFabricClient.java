@@ -43,7 +43,6 @@ public class BandwidthOptimizerFabricClient implements ClientModInitializer {
             ChunkPersistentClientCache.flushAsync("fabric_client_disconnect");
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            com.PinkCats.bandwidthoptimizer.gate.EntityMovementReconstruction.tick();
             ClientReconnectCoordinator.onClientTick();
             IdleGateClientController.onClientTick(client);
             com.PinkCats.bandwidthoptimizer.experimental.runall.ExperientClientCaptureResetHooks.onClientTick();

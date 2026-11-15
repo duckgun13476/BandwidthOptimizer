@@ -704,14 +704,6 @@ tasks.register('runIdleGateClientPublicationRegression', JavaExec) {
     mainClass = 'com.PinkCats.bandwidthoptimizer.gate.IdleGateClientPublicationRegressionMain'
 }
 
-tasks.register('runActiveEntityViewGateRegression', JavaExec) {
-    group = 'verification'
-    description = 'Verifies bounded active-play offscreen entity coalescing and recovery.'
-    dependsOn(tasks.named('testClasses'))
-    classpath = files(sourceSets.test.output, sourceSets.main.runtimeClasspath, sourceSets.test.runtimeClasspath)
-    mainClass = 'com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.ActiveEntityViewGateRegressionMain'
-}
-
 tasks.register('runSableEntityGateCompatRegression', JavaExec) {
     group = 'verification'
     dependsOn(tasks.named('testClasses'))

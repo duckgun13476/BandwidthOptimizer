@@ -292,15 +292,6 @@ tasks.register('runAttributeRecoveryPolicyRegression', JavaExec) {
     )
 }
 
-tasks.register('runActiveEntityViewGateRegression', JavaExec) {
-    configureTestJavaExecTask(
-            delegate,
-            'verification',
-            'Verifies exact active-play movement pairing, interpolation cadence, and bounded recovery.',
-            'com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.ActiveEntityViewGateRegressionMain'
-    )
-}
-
 tasks.register('runIdleGateServerStateRegression', JavaExec) {
     configureTestJavaExecTask(
             delegate,

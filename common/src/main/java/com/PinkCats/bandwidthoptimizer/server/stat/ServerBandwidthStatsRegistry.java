@@ -9,7 +9,6 @@ import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkHotspotStats;
 import com.PinkCats.bandwidthoptimizer.chunk.verify.ChunkServerOfflineReuseStats;
 import com.PinkCats.bandwidthoptimizer.gate.integration.create.CreateBlockEntityUpdateGate;
 import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.IdleGateBackgroundPacketGate;
-import com.PinkCats.bandwidthoptimizer.gate.integration.minecraft.ActiveEntityViewGate;
 import com.PinkCats.bandwidthoptimizer.gate.source.ServerSourceGateStats;
 import com.PinkCats.bandwidthoptimizer.integration.minecraft.ServerPlayerLevelCompat;
 import com.PinkCats.bandwidthoptimizer.report.ChannelTransportSourceRankCore;
@@ -132,7 +131,6 @@ public final class ServerBandwidthStatsRegistry {
         ChunkServerOfflineReuseStats.reset();
         CreateBlockEntityUpdateGate.resetStats();
         IdleGateBackgroundPacketGate.reset();
-        ActiveEntityViewGate.resetStats();
         ServerSourceGateStats.reset();
         com.PinkCats.bandwidthoptimizer.integration.watut.WatutTrafficStats.resetServer();
         ChannelTransportSourceRankCore.resetCreateBlockEntityTransportStats();
