@@ -1,11 +1,11 @@
-#### v5.10.33.158-release
+#### v5.10.33.160-release
 
-1. Add bounded latency sampling tasks that can be queried by ID, allowing RCON integrations to retrieve player results after sampling completes.
-
-#### v5.10.33.157-release
-
-1. Add player latency commands with current samples, timed averages and high-latency intervals. Operators and the server console can target a player or all online players.
-2. Expand bounded connection-failure diagnostics in `failures.jsonl` with connection, player and decoder context, and improve failure classification while preserving normal disconnect silence.
+1. Support transport packets up to 64 MiB and warn about packets over 8 MiB with source information when available.
+2. Remove active-play entity movement gating to avoid irregular movement updates and visible stutter.
+3. Update the embedded TorqueAPI to 1.3.3.
+4. Add bounded latency sampling tasks that can be queried by ID, allowing RCON integrations to retrieve player results after sampling completes.
+5. Add player latency commands with current samples, timed averages and high-latency intervals. Operators and the server console can target a player or all online players.
+6. Expand bounded connection-failure diagnostics in `failures.jsonl` with connection, player and decoder context, and improve failure classification while preserving normal disconnect silence.
 
 #### v5.10.33.156-release
 
